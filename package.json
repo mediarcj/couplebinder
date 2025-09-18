@@ -1,0 +1,12 @@
+{
+  "name": "detechify",
+  "version": "1.0.0",
+  "description": "A web application project",
+  "main": "server/app.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
+}

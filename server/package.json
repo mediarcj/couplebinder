@@ -14,7 +14,8 @@
     "express-rate-limit": "^7.1.5",
     "ejs": "^3.1.9",
     "uuid": "^9.0.1",
-    "morgan": "^1.10.0"
+    "morgan": "^1.10.0",
+    "dotenv": "^16.3.1"
   },
   "keywords": [],
   "author": "",

@@ -144,6 +144,31 @@ app.get('/api/hello', (req, res) => {
   res.json({ message: 'hello world' });
 });
 
+// UI configuration endpoint - backend-driven UI instructions
+app.get('/api/ui-config', (req, res) => {
+  res.json({
+    allowed_actions: ['upload_resume', 'ingest_job_description'],
+    cooldown_seconds: 0,
+    upload_limits: {
+      max_mb: 3,
+      types: ['pdf', 'docx', 'txt'],
+      max_pages: 8
+    },
+    feature_flags: {
+      mode_b_short_retention: false
+    },
+    form_schema: {
+      job_description_text: {
+        required: true,
+        min: 20,
+        max: 5000
+      }
+    },
+    requestId: req.requestId,
+    timestamp: new Date().toISOString()
+  });
+});
+
 // ============================================================
 // STEP 5: Error Handling
 // ============================================================
@@ -178,4 +203,5 @@ app.listen(PORT, () => {
   console.log(`Detechify server running on port ${PORT}`);
   console.log(`Health check: http://localhost:${PORT}/health`);
   console.log(`Hello endpoint: http://localhost:${PORT}/api/hello`);
+  console.log(`UI config endpoint: http://localhost:${PORT}/api/ui-config`);
 });

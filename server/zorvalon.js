@@ -147,18 +147,17 @@ app.get('/api/hello', (req, res) => {
 // UI configuration endpoint - backend-driven UI instructions
 app.get('/api/ui-config', (req, res) => {
   res.json({
-    allowed_actions: ['upload_resume', 'ingest_job_description'],
+    allowed_actions: ['submit_content', 'view_history'],
     cooldown_seconds: 0,
-    upload_limits: {
-      max_mb: 3,
-      types: ['pdf', 'docx', 'txt'],
-      max_pages: 8
+    input_limits: {
+      text_max: 5000,
+      title_max: 140
     },
     feature_flags: {
-      mode_b_short_retention: false
+      advanced_mode: false
     },
     form_schema: {
-      job_description_text: {
+      text: {
         required: true,
         min: 20,
         max: 5000

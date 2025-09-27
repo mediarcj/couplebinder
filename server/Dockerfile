@@ -1,5 +1,7 @@
-# Detechify Server Dockerfile
-FROM node:18-alpine
+# File: server/Dockerfile
+# Description: Docker configuration for Detechify server
+# Purpose: Creates secure containerized environment for production deployment
+# Notes: Uses Alpine Linux, non-root user, and includes health checks
 
 # Set working directory
 WORKDIR /app

@@ -1,3 +1,8 @@
+// File: server/package.json
+// Description: Server dependencies and scripts for Detechify Node.js application
+// Purpose: Defines all required packages and npm scripts for the server
+// Notes: Includes Express, security middleware, and development dependencies
+
 {
   "name": "detechify-server",
   "version": "1.0.0",

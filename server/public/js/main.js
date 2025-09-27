@@ -1,5 +1,7 @@
-// Detechify Main JavaScript
-// Simple, clean client-side functionality
+// File: server/public/js/main.js
+// Description: Client-side JavaScript for Detechify frontend
+// Purpose: Handles form interactions, character counting, and API calls
+// Notes: Includes text submission form validation and submissions viewing functionality
 
 document.addEventListener('DOMContentLoaded', function() {
     console.log('Detechify frontend loaded');

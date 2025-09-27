@@ -168,6 +168,53 @@ app.get('/api/ui-config', (req, res) => {
   });
 });
 
+// Text submission endpoint with validation
+app.post('/api/submit', (req, res) => {
+  const { text } = req.body;
+  
+  // Validate text field
+  if (!text) {
+    return res.status(400).json({
+      error: 'Text field is required',
+      requestId: req.requestId,
+      timestamp: new Date().toISOString()
+    });
+  }
+  
+  if (typeof text !== 'string') {
+    return res.status(400).json({
+      error: 'Text must be a string',
+      requestId: req.requestId,
+      timestamp: new Date().toISOString()
+    });
+  }
+  
+  if (text.length < 20) {
+    return res.status(400).json({
+      error: 'Text must be at least 20 characters',
+      requestId: req.requestId,
+      timestamp: new Date().toISOString()
+    });
+  }
+  
+  if (text.length > 5000) {
+    return res.status(400).json({
+      error: 'Text must not exceed 5000 characters',
+      requestId: req.requestId,
+      timestamp: new Date().toISOString()
+    });
+  }
+  
+  // Text is valid
+  res.json({
+    success: true,
+    message: 'Text submitted successfully',
+    text_length: text.length,
+    requestId: req.requestId,
+    timestamp: new Date().toISOString()
+  });
+});
+
 // ============================================================
 // STEP 5: Error Handling
 // ============================================================

@@ -2,8 +2,14 @@
   "name": "detechify",
   "version": "1.0.0",
   "description": "A web application project",
-  "main": "server/app.js",
+  "private": true,
+  "workspaces": [
+    "server",
+    "nextjs"
+  ],
   "scripts": {
+    "start": "npm run start --workspace=server",
+    "dev": "npm run dev --workspace=server",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],

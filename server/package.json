@@ -1,0 +1,16 @@
+{
+  "name": "detechify-server",
+  "version": "1.0.0",
+  "description": "Detechify server application",
+  "main": "zorvalon.js",
+  "scripts": {
+    "start": "node zorvalon.js",
+    "dev": "node zorvalon.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
+}

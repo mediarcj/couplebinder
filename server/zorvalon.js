@@ -9,20 +9,21 @@ const cors = require('cors');
 const rateLimit = require('express-rate-limit');
 const morgan = require('morgan');
 const { v4: uuidv4 } = require('uuid');
+const { config, logConfigSummary } = require('./config');
 
 // ============================================================
 // STEP 1: Create Express App
 // ============================================================
 const app = express();
-const PORT = process.env.PORT || 3000;
 
 console.log('Detechify server starting...');
+logConfigSummary();
 
 // ============================================================
 // STEP 1.5: In-Memory Storage
 // ============================================================
 const submissions = [];
-const MAX_SUBMISSIONS = 10;
+const MAX_SUBMISSIONS = config.limits.maxSubmissions;
 
 console.log('In-memory storage initialized');
 
@@ -46,17 +47,17 @@ app.use(helmet({
 
 // CORS configuration
 app.use(cors({
-  origin: process.env.NODE_ENV === 'production' ? false : true,
+  origin: config.server.nodeEnv === 'production' ? false : true,
   credentials: true,
   optionsSuccessStatus: 200
 }));
 
 // Rate limiting
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per windowMs
+  windowMs: config.rateLimit.windowMs,
+  max: config.rateLimit.max,
   message: {
-    error: 'Too many requests from this IP, please try again later.'
+    error: config.rateLimit.message
   },
   standardHeaders: true,
   legacyHeaders: false,
@@ -106,7 +107,9 @@ console.log('View engine and static assets configured');
 app.get('/', (req, res) => {
   res.render('index', { 
     title: 'Detechify',
-    message: 'Welcome to Detechify - Building the future of tech detection'
+    message: 'Welcome to Detechify - Building the future of tech detection',
+    textMinLength: config.limits.textMinLength,
+    textMaxLength: config.limits.textMaxLength
   });
 });
 
@@ -158,7 +161,7 @@ app.get('/api/ui-config', (req, res) => {
     allowed_actions: ['submit_content', 'view_history'],
     cooldown_seconds: 0,
     input_limits: {
-      text_max: 5000,
+      text_max: config.limits.textMaxLength,
       title_max: 140
     },
     feature_flags: {
@@ -167,8 +170,8 @@ app.get('/api/ui-config', (req, res) => {
     form_schema: {
       text: {
         required: true,
-        min: 20,
-        max: 5000
+        min: config.limits.textMinLength,
+        max: config.limits.textMaxLength
       }
     },
     requestId: req.requestId,
@@ -197,17 +200,17 @@ app.post('/api/submit', (req, res) => {
     });
   }
   
-  if (text.length < 20) {
+  if (text.length < config.limits.textMinLength) {
     return res.status(400).json({
-      error: 'Text must be at least 20 characters',
+      error: `Text must be at least ${config.limits.textMinLength} characters`,
       requestId: req.requestId,
       timestamp: new Date().toISOString()
     });
   }
   
-  if (text.length > 5000) {
+  if (text.length > config.limits.textMaxLength) {
     return res.status(400).json({
-      error: 'Text must not exceed 5000 characters',
+      error: `Text must not exceed ${config.limits.textMaxLength} characters`,
       requestId: req.requestId,
       timestamp: new Date().toISOString()
     });
@@ -277,10 +280,10 @@ app.use((req, res) => {
 // ============================================================
 // STEP 6: Start Server
 // ============================================================
-app.listen(PORT, () => {
-  console.log(`Detechify server running on port ${PORT}`);
-  console.log(`Health check: http://localhost:${PORT}/health`);
-  console.log(`Hello endpoint: http://localhost:${PORT}/api/hello`);
-  console.log(`UI config endpoint: http://localhost:${PORT}/api/ui-config`);
-  console.log(`Submissions endpoint: http://localhost:${PORT}/api/submissions`);
+app.listen(config.server.port, config.server.host, () => {
+  console.log(`Detechify server running on ${config.server.host}:${config.server.port}`);
+  console.log(`Health check: http://localhost:${config.server.port}/health`);
+  console.log(`Hello endpoint: http://localhost:${config.server.port}/api/hello`);
+  console.log(`UI config endpoint: http://localhost:${config.server.port}/api/ui-config`);
+  console.log(`Submissions endpoint: http://localhost:${config.server.port}/api/submissions`);
 });

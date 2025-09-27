@@ -79,9 +79,12 @@ function initializeTextForm() {
         charCount.textContent = count;
         
         // Visual feedback for limits
-        if (count < 20) {
+        const minLength = window.appConfig ? window.appConfig.textMinLength : 20;
+        const maxLength = window.appConfig ? window.appConfig.textMaxLength : 5000;
+        
+        if (count < minLength) {
             charCount.style.color = '#e74c3c';
-        } else if (count > 5000) {
+        } else if (count > maxLength) {
             charCount.style.color = '#e74c3c';
         } else {
             charCount.style.color = '#27ae60';

@@ -39,12 +39,12 @@
                         <textarea 
                             id="textInput" 
                             name="text" 
-                            placeholder="Enter your text here (minimum 20 characters, maximum 5000 characters)..."
+                            placeholder="Enter your text here (minimum <%= textMinLength %> characters, maximum <%= textMaxLength %> characters)..."
                             rows="4"
-                            maxlength="5000"
+                            maxlength="<%= textMaxLength %>"
                         ></textarea>
                         <div class="char-count">
-                            <span id="charCount">0</span> / 5000 characters
+                            <span id="charCount">0</span> / <%= textMaxLength %> characters
                         </div>
                     </div>
                     <button type="submit" class="btn btn-primary">Submit Text</button>
@@ -97,6 +97,13 @@
         </div>
     </footer>
 
+    <script>
+        // Pass server config to client-side JavaScript
+        window.appConfig = {
+            textMinLength: <%= textMinLength %>,
+            textMaxLength: <%= textMaxLength %>
+        };
+    </script>
     <script src="/js/main.js"></script>
 </body>
 </html>

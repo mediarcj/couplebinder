@@ -102,7 +102,7 @@ app.get('/', (req, res) => {
   });
 });
 
-// Health check endpoints (following building laws)
+// Health check endpoints
 app.get('/health', (req, res) => {
   res.json({ 
     status: 'ok', 
@@ -139,7 +139,7 @@ app.get('/health/readiness', (req, res) => {
   }
 });
 
-// Hello world endpoint (as required by building laws)
+// Hello world endpoint
 app.get('/api/hello', (req, res) => {
   res.json({ message: 'hello world' });
 });

@@ -121,13 +121,13 @@ main {
 
 .btn-secondary {
     background-color: transparent;
-    color: white;
-    border: 2px solid white;
+    color: #667eea;
+    border: 2px solid #667eea;
 }
 
 .btn-secondary:hover {
-    background-color: white;
-    color: #667eea;
+    background-color: #667eea;
+    color: white;
 }
 
 /* Features Section */

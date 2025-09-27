@@ -3,6 +3,9 @@
 # Purpose: Creates secure containerized environment for production deployment
 # Notes: Uses Alpine Linux, non-root user, and includes health checks
 
+# Use a lightweight Node.js image
+FROM node:18-alpine
+
 # Set working directory
 WORKDIR /app
 

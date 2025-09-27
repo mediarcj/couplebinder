@@ -3,8 +3,6 @@
 # Purpose: Defines and orchestrates the server container with environment setup
 # Notes: Includes health checks, volume mounts, and restart policies
 
-version: '3.8'
-
 services:
   detechify-server:
     build:

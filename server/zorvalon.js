@@ -19,6 +19,14 @@ const PORT = process.env.PORT || 3000;
 console.log('Detechify server starting...');
 
 // ============================================================
+// STEP 1.5: In-Memory Storage
+// ============================================================
+const submissions = [];
+const MAX_SUBMISSIONS = 10;
+
+console.log('In-memory storage initialized');
+
+// ============================================================
 // STEP 2: Core Middleware Registration (ENFORCED ORDER)
 // Helmet → CORS → RateLimit → Parsers → Logging → Routes
 // ============================================================
@@ -205,11 +213,35 @@ app.post('/api/submit', (req, res) => {
     });
   }
   
-  // Text is valid
+  // Text is valid - store in memory
+  const submission = {
+    id: req.requestId,
+    text: text,
+    text_length: text.length,
+    timestamp: new Date().toISOString(),
+    preview: text.substring(0, 100) + (text.length > 100 ? '...' : '')
+  };
+  
+  // Add to beginning of array and keep only MAX_SUBMISSIONS
+  submissions.unshift(submission);
+  if (submissions.length > MAX_SUBMISSIONS) {
+    submissions.pop();
+  }
+  
   res.json({
     success: true,
     message: 'Text submitted successfully',
     text_length: text.length,
+    requestId: req.requestId,
+    timestamp: new Date().toISOString()
+  });
+});
+
+// Recent submissions endpoint
+app.get('/api/submissions', (req, res) => {
+  res.json({
+    submissions: submissions,
+    count: submissions.length,
     requestId: req.requestId,
     timestamp: new Date().toISOString()
   });
@@ -250,4 +282,5 @@ app.listen(PORT, () => {
   console.log(`Health check: http://localhost:${PORT}/health`);
   console.log(`Hello endpoint: http://localhost:${PORT}/api/hello`);
   console.log(`UI config endpoint: http://localhost:${PORT}/api/ui-config`);
+  console.log(`Submissions endpoint: http://localhost:${PORT}/api/submissions`);
 });

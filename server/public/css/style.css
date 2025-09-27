@@ -303,3 +303,43 @@ footer p {
     color: #721c24;
     border: 1px solid #f5c6cb;
 }
+
+/* Submission Actions */
+.submission-actions {
+    margin-top: 1rem;
+    text-align: center;
+}
+
+/* Submissions List */
+.submissions-list {
+    margin-top: 1.5rem;
+    display: none;
+}
+
+.submission-item {
+    background: #f8f9fa;
+    border: 1px solid #e9ecef;
+    border-radius: 6px;
+    padding: 1rem;
+    margin-bottom: 0.5rem;
+}
+
+.submission-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
+    font-size: 12px;
+    color: #6c757d;
+}
+
+.submission-preview {
+    color: #495057;
+    font-size: 14px;
+    line-height: 1.4;
+}
+
+.submission-id {
+    font-family: monospace;
+    font-size: 11px;
+}

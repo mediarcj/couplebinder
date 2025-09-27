@@ -60,6 +60,7 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Text submission form functionality
     initializeTextForm();
+    initializeSubmissions();
 });
 
 function initializeTextForm() {
@@ -139,4 +140,67 @@ function showResult(type, message) {
     setTimeout(() => {
         resultDiv.style.display = 'none';
     }, 5000);
+}
+
+function initializeSubmissions() {
+    const viewSubmissionsBtn = document.getElementById('viewSubmissionsBtn');
+    const submissionsList = document.getElementById('submissionsList');
+    
+    if (!viewSubmissionsBtn || !submissionsList) {
+        return; // Elements not found
+    }
+    
+    viewSubmissionsBtn.addEventListener('click', async function() {
+        const originalText = this.textContent;
+        this.textContent = 'Loading...';
+        this.disabled = true;
+        
+        try {
+            const response = await fetch('/api/submissions');
+            const data = await response.json();
+            
+            if (response.ok) {
+                displaySubmissions(data.submissions);
+                this.textContent = 'Hide Submissions';
+            } else {
+                showResult('error', 'Failed to load submissions');
+                this.textContent = originalText;
+            }
+        } catch (error) {
+            showResult('error', 'Network error loading submissions');
+            this.textContent = originalText;
+        } finally {
+            this.disabled = false;
+        }
+    });
+}
+
+function displaySubmissions(submissions) {
+    const submissionsList = document.getElementById('submissionsList');
+    const viewBtn = document.getElementById('viewSubmissionsBtn');
+    
+    if (!submissionsList) return;
+    
+    if (submissionsList.style.display === 'none' || submissionsList.style.display === '') {
+        // Show submissions
+        if (submissions.length === 0) {
+            submissionsList.innerHTML = '<p style="text-align: center; color: #6c757d;">No submissions yet. Submit some text above!</p>';
+        } else {
+            submissionsList.innerHTML = submissions.map(sub => `
+                <div class="submission-item">
+                    <div class="submission-header">
+                        <span>${sub.text_length} characters</span>
+                        <span class="submission-id">${sub.id}</span>
+                        <span>${new Date(sub.timestamp).toLocaleString()}</span>
+                    </div>
+                    <div class="submission-preview">${sub.preview}</div>
+                </div>
+            `).join('');
+        }
+        submissionsList.style.display = 'block';
+    } else {
+        // Hide submissions
+        submissionsList.style.display = 'none';
+        viewBtn.textContent = 'View Recent Submissions';
+    }
 }

@@ -27,12 +27,12 @@ async function initializeDatabase() {
   try {
     const connected = await testConnection();
     if (connected) {
-      console.log('✅ Database connection established');
-    } else {
-      console.log('⚠️ Database connection failed - continuing without database');
+        console.log('Database connection established');
+      } else {
+        console.log('Database connection failed - continuing without database');
     }
   } catch (error) {
-    console.log('⚠️ Database initialization error:', error.message);
+    console.log('Database initialization error:', error.message);
   }
 }
 

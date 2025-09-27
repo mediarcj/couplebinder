@@ -17,11 +17,11 @@ const db = knex(dbConfig);
 async function testConnection() {
   try {
     const result = await db.raw('SELECT NOW()');
-    console.log('✅ Database connection successful');
-    console.log(`📅 Database time: ${result.rows[0].now}`);
+    console.log('Database connection successful');
+    console.log(`Database time: ${result.rows[0].now}`);
     return true;
   } catch (error) {
-    console.error('❌ Database connection failed:', error.message);
+    console.error('Database connection failed:', error.message);
     return false;
   }
 }

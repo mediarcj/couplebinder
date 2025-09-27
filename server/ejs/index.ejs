@@ -102,11 +102,17 @@
         </div>
     </footer>
 
+    <!-- Pass server config to client-side JavaScript via data attributes -->
+    <div id="app-config" 
+         data-text-min-length="<%= textMinLength %>" 
+         data-text-max-length="<%= textMaxLength %>" 
+         style="display: none;"></div>
     <script>
-        // Pass server config to client-side JavaScript
+        // Extract config from data attributes
+        const configEl = document.getElementById('app-config');
         window.appConfig = {
-            textMinLength: <%= textMinLength %>,
-            textMaxLength: <%= textMaxLength %>
+            textMinLength: parseInt(configEl.dataset.textMinLength),
+            textMaxLength: parseInt(configEl.dataset.textMaxLength)
         };
     </script>
     <script src="/js/main.js"></script>

@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title><%= title %> - Detechify</title>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <header>
+        <nav>
+            <div class="container">
+                <h1>Detechify</h1>
+                <ul>
+                    <li><a href="/">Home</a></li>
+                    <li><a href="/health">Health</a></li>
+                    <li><a href="/api/hello">API</a></li>
+                </ul>
+            </div>
+        </nav>
+    </header>
+
+    <main>
+        <div class="container">
+            <div class="hero">
+                <h1>Welcome to Detechify</h1>
+                <p class="subtitle"><%= message %></p>
+                <div class="cta-buttons">
+                    <a href="/health" class="btn btn-primary">Check Health</a>
+                    <a href="/api/hello" class="btn btn-secondary">API Test</a>
+                </div>
+            </div>
+
+            <div class="features">
+                <div class="feature-grid">
+                    <div class="feature-card">
+                        <h3>Secure by Design</h3>
+                        <p>Built with enterprise-grade security middleware including Helmet, CORS, and rate limiting.</p>
+                    </div>
+                    <div class="feature-card">
+                        <h3>Modern Architecture</h3>
+                        <p>Following building laws for clean, maintainable, and scalable code structure.</p>
+                    </div>
+                    <div class="feature-card">
+                        <h3>EJS Frontend</h3>
+                        <p>Starting with EJS templates, ready for future Next.js migration when needed.</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="status">
+                <h2>Server Status</h2>
+                <div class="status-item">
+                    <span class="status-label">API Endpoint:</span>
+                    <span class="status-value">Active</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">Security Middleware:</span>
+                    <span class="status-value">Enabled</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">Rate Limiting:</span>
+                    <span class="status-value">100 req/15min</span>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <footer>
+        <div class="container">
+            <p>&copy; 2024 Detechify. Building the future of tech detection.</p>
+        </div>
+    </footer>
+
+    <script src="/js/main.js"></script>
+</body>
+</html>

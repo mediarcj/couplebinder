@@ -1,6 +1,6 @@
 // File: zorvalon.js
 // Description: Entry point for Detechify server
-// Boot order: Express → Helmet → CORS → RateLimit → Parsers → Routes → Error Handling → Start Server
+// Boot order: Express → Helmet → CORS → RateLimit → Parsers → Views → Routes → Error Handling → Start Server
 // Notes: Console logs mark important checkpoints for audit and debugging
 
 const express = require('express');
@@ -60,8 +60,29 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 console.log('Core middleware loaded: Helmet, CORS, Rate Limit, Body Parsers');
 
 // ============================================================
-// STEP 3: Routes
+// STEP 3: View Engine / Static Assets
 // ============================================================
+
+// Set EJS as the view engine
+app.set('view engine', 'ejs');
+app.set('views', './ejs');
+
+// Serve static files from public directory
+app.use(express.static('public'));
+
+console.log('View engine and static assets configured');
+
+// ============================================================
+// STEP 4: Routes
+// ============================================================
+
+// Home page route
+app.get('/', (req, res) => {
+  res.render('index', { 
+    title: 'Detechify',
+    message: 'Welcome to Detechify - Building the future of tech detection'
+  });
+});
 
 // Health check endpoint
 app.get('/health', (req, res) => {
@@ -74,7 +95,7 @@ app.get('/api/hello', (req, res) => {
 });
 
 // ============================================================
-// STEP 4: Error Handling
+// STEP 5: Error Handling
 // ============================================================
 app.use((err, req, res, next) => {
   console.error('Server error:', err);
@@ -87,7 +108,7 @@ app.use((req, res) => {
 });
 
 // ============================================================
-// STEP 5: Start Server
+// STEP 6: Start Server
 // ============================================================
 app.listen(PORT, () => {
   console.log(`Detechify server running on port ${PORT}`);

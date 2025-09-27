@@ -10,6 +10,7 @@ const rateLimit = require('express-rate-limit');
 const morgan = require('morgan');
 const { v4: uuidv4 } = require('uuid');
 const { config, logConfigSummary } = require('./config');
+const { testConnection } = require('./db/connection');
 
 // ============================================================
 // STEP 1: Create Express App
@@ -20,7 +21,26 @@ console.log('Detechify server starting...');
 logConfigSummary();
 
 // ============================================================
-// STEP 1.5: In-Memory Storage
+// STEP 1.5: Database Connection Test
+// ============================================================
+async function initializeDatabase() {
+  try {
+    const connected = await testConnection();
+    if (connected) {
+      console.log('✅ Database connection established');
+    } else {
+      console.log('⚠️ Database connection failed - continuing without database');
+    }
+  } catch (error) {
+    console.log('⚠️ Database initialization error:', error.message);
+  }
+}
+
+// Initialize database connection
+initializeDatabase();
+
+// ============================================================
+// STEP 1.6: In-Memory Storage
 // ============================================================
 const submissions = [];
 const MAX_SUBMISSIONS = config.limits.maxSubmissions;

@@ -16,11 +16,16 @@
         <nav>
             <div class="container">
                 <h1>Detechify</h1>
-                <ul>
-                    <li><a href="/">Home</a></li>
-                    <li><a href="/health">Health</a></li>
-                    <li><a href="/api/hello">API</a></li>
-                </ul>
+                <div class="nav-content">
+                    <ul>
+                        <li><a href="/">Home</a></li>
+                        <li><a href="/health">Health</a></li>
+                        <li><a href="/api/hello">API</a></li>
+                    </ul>
+                    <div class="auth-section">
+                        <a href="#" class="login-link" onclick="handleLogin(); return false;">Login</a>
+                    </div>
+                </div>
             </div>
         </nav>
     </header>
@@ -114,6 +119,11 @@
             textMinLength: parseInt(configEl.dataset.textMinLength),
             textMaxLength: parseInt(configEl.dataset.textMaxLength)
         };
+
+        // Login button handler (placeholder for future functionality)
+        function handleLogin() {
+            alert('Login functionality coming soon!');
+        }
     </script>
     <script src="/js/main.js"></script>
 </body>

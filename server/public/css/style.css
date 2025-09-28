@@ -744,3 +744,86 @@ nav ul li a.active {
         align-items: flex-start;
     }
 }
+
+/* Notification Modal Styles */
+.notification-modal {
+    max-width: 400px;
+    text-align: center;
+}
+
+.notification-modal .modal-header h2 {
+    color: #2c3e50;
+    margin: 0;
+}
+
+.notification-modal .modal-body p {
+    color: #666;
+    margin: 1rem 0;
+    font-size: 1.1rem;
+}
+
+.notification-modal .form-actions {
+    justify-content: center;
+    margin-top: 1.5rem;
+}
+
+.notification-modal .form-actions button {
+    min-width: 100px;
+}
+
+/* General error message styling */
+#loginGeneralError {
+    text-align: center;
+    margin-top: 1rem;
+    padding: 0.75rem;
+    background-color: #fee;
+    border: 1px solid #fcc;
+    border-radius: 4px;
+}
+
+/* Modal State Transitions */
+.modal-state {
+    transition: opacity 0.3s ease-in-out, transform 0.3s ease-in-out;
+    opacity: 1;
+    transform: translateX(0);
+}
+
+.modal-state.hidden {
+    opacity: 0;
+    transform: translateX(-20px);
+    pointer-events: none;
+}
+
+.modal-state.showing {
+    opacity: 0;
+    transform: translateX(20px);
+}
+
+/* Success Content Styling */
+.success-content {
+    text-align: center;
+    padding: 2rem 0;
+}
+
+.success-icon {
+    font-size: 3rem;
+    color: #27ae60;
+    margin-bottom: 1rem;
+    font-weight: bold;
+}
+
+.success-content h3 {
+    color: #2c3e50;
+    margin-bottom: 1rem;
+    font-size: 1.5rem;
+}
+
+.success-content p {
+    color: #666;
+    margin-bottom: 2rem;
+    font-size: 1.1rem;
+}
+
+.success-content .form-actions {
+    justify-content: center;
+}

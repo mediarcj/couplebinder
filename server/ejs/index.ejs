@@ -115,35 +115,67 @@
                 <span class="close">&times;</span>
             </div>
             <div class="modal-body">
-                <form id="loginForm">
-                    <div class="form-group">
-                        <label for="loginEmail">Email Address</label>
-                        <input 
-                            type="text" 
-                            id="loginEmail" 
-                            name="email" 
-                            placeholder="Enter your email address"
-                            maxlength="40"
-                            autocomplete="email"
-                        >
-                        <div id="emailError" class="error-message"></div>
+                <!-- Login Form State -->
+                <div id="loginFormState" class="modal-state">
+                    <form id="loginForm">
+                        <div class="form-group">
+                            <label for="loginEmail">Email Address</label>
+                            <input 
+                                type="text" 
+                                id="loginEmail" 
+                                name="email" 
+                                placeholder="Enter your email address"
+                                maxlength="40"
+                                autocomplete="email"
+                            >
+                            <div id="emailError" class="error-message"></div>
+                        </div>
+                        <div class="form-group">
+                            <label for="loginPassword">Password</label>
+                            <input 
+                                type="password" 
+                                id="loginPassword" 
+                                name="password" 
+                                placeholder="Enter your password"
+                                autocomplete="current-password"
+                            >
+                            <div id="passwordError" class="error-message"></div>
+                        </div>
+                        <div class="form-actions">
+                            <button type="button" class="btn btn-secondary">Cancel</button>
+                            <button type="submit" class="btn btn-secondary">Login</button>
+                        </div>
+                        <div id="loginGeneralError" class="error-message" style="display: none;"></div>
+                    </form>
+                </div>
+                
+                <!-- Login Success State -->
+                <div id="loginSuccessState" class="modal-state" style="display: none;">
+                    <div class="success-content">
+                        <div class="success-icon">✓</div>
+                        <h3 id="successTitle">Login Successful!</h3>
+                        <p id="successMessage">Welcome message</p>
+                        <div class="form-actions">
+                            <button type="button" class="btn btn-secondary" id="successOkBtn">OK</button>
+                        </div>
                     </div>
-                    <div class="form-group">
-                        <label for="loginPassword">Password</label>
-                        <input 
-                            type="password" 
-                            id="loginPassword" 
-                            name="password" 
-                            placeholder="Enter your password"
-                            autocomplete="current-password"
-                        >
-                        <div id="passwordError" class="error-message"></div>
-                    </div>
-                    <div class="form-actions">
-                        <button type="button" class="btn btn-secondary">Cancel</button>
-                        <button type="submit" class="btn btn-secondary">Login</button>
-                    </div>
-                </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Notification Modal -->
+    <div id="notificationModal" class="modal">
+        <div class="modal-content notification-modal">
+            <div class="modal-header">
+                <h2 id="notificationTitle">Notification</h2>
+                <span class="close" id="notificationClose">&times;</span>
+            </div>
+            <div class="modal-body">
+                <p id="notificationMessage">Message content</p>
+                <div class="form-actions">
+                    <button type="button" class="btn btn-secondary" id="notificationOkBtn">OK</button>
+                </div>
             </div>
         </div>
     </div>

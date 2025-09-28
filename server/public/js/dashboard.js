@@ -11,6 +11,57 @@ document.addEventListener('DOMContentLoaded', function() {
     initializeSubmissions();
 });
 
+// Notification Modal Functions
+function showNotificationModal(title, message, onClose = null) {
+    // Create modal if it doesn't exist
+    let modal = document.getElementById('notificationModal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'notificationModal';
+        modal.className = 'modal';
+        modal.innerHTML = `
+            <div class="modal-content notification-modal">
+                <div class="modal-header">
+                    <h2 id="notificationTitle">Notification</h2>
+                    <span class="close" id="notificationClose">&times;</span>
+                </div>
+                <div class="modal-body">
+                    <p id="notificationMessage">Message content</p>
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-secondary" id="notificationOkBtn">OK</button>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+    }
+    
+    const titleEl = document.getElementById('notificationTitle');
+    const messageEl = document.getElementById('notificationMessage');
+    const closeBtn = document.getElementById('notificationClose');
+    const okBtn = document.getElementById('notificationOkBtn');
+    
+    if (titleEl) titleEl.textContent = title;
+    if (messageEl) messageEl.textContent = message;
+    if (modal) modal.style.display = 'block';
+    
+    // Close modal handlers
+    const closeModal = () => {
+        modal.style.display = 'none';
+        if (onClose) onClose();
+    };
+    
+    if (closeBtn) closeBtn.onclick = closeModal;
+    if (okBtn) okBtn.onclick = closeModal;
+    
+    // Close on outside click
+    window.onclick = function(event) {
+        if (event.target === modal) {
+            closeModal();
+        }
+    };
+}
+
 /**
  * Initialize dashboard-specific functionality
  */
@@ -37,14 +88,19 @@ async function handleLogout() {
         const data = await response.json();
         
         if (data.success) {
-            alert('Logged out successfully!');
-            window.location.href = '/';
+            showNotificationModal(
+                'Logout Successful!', 
+                'You have been logged out successfully!',
+                () => {
+                    window.location.href = '/';
+                }
+            );
         } else {
-            alert(`Logout failed: ${data.message}`);
+            showNotificationModal('Logout Failed', `Logout failed: ${data.message}`);
         }
     } catch (error) {
         console.error('Logout error:', error);
-        alert('Network error during logout. Please try again.');
+        showNotificationModal('Network Error', 'Network error during logout. Please try again.');
     }
 }
 

@@ -274,7 +274,7 @@ function closeModal() {
     const modal = document.getElementById('loginModal');
     if (modal) {
         modal.style.display = 'none';
-        clearLoginForm();
+        resetToFormState();
     }
 }
 
@@ -282,10 +282,107 @@ function clearLoginForm() {
     const form = document.getElementById('loginForm');
     const emailError = document.getElementById('emailError');
     const passwordError = document.getElementById('passwordError');
+    const generalError = document.getElementById('loginGeneralError');
     
     if (form) form.reset();
     if (emailError) emailError.textContent = '';
     if (passwordError) passwordError.textContent = '';
+    if (generalError) {
+        generalError.textContent = '';
+        generalError.style.display = 'none';
+    }
+}
+
+// Notification Modal Functions
+function showNotificationModal(title, message, onClose = null) {
+    const modal = document.getElementById('notificationModal');
+    const titleEl = document.getElementById('notificationTitle');
+    const messageEl = document.getElementById('notificationMessage');
+    const closeBtn = document.getElementById('notificationClose');
+    const okBtn = document.getElementById('notificationOkBtn');
+    
+    if (titleEl) titleEl.textContent = title;
+    if (messageEl) messageEl.textContent = message;
+    if (modal) modal.style.display = 'block';
+    
+    // Close modal handlers
+    const closeModal = () => {
+        modal.style.display = 'none';
+        if (onClose) onClose();
+    };
+    
+    if (closeBtn) closeBtn.onclick = closeModal;
+    if (okBtn) okBtn.onclick = closeModal;
+    
+    // Close on outside click
+    window.onclick = function(event) {
+        if (event.target === modal) {
+            closeModal();
+        }
+    };
+}
+
+function showLoginGeneralError(message) {
+    const generalError = document.getElementById('loginGeneralError');
+    if (generalError) {
+        generalError.textContent = message;
+        generalError.style.display = 'block';
+    }
+}
+
+// Modal State Transition Functions
+function switchToSuccessState(title, message, onComplete = null) {
+    const formState = document.getElementById('loginFormState');
+    const successState = document.getElementById('loginSuccessState');
+    const successTitle = document.getElementById('successTitle');
+    const successMessage = document.getElementById('successMessage');
+    const successOkBtn = document.getElementById('successOkBtn');
+    
+    if (successTitle) successTitle.textContent = title;
+    if (successMessage) successMessage.textContent = message;
+    
+    // Set up OK button handler
+    if (successOkBtn) {
+        successOkBtn.onclick = () => {
+            if (onComplete) onComplete();
+        };
+    }
+    
+    // Start transition
+    if (formState && successState) {
+        // Hide form state with slide out animation
+        formState.classList.add('hidden');
+        
+        // After form is hidden, show success state with slide in animation
+        setTimeout(() => {
+            formState.style.display = 'none';
+            successState.style.display = 'block';
+            successState.classList.add('showing');
+            
+            // Trigger the slide in animation
+            setTimeout(() => {
+                successState.classList.remove('showing');
+            }, 10);
+        }, 300); // Match CSS transition duration
+    }
+}
+
+function resetToFormState() {
+    const formState = document.getElementById('loginFormState');
+    const successState = document.getElementById('loginSuccessState');
+    
+    if (formState && successState) {
+        // Hide success state
+        successState.style.display = 'none';
+        successState.classList.remove('showing');
+        
+        // Show form state
+        formState.style.display = 'block';
+        formState.classList.remove('hidden');
+        
+        // Clear form and errors
+        clearLoginForm();
+    }
 }
 
 function validateEmail(email) {
@@ -379,15 +476,20 @@ async function handleLoginSubmit(e) {
             const data = await response.json();
             
             if (data.success) {
-                alert(`Login successful! Welcome ${data.user.first_name} ${data.user.last_name}!`);
-                closeModal();
-                // Redirect to dashboard after successful login
-                window.location.href = '/dashboard';
+                switchToSuccessState(
+                    'Login Successful!', 
+                    `Welcome ${data.user.first_name} ${data.user.last_name}!`,
+                    () => {
+                        closeModal();
+                        // Redirect to dashboard after successful login
+                        window.location.href = '/dashboard';
+                    }
+                );
             } else {
-                alert(`Login failed: ${data.message}`);
+                showLoginGeneralError(`Login failed: ${data.message}`);
             }
         } catch (error) {
-            alert('Network error. Please try again.');
+            showLoginGeneralError('Network error. Please try again.');
         }
     }
 }
@@ -436,13 +538,18 @@ async function handleLogout() {
         const data = await response.json();
         
         if (data.success) {
-            alert('Logged out successfully!');
-            updateUIForLoggedOutUser();
+            showNotificationModal(
+                'Logout Successful!', 
+                'You have been logged out successfully!',
+                () => {
+                    updateUIForLoggedOutUser();
+                }
+            );
         } else {
-            alert(`Logout failed: ${data.message}`);
+            showNotificationModal('Logout Failed', `Logout failed: ${data.message}`);
         }
     } catch (error) {
-        alert('Network error during logout. Please try again.');
+        showNotificationModal('Network Error', 'Network error during logout. Please try again.');
     }
 }
 

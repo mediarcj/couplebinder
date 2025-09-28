@@ -5,15 +5,17 @@
 
 const express = require('express');
 const { verifyLogin } = require('../middleware/auth');
+const { createAuthRateLimit, getClientIP } = require('../middleware/security');
 const router = express.Router();
 
 /**
  * POST /api/auth/login
- * Handles user login form submission
+ * Handles user login form submission with server-authoritative security
  */
-router.post('/login', async (req, res) => {
+router.post('/login', createAuthRateLimit(), async (req, res) => {
     try {
         const { email, password } = req.body;
+        const clientIP = getClientIP(req);
 
         // Basic validation
         if (!email || !password) {
@@ -23,8 +25,8 @@ router.post('/login', async (req, res) => {
             });
         }
 
-        // Verify login credentials
-        const result = await verifyLogin(email, password);
+        // Verify login credentials with client IP for security tracking
+        const result = await verifyLogin(email, password, clientIP);
         
         if (result.success) {
             // Create session for logged-in user

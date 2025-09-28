@@ -14,6 +14,7 @@ const morgan = require('morgan');
 const { v4: uuidv4 } = require('uuid');
 const { config, logConfigSummary } = require('./config');
 const { testConnection } = require('./db/connection');
+const { addCSRFToken, validateCSRF } = require('./middleware/csrf');
 
 // ============================================================
 // STEP 1: Create Express App
@@ -306,10 +307,13 @@ console.log('View engine and static assets configured');
 // STEP 4: Routes
 // ============================================================
 
-// Import modular routes
-app.use('/api/auth', require('./routes/auth'));
-app.use('/api', require('./routes/api'));
-app.use('/api', require('./routes/submissions'));
+// Add CSRF protection middleware
+app.use(addCSRFToken);
+
+// Import modular routes with CSRF protection for state-changing requests
+app.use('/api/auth', validateCSRF, require('./routes/auth'));
+app.use('/api', validateCSRF, require('./routes/api'));
+app.use('/api', validateCSRF, require('./routes/submissions'));
 // Import health routes with Redis status update function
 const { router: healthRouter, updateRedisStatus } = require('./routes/health');
 app.use('/health', healthRouter);
@@ -324,6 +328,7 @@ app.get('/', (req, res) => {
   res.render('index', { 
     title: 'Detechify',
     message: 'Welcome to Detechify - Building the future of tech detection',
+    csrfToken: res.locals.csrfToken,
     textMinLength: config.limits.textMinLength,
     textMaxLength: config.limits.textMaxLength
   });

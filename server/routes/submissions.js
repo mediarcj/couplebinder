@@ -6,6 +6,7 @@
 const express = require('express');
 const router = express.Router();
 const { config } = require('../config');
+const { validateTextServerSide, getClientIP } = require('../middleware/security');
 
 // In-memory storage for submissions (shared with main app)
 // This will be passed from zorvalon.js via middleware
@@ -26,47 +27,37 @@ function injectSubmissions(req, res, next) {
  */
 router.post('/submit', injectSubmissions, (req, res) => {
   const { text } = req.body;
+  const clientIP = getClientIP(req);
   
-  // Validate text field
-  if (!text) {
+  // Server-side text validation (never trust client)
+  const textValidation = validateTextServerSide(text);
+  if (!textValidation.valid) {
+    console.log(`Security: Invalid text submission attempt from IP: ${clientIP}, Error: ${textValidation.error}`);
     return res.status(400).json({
-      error: 'Text field is required',
+      error: textValidation.error,
       requestId: req.requestId,
       timestamp: new Date().toISOString()
     });
   }
   
-  if (typeof text !== 'string') {
-    return res.status(400).json({
-      error: 'Text must be a string',
+  // Check submission limit
+  if (req.submissions.length >= req.MAX_SUBMISSIONS) {
+    console.log(`Security: Submission limit exceeded from IP: ${clientIP}`);
+    return res.status(429).json({
+      error: 'Maximum submission limit reached',
       requestId: req.requestId,
       timestamp: new Date().toISOString()
     });
   }
   
-  if (text.length < config.limits.textMinLength) {
-    return res.status(400).json({
-      error: `Text must be at least ${config.limits.textMinLength} characters`,
-      requestId: req.requestId,
-      timestamp: new Date().toISOString()
-    });
-  }
-  
-  if (text.length > config.limits.textMaxLength) {
-    return res.status(400).json({
-      error: `Text must not exceed ${config.limits.textMaxLength} characters`,
-      requestId: req.requestId,
-      timestamp: new Date().toISOString()
-    });
-  }
-  
-  // Text is valid - store in memory
+  // Text is valid - store in memory with sanitized content
   const submission = {
     id: req.requestId,
-    text: text,
-    text_length: text.length,
+    text: textValidation.sanitized, // Use sanitized text
+    text_length: textValidation.sanitized.length,
     timestamp: new Date().toISOString(),
-    preview: text.substring(0, 100) + (text.length > 100 ? '...' : '')
+    preview: textValidation.sanitized.substring(0, 100) + (textValidation.sanitized.length > 100 ? '...' : ''),
+    clientIP: clientIP // Track client IP for security
   };
   
   // Add to beginning of array and keep only MAX_SUBMISSIONS
@@ -75,10 +66,12 @@ router.post('/submit', injectSubmissions, (req, res) => {
     req.submissions.pop();
   }
   
+  console.log(`Security: Valid submission created: ${submission.id}, IP: ${clientIP}, Request ID: ${req.requestId}`);
+  
   res.json({
     success: true,
     message: 'Text submitted successfully',
-    text_length: text.length,
+    text_length: textValidation.sanitized.length,
     requestId: req.requestId,
     timestamp: new Date().toISOString()
   });

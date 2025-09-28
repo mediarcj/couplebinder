@@ -6,6 +6,14 @@
 const { db, safeQuery } = require('../db/connection');
 const { verifyPassword } = require('./password');
 const { validateEmail } = require('./validation');
+const { 
+    validateEmailServerSide, 
+    validatePasswordServerSide,
+    checkAccountLockout,
+    recordFailedAttempt,
+    clearFailedAttempts,
+    getClientIP
+} = require('./security');
 
 /**
  * WHAT:
@@ -21,53 +29,59 @@ const { validateEmail } = require('./validation');
  */
 
 /**
- * Verify user login credentials with enhanced error handling
+ * Verify user login credentials with server-authoritative security
  * @param {string} email - User's email address
  * @param {string} password - User's plain text password
+ * @param {string} clientIP - Client IP address for rate limiting
  * @returns {Promise<{success: boolean, user?: object, message?: string, errorType?: string}>}
  */
-async function verifyLogin(email, password) {
+async function verifyLogin(email, password, clientIP) {
     try {
-        // Input validation with detailed error messages
-        if (!email || typeof email !== 'string') {
+        // Server-side email validation (never trust client)
+        const emailValidation = validateEmailServerSide(email);
+        if (!emailValidation.valid) {
             return { 
                 success: false, 
-                message: 'Email is required', 
+                message: emailValidation.error, 
                 errorType: 'VALIDATION_ERROR' 
             };
         }
 
-        if (!password || typeof password !== 'string') {
+        // Server-side password validation (never trust client)
+        const passwordValidation = validatePasswordServerSide(password);
+        if (!passwordValidation.valid) {
             return { 
                 success: false, 
-                message: 'Password is required', 
+                message: passwordValidation.error, 
                 errorType: 'VALIDATION_ERROR' 
             };
         }
 
-        // Sanitize and validate email format
-        const sanitizedEmail = email.trim().toLowerCase();
-        if (!validateEmail(sanitizedEmail)) {
-            return { 
-                success: false, 
-                message: 'Invalid email format', 
-                errorType: 'VALIDATION_ERROR' 
+        // Check account lockout status
+        const lockoutStatus = checkAccountLockout(emailValidation.sanitized, clientIP);
+        if (lockoutStatus.locked) {
+            return {
+                success: false,
+                message: lockoutStatus.message,
+                errorType: 'ACCOUNT_LOCKED',
+                remainingTime: lockoutStatus.remainingTime
             };
         }
 
-        // Password length validation
-        if (password.length < 8 || password.length > 128) {
+        // Check database connectivity first
+        if (!db) {
+            console.error('Auth Error: Database connection not available');
             return { 
                 success: false, 
-                message: 'Invalid email or password', 
-                errorType: 'AUTHENTICATION_ERROR' 
+                message: 'Service temporarily unavailable', 
+                errorType: 'SYSTEM_ERROR' 
             };
         }
 
         // Database query with error handling
         const userQuery = db('users')
             .select('id', 'email', 'password', 'first_name', 'last_name', 'created_at', 'updated_at', 'user_role')
-            .where('email', sanitizedEmail)
+            .where('email', emailValidation.sanitized)
             .first();
 
         const userResult = await safeQuery(userQuery, 'user_lookup');
@@ -83,6 +97,9 @@ async function verifyLogin(email, password) {
 
         const user = userResult.data;
         if (!user) {
+            // Record failed attempt for non-existent user (security measure)
+            recordFailedAttempt(emailValidation.sanitized, clientIP);
+            console.log(`Auth: Login attempt with non-existent email: ${emailValidation.sanitized}, IP: ${clientIP}`);
             return { 
                 success: false, 
                 message: 'Invalid email or password', 
@@ -97,10 +114,12 @@ async function verifyLogin(email, password) {
         } catch (error) {
             console.error('Password verification error:', {
                 userId: user.id,
-                email: sanitizedEmail,
+                email: emailValidation.sanitized,
+                clientIP,
                 error: error.message,
                 timestamp: new Date().toISOString()
             });
+            recordFailedAttempt(emailValidation.sanitized, clientIP);
             return { 
                 success: false, 
                 message: 'Authentication service temporarily unavailable', 
@@ -109,6 +128,8 @@ async function verifyLogin(email, password) {
         }
 
         if (!passwordMatch) {
+            recordFailedAttempt(emailValidation.sanitized, clientIP);
+            console.log(`Auth: Failed login attempt for user: ${emailValidation.sanitized}, IP: ${clientIP}`);
             return { 
                 success: false, 
                 message: 'Invalid email or password', 
@@ -116,6 +137,9 @@ async function verifyLogin(email, password) {
             };
         }
 
+        // Clear failed attempts on successful login
+        clearFailedAttempts(emailValidation.sanitized, clientIP);
+        
         // Return user data (without password) with success
         const { password: _, ...userWithoutPassword } = user;
         return { 

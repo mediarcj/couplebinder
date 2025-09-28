@@ -1,6 +1,30 @@
 // File: server/public/js/main.js
 // Description: Client-side JavaScript for Detechify frontend
 // Purpose: Handles form interactions, character counting, and API calls
+
+/**
+ * Get CSRF token from cookie or meta tag
+ * @returns {string} CSRF token
+ */
+function getCSRFToken() {
+    // Try to get from meta tag first
+    const metaToken = document.querySelector('meta[name="csrf-token"]');
+    if (metaToken) {
+        return metaToken.getAttribute('content');
+    }
+    
+    // Fallback to cookie
+    const cookies = document.cookie.split(';');
+    for (let cookie of cookies) {
+        const [name, value] = cookie.trim().split('=');
+        if (name === 'csrf-token') {
+            return value;
+        }
+    }
+    
+    console.warn('CSRF token not found');
+    return '';
+}
 // Notes: Includes text submission form validation and submissions viewing functionality
 
 document.addEventListener('DOMContentLoaded', function() {
@@ -126,10 +150,12 @@ function initializeTextForm() {
         submitBtn.disabled = true;
         
         try {
+            const csrfToken = getCSRFToken();
             const response = await fetch('/api/submit', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
+                    'X-CSRF-Token': csrfToken
                 },
                 body: JSON.stringify({ text: text })
             });
@@ -481,12 +507,16 @@ async function handleLoginSubmit(e) {
     }
     
     if (!hasErrors) {
-        // Submit to backend API
+        // Submit to backend API with CSRF protection
         try {
+            // Get CSRF token from cookie or meta tag
+            const csrfToken = getCSRFToken();
+            
             const response = await fetch('/api/auth/login', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
+                    'X-CSRF-Token': csrfToken
                 },
                 body: JSON.stringify({ email, password })
             });
@@ -555,10 +585,12 @@ function updateUIForLoggedOutUser() {
 
 async function handleLogout() {
     try {
+        const csrfToken = getCSRFToken();
         const response = await fetch('/api/auth/logout', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
+                'X-CSRF-Token': csrfToken
             }
         });
         

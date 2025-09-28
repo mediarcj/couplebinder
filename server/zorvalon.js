@@ -139,6 +139,13 @@ console.log('View engine and static assets configured');
 
 // Import modular routes
 app.use('/api/auth', require('./routes/auth'));
+app.use('/api', require('./routes/api'));
+app.use('/api', require('./routes/submissions'));
+app.use('/health', require('./routes/health'));
+
+// Initialize submissions route with shared storage
+const submissionsRouter = require('./routes/submissions');
+submissionsRouter.setSubmissions(submissions);
 
 // Home page route
 app.get('/', (req, res) => {
@@ -147,143 +154,6 @@ app.get('/', (req, res) => {
     message: 'Welcome to Detechify - Building the future of tech detection',
     textMinLength: config.limits.textMinLength,
     textMaxLength: config.limits.textMaxLength
-  });
-});
-
-// Health check endpoints
-app.get('/health', (req, res) => {
-  res.json({ 
-    status: 'ok', 
-    message: 'Detechify server is running',
-    timestamp: new Date().toISOString(),
-    requestId: req.requestId
-  });
-});
-
-app.get('/health/liveness', (req, res) => {
-  res.json({ 
-    status: 'alive',
-    timestamp: new Date().toISOString(),
-    requestId: req.requestId
-  });
-});
-
-app.get('/health/readiness', (req, res) => {
-  // Check if server is ready to accept requests
-  const isReady = true; // In future, check database, Redis, etc.
-  
-  if (isReady) {
-    res.json({ 
-      status: 'ready',
-      timestamp: new Date().toISOString(),
-      requestId: req.requestId
-    });
-  } else {
-    res.status(503).json({ 
-      status: 'not ready',
-      timestamp: new Date().toISOString(),
-      requestId: req.requestId
-    });
-  }
-});
-
-// Hello world endpoint
-app.get('/api/hello', (req, res) => {
-  res.json({ message: 'hello world' });
-});
-
-// UI configuration endpoint - backend-driven UI instructions
-app.get('/api/ui-config', (req, res) => {
-  res.json({
-    allowed_actions: ['submit_content', 'view_history'],
-    cooldown_seconds: 0,
-    input_limits: {
-      text_max: config.limits.textMaxLength,
-      title_max: 140
-    },
-    feature_flags: {
-      advanced_mode: false
-    },
-    form_schema: {
-      text: {
-        required: true,
-        min: config.limits.textMinLength,
-        max: config.limits.textMaxLength
-      }
-    },
-    requestId: req.requestId,
-    timestamp: new Date().toISOString()
-  });
-});
-
-// Text submission endpoint with validation
-app.post('/api/submit', (req, res) => {
-  const { text } = req.body;
-  
-  // Validate text field
-  if (!text) {
-    return res.status(400).json({
-      error: 'Text field is required',
-      requestId: req.requestId,
-      timestamp: new Date().toISOString()
-    });
-  }
-  
-  if (typeof text !== 'string') {
-    return res.status(400).json({
-      error: 'Text must be a string',
-      requestId: req.requestId,
-      timestamp: new Date().toISOString()
-    });
-  }
-  
-  if (text.length < config.limits.textMinLength) {
-    return res.status(400).json({
-      error: `Text must be at least ${config.limits.textMinLength} characters`,
-      requestId: req.requestId,
-      timestamp: new Date().toISOString()
-    });
-  }
-  
-  if (text.length > config.limits.textMaxLength) {
-    return res.status(400).json({
-      error: `Text must not exceed ${config.limits.textMaxLength} characters`,
-      requestId: req.requestId,
-      timestamp: new Date().toISOString()
-    });
-  }
-  
-  // Text is valid - store in memory
-  const submission = {
-    id: req.requestId,
-    text: text,
-    text_length: text.length,
-    timestamp: new Date().toISOString(),
-    preview: text.substring(0, 100) + (text.length > 100 ? '...' : '')
-  };
-  
-  // Add to beginning of array and keep only MAX_SUBMISSIONS
-  submissions.unshift(submission);
-  if (submissions.length > MAX_SUBMISSIONS) {
-    submissions.pop();
-  }
-  
-  res.json({
-    success: true,
-    message: 'Text submitted successfully',
-    text_length: text.length,
-    requestId: req.requestId,
-    timestamp: new Date().toISOString()
-  });
-});
-
-// Recent submissions endpoint
-app.get('/api/submissions', (req, res) => {
-  res.json({
-    submissions: submissions,
-    count: submissions.length,
-    requestId: req.requestId,
-    timestamp: new Date().toISOString()
   });
 });
 

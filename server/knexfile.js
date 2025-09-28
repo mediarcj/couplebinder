@@ -30,7 +30,7 @@ module.exports = {
 
   production: {
     client: 'postgresql',
-    connection: process.env.DATABASE_URL ? process.env.DATABASE_URL : {
+    connection: {
       host: process.env.DB_HOST,
       port: parseInt(process.env.DB_PORT),
       database: process.env.DB_NAME,

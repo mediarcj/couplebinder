@@ -1,23 +1,24 @@
 // File: zorvalon.js
-// Description: Entry point for Detechify server
-// Boot order: Express → Helmet → CORS → RateLimit → Parsers → Logging → Views → Routes → Error Handling → Start Server
+// Description: Entry point for Detechify server - Refactored for better organization
+// Boot order: Express → Database → Redis → Security → Middleware → Routes → Error Handling → Start Server
 // Notes: Console logs mark important checkpoints for audit and debugging
 
 const express = require('express');
 const helmet = require('helmet');
 const cors = require('cors');
-const rateLimit = require('express-rate-limit');
 const session = require('express-session');
-const RedisStore = require('connect-redis').default;
 const redis = require('redis');
 const morgan = require('morgan');
 const { v4: uuidv4 } = require('uuid');
+
+// Application Configuration and Dependencies
 const { config, logConfigSummary } = require('./config');
 const { testConnection } = require('./db/connection');
 const { addCSRFToken, validateCSRF } = require('./middleware/csrf');
+const { createRateLimit } = require('./middleware/rateLimiting');
 
 // ============================================================
-// STEP 1: Create Express App
+// STEP 1: Application Initialization
 // ============================================================
 
 /**
@@ -38,7 +39,7 @@ console.log('Detechify server starting...');
 logConfigSummary();
 
 // ============================================================
-// STEP 1.5: Database Connection Test
+// STEP 2: Database Connection and Testing
 // ============================================================
 
 /**
@@ -50,159 +51,103 @@ logConfigSummary();
  * We need to know if it's working before accepting user requests.
  *
  * HOW:
- * We call a test function that tries to connect and run a simple query.
- * If it fails, we log the error but continue startup so the app can still serve static pages.
+ * We call the testConnection function which handles errors gracefully.
+ * If the database is unavailable, we log the error but continue startup.
  */
-async function initializeDatabase() {
-  try {
-    const connected = await testConnection();
-    if (connected) {
+testConnection()
+    .then(() => {
         console.log('Database connection established');
-      } else {
-        console.log('Database connection failed - continuing without database');
-    }
-  } catch (error) {
-    console.log('Database initialization error:', error.message);
-  }
-}
-
-// Initialize database connection
-initializeDatabase();
+    })
+    .catch((error) => {
+        console.error('Database connection failed:', error.message);
+        console.log('Continuing startup without database...');
+    });
 
 // ============================================================
-// STEP 1.6: Redis Client Creation
+// STEP 3: Redis Client Creation and Connection
 // ============================================================
 
 /**
  * WHAT:
- * We create a Redis client for storing user sessions and caching data.
+ * We create and configure a Redis client for session storage and caching.
  *
  * WHY:
- * Redis provides fast, persistent session storage that survives server restarts.
- * This is essential for production scalability and session security.
+ * Redis provides persistent session storage across server restarts and enables
+ * horizontal scaling with multiple server instances.
  *
  * HOW:
- * We configure the Redis client with connection settings from environment variables.
+ * We create a Redis client with retry strategy and error handling.
  * If Redis is unavailable, we fall back to in-memory session storage.
  */
-let redisClient;
+let redisClient = null;
+let RedisStore = null;
 
-      try {
-        const redisConfig = {
-          socket: {
+try {
+    // Import RedisStore after Redis client creation
+    RedisStore = require('connect-redis').default;
+    
+    const redisConfig = {
+        socket: {
             host: config.redis.host,
             port: config.redis.port,
             connectTimeout: 5000,
             lazyConnect: true
-          },
-          retry_strategy: (options) => {
-            if (options.error && options.error.code === 'ECONNREFUSED') {
-              return new Error('Redis server connection refused');
-            }
-            if (options.total_retry_time > 1000 * 60 * 60) {
-              return new Error('Retry time exhausted');
-            }
-            if (options.attempt > 10) {
-              return undefined;
-            }
-            return Math.min(options.attempt * 100, 3000);
-          }
-        };
-
-        // Add password only if provided
-        if (config.redis.password) {
-          redisConfig.password = config.redis.password;
         }
-
-        redisClient = redis.createClient(redisConfig);
-
-  redisClient.on('error', (err) => {
-    console.error('Redis client error:', err.message);
-    updateRedisStatus(false);
-  });
-
-  redisClient.on('connect', () => {
-    console.log('Redis client connected');
-    updateRedisStatus(true);
-  });
-
-  console.log('Redis client created');
+    };
+    
+    // Add password if configured
+    if (config.redis.password) {
+        redisConfig.password = config.redis.password;
+    }
+    
+    redisClient = redis.createClient(redisConfig);
+    
+    // Configure retry strategy
+    redisClient.on('error', (err) => {
+        console.error('Redis client error:', err.message);
+        updateRedisStatus(false, new Date().toISOString());
+    });
+    
+    redisClient.on('connect', () => {
+        console.log('Redis client connected');
+        updateRedisStatus(true, new Date().toISOString());
+    });
+    
+    // Initialize Redis connection
+    const initializeRedis = async () => {
+        try {
+            await redisClient.connect();
+            console.log('Redis connection established');
+        } catch (error) {
+            console.error('Redis connection failed:', error.message);
+            console.log('Continuing without Redis sessions...');
+        }
+    };
+    
+    initializeRedis().catch(() => {
+        // Error already handled in initializeRedis
+    });
+    
 } catch (error) {
-  console.log('Redis client creation failed:', error.message);
+    console.error('Redis client creation failed:', error.message);
+    console.log('Continuing without Redis sessions...');
 }
 
 // ============================================================
-// STEP 1.7: Redis Connection Initialization
+// STEP 4: Security and Core Middleware Registration
 // ============================================================
 
 /**
  * WHAT:
- * We establish the actual connection to the Redis server after creating the client.
+ * We register all security middleware, parsers, and core functionality.
  *
  * WHY:
- * The Redis client needs to connect to the server before we can store session data.
- * Without this connection, session storage will fail and users won't stay logged in.
+ * Security middleware must be registered early in the middleware stack
+ * to protect all subsequent routes and handlers.
  *
  * HOW:
- * We attempt to connect to Redis using the configured client.
- * If connection fails, we log the error but continue startup with memory sessions.
- */
-async function initializeRedis() {
-  if (!redisClient) {
-    console.log('Redis client not available - skipping Redis initialization');
-    return;
-  }
-  
-  try {
-    await redisClient.connect();
-    console.log('Redis connection established');
-    updateRedisStatus(true);
-  } catch (error) {
-    console.log('Redis connection failed - continuing without Redis sessions:', error.message);
-    updateRedisStatus(false);
-  }
-}
-
-// Initialize Redis connection
-initializeRedis();
-
-// ============================================================
-// STEP 1.8: In-Memory Storage
-// ============================================================
-
-/**
- * WHAT:
- * We set up temporary in-memory storage for user submissions and data.
- *
- * WHY:
- * This provides a fallback storage mechanism when the database is unavailable.
- * It also serves as a simple data store for development and testing.
- *
- * HOW:
- * We create arrays to hold user data and apply size limits from configuration.
- * Data is lost when the server restarts, which is expected for this temporary storage.
- */
-const submissions = [];
-const MAX_SUBMISSIONS = config.limits.maxSubmissions;
-
-console.log('In-memory storage initialized');
-
-// ============================================================
-// STEP 2: Core Middleware Registration (ENFORCED ORDER)
-// Helmet → CORS → RateLimit → Parsers → Session → Logging → Routes
-// ============================================================
-
-/**
- * WHAT:
- * We register all core middleware in a specific order that ensures proper security and functionality.
- *
- * WHY:
- * Middleware order matters because each layer processes requests before the next.
- * Security middleware must come first to protect against attacks.
- *
- * HOW:
- * We apply middleware in this order: security headers, CORS, rate limiting, body parsing, sessions, logging.
- * Each middleware runs on every request before reaching our route handlers.
+ * We register middleware in the correct order: security headers, CORS,
+ * rate limiting, body parsing, sessions, and custom middleware.
  */
 
 // Security headers (Helmet)
@@ -210,30 +155,26 @@ app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'"],
       styleSrc: ["'self'", "'unsafe-inline'"],
-      scriptSrc: ["'self'"],
       imgSrc: ["'self'", "data:", "https:"],
     },
   },
-  crossOriginEmbedderPolicy: false
 }));
 
 // CORS configuration
 app.use(cors({
   origin: config.server.nodeEnv === 'production' ? false : true,
   credentials: true,
-  optionsSuccessStatus: 200
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-CSRF-Token', 'X-Request-ID']
 }));
 
-// Rate limiting
-const limiter = rateLimit({
+// Global rate limiting - relaxed for normal browsing
+const limiter = createRateLimit({
   windowMs: config.rateLimit.windowMs,
   max: config.rateLimit.max,
-  message: {
-    error: config.rateLimit.message
-  },
-  standardHeaders: true,
-  legacyHeaders: false,
+  message: config.rateLimit.message
 });
 app.use(limiter);
 
@@ -247,29 +188,30 @@ if (redisClient && RedisStore) {
     store: new RedisStore({ client: redisClient }),
     secret: config.security.sessionSecret,
     resave: false,
-    saveUninitialized: false, // Changed to false for production security
+    saveUninitialized: false,
     cookie: {
-      secure: false, // Set to false for development/testing
+      secure: config.server.nodeEnv === 'production',
       httpOnly: true,
       maxAge: 24 * 60 * 60 * 1000, // 24 hours
-      sameSite: 'lax' // Set to lax for development
+      sameSite: config.server.nodeEnv === 'production' ? 'strict' : 'lax'
     },
-    name: 'detechify.sid' // Custom session cookie name
+    name: 'detechify.sid'
   }));
   console.log('Session middleware configured with Redis store');
 } else {
   app.use(session({
     secret: config.security.sessionSecret,
     resave: false,
-    saveUninitialized: true,
+    saveUninitialized: false,
     cookie: {
-      secure: false, // Set to false for development
+      secure: false,
       httpOnly: true,
       maxAge: 24 * 60 * 60 * 1000, // 24 hours
       sameSite: 'lax'
-    }
+    },
+    name: 'detechify.sid'
   }));
-  console.log('Session middleware configured with memory store (fallback)');
+  console.log('Session middleware configured with memory store');
 }
 
 // Request ID middleware - add unique ID to every request
@@ -283,18 +225,29 @@ app.use((req, res, next) => {
 app.use(morgan(':method :url :status :response-time ms - :req[X-Request-ID]', {
   stream: {
     write: (message) => {
-      console.log(`[${new Date().toISOString()}] ${message.trim()}`);
+      console.log(message.trim());
     }
   }
 }));
 
-console.log('Core middleware loaded: Helmet, CORS, Rate Limit, Body Parsers, Session, Logging');
+console.log('Core middleware registration completed');
 
 // ============================================================
-// STEP 3: View Engine / Static Assets
+// STEP 5: View Engine and Static Assets
 // ============================================================
 
-// Set EJS as the view engine
+/**
+ * WHAT:
+ * We configure the view engine and static file serving.
+ *
+ * WHY:
+ * EJS templating provides dynamic content generation and static files
+ * serve client-side assets like CSS and JavaScript.
+ *
+ * HOW:
+ * We set EJS as the view engine and configure the public directory
+ * for static asset serving.
+ */
 app.set('view engine', 'ejs');
 app.set('views', './ejs');
 
@@ -304,16 +257,48 @@ app.use(express.static('public'));
 console.log('View engine and static assets configured');
 
 // ============================================================
-// STEP 4: Routes
+// STEP 6: Security Middleware Configuration
 // ============================================================
 
+/**
+ * WHAT:
+ * We register security middleware for CSRF protection.
+ *
+ * WHY:
+ * CSRF protection prevents cross-site request forgery attacks
+ * by validating tokens on state-changing requests.
+ *
+ * HOW:
+ * We add CSRF token generation middleware and configure
+ * validation for protected routes.
+ */
 // Add CSRF protection middleware
 app.use(addCSRFToken);
+
+console.log('Security middleware configured');
+
+// ============================================================
+// STEP 7: Routes Registration
+// ============================================================
+
+/**
+ * WHAT:
+ * We register all application routes with appropriate middleware.
+ *
+ * WHY:
+ * Routes define the API endpoints and page handlers for the application.
+ * We organize them by functionality and apply appropriate middleware.
+ *
+ * HOW:
+ * We register routes with CSRF protection for state-changing requests
+ * and organize them by functional areas (auth, API, dashboard, health).
+ */
 
 // Import modular routes with CSRF protection for state-changing requests
 app.use('/api/auth', validateCSRF, require('./routes/auth'));
 app.use('/api', validateCSRF, require('./routes/api'));
 app.use('/api', validateCSRF, require('./routes/submissions'));
+
 // Import health routes with Redis status update function
 const { router: healthRouter, updateRedisStatus } = require('./routes/health');
 app.use('/health', healthRouter);
@@ -321,6 +306,7 @@ app.use('/dashboard', require('./routes/dashboard'));
 
 // Initialize submissions route with shared storage
 const submissionsRouter = require('./routes/submissions');
+const submissions = [];
 submissionsRouter.setSubmissions(submissions);
 
 // Home page route
@@ -334,17 +320,34 @@ app.get('/', (req, res) => {
   });
 });
 
+console.log('Routes registration completed');
+
 // ============================================================
-// STEP 5: Error Handling
+// STEP 8: Error Handling
 // ============================================================
+
+/**
+ * WHAT:
+ * We register global error handling middleware for graceful error management.
+ *
+ * WHY:
+ * Error handling ensures the application doesn't crash on unexpected errors
+ * and provides meaningful error responses to clients.
+ *
+ * HOW:
+ * We register error middleware that catches all unhandled errors,
+ * logs them with context, and returns appropriate HTTP responses.
+ */
 app.use((err, req, res, next) => {
   const errorId = req.requestId || uuidv4();
   console.error(`[${new Date().toISOString()}] Server error [${errorId}]:`, {
     message: err.message,
     stack: err.stack,
     url: req.url,
-    method: req.method
+    method: req.method,
+    ip: req.ip
   });
+  
   res.status(500).json({ 
     error: 'Internal server error',
     requestId: errorId,
@@ -356,18 +359,57 @@ app.use((err, req, res, next) => {
 app.use((req, res) => {
   res.status(404).json({ 
     error: 'Not found',
+    message: `The requested resource ${req.url} was not found on this server.`,
     requestId: req.requestId,
     timestamp: new Date().toISOString()
   });
 });
 
+console.log('Error handling middleware registered');
+
 // ============================================================
-// STEP 6: Start Server
+// STEP 9: Server Startup
 // ============================================================
-app.listen(config.server.port, config.server.host, () => {
-  console.log(`Detechify server running on ${config.server.host}:${config.server.port}`);
-  console.log(`Health check: http://localhost:${config.server.port}/health`);
-  console.log(`Hello endpoint: http://localhost:${config.server.port}/api/hello`);
-  console.log(`UI config endpoint: http://localhost:${config.server.port}/api/ui-config`);
-  console.log(`Submissions endpoint: http://localhost:${config.server.port}/api/submissions`);
+
+/**
+ * WHAT:
+ * We start the HTTP server and listen for incoming connections.
+ *
+ * WHY:
+ * The server needs to listen on a port to accept HTTP requests.
+ * We also set up graceful shutdown handling for production deployments.
+ *
+ * HOW:
+ * We start the server on the configured port and host,
+ * and set up signal handlers for graceful shutdown.
+ */
+const PORT = config.server.port;
+const HOST = config.server.host;
+
+const server = app.listen(PORT, HOST, () => {
+  console.log(`Detechify server running on http://${HOST}:${PORT}`);
+  console.log(`Environment: ${config.server.nodeEnv}`);
+  console.log(`Database: ${config.database.host}:${config.database.port}/${config.database.name}`);
+  console.log(`Redis: ${redisClient ? 'Connected' : 'Not available'}`);
+  console.log('Server startup completed successfully');
 });
+
+// Graceful shutdown handling
+process.on('SIGTERM', () => {
+  console.log('SIGTERM received, shutting down gracefully');
+  server.close(() => {
+    console.log('Process terminated');
+    process.exit(0);
+  });
+});
+
+process.on('SIGINT', () => {
+  console.log('SIGINT received, shutting down gracefully');
+  server.close(() => {
+    console.log('Process terminated');
+    process.exit(0);
+  });
+});
+
+// Export for testing
+module.exports = app;

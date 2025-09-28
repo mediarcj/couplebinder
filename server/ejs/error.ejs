@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title><%= title %> - Detechify</title>
+    <link rel="stylesheet" href="/css/style.css">
+    <style>
+        .error-container {
+            max-width: 600px;
+            margin: 100px auto;
+            padding: 40px;
+            text-align: center;
+            background: #f8f9fa;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        .error-code {
+            font-size: 72px;
+            font-weight: bold;
+            color: #dc3545;
+            margin-bottom: 20px;
+        }
+        .error-message {
+            font-size: 24px;
+            color: #333;
+            margin-bottom: 20px;
+        }
+        .error-description {
+            font-size: 16px;
+            color: #666;
+            margin-bottom: 30px;
+            line-height: 1.6;
+        }
+        .retry-info {
+            background: #e9ecef;
+            padding: 20px;
+            border-radius: 5px;
+            margin-bottom: 30px;
+        }
+        .retry-timer {
+            font-size: 18px;
+            font-weight: bold;
+            color: #dc3545;
+        }
+        .back-button {
+            display: inline-block;
+            padding: 12px 24px;
+            background: #007bff;
+            color: white;
+            text-decoration: none;
+            border-radius: 5px;
+            transition: background 0.3s;
+        }
+        .back-button:hover {
+            background: #0056b3;
+        }
+        .request-info {
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid #dee2e6;
+            font-size: 14px;
+            color: #6c757d;
+        }
+    </style>
+</head>
+<body>
+    <div class="error-container">
+        <div class="error-code"><%= errorCode %></div>
+        <div class="error-message"><%= errorMessage %></div>
+        <div class="error-description"><%= description %></div>
+        
+        <% if (retryAfter) { %>
+        <div class="retry-info">
+            <p>You can try again in:</p>
+            <div class="retry-timer" id="countdown"><%= retryAfter %> seconds</div>
+        </div>
+        <% } %>
+        
+        <a href="/" class="back-button">Return to Home</a>
+        
+        <div class="request-info">
+            <p>Request ID: <%= requestId %></p>
+            <p>Time: <%= new Date(timestamp).toLocaleString() %></p>
+        </div>
+    </div>
+
+    <% if (retryAfter) { %>
+    <script>
+        // Countdown timer for retry
+        let timeLeft = <%= retryAfter %>;
+        const countdownElement = document.getElementById('countdown');
+        
+        const timer = setInterval(() => {
+            timeLeft--;
+            countdownElement.textContent = timeLeft + ' seconds';
+            
+            if (timeLeft <= 0) {
+                clearInterval(timer);
+                countdownElement.textContent = 'You can try again now!';
+                countdownElement.style.color = '#28a745';
+            }
+        }, 1000);
+    </script>
+    <% } %>
+</body>
+</html>

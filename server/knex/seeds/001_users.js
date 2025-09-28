@@ -3,16 +3,23 @@
 // Purpose: Provides sample user data for testing and development
 // Notes: Creates test users with various profile configurations
 
+const { createPasswordHash } = require('../../middleware/password');
+
 exports.seed = async function(knex) {
   // Deletes ALL existing entries
   await knex('users').del();
+  
+  // Hash passwords for test users
+  const hashedPassword1 = await createPasswordHash('password123');
+  const hashedPassword2 = await createPasswordHash('password456');
+  const hashedPassword3 = await createPasswordHash('admin123');
   
   // Inserts seed entries
   await knex('users').insert([
     {
       id: '550e8400-e29b-41d4-a716-446655440001',
       email: 'john.doe@example.com',
-      password: 'hashed_password_placeholder_1',
+      password: hashedPassword1.stored,
       first_name: 'John',
       last_name: 'Doe',
       phone: '1-555-123-4567',
@@ -34,7 +41,7 @@ exports.seed = async function(knex) {
     {
       id: '550e8400-e29b-41d4-a716-446655440002',
       email: 'jane.smith@example.com',
-      password: 'hashed_password_placeholder_2',
+      password: hashedPassword2.stored,
       first_name: 'Jane',
       last_name: 'Smith',
       phone: '1-555-987-6543',
@@ -58,7 +65,7 @@ exports.seed = async function(knex) {
     {
       id: '550e8400-e29b-41d4-a716-446655440003',
       email: 'admin@detechify.com',
-      password: 'hashed_password_placeholder_3',
+      password: hashedPassword3.stored,
       first_name: 'Admin',
       last_name: 'User',
       phone: '1-555-000-0000',

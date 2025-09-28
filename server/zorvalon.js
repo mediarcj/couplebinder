@@ -123,6 +123,9 @@ console.log('View engine and static assets configured');
 // STEP 4: Routes
 // ============================================================
 
+// Import modular routes
+app.use('/api/auth', require('./routes/auth'));
+
 // Home page route
 app.get('/', (req, res) => {
   res.render('index', { 

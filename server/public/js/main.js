@@ -333,7 +333,7 @@ function validatePassword(password) {
     return '';
 }
 
-function handleLoginSubmit(e) {
+async function handleLoginSubmit(e) {
     e.preventDefault();
     
     const email = document.getElementById('loginEmail').value;
@@ -363,7 +363,26 @@ function handleLoginSubmit(e) {
     }
     
     if (!hasErrors) {
-        // Form is valid - placeholder for future backend integration
-        alert('Login form is valid! Backend integration coming soon.');
+        // Submit to backend API
+        try {
+            const response = await fetch('/api/auth/login', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ email, password })
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                alert(`Login successful! Welcome ${data.user.first_name} ${data.user.last_name}!`);
+                closeModal();
+            } else {
+                alert(`Login failed: ${data.message}`);
+            }
+        } catch (error) {
+            alert('Network error. Please try again.');
+        }
     }
 }

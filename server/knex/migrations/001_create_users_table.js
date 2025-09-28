@@ -10,7 +10,7 @@ exports.up = function(knex) {
 
     // Auth credentials
     table.string('email').notNullable().unique(); // Email as username for authentication
-    table.string('password').notNullable(); // Hashed password
+    table.text('password').notNullable(); // Hashed password
 
     // Basic required profile info
     table.string('first_name').notNullable();

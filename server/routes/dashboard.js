@@ -29,7 +29,8 @@ router.get('/', requireAuth, async (req, res) => {
         res.render('dashboard', {
             title: 'Dashboard',
             user: user,
-            requestId: req.requestId
+            requestId: req.requestId,
+            csrfToken: res.locals.csrfToken
         });
     } catch (error) {
         console.error('Dashboard route error:', error.message);

@@ -107,6 +107,47 @@
         </div>
     </footer>
 
+    <!-- Login Modal -->
+    <div id="loginModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Login to Detechify</h2>
+                <span class="close">&times;</span>
+            </div>
+            <div class="modal-body">
+                <form id="loginForm">
+                    <div class="form-group">
+                        <label for="loginEmail">Email Address</label>
+                        <input 
+                            type="text" 
+                            id="loginEmail" 
+                            name="email" 
+                            placeholder="Enter your email address"
+                            maxlength="40"
+                            autocomplete="email"
+                        >
+                        <div id="emailError" class="error-message"></div>
+                    </div>
+                    <div class="form-group">
+                        <label for="loginPassword">Password</label>
+                        <input 
+                            type="password" 
+                            id="loginPassword" 
+                            name="password" 
+                            placeholder="Enter your password"
+                            autocomplete="current-password"
+                        >
+                        <div id="passwordError" class="error-message"></div>
+                    </div>
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-secondary">Cancel</button>
+                        <button type="submit" class="btn btn-primary">Login</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
     <!-- Pass server config to client-side JavaScript via data attributes -->
     <div id="app-config" 
          data-text-min-length="<%= textMinLength %>" 
@@ -119,11 +160,6 @@
             textMinLength: parseInt(configEl.dataset.textMinLength),
             textMaxLength: parseInt(configEl.dataset.textMaxLength)
         };
-
-        // Login button handler (placeholder for future functionality)
-        function handleLogin() {
-            alert('Login functionality coming soon!');
-        }
     </script>
     <script src="/js/main.js"></script>
 </body>

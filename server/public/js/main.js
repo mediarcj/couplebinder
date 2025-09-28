@@ -10,8 +10,13 @@ document.addEventListener('DOMContentLoaded', function() {
     const links = document.querySelectorAll('a[href^="#"]');
     links.forEach(link => {
         link.addEventListener('click', function(e) {
+            const href = this.getAttribute('href');
+            if (href === '#') {
+                e.preventDefault();
+                return; // Skip links that just have # as href
+            }
             e.preventDefault();
-            const target = document.querySelector(this.getAttribute('href'));
+            const target = document.querySelector(href);
             if (target) {
                 target.scrollIntoView({
                     behavior: 'smooth'
@@ -63,6 +68,9 @@ document.addEventListener('DOMContentLoaded', function() {
     // Text submission form functionality
     initializeTextForm();
     initializeSubmissions();
+    
+    // Login modal functionality
+    initializeLoginModal();
 });
 
 function initializeTextForm() {
@@ -207,5 +215,146 @@ function displaySubmissions(submissions) {
         // Hide submissions
         submissionsList.style.display = 'none';
         viewBtn.textContent = 'View Recent Submissions';
+    }
+}
+
+function initializeLoginModal() {
+    const loginLink = document.querySelector('.login-link');
+    const modal = document.getElementById('loginModal');
+    const closeBtn = document.querySelector('.close');
+    const cancelBtn = document.querySelector('.form-actions .btn-secondary');
+    const loginForm = document.getElementById('loginForm');
+    
+    if (!loginLink || !modal) {
+        return; // Modal elements not found
+    }
+    
+    // Show modal when login link is clicked
+    loginLink.addEventListener('click', function(e) {
+        e.preventDefault();
+        modal.style.display = 'block';
+    });
+    
+    // Close modal when close button is clicked
+    if (closeBtn) {
+        closeBtn.addEventListener('click', closeModal);
+    }
+    
+    // Close modal when cancel button is clicked
+    if (cancelBtn) {
+        cancelBtn.addEventListener('click', closeModal);
+    }
+    
+    // Close modal when clicking outside of it
+    window.addEventListener('click', function(event) {
+        if (event.target === modal) {
+            closeModal();
+        }
+    });
+    
+    // Handle form submission
+    if (loginForm) {
+        loginForm.addEventListener('submit', handleLoginSubmit);
+    }
+}
+
+function closeModal() {
+    const modal = document.getElementById('loginModal');
+    if (modal) {
+        modal.style.display = 'none';
+        clearLoginForm();
+    }
+}
+
+function clearLoginForm() {
+    const form = document.getElementById('loginForm');
+    const emailError = document.getElementById('emailError');
+    const passwordError = document.getElementById('passwordError');
+    
+    if (form) form.reset();
+    if (emailError) emailError.textContent = '';
+    if (passwordError) passwordError.textContent = '';
+}
+
+function validateEmail(email) {
+    if (!email) {
+        return 'Email address is required';
+    }
+    if (email.length > 40) {
+        return 'Email address must be 40 characters or less';
+    }
+    if (email.includes(' ')) {
+        return 'Email address cannot contain spaces';
+    }
+    if (!email.includes('@')) {
+        return 'Email address must contain @ symbol';
+    }
+    if (!email.includes('.')) {
+        return 'Email address must contain a dot (.)';
+    }
+    if (email.indexOf('@') !== email.lastIndexOf('@')) {
+        return 'Email address can only contain one @ symbol';
+    }
+    if (email.indexOf('@') === 0 || email.indexOf('@') === email.length - 1) {
+        return 'Email address cannot start or end with @ symbol';
+    }
+    if (email.indexOf('.') === 0 || email.indexOf('.') === email.length - 1) {
+        return 'Email address cannot start or end with a dot';
+    }
+    if (email.indexOf('@') > email.lastIndexOf('.')) {
+        return 'Dot must come after @ symbol in email address';
+    }
+    // Check for valid characters only (letters, numbers, @, ., -, _)
+    const validEmailRegex = /^[a-zA-Z0-9@._-]+$/;
+    if (!validEmailRegex.test(email)) {
+        return 'Email address can only contain letters, numbers, @, ., -, and _';
+    }
+    return '';
+}
+
+function validatePassword(password) {
+    if (!password) {
+        return 'Password is required';
+    }
+    // Check for valid characters only (letters and numbers)
+    const validPasswordRegex = /^[a-zA-Z0-9]+$/;
+    if (!validPasswordRegex.test(password)) {
+        return 'Password can only contain uppercase letters, lowercase letters, and numbers';
+    }
+    return '';
+}
+
+function handleLoginSubmit(e) {
+    e.preventDefault();
+    
+    const email = document.getElementById('loginEmail').value;
+    const password = document.getElementById('loginPassword').value;
+    
+    // Clear previous errors
+    const emailError = document.getElementById('emailError');
+    const passwordError = document.getElementById('passwordError');
+    
+    if (emailError) emailError.textContent = '';
+    if (passwordError) passwordError.textContent = '';
+    
+    let hasErrors = false;
+    
+    // Validate email
+    const emailErrorMsg = validateEmail(email);
+    if (emailErrorMsg && emailError) {
+        emailError.textContent = emailErrorMsg;
+        hasErrors = true;
+    }
+    
+    // Validate password
+    const passwordErrorMsg = validatePassword(password);
+    if (passwordErrorMsg && passwordError) {
+        passwordError.textContent = passwordErrorMsg;
+        hasErrors = true;
+    }
+    
+    if (!hasErrors) {
+        // Form is valid - placeholder for future backend integration
+        alert('Login form is valid! Backend integration coming soon.');
     }
 }

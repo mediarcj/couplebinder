@@ -62,8 +62,11 @@ function createRateLimit(options = {}) {
         if (data.count > max) {
           // Rate limit exceeded
           console.log(`Rate limiting: Blocked IP ${clientIP}, Count: ${data.count}`);
-          const retryAfter = Math.ceil((windowMs - (now - data.firstRequest)) / 1000);
-          
+        
+          // Convert remaining window to MINUTES for display (env stays in ms)
+          const remainingMs = Math.max(0, windowMs - (now - data.firstRequest));
+          const retryAfter = Math.ceil(remainingMs / (1000 * 60)); // minutes
+        
           // 429 handler - Rate limit exceeded (handled by custom rate limiting middleware)
           return res.status(429).send(`
             <!DOCTYPE html>
@@ -80,7 +83,7 @@ function createRateLimit(options = {}) {
             <body>
               <h1 class="error">429 - Too Many Requests</h1>
               <p class="description">The server has blocked you because you've sent too many requests in a short period. Please try again later.</p>
-              <p class="retry">You can try again in ${retryAfter} seconds</p>
+              <p class="retry">You can try again in ${retryAfter} minute${retryAfter > 1 ? 's' : ''}</p>
               <p><a href="/">Return to Home</a></p>
             </body>
             </html>

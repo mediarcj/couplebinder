@@ -117,10 +117,12 @@ let redisClient;
 
   redisClient.on('error', (err) => {
     console.error('Redis client error:', err.message);
+    updateRedisStatus(false);
   });
 
   redisClient.on('connect', () => {
     console.log('Redis client connected');
+    updateRedisStatus(true);
   });
 
   console.log('Redis client created');
@@ -153,8 +155,10 @@ async function initializeRedis() {
   try {
     await redisClient.connect();
     console.log('Redis connection established');
+    updateRedisStatus(true);
   } catch (error) {
     console.log('Redis connection failed - continuing without Redis sessions:', error.message);
+    updateRedisStatus(false);
   }
 }
 
@@ -306,7 +310,9 @@ console.log('View engine and static assets configured');
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api', require('./routes/api'));
 app.use('/api', require('./routes/submissions'));
-app.use('/health', require('./routes/health'));
+// Import health routes with Redis status update function
+const { router: healthRouter, updateRedisStatus } = require('./routes/health');
+app.use('/health', healthRouter);
 app.use('/dashboard', require('./routes/dashboard'));
 
 // Initialize submissions route with shared storage

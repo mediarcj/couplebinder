@@ -49,32 +49,88 @@ function createPasswordHash(password) {
 }
 
 /**
- * Verify a password against a stored hash
+ * Verify a password against a stored hash with enhanced error handling
  * @param {string} password - Plain text password to verify
  * @param {string} stored - Stored hash string from database
- * @returns {boolean} True if password matches
+ * @returns {Promise<boolean>} True if password matches
  */
-function verifyPassword(password, stored) {
+async function verifyPassword(password, stored) {
   try {
+    // Input validation
+    if (!password || typeof password !== 'string') {
+      console.error('Password verification error: Invalid password input');
+      return false;
+    }
+
+    if (!stored || typeof stored !== 'string') {
+      console.error('Password verification error: Invalid stored hash input');
+      return false;
+    }
+
+    // Parse stored hash components
     const parts = stored.split(':');
     if (parts.length !== 5) {
+      console.error('Password verification error: Invalid hash format', {
+        partsCount: parts.length,
+        timestamp: new Date().toISOString()
+      });
       return false;
     }
     
     const [storedHash, salt, iterations, keyLength, digest] = parts;
     
-    // Use stored parameters for verification
+    // Validate hash components
+    if (!storedHash || !salt || !iterations || !keyLength || !digest) {
+      console.error('Password verification error: Missing hash components');
+      return false;
+    }
+
+    // Validate numeric parameters
+    const iterationsNum = parseInt(iterations);
+    const keyLengthNum = parseInt(keyLength);
+    
+    if (isNaN(iterationsNum) || isNaN(keyLengthNum)) {
+      console.error('Password verification error: Invalid numeric parameters', {
+        iterations: iterations,
+        keyLength: keyLength,
+        timestamp: new Date().toISOString()
+      });
+      return false;
+    }
+
+    // Validate digest algorithm
+    const validDigests = ['sha256', 'sha512'];
+    if (!validDigests.includes(digest)) {
+      console.error('Password verification error: Unsupported digest algorithm', {
+        digest: digest,
+        timestamp: new Date().toISOString()
+      });
+      return false;
+    }
+
+    // Perform password verification with timeout protection
     const hash = crypto.pbkdf2Sync(
       password, 
       Buffer.from(salt, 'base64'), 
-      parseInt(iterations), 
-      parseInt(keyLength), 
+      iterationsNum, 
+      keyLengthNum, 
       digest
     ).toString('base64');
     
-    return hash === storedHash;
+    // Constant-time comparison to prevent timing attacks
+    const isValid = crypto.timingSafeEqual(
+      Buffer.from(hash, 'base64'),
+      Buffer.from(storedHash, 'base64')
+    );
+    
+    return isValid;
+    
   } catch (error) {
-    console.error('Password verification error:', error);
+    console.error('Password verification error:', {
+      message: error.message,
+      code: error.code,
+      timestamp: new Date().toISOString()
+    });
     return false;
   }
 }

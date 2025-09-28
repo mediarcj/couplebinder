@@ -144,7 +144,16 @@ function initializeTextForm() {
                 showResult('error', `Error: ${data.error}`);
             }
         } catch (error) {
-            showResult('error', 'Network error. Please try again.');
+            console.error('Submission error:', error);
+            let errorMessage = 'Network error. Please try again.';
+            
+            if (error.name === 'TypeError' && error.message.includes('fetch')) {
+                errorMessage = 'Unable to connect to server. Please check your internet connection.';
+            } else if (error.name === 'SyntaxError') {
+                errorMessage = 'Server response error. Please try again.';
+            }
+            
+            showResult('error', errorMessage);
         } finally {
             // Reset button
             submitBtn.textContent = originalText;
@@ -192,7 +201,16 @@ function initializeSubmissions() {
                 this.textContent = originalText;
             }
         } catch (error) {
-            showResult('error', 'Network error loading submissions');
+            console.error('Load submissions error:', error);
+            let errorMessage = 'Network error loading submissions';
+            
+            if (error.name === 'TypeError' && error.message.includes('fetch')) {
+                errorMessage = 'Unable to connect to server. Please check your internet connection.';
+            } else if (error.name === 'SyntaxError') {
+                errorMessage = 'Server response error. Please try again.';
+            }
+            
+            showResult('error', errorMessage);
             this.textContent = originalText;
         } finally {
             this.disabled = false;
@@ -489,7 +507,16 @@ async function handleLoginSubmit(e) {
                 showLoginGeneralError(`Login failed: ${data.message}`);
             }
         } catch (error) {
-            showLoginGeneralError('Network error. Please try again.');
+            console.error('Login error:', error);
+            let errorMessage = 'Network error. Please try again.';
+            
+            if (error.name === 'TypeError' && error.message.includes('fetch')) {
+                errorMessage = 'Unable to connect to server. Please check your internet connection.';
+            } else if (error.name === 'SyntaxError') {
+                errorMessage = 'Server response error. Please try again.';
+            }
+            
+            showLoginGeneralError(errorMessage);
         }
     }
 }

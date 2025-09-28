@@ -6,6 +6,15 @@
 document.addEventListener('DOMContentLoaded', function() {
     console.log('Detechify frontend loaded');
     
+    // Extract config from data attributes
+    const configEl = document.getElementById('app-config');
+    if (configEl) {
+        window.appConfig = {
+            textMinLength: parseInt(configEl.dataset.textMinLength),
+            textMaxLength: parseInt(configEl.dataset.textMaxLength)
+        };
+    }
+    
     // Add smooth scrolling for anchor links
     const links = document.querySelectorAll('a[href^="#"]');
     links.forEach(link => {

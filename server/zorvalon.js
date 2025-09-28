@@ -1,6 +1,6 @@
 // File: zorvalon.js
 // Description: Entry point for Detechify server - Refactored for better organization
-// Boot order: Express → Database → Redis → Security → Middleware → Routes → Error Handling → Start Server
+// Boot order: Express → Database → Redis → Security → Middleware → Routes → Error Handling → Start Server → Graceful Shutdown
 // Notes: Console logs mark important checkpoints for audit and debugging
 
 const express = require('express');
@@ -394,22 +394,125 @@ const server = app.listen(PORT, HOST, () => {
   console.log('Server startup completed successfully');
 });
 
-// Graceful shutdown handling
-process.on('SIGTERM', () => {
-  console.log('SIGTERM received, shutting down gracefully');
-  server.close(() => {
-    console.log('Process terminated');
-    process.exit(0);
+// ============================================================
+// STEP 10: Graceful Shutdown System
+// ============================================================
+
+/**
+ * WHAT:
+ * We implement a comprehensive graceful shutdown system that handles
+ * termination signals and ensures all resources are properly cleaned up.
+ *
+ * WHY:
+ * Graceful shutdown prevents data corruption, ensures active requests
+ * complete safely, and allows load balancers to drain connections properly.
+ * This is essential for production deployments and zero-downtime updates.
+ *
+ * HOW:
+ * We track server state, implement connection draining, close database
+ * connections, flush Redis data, and provide timeout fallbacks.
+ */
+
+let isShuttingDown = false;
+let activeConnections = new Set();
+let shutdownTimeout = null;
+
+// Track active connections for graceful draining
+server.on('connection', (socket) => {
+  if (isShuttingDown) {
+    socket.destroy();
+    return;
+  }
+  
+  activeConnections.add(socket);
+  
+  socket.on('close', () => {
+    activeConnections.delete(socket);
   });
 });
 
-process.on('SIGINT', () => {
-  console.log('SIGINT received, shutting down gracefully');
+/**
+ * Gracefully shutdown the server and all resources
+ * @param {string} signal - The signal that triggered shutdown
+ * @param {number} code - Exit code
+ */
+function gracefulShutdown(signal, code = 0) {
+  if (isShuttingDown) {
+    console.log('Shutdown already in progress, forcing exit');
+    process.exit(1);
+  }
+  
+  isShuttingDown = true;
+  console.log(`${signal} received, initiating graceful shutdown...`);
+  
+  // Set shutdown timeout (30 seconds max)
+  shutdownTimeout = setTimeout(() => {
+    console.error('Graceful shutdown timeout reached, forcing exit');
+    process.exit(1);
+  }, 30000);
+  
+  // Stop accepting new connections
   server.close(() => {
-    console.log('Process terminated');
-    process.exit(0);
+    console.log('HTTP server closed');
+    
+    // Close all active connections
+    const closePromises = Array.from(activeConnections).map(socket => {
+      return new Promise((resolve) => {
+        socket.end(() => {
+          socket.destroy();
+          resolve();
+        });
+      });
+    });
+    
+    Promise.all(closePromises).then(() => {
+      console.log('All active connections closed');
+      
+      // Close Redis connection
+      if (redisClient && redisClient.isOpen) {
+        redisClient.quit().then(() => {
+          console.log('Redis connection closed');
+          finalizeShutdown(code);
+        }).catch((err) => {
+          console.error('Error closing Redis connection:', err.message);
+          finalizeShutdown(code);
+        });
+      } else {
+        finalizeShutdown(code);
+      }
+    });
   });
+}
+
+/**
+ * Finalize the shutdown process
+ * @param {number} code - Exit code
+ */
+function finalizeShutdown(code) {
+  if (shutdownTimeout) {
+    clearTimeout(shutdownTimeout);
+  }
+  
+  console.log('Graceful shutdown completed');
+  process.exit(code);
+}
+
+// Handle termination signals
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM', 0));
+process.on('SIGINT', () => gracefulShutdown('SIGINT', 0));
+
+// Handle uncaught exceptions and unhandled rejections
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught Exception:', error);
+  gracefulShutdown('UNCAUGHT_EXCEPTION', 1);
 });
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+  gracefulShutdown('UNHANDLED_REJECTION', 1);
+});
+
+console.log('Graceful shutdown system initialized');
 
 // Export for testing
 module.exports = app;

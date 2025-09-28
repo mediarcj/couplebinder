@@ -529,8 +529,10 @@ async function handleLoginSubmit(e) {
                     `Welcome ${data.user.first_name} ${data.user.last_name}!`,
                     () => {
                         closeModal();
-                        // Redirect to dashboard after successful login
-                        window.location.href = '/dashboard';
+                        // Small delay to ensure session cookie is processed
+                        setTimeout(() => {
+                            window.location.href = '/dashboard';
+                        }, 100);
                     }
                 );
             } else {

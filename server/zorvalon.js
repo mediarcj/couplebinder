@@ -7,6 +7,7 @@ const express = require('express');
 const helmet = require('helmet');
 const cors = require('cors');
 const rateLimit = require('express-rate-limit');
+const session = require('express-session');
 const morgan = require('morgan');
 const { v4: uuidv4 } = require('uuid');
 const { config, logConfigSummary } = require('./config');
@@ -88,6 +89,19 @@ app.use(limiter);
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
+// Session middleware
+app.use(session({
+  secret: config.security.sessionSecret,
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    secure: config.server.nodeEnv === 'production',
+    httpOnly: true,
+    maxAge: 24 * 60 * 60 * 1000, // 24 hours
+    sameSite: config.server.nodeEnv === 'production' ? 'strict' : 'lax'
+  }
+}));
+
 // Request ID middleware - add unique ID to every request
 app.use((req, res, next) => {
   req.requestId = uuidv4();
@@ -104,7 +118,7 @@ app.use(morgan(':method :url :status :response-time ms - :req[X-Request-ID]', {
   }
 }));
 
-console.log('Core middleware loaded: Helmet, CORS, Rate Limit, Body Parsers, Logging');
+console.log('Core middleware loaded: Helmet, CORS, Rate Limit, Body Parsers, Session, Logging');
 
 // ============================================================
 // STEP 3: View Engine / Static Assets

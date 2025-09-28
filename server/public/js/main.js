@@ -80,6 +80,9 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Login modal functionality
     initializeLoginModal();
+    
+    // Check session status and update UI
+    checkSessionStatus();
 });
 
 function initializeTextForm() {
@@ -241,7 +244,7 @@ function initializeLoginModal() {
     // Show modal when login link is clicked
     loginLink.addEventListener('click', function(e) {
         e.preventDefault();
-        modal.style.display = 'block';
+        handleLogin();
     });
     
     // Close modal when close button is clicked
@@ -378,6 +381,7 @@ async function handleLoginSubmit(e) {
             if (data.success) {
                 alert(`Login successful! Welcome ${data.user.first_name} ${data.user.last_name}!`);
                 closeModal();
+                checkSessionStatus(); // Refresh UI to show logged-in state
             } else {
                 alert(`Login failed: ${data.message}`);
             }
@@ -385,4 +389,62 @@ async function handleLoginSubmit(e) {
             alert('Network error. Please try again.');
         }
     }
+}
+
+async function checkSessionStatus() {
+    try {
+        const response = await fetch('/api/auth/status');
+        const data = await response.json();
+        
+        if (data.success && data.authenticated) {
+            updateUIForLoggedInUser(data.userEmail);
+        } else {
+            updateUIForLoggedOutUser();
+        }
+    } catch (error) {
+        console.error('Session status check failed:', error);
+        updateUIForLoggedOutUser();
+    }
+}
+
+function updateUIForLoggedInUser(userEmail) {
+    const loginLink = document.querySelector('.login-link');
+    if (loginLink) {
+        loginLink.textContent = `Logout (${userEmail})`;
+        loginLink.onclick = handleLogout;
+    }
+}
+
+function updateUIForLoggedOutUser() {
+    const loginLink = document.querySelector('.login-link');
+    if (loginLink) {
+        loginLink.textContent = 'Login';
+        loginLink.onclick = handleLogin;
+    }
+}
+
+async function handleLogout() {
+    try {
+        const response = await fetch('/api/auth/logout', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            alert('Logged out successfully!');
+            updateUIForLoggedOutUser();
+        } else {
+            alert(`Logout failed: ${data.message}`);
+        }
+    } catch (error) {
+        alert('Network error during logout. Please try again.');
+    }
+}
+
+function handleLogin() {
+    document.getElementById('loginModal').style.display = 'block';
 }

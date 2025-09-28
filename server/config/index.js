@@ -34,7 +34,9 @@ const config = {
   // Redis configuration
   redis: {
     host: process.env.REDIS_HOST,
-    port: parseInt(process.env.REDIS_PORT)
+    port: parseInt(process.env.REDIS_PORT),
+    password: process.env.REDIS_PASSWORD,
+    url: process.env.REDIS_URL
   },
 
   // Rate limiting configuration
@@ -124,7 +126,7 @@ function logConfigSummary() {
   console.log(`  Text limits: ${config.limits.textMinLength}-${config.limits.textMaxLength} chars`);
   console.log(`  Max submissions: ${config.limits.maxSubmissions}`);
   console.log(`  Database: ${config.database.url ? 'configured' : 'not configured'}`);
-  console.log(`  Redis: ${config.redis.host}:${config.redis.port}`);
+        console.log(`  Redis: ${config.redis.host}:${config.redis.port}${config.redis.password ? ' (password protected)' : ' (no password)'}`);
 }
 
 module.exports = {

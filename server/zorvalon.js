@@ -18,6 +18,19 @@ const { testConnection } = require('./db/connection');
 // ============================================================
 // STEP 1: Create Express App
 // ============================================================
+
+/**
+ * WHAT:
+ * We create the main Express application instance and start the server initialization.
+ *
+ * WHY:
+ * Express is our web framework that handles HTTP requests, middleware, and routing.
+ * We need this as the foundation before adding any middleware or routes.
+ *
+ * HOW:
+ * We create the app instance and immediately log startup messages for debugging.
+ * If this fails, the process will exit and we'll see the error in logs.
+ */
 const app = express();
 
 console.log('Detechify server starting...');
@@ -26,6 +39,19 @@ logConfigSummary();
 // ============================================================
 // STEP 1.5: Database Connection Test
 // ============================================================
+
+/**
+ * WHAT:
+ * We test the database connection to ensure we can store and retrieve data.
+ *
+ * WHY:
+ * The database is critical for user authentication, sessions, and data storage.
+ * We need to know if it's working before accepting user requests.
+ *
+ * HOW:
+ * We call a test function that tries to connect and run a simple query.
+ * If it fails, we log the error but continue startup so the app can still serve static pages.
+ */
 async function initializeDatabase() {
   try {
     const connected = await testConnection();
@@ -45,29 +71,49 @@ initializeDatabase();
 // ============================================================
 // STEP 1.6: Redis Client Creation
 // ============================================================
+
+/**
+ * WHAT:
+ * We create a Redis client for storing user sessions and caching data.
+ *
+ * WHY:
+ * Redis provides fast, persistent session storage that survives server restarts.
+ * This is essential for production scalability and session security.
+ *
+ * HOW:
+ * We configure the Redis client with connection settings from environment variables.
+ * If Redis is unavailable, we fall back to in-memory session storage.
+ */
 let redisClient;
 
-try {
-  redisClient = redis.createClient({
-    socket: {
-      host: config.redis.host,
-      port: config.redis.port,
-      connectTimeout: 5000,
-      lazyConnect: true
-    },
-    retry_strategy: (options) => {
-      if (options.error && options.error.code === 'ECONNREFUSED') {
-        return new Error('Redis server connection refused');
-      }
-      if (options.total_retry_time > 1000 * 60 * 60) {
-        return new Error('Retry time exhausted');
-      }
-      if (options.attempt > 10) {
-        return undefined;
-      }
-      return Math.min(options.attempt * 100, 3000);
-    }
-  });
+      try {
+        const redisConfig = {
+          socket: {
+            host: config.redis.host,
+            port: config.redis.port,
+            connectTimeout: 5000,
+            lazyConnect: true
+          },
+          retry_strategy: (options) => {
+            if (options.error && options.error.code === 'ECONNREFUSED') {
+              return new Error('Redis server connection refused');
+            }
+            if (options.total_retry_time > 1000 * 60 * 60) {
+              return new Error('Retry time exhausted');
+            }
+            if (options.attempt > 10) {
+              return undefined;
+            }
+            return Math.min(options.attempt * 100, 3000);
+          }
+        };
+
+        // Add password only if provided
+        if (config.redis.password) {
+          redisConfig.password = config.redis.password;
+        }
+
+        redisClient = redis.createClient(redisConfig);
 
   redisClient.on('error', (err) => {
     console.error('Redis client error:', err.message);
@@ -85,6 +131,19 @@ try {
 // ============================================================
 // STEP 1.7: Redis Connection Initialization
 // ============================================================
+
+/**
+ * WHAT:
+ * We establish the actual connection to the Redis server after creating the client.
+ *
+ * WHY:
+ * The Redis client needs to connect to the server before we can store session data.
+ * Without this connection, session storage will fail and users won't stay logged in.
+ *
+ * HOW:
+ * We attempt to connect to Redis using the configured client.
+ * If connection fails, we log the error but continue startup with memory sessions.
+ */
 async function initializeRedis() {
   if (!redisClient) {
     console.log('Redis client not available - skipping Redis initialization');
@@ -105,6 +164,19 @@ initializeRedis();
 // ============================================================
 // STEP 1.8: In-Memory Storage
 // ============================================================
+
+/**
+ * WHAT:
+ * We set up temporary in-memory storage for user submissions and data.
+ *
+ * WHY:
+ * This provides a fallback storage mechanism when the database is unavailable.
+ * It also serves as a simple data store for development and testing.
+ *
+ * HOW:
+ * We create arrays to hold user data and apply size limits from configuration.
+ * Data is lost when the server restarts, which is expected for this temporary storage.
+ */
 const submissions = [];
 const MAX_SUBMISSIONS = config.limits.maxSubmissions;
 
@@ -112,8 +184,21 @@ console.log('In-memory storage initialized');
 
 // ============================================================
 // STEP 2: Core Middleware Registration (ENFORCED ORDER)
-// Helmet → CORS → RateLimit → Parsers → Logging → Routes
+// Helmet → CORS → RateLimit → Parsers → Session → Logging → Routes
 // ============================================================
+
+/**
+ * WHAT:
+ * We register all core middleware in a specific order that ensures proper security and functionality.
+ *
+ * WHY:
+ * Middleware order matters because each layer processes requests before the next.
+ * Security middleware must come first to protect against attacks.
+ *
+ * HOW:
+ * We apply middleware in this order: security headers, CORS, rate limiting, body parsing, sessions, logging.
+ * Each middleware runs on every request before reaching our route handlers.
+ */
 
 // Security headers (Helmet)
 app.use(helmet({

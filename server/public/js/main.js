@@ -381,7 +381,8 @@ async function handleLoginSubmit(e) {
             if (data.success) {
                 alert(`Login successful! Welcome ${data.user.first_name} ${data.user.last_name}!`);
                 closeModal();
-                checkSessionStatus(); // Refresh UI to show logged-in state
+                // Redirect to dashboard after successful login
+                window.location.href = '/dashboard';
             } else {
                 alert(`Login failed: ${data.message}`);
             }

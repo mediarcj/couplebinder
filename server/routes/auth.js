@@ -32,10 +32,23 @@ router.post('/login', async (req, res) => {
             req.session.userEmail = result.user.email;
             req.session.isAuthenticated = true;
             
-            res.json({
-                success: true,
-                message: 'Login successful',
-                user: result.user
+            
+            // Explicitly save the session
+            req.session.save((err) => {
+                if (err) {
+                    console.error('Session save error:', err);
+                    return res.status(500).json({
+                        success: false,
+                        message: 'Session error'
+                    });
+                }
+                
+                console.log('Session saved successfully');
+                res.json({
+                    success: true,
+                    message: 'Login successful',
+                    user: result.user
+                });
             });
         } else {
             res.status(401).json({

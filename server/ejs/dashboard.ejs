@@ -1,0 +1,120 @@
+<!-- File: server/ejs/dashboard.ejs
+     Description: Protected dashboard template for authenticated users
+     Purpose: Displays user dashboard with profile info and navigation
+     Notes: Uses consistent UI/UX with main homepage template -->
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title><%= title %> - Detechify</title>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <header>
+        <nav>
+            <div class="container">
+                <h1>Detechify</h1>
+                <div class="nav-content">
+                    <ul>
+                        <li><a href="/">Home</a></li>
+                        <li><a href="/health">Health</a></li>
+                        <li><a href="/api/hello">API</a></li>
+                        <li><a href="/dashboard" class="active">Dashboard</a></li>
+                    </ul>
+                    <div class="auth-section">
+                        <span class="user-info">Welcome, <%= user.first_name %>!</span>
+                        <button id="logoutBtn" class="btn btn-secondary">Logout</button>
+                    </div>
+                </div>
+            </div>
+        </nav>
+    </header>
+
+    <main>
+        <div class="container">
+            <div class="hero">
+                <h1>Welcome to Your Dashboard</h1>
+                <p class="subtitle">Hello <%= user.first_name %> <%= user.last_name %>, you're successfully logged in!</p>
+                <div class="cta-buttons">
+                    <a href="/health" class="btn btn-primary">Check Health</a>
+                    <a href="/api/hello" class="btn btn-primary">API Test</a>
+                </div>
+            </div>
+
+            <div class="user-profile">
+                <h2>Your Profile</h2>
+                <div class="profile-card">
+                    <div class="profile-info">
+                        <div class="info-item">
+                            <span class="info-label">Name:</span>
+                            <span class="info-value"><%= user.first_name %> <%= user.last_name %></span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">Email:</span>
+                            <span class="info-value"><%= user.email %></span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">Member Since:</span>
+                            <span class="info-value"><%= new Date(user.created_at).toLocaleDateString() %></span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">Last Updated:</span>
+                            <span class="info-value"><%= new Date(user.updated_at).toLocaleDateString() %></span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="dashboard-actions">
+                <h2>Quick Actions</h2>
+                <div class="action-grid">
+                    <div class="action-card">
+                        <h3>Text Submission</h3>
+                        <p>Submit text for processing and analysis.</p>
+                        <a href="/" class="btn btn-primary">Go to Submission</a>
+                    </div>
+                    <div class="action-card">
+                        <h3>View Submissions</h3>
+                        <p>Check your recent text submissions.</p>
+                        <button id="viewSubmissionsBtn" class="btn btn-secondary">View Recent</button>
+                    </div>
+                    <div class="action-card">
+                        <h3>Account Settings</h3>
+                        <p>Manage your account preferences.</p>
+                        <button class="btn btn-secondary" disabled>Coming Soon</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="status">
+                <h2>Account Status</h2>
+                <div class="status-item">
+                    <span class="status-label">Authentication:</span>
+                    <span class="status-value status-success">Active</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">Session:</span>
+                    <span class="status-value status-success">Valid</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">Account Type:</span>
+                    <span class="status-value">Standard</span>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <footer>
+        <div class="container">
+            <p>&copy; 2024 Detechify. Building the future of tech detection.</p>
+        </div>
+    </footer>
+
+    <!-- Hidden submissions list for dashboard -->
+    <div id="submissionsList" class="submissions-list" style="display: none;"></div>
+
+    <script src="/js/dashboard.js"></script>
+</body>
+</html>

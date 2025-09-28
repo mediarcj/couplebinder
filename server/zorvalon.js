@@ -93,14 +93,15 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(session({
   secret: config.security.sessionSecret,
   resave: false,
-  saveUninitialized: false,
+  saveUninitialized: true,
   cookie: {
-    secure: config.server.nodeEnv === 'production',
+    secure: false, // Set to false for development
     httpOnly: true,
     maxAge: 24 * 60 * 60 * 1000, // 24 hours
-    sameSite: config.server.nodeEnv === 'production' ? 'strict' : 'lax'
+    sameSite: 'lax'
   }
 }));
+
 
 // Request ID middleware - add unique ID to every request
 app.use((req, res, next) => {
@@ -142,6 +143,7 @@ app.use('/api/auth', require('./routes/auth'));
 app.use('/api', require('./routes/api'));
 app.use('/api', require('./routes/submissions'));
 app.use('/health', require('./routes/health'));
+app.use('/dashboard', require('./routes/dashboard'));
 
 // Initialize submissions route with shared storage
 const submissionsRouter = require('./routes/submissions');

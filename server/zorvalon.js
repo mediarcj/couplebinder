@@ -15,7 +15,7 @@ const { v4: uuidv4 } = require('uuid');
 const { config, logConfigSummary } = require('./config');
 const { testConnection } = require('./db/connection');
 const { addCSRFToken, validateCSRF } = require('./middleware/csrf');
-const { createRateLimit } = require('./middleware/rateLimiting');
+// Rate limiting removed - handled at Cloudflare edge
 
 // ============================================================
 // STEP 1: Application Initialization
@@ -170,13 +170,7 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization', 'X-CSRF-Token', 'X-Request-ID']
 }));
 
-// Global rate limiting - relaxed for normal browsing
-const limiter = createRateLimit({
-  windowMs: config.rateLimit.windowMs,
-  max: config.rateLimit.max,
-  message: config.rateLimit.message
-});
-app.use(limiter);
+// Rate limiting will be applied after static files
 
 // Body parsers with size limits
 app.use(express.json({ limit: '10mb' }));
@@ -254,7 +248,10 @@ app.set('views', './ejs');
 // Serve static files from public directory
 app.use(express.static('public'));
 
+// Rate limiting removed - handled at Cloudflare edge
+
 console.log('View engine and static assets configured');
+console.log('Rate limiting handled at Cloudflare edge');
 
 // ============================================================
 // STEP 6: Security Middleware Configuration

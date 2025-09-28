@@ -3,6 +3,29 @@
 // Purpose: Handles logout, submissions viewing, and dashboard interactions
 // Notes: Maintains consistency with main.js functionality
 
+/**
+ * Get CSRF token from meta tag or cookie
+ */
+function getCSRFToken() {
+    // Try to get from meta tag first
+    const metaToken = document.querySelector('meta[name="csrf-token"]');
+    if (metaToken) {
+        return metaToken.getAttribute('content');
+    }
+    
+    // Fallback to cookie
+    const cookies = document.cookie.split(';');
+    for (let cookie of cookies) {
+        const [name, value] = cookie.trim().split('=');
+        if (name === 'csrf-token') {
+            return value;
+        }
+    }
+    
+    console.warn('CSRF token not found');
+    return '';
+}
+
 document.addEventListener('DOMContentLoaded', function() {
     console.log('Dashboard frontend loaded');
     
@@ -78,10 +101,12 @@ function initializeDashboard() {
  */
 async function handleLogout() {
     try {
+        const csrfToken = getCSRFToken();
         const response = await fetch('/api/auth/logout', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
+                'X-CSRF-Token': csrfToken
             }
         });
         

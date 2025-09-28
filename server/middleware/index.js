@@ -57,13 +57,7 @@ const {
     validateProfile
 } = require('./validation');
 
-// Rate Limiting Middleware
-const {
-    createRateLimit,
-    getRateLimitStats,
-    clearRateLimitForIP,
-    clearAllRateLimits
-} = require('./rateLimiting');
+// Rate limiting removed - handled at Cloudflare edge
 
 /**
  * Configure and return all security middleware
@@ -160,12 +154,7 @@ module.exports = {
         validateProfile
     },
     
-    rateLimiting: {
-        createRateLimit,
-        getRateLimitStats,
-        clearRateLimitForIP,
-        clearAllRateLimits
-    },
+    // Rate limiting removed - handled at Cloudflare edge
     
     // Configuration functions (big tech pattern)
     configureSecurityMiddleware,

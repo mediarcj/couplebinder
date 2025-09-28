@@ -8,19 +8,18 @@
     "dev": "node zorvalon.js"
   },
   "dependencies": {
-    "express": "^4.18.2",
-    "helmet": "^7.1.0",
+    "connect-redis": "^7.1.0",
     "cors": "^2.8.5",
-    "express-rate-limit": "^7.1.5",
-    "ejs": "^3.1.9",
-    "uuid": "^9.0.1",
-    "morgan": "^1.10.0",
     "dotenv": "^16.3.1",
-    "pg": "^8.11.3",
-    "knex": "^3.1.0",
+    "ejs": "^3.1.9",
+    "express": "^4.18.2",
     "express-session": "^1.17.3",
+    "helmet": "^7.1.0",
+    "knex": "^3.1.0",
+    "morgan": "^1.10.0",
+    "pg": "^8.11.3",
     "redis": "^4.6.12",
-    "connect-redis": "^7.1.0"
+    "uuid": "^9.0.1"
   },
   "keywords": [],
   "author": "",

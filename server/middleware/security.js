@@ -3,7 +3,7 @@
 // Purpose: Enforces all security restrictions server-side, treating browser as hostile
 // Notes: Never trusts client-side validation, implements atomic operations and rate limiting
 
-const rateLimit = require('express-rate-limit');
+// Rate limiting removed - handled at Cloudflare edge
 const crypto = require('crypto');
 
 /**
@@ -117,31 +117,22 @@ function validateTextServerSide(text) {
 }
 
 /**
- * Rate limiting for authentication endpoints
- * Per user + per IP tracking with exponential backoff
+ * WHAT:
+ * Authentication rate limiting middleware (disabled - handled at Cloudflare edge)
+ *
+ * WHY:
+ * Rate limiting is now handled at the Cloudflare edge layer for better performance
+ * and centralized protection across all endpoints
+ *
+ * HOW:
+ * Returns a simple middleware that passes through all requests
+ * Cloudflare handles rate limiting at the edge
  */
 function createAuthRateLimit() {
-    return rateLimit({
-        windowMs: 15 * 60 * 1000, // 15 minutes
-        max: 5, // Maximum 5 attempts per window
-        message: {
-            success: false,
-            message: 'Too many login attempts. Please try again in 15 minutes.',
-            errorType: 'RATE_LIMIT_EXCEEDED'
-        },
-        standardHeaders: true,
-        legacyHeaders: false,
-        keyGenerator: (req) => {
-            // Combine IP and email for per-user + per-IP limiting
-            const ip = req.ip || req.connection.remoteAddress;
-            const email = req.body?.email || 'unknown';
-            return `${ip}:${email}`;
-        },
-        skip: (req) => {
-            // Skip rate limiting for successful requests
-            return false;
-        }
-    });
+    return (req, res, next) => {
+        // Rate limiting handled at Cloudflare edge
+        next();
+    };
 }
 
 /**

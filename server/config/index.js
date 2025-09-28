@@ -39,7 +39,7 @@ const config = {
     url: process.env.REDIS_URL
   },
 
-  // Rate limiting configuration
+  // Rate limiting configuration (handled at Cloudflare edge)
   rateLimit: {
     windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS),
     max: parseInt(process.env.RATE_LIMIT_MAX),
@@ -122,7 +122,7 @@ if (validationErrors.length > 0) {
 function logConfigSummary() {
   console.log('Configuration loaded:');
   console.log(`  Server: ${config.server.host}:${config.server.port} (${config.server.nodeEnv})`);
-  console.log(`  Rate limiting: ${config.rateLimit.max} requests per ${config.rateLimit.windowMs}ms`);
+  console.log(`  Rate limiting: handled at Cloudflare edge`);
   console.log(`  Text limits: ${config.limits.textMinLength}-${config.limits.textMaxLength} chars`);
   console.log(`  Max submissions: ${config.limits.maxSubmissions}`);
   console.log(`  Database: ${config.database.url ? 'configured' : 'not configured'}`);

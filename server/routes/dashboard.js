@@ -7,6 +7,7 @@ const express = require('express');
 const router = express.Router();
 const { requireAuth } = require('../middleware/requireAuth');
 const { db } = require('../db/connection');
+const { usersRepo } = require('../db/repo');
 
 /**
  * GET /dashboard
@@ -14,11 +15,8 @@ const { db } = require('../db/connection');
  */
 router.get('/', requireAuth, async (req, res) => {
     try {
-        // Get user data from database
-        const user = await db('users')
-            .select('id', 'email', 'first_name', 'last_name', 'created_at', 'updated_at')
-            .where('id', req.session.userId)
-            .first();
+        // Get user data from database using repository
+        const user = await usersRepo.findById(db, req.session.userId);
 
         if (!user) {
             // User not found in database, destroy session and redirect

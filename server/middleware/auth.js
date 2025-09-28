@@ -4,6 +4,7 @@
 // Notes: Uses existing password and validation middleware for consistency
 
 const { db, safeQuery } = require('../db/connection');
+const { usersRepo } = require('../db/repo');
 const { verifyPassword } = require('./password');
 const { validateEmail } = require('./validation');
 const { 
@@ -78,24 +79,18 @@ async function verifyLogin(email, password, clientIP) {
             };
         }
 
-        // Database query with error handling
-        const userQuery = db('users')
-            .select('id', 'email', 'password', 'first_name', 'last_name', 'created_at', 'updated_at', 'user_role')
-            .where('email', emailValidation.sanitized)
-            .first();
-
-        const userResult = await safeQuery(userQuery, 'user_lookup');
-
-        if (!userResult.success) {
-            console.error('Database error during user lookup:', userResult.error);
+        // Database query with error handling using repository
+        let user;
+        try {
+            user = await usersRepo.findByEmail(db, emailValidation.sanitized);
+        } catch (error) {
+            console.error('Database error during user lookup:', error);
             return { 
                 success: false, 
                 message: 'Authentication service temporarily unavailable', 
                 errorType: 'SERVICE_ERROR' 
             };
         }
-
-        const user = userResult.data;
         if (!user) {
             // Record failed attempt for non-existent user (security measure)
             recordFailedAttempt(emailValidation.sanitized, clientIP);
@@ -178,22 +173,17 @@ async function validateSession(session) {
             };
         }
 
-        const userQuery = db('users')
-            .select('id', 'email', 'first_name', 'last_name', 'created_at', 'updated_at', 'user_role')
-            .where('id', session.userId)
-            .first();
-
-        const userResult = await safeQuery(userQuery, 'session_validation');
-
-        if (!userResult.success) {
-            console.error('Database error during session validation:', userResult.error);
+        // Database query with error handling using repository
+        let user;
+        try {
+            user = await usersRepo.findById(db, session.userId);
+        } catch (error) {
+            console.error('Database error during session validation:', error);
             return { 
                 success: false, 
                 message: 'Session validation failed' 
             };
         }
-
-        const user = userResult.data;
         if (!user) {
             return { 
                 success: false, 

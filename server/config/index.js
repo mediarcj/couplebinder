@@ -31,6 +31,12 @@ const config = {
     bcryptRounds: parseInt(process.env.BCRYPT_ROUNDS)
   },
 
+  // Redis configuration
+  redis: {
+    host: process.env.REDIS_HOST,
+    port: parseInt(process.env.REDIS_PORT)
+  },
+
   // Rate limiting configuration
   rateLimit: {
     windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS),
@@ -54,6 +60,7 @@ function validateConfig() {
   const requiredVars = [
     'PORT', 'NODE_ENV', 'HOST',
     'DB_HOST', 'DB_PORT', 'DB_NAME', 'DB_USER', 'DB_PASSWORD',
+    'REDIS_HOST', 'REDIS_PORT',
     'RATE_LIMIT_WINDOW_MS', 'RATE_LIMIT_MAX',
     'TEXT_MIN_LENGTH', 'TEXT_MAX_LENGTH', 'MAX_SUBMISSIONS'
   ];
@@ -117,6 +124,7 @@ function logConfigSummary() {
   console.log(`  Text limits: ${config.limits.textMinLength}-${config.limits.textMaxLength} chars`);
   console.log(`  Max submissions: ${config.limits.maxSubmissions}`);
   console.log(`  Database: ${config.database.url ? 'configured' : 'not configured'}`);
+  console.log(`  Redis: ${config.redis.host}:${config.redis.port}`);
 }
 
 module.exports = {

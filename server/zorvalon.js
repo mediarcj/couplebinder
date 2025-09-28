@@ -8,6 +8,8 @@ const helmet = require('helmet');
 const cors = require('cors');
 const rateLimit = require('express-rate-limit');
 const session = require('express-session');
+const RedisStore = require('connect-redis').default;
+const redis = require('redis');
 const morgan = require('morgan');
 const { v4: uuidv4 } = require('uuid');
 const { config, logConfigSummary } = require('./config');
@@ -41,7 +43,67 @@ async function initializeDatabase() {
 initializeDatabase();
 
 // ============================================================
-// STEP 1.6: In-Memory Storage
+// STEP 1.6: Redis Client Creation
+// ============================================================
+let redisClient;
+
+try {
+  redisClient = redis.createClient({
+    socket: {
+      host: config.redis.host,
+      port: config.redis.port,
+      connectTimeout: 5000,
+      lazyConnect: true
+    },
+    retry_strategy: (options) => {
+      if (options.error && options.error.code === 'ECONNREFUSED') {
+        return new Error('Redis server connection refused');
+      }
+      if (options.total_retry_time > 1000 * 60 * 60) {
+        return new Error('Retry time exhausted');
+      }
+      if (options.attempt > 10) {
+        return undefined;
+      }
+      return Math.min(options.attempt * 100, 3000);
+    }
+  });
+
+  redisClient.on('error', (err) => {
+    console.error('Redis client error:', err.message);
+  });
+
+  redisClient.on('connect', () => {
+    console.log('Redis client connected');
+  });
+
+  console.log('Redis client created');
+} catch (error) {
+  console.log('Redis client creation failed:', error.message);
+}
+
+// ============================================================
+// STEP 1.7: Redis Connection Initialization
+// ============================================================
+async function initializeRedis() {
+  if (!redisClient) {
+    console.log('Redis client not available - skipping Redis initialization');
+    return;
+  }
+  
+  try {
+    await redisClient.connect();
+    console.log('Redis connection established');
+  } catch (error) {
+    console.log('Redis connection failed - continuing without Redis sessions:', error.message);
+  }
+}
+
+// Initialize Redis connection
+initializeRedis();
+
+// ============================================================
+// STEP 1.8: In-Memory Storage
 // ============================================================
 const submissions = [];
 const MAX_SUBMISSIONS = config.limits.maxSubmissions;
@@ -89,19 +151,36 @@ app.use(limiter);
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Session middleware
-app.use(session({
-  secret: config.security.sessionSecret,
-  resave: false,
-  saveUninitialized: true,
-  cookie: {
-    secure: false, // Set to false for development
-    httpOnly: true,
-    maxAge: 24 * 60 * 60 * 1000, // 24 hours
-    sameSite: 'lax'
-  }
-}));
-
+// Session middleware with Redis store (if available) or memory store
+if (redisClient && RedisStore) {
+  app.use(session({
+    store: new RedisStore({ client: redisClient }),
+    secret: config.security.sessionSecret,
+    resave: false,
+    saveUninitialized: false, // Changed to false for production security
+    cookie: {
+      secure: false, // Set to false for development/testing
+      httpOnly: true,
+      maxAge: 24 * 60 * 60 * 1000, // 24 hours
+      sameSite: 'lax' // Set to lax for development
+    },
+    name: 'detechify.sid' // Custom session cookie name
+  }));
+  console.log('Session middleware configured with Redis store');
+} else {
+  app.use(session({
+    secret: config.security.sessionSecret,
+    resave: false,
+    saveUninitialized: true,
+    cookie: {
+      secure: false, // Set to false for development
+      httpOnly: true,
+      maxAge: 24 * 60 * 60 * 1000, // 24 hours
+      sameSite: 'lax'
+    }
+  }));
+  console.log('Session middleware configured with memory store (fallback)');
+}
 
 // Request ID middleware - add unique ID to every request
 app.use((req, res, next) => {

@@ -9,7 +9,7 @@ const cors = require('cors');
 const session = require('express-session');
 const redis = require('redis');
 const morgan = require('morgan');
-const { v4: uuidv4 } = require('uuid');
+const crypto = require('node:crypto');
 
 // Application Configuration and Dependencies
 const { config, logConfigSummary } = require('./config');
@@ -210,7 +210,7 @@ if (redisClient && RedisStore) {
 
 // Request ID middleware - add unique ID to every request
 app.use((req, res, next) => {
-  req.requestId = uuidv4();
+  req.requestId = crypto.randomUUID();
   res.setHeader('X-Request-ID', req.requestId);
   next();
 });
@@ -336,7 +336,7 @@ console.log('Routes registration completed');
  * logs them with context, and returns appropriate HTTP responses.
  */
 app.use((err, req, res, next) => {
-  const errorId = req.requestId || uuidv4();
+  const errorId = req.requestId || crypto.randomUUID();
   console.error(`[${new Date().toISOString()}] Server error [${errorId}]:`, {
     message: err.message,
     stack: err.stack,

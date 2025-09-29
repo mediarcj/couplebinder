@@ -4,6 +4,7 @@
 // Notes: Implements double-submit cookie pattern for stateless CSRF protection
 
 const crypto = require('crypto');
+const logger = require('../utils/logger');
 
 /**
  * WHAT:
@@ -43,7 +44,9 @@ function generateCSRFToken(sessionId) {
         csrfTokens.delete(token);
     }, CSRF_TOKEN_EXPIRY);
     
-    console.log(`CSRF: Generated token for session: ${sessionId}`);
+    logger.info('CSRF token generated', {
+      requestId: 'system'
+    });
     return token;
 }
 
@@ -137,7 +140,10 @@ function validateCSRF(req, res, next) {
     const validation = validateCSRFToken(token, req.sessionID);
     
     if (!validation.valid) {
-        console.log(`CSRF: Invalid token attempt - IP: ${req.ip}, Session: ${req.sessionID}, Error: ${validation.message}`);
+        logger.security('csrf_invalid_token', {
+            requestId: req.requestId,
+            ip: req.ip
+        });
         return res.status(403).json({
             success: false,
             message: 'CSRF token validation failed',
@@ -145,7 +151,9 @@ function validateCSRF(req, res, next) {
         });
     }
     
-    console.log(`CSRF: Valid token for session: ${req.sessionID}`);
+    logger.info('CSRF token validated', {
+        requestId: req.requestId
+    });
     next();
 }
 
@@ -165,7 +173,10 @@ function cleanupExpiredTokens() {
     }
     
     if (cleaned > 0) {
-        console.log(`CSRF: Cleaned up ${cleaned} expired tokens`);
+        logger.info('CSRF tokens cleaned up', {
+            requestId: 'system',
+            cleanedCount: cleaned
+        });
     }
 }
 

@@ -3,6 +3,8 @@
 // Purpose: Centralized user data access layer, enabling easy migration to Supabase
 // Notes: All user database operations go through this repository
 
+const logger = require('../../utils/logger');
+
 /**
  * WHAT:
  * We provide a clean interface for user database operations that can be easily swapped for Supabase.
@@ -23,13 +25,25 @@
  * @returns {Promise<Object|null>} User object or null if not found
  */
 async function findById(trxOrDb, id) {
+  const startTime = Date.now();
   try {
     const user = await trxOrDb('users')
       .where({ id })
       .first();
+    
+    logger.database('SELECT', 'users', {
+      requestId: 'system',
+      duration: Date.now() - startTime
+    });
+    
     return user || null;
   } catch (error) {
-    console.error('Error finding user by ID:', error);
+    logger.error('Database error finding user by ID', {
+      requestId: 'system',
+      operation: 'SELECT',
+      table: 'users',
+      error: error.message
+    });
     throw error;
   }
 }
@@ -59,13 +73,25 @@ async function findByEmail(trxOrDb, email) {
  * @returns {Promise<Object>} Created user object
  */
 async function create(trxOrDb, userData) {
+  const startTime = Date.now();
   try {
     const [user] = await trxOrDb('users')
       .insert(userData)
       .returning('*');
+    
+    logger.database('INSERT', 'users', {
+      requestId: 'system',
+      duration: Date.now() - startTime
+    });
+    
     return user;
   } catch (error) {
-    console.error('Error creating user:', error);
+    logger.error('Database error creating user', {
+      requestId: 'system',
+      operation: 'INSERT',
+      table: 'users',
+      error: error.message
+    });
     throw error;
   }
 }

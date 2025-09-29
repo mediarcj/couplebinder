@@ -6,6 +6,7 @@
 const express = require('express');
 const { verifyLogin } = require('../middleware/auth');
 const { createAuthRateLimit, getClientIP } = require('../middleware/security');
+const logger = require('../utils/logger');
 const router = express.Router();
 
 /**
@@ -34,18 +35,28 @@ router.post('/login', createAuthRateLimit(), async (req, res) => {
             req.session.userEmail = result.user.email;
             req.session.isAuthenticated = true;
             
+            logger.auth('login_success', {
+                requestId: req.requestId,
+                outcome: 'success',
+                ip: clientIP
+            });
             
             // Explicitly save the session
             req.session.save((err) => {
                 if (err) {
-                    console.error('Session save error:', err);
+                    logger.error('Session save error', {
+                        requestId: req.requestId,
+                        error: err.message
+                    });
                     return res.status(500).json({
                         success: false,
                         message: 'Session error'
                     });
                 }
                 
-                console.log('Session saved successfully');
+                logger.info('Session saved successfully', {
+                    requestId: req.requestId
+                });
                 res.json({
                     success: true,
                     message: 'Login successful',
@@ -53,13 +64,22 @@ router.post('/login', createAuthRateLimit(), async (req, res) => {
                 });
             });
         } else {
+            logger.auth('login_failed', {
+                requestId: req.requestId,
+                outcome: 'failed',
+                ip: clientIP
+            });
+            
             res.status(401).json({
                 success: false,
                 message: result.message
             });
         }
     } catch (error) {
-        console.error('Login route error:', error.message);
+        logger.error('Login route error', {
+            requestId: req.requestId,
+            error: error.message
+        });
         res.status(500).json({
             success: false,
             message: 'Internal server error'
@@ -75,12 +95,21 @@ router.post('/logout', (req, res) => {
     try {
         req.session.destroy((err) => {
             if (err) {
-                console.error('Logout session destroy error:', err.message);
+                logger.error('Logout session destroy error', {
+                    requestId: req.requestId,
+                    error: err.message
+                });
                 return res.status(500).json({
                     success: false,
                     message: 'Logout failed'
                 });
             }
+            
+            logger.auth('logout_success', {
+                requestId: req.requestId,
+                outcome: 'success',
+                ip: req.ip
+            });
             
             res.clearCookie('connect.sid');
             res.json({
@@ -89,7 +118,10 @@ router.post('/logout', (req, res) => {
             });
         });
     } catch (error) {
-        console.error('Logout route error:', error.message);
+        logger.error('Logout route error', {
+            requestId: req.requestId,
+            error: error.message
+        });
         res.status(500).json({
             success: false,
             message: 'Internal server error'

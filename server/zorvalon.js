@@ -15,6 +15,8 @@ const crypto = require('node:crypto');
 const { config, logConfigSummary } = require('./config');
 const { testConnection } = require('./db/connection');
 const { addCSRFToken, validateCSRF } = require('./middleware/csrf');
+const requestIdMiddleware = require('./middleware/requestId');
+const logger = require('./utils/logger');
 // Rate limiting removed - handled at Cloudflare edge
 
 // ============================================================
@@ -209,20 +211,19 @@ if (redisClient && RedisStore) {
 }
 
 // Request ID middleware - add unique ID to every request
+app.use(requestIdMiddleware);
+
+// Request timing middleware for structured logging
 app.use((req, res, next) => {
-  req.requestId = crypto.randomUUID();
-  res.setHeader('X-Request-ID', req.requestId);
+  const startTime = Date.now();
+  
+  res.on('finish', () => {
+    const duration = Date.now() - startTime;
+    logger.request(req, res, duration);
+  });
+  
   next();
 });
-
-// Structured logging with Morgan
-app.use(morgan(':method :url :status :response-time ms - :req[X-Request-ID]', {
-  stream: {
-    write: (message) => {
-      console.log(message.trim());
-    }
-  }
-}));
 
 console.log('Core middleware registration completed');
 
@@ -338,7 +339,9 @@ console.log('Routes registration completed');
  */
 app.use((err, req, res, next) => {
   const errorId = req.requestId || crypto.randomUUID();
-  console.error(`[${new Date().toISOString()}] Server error [${errorId}]:`, {
+  
+  logger.error('Server error occurred', {
+    requestId: errorId,
     message: err.message,
     stack: err.stack,
     url: req.url,

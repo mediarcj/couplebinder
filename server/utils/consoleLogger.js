@@ -186,7 +186,7 @@ function formatConfigSummary(config) {
  * @param {string} middleware - Middleware name
  */
 function formatMiddlewareRegistration(middleware) {
-  console.log(`✓ ${middleware} registered`);
+  console.log(`${middleware} registered`);
 }
 
 /**

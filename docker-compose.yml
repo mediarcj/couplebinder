@@ -54,6 +54,7 @@ services:
       - REDIS_PASSWORD=${REDIS_PASSWORD}
     volumes:
       - ./server/.env:/app/.env:ro
+      - ./public:/app/public:ro
     depends_on:
       postgres:
         condition: service_healthy

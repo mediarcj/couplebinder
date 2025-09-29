@@ -9,7 +9,7 @@ const { config } = require('../config');
 
 /**
  * WHAT:
- * We create a robust database connection with comprehensive error handling and monitoring.
+ * We create a strong database connection with good error handling and monitoring.
  *
  * WHY:
  * Database connectivity is critical for user authentication and data persistence.

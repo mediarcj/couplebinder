@@ -8,8 +8,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="csrf-token" content="<%= csrfToken || '' %>">
-    <title><%= title %> - Detechify</title>
+    <meta name="csrf-token" content="<%= ui.csrfToken || '' %>">
+    <title><%= page.title %></title>
     <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
@@ -24,7 +24,12 @@
                         <li><a href="/api/hello">API</a></li>
                     </ul>
                     <div class="auth-section">
-                        <a href="#" class="login-link">Login</a>
+                        <% if (user.isAuthenticated) { %>
+                            <a href="/dashboard" class="dashboard-link">Dashboard</a>
+                            <a href="#" class="logout-link">Logout</a>
+                        <% } else { %>
+                            <a href="#" class="login-link">Login</a>
+                        <% } %>
                     </div>
                 </div>
             </div>
@@ -35,7 +40,7 @@
         <div class="container">
             <div class="hero">
                 <h1>Welcome to Detechify</h1>
-                <p class="subtitle"><%= message %></p>
+                <p class="subtitle"><%= page.description %></p>
                 <div class="cta-buttons">
                     <a href="/health" class="btn btn-primary">Check Health</a>
                     <a href="/api/hello" class="btn btn-primary">API Test</a>
@@ -50,12 +55,12 @@
                         <textarea 
                             id="textInput" 
                             name="text" 
-                            placeholder="Enter your text here (minimum <%= textMinLength %> characters, maximum <%= textMaxLength %> characters)..."
+                            placeholder="Enter your text here (minimum <%= features.textLimits.min %> characters, maximum <%= features.textLimits.max %> characters)..."
                             rows="4"
-                            maxlength="<%= textMaxLength %>"
+                            maxlength="<%= features.textLimits.max %>"
                         ></textarea>
                         <div class="char-count">
-                            <span id="charCount">0</span> / <%= textMaxLength %> characters
+                            <span id="charCount">0</span> / <%= features.textLimits.max %> characters
                         </div>
                     </div>
                     <button type="submit" class="btn btn-secondary">Submit Text</button>
@@ -71,11 +76,11 @@
                 <div class="feature-grid">
                     <div class="feature-card">
                         <h3>Secure by Design</h3>
-                        <p>Built with enterprise-grade security middleware including Helmet, CORS, and rate limiting.</p>
+                        <p>Built with strong security middleware including Helmet, CORS, and rate limiting.</p>
                     </div>
                     <div class="feature-card">
-                        <h3>Modern Architecture</h3>
-                        <p>Built with clean, maintainable, and scalable code structure.</p>
+                        <h3>Clean Code</h3>
+                        <p>Built with simple and reliable code.</p>
                     </div>
                     <div class="feature-card">
                         <h3>EJS Frontend</h3>
@@ -126,7 +131,7 @@
                                 id="loginEmail" 
                                 name="email" 
                                 placeholder="Enter your email address"
-                                maxlength="40"
+                                maxlength="<%= ui_instructions.input_limits.email_max || 40 %>"
                                 autocomplete="email"
                             >
                             <div id="emailError" class="error-message"></div>
@@ -183,8 +188,8 @@
 
     <!-- Pass server config to client-side JavaScript via data attributes -->
     <div id="app-config" 
-         data-text-min-length="<%= textMinLength %>" 
-         data-text-max-length="<%= textMaxLength %>" 
+         data-text-min-length="<%= features.textLimits.min %>" 
+         data-text-max-length="<%= features.textLimits.max %>" 
          style="display: none;"></div>
     <script src="/js/main.js"></script>
 </body>

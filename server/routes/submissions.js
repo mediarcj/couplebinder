@@ -8,6 +8,7 @@ const router = express.Router();
 const { config } = require('../config');
 const { db } = require('../db/connection');
 const { validateTextServerSide, getClientIP } = require('../middleware/security');
+const { checkAndConsumeQuota } = require('../db/repo/quotasRepo');
 
 // In-memory storage for submissions (shared with main app)
 // This will be passed from zorvalon.js via middleware
@@ -104,6 +105,23 @@ router.post('/submit/db', async (req, res) => {
         timestamp: new Date().toISOString()
       });
     }
+
+    // CRITICAL SECTION: atomic quota check and consume
+    // We check and consume quota atomically to prevent race conditions
+    // where multiple concurrent requests could bypass submission limits
+    const quotaResult = await checkAndConsumeQuota(clientIP, 'submissions', MAX_SUBMISSIONS, trx);
+    if (!quotaResult.success) {
+      await trx.rollback();
+      console.log(`Security: Quota limit exceeded for IP: ${clientIP}, Used: ${quotaResult.used}/${quotaResult.limit}`);
+      return res.status(429).json({
+        error: 'Maximum submission limit reached',
+        remaining: quotaResult.remaining,
+        used: quotaResult.used,
+        limit: quotaResult.limit,
+        requestId: req.requestId,
+        timestamp: new Date().toISOString()
+      });
+    }
     
     // Create submission record within transaction
     const submissionData = {
@@ -132,6 +150,11 @@ router.post('/submit/db', async (req, res) => {
         id: submission.id,
         text_length: submission.text_length,
         created_at: submission.created_at
+      },
+      quota: {
+        remaining: quotaResult.remaining,
+        used: quotaResult.used,
+        limit: quotaResult.limit
       },
       requestId: req.requestId,
       timestamp: new Date().toISOString()

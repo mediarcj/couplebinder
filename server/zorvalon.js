@@ -9,6 +9,7 @@ const cors = require('cors');
 const session = require('express-session');
 const redis = require('redis');
 const morgan = require('morgan');
+const path = require('path');
 const crypto = require('node:crypto');
 
 // Application Configuration and Dependencies
@@ -251,7 +252,9 @@ app.set('view engine', 'ejs');
 app.set('views', './ejs');
 
 // Serve static files from public directory
-app.use(express.static('public'));
+const publicPath = path.join(__dirname, 'public');
+console.log('Static files path:', publicPath);
+app.use(express.static(publicPath));
 
 // Rate limiting removed - handled at Cloudflare edge
 
@@ -299,6 +302,7 @@ consoleLogger.formatMiddlewareRegistration('Security middleware');
 // Import modular routes with CSRF protection for state-changing requests
 app.use('/api/auth', validateCSRF, require('./routes/auth'));
 app.use('/api/users', require('./routes/users'));
+app.use('/api/page', require('./routes/pageApi'));
 app.use('/api', validateCSRF, require('./routes/api'));
 app.use('/api', validateCSRF, require('./routes/submissions'));
 
@@ -312,15 +316,26 @@ const submissionsRouter = require('./routes/submissions');
 const submissions = [];
 submissionsRouter.setSubmissions(submissions);
 
+// Import presenters
+const { buildHomePageModel } = require('./ui_contract/presenters');
+
 // Home page route
 app.get('/', (req, res) => {
-  res.render('index', { 
-    title: 'Detechify',
-    message: 'Welcome to Detechify - Building the future of tech detection',
-    csrfToken: res.locals.csrfToken,
-    textMinLength: config.limits.textMinLength,
-    textMaxLength: config.limits.textMaxLength
-  });
+  try {
+    // Build page model using presenter
+    const pageModel = buildHomePageModel(req, res);
+    
+    // Render EJS template with page model
+    res.render('index', pageModel);
+  } catch (error) {
+    console.error('Home page error:', error);
+    res.status(500).json({ 
+      error: 'Internal server error',
+      message: error.message,
+      requestId: req.requestId,
+      timestamp: new Date().toISOString()
+    });
+  }
 });
 
 consoleLogger.formatMiddlewareRegistration('Routes');

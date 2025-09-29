@@ -6,8 +6,7 @@
 const express = require('express');
 const router = express.Router();
 const { requireAuth } = require('../middleware/requireAuth');
-const { db } = require('../db/connection');
-const { usersRepo } = require('../db/repo');
+const { buildDashboardPageModel, buildErrorPageModel } = require('../ui_contract/presenters');
 
 /**
  * GET /dashboard
@@ -15,28 +14,22 @@ const { usersRepo } = require('../db/repo');
  */
 router.get('/', requireAuth, async (req, res) => {
     try {
-        // Get user data from database using repository
-        const user = await usersRepo.findById(db, req.session.userId);
+        // Build page model using presenter
+        const pageModel = await buildDashboardPageModel(req, res);
 
-        if (!user) {
+        // Check if user exists in database
+        if (!pageModel.user.profile) {
             // User not found in database, destroy session and redirect
             req.session.destroy();
             return res.redirect('/?error=user_not_found');
         }
 
-        res.render('dashboard', {
-            title: 'Dashboard',
-            user: user,
-            requestId: req.requestId,
-            csrfToken: res.locals.csrfToken
-        });
+        // Render EJS template with page model
+        res.render('dashboard', pageModel);
     } catch (error) {
         console.error('Dashboard route error:', error.message);
-        res.status(500).render('error', {
-            title: 'Error',
-            message: 'Unable to load dashboard',
-            requestId: req.requestId
-        });
+        const pageModel = buildErrorPageModel(req, res, 500, 'Unable to load dashboard');
+        res.status(500).render('error', pageModel);
     }
 });
 

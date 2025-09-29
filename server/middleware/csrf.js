@@ -23,7 +23,7 @@ const consoleLogger = require('../utils/consoleLogger');
 
 // Store for CSRF tokens (in production, use Redis)
 const csrfTokens = new Map();
-const CSRF_TOKEN_EXPIRY = 60 * 60 * 1000; // 1 hour
+const CSRF_TOKEN_EXPIRY = 8 * 60 * 60 * 1000; // 8 hours (enterprise standard)
 
 /**
  * Generate a secure CSRF token

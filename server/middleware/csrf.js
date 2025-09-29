@@ -45,7 +45,7 @@ function generateCSRFToken(sessionId) {
         csrfTokens.delete(token);
     }, CSRF_TOKEN_EXPIRY);
     
-    logger.info('CSRF token generated', {
+    logger.csrfToken('generated', {
       requestId: 'system'
     });
     return token;
@@ -156,7 +156,7 @@ function validateCSRF(req, res, next) {
         });
     }
     
-    logger.info('CSRF token validated', {
+    logger.csrfToken('validated', {
         requestId: req.requestId
     });
     next();

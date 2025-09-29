@@ -15,6 +15,7 @@
  */
 
 const { config } = require('../config');
+const consoleLogger = require('./consoleLogger');
 
 // Sensitive patterns to redact from logs
 const SENSITIVE_PATTERNS = [
@@ -117,7 +118,8 @@ class SecureLogger {
    */
   info(message, meta = {}) {
     if (this.isDevelopment) {
-      console.log(formatLogMessage('info', message, meta));
+      // Use consoleLogger for formatted display instead of raw JSON
+      consoleLogger.formatInfo(message, meta);
     }
   }
   
@@ -127,7 +129,8 @@ class SecureLogger {
    * @param {Object} meta - Additional metadata
    */
   warn(message, meta = {}) {
-    console.warn(formatLogMessage('warn', message, meta));
+    // Use consoleLogger for formatted display instead of raw JSON
+    consoleLogger.formatWarning(message, meta);
   }
   
   /**
@@ -136,7 +139,8 @@ class SecureLogger {
    * @param {Object} meta - Additional metadata
    */
   error(message, meta = {}) {
-    console.error(formatLogMessage('error', message, meta));
+    // Use consoleLogger for formatted display instead of raw JSON
+    consoleLogger.formatError(message, meta);
   }
   
   /**
@@ -146,23 +150,8 @@ class SecureLogger {
    * @param {number} duration - Request duration in ms
    */
   request(req, res, duration) {
-    const meta = {
-      requestId: req.requestId,
-      method: req.method,
-      url: req.url,
-      status: res.statusCode,
-      duration: `${duration}ms`,
-      userAgent: req.get('User-Agent') ? '[REDACTED]' : undefined,
-      ip: req.ip
-    };
-    
-    const message = `${req.method} ${req.url} ${res.statusCode} ${duration}ms`;
-    
-    if (res.statusCode >= 400) {
-      this.error(message, meta);
-    } else {
-      this.info(message, meta);
-    }
+    // This method is now handled by consoleLogger.formatRequest in zorvalon.js
+    // No need to log here as it would create duplicate logs
   }
   
   /**
@@ -179,6 +168,9 @@ class SecureLogger {
     };
     
     this.info(`Auth event: ${event}`, safeMeta);
+    
+    // Also format for console display
+    consoleLogger.formatAuthEvent(event, safeMeta);
   }
   
   /**
@@ -196,6 +188,9 @@ class SecureLogger {
     };
     
     this.info(`Database: ${operation} on ${table}`, safeMeta);
+    
+    // Also format for console display
+    consoleLogger.formatDatabaseOperation(operation, table, safeMeta);
   }
   
   /**
@@ -212,6 +207,73 @@ class SecureLogger {
     };
     
     this.warn(`Security: ${event}`, safeMeta);
+    
+    // Also format for console display
+    consoleLogger.formatSecurityEvent(event, safeMeta);
+  }
+  
+  /**
+   * Log cookie parsing events
+   * @param {Object} meta - Additional metadata
+   */
+  cookieParsing(meta = {}) {
+    const safeMeta = {
+      count: meta.count || 0
+    };
+    
+    this.info('Cookies parsed and attached to request', safeMeta);
+    
+    // Also format for console display
+    consoleLogger.formatCookieParsing(safeMeta);
+  }
+  
+  /**
+   * Log CSRF token events
+   * @param {string} action - Token action (generated, validated)
+   * @param {Object} meta - Additional metadata
+   */
+  csrfToken(action, meta = {}) {
+    const safeMeta = {
+      requestId: meta.requestId || 'system'
+    };
+    
+    this.info(`CSRF token ${action}`, safeMeta);
+    
+    // Also format for console display
+    consoleLogger.formatCSRFToken(action, safeMeta);
+  }
+  
+  /**
+   * Log security clearance events
+   * @param {string} event - Security event
+   * @param {Object} meta - Additional metadata
+   */
+  securityClearance(event, meta = {}) {
+    const safeMeta = {
+      user: meta.user,
+      ip: meta.ip
+    };
+    
+    this.info(`Security: ${event}`, safeMeta);
+    
+    // Also format for console display
+    consoleLogger.formatSecurityClearance(event, safeMeta);
+  }
+  
+  /**
+   * Log session events
+   * @param {string} action - Session action
+   * @param {Object} meta - Additional metadata
+   */
+  session(action, meta = {}) {
+    const safeMeta = {
+      requestId: meta.requestId || 'system'
+    };
+    
+    this.info(`Session ${action}`, safeMeta);
+    
+    // Also format for console display
+    consoleLogger.formatSessionEvent(action, safeMeta);
   }
 }
 

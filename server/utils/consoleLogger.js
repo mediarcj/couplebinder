@@ -76,12 +76,14 @@ function formatAuthEvent(event, meta = {}) {
   const ip = meta.ip || 'unknown';
   const outcome = meta.outcome || 'unknown';
   
-  console.log(`\nAUTH EVENT`);
+  console.log(`\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+  console.log(`AUTH EVENT`);
   console.log(`   Event: ${event}`);
   console.log(`   Outcome: ${outcome}`);
   console.log(`   Request ID: ${requestId}`);
   console.log(`   Client IP: ${ip}`);
   console.log(`   Time: ${formatTimestamp()}`);
+  console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
 }
 
 /**
@@ -93,11 +95,13 @@ function formatSecurityEvent(event, meta = {}) {
   const requestId = meta.requestId || 'system';
   const ip = meta.ip || 'unknown';
   
-  console.log(`\nSECURITY ALERT`);
+  console.log(`\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+  console.log(`SECURITY ALERT`);
   console.log(`   Event: ${event}`);
   console.log(`   Request ID: ${requestId}`);
   console.log(`   Client IP: ${ip}`);
   console.log(`   Time: ${formatTimestamp()}`);
+  console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
 }
 
 /**
@@ -110,12 +114,14 @@ function formatDatabaseOperation(operation, table, meta = {}) {
   const requestId = meta.requestId || 'system';
   const duration = meta.duration ? `${meta.duration}ms` : 'unknown';
   
-  console.log(`\nDATABASE`);
+  console.log(`\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+  console.log(`DATABASE`);
   console.log(`   Operation: ${operation}`);
   console.log(`   Table: ${table}`);
   console.log(`   Duration: ${duration}`);
   console.log(`   Request ID: ${requestId}`);
   console.log(`   Time: ${formatTimestamp()}`);
+  console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
 }
 
 /**
@@ -127,11 +133,13 @@ function formatError(message, meta = {}) {
   const requestId = meta.requestId || 'system';
   const error = meta.error || 'No details available';
   
-  console.log(`\nERROR OCCURRED`);
+  console.log(`\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+  console.log(`ERROR OCCURRED`);
   console.log(`   Message: ${message}`);
   console.log(`   Details: ${error}`);
   console.log(`   Request ID: ${requestId}`);
   console.log(`   Time: ${formatTimestamp()}`);
+  console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
 }
 
 /**
@@ -142,10 +150,12 @@ function formatError(message, meta = {}) {
 function formatInfo(message, meta = {}) {
   const requestId = meta.requestId || 'system';
   
-  console.log(`\nINFO`);
+  console.log(`\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+  console.log(`INFO`);
   console.log(`   Message: ${message}`);
   console.log(`   Request ID: ${requestId}`);
   console.log(`   Time: ${formatTimestamp()}`);
+  console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
 }
 
 /**
@@ -200,6 +210,87 @@ function formatGracefulShutdown(signal) {
   console.log(`   Shutting down gracefully...`);
 }
 
+/**
+ * Format cookie parsing events
+ * @param {Object} meta - Additional metadata
+ */
+function formatCookieParsing(meta = {}) {
+  const count = meta.count || 0;
+  
+  console.log(`\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+  console.log(`COOKIE PARSING`);
+  console.log(`   Message: Cookies parsed and attached to request`);
+  console.log(`   Count: ${count}`);
+  console.log(`   Time: ${formatTimestamp()}`);
+  console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+}
+
+/**
+ * Format CSRF token events
+ * @param {string} action - Token action (generated, validated)
+ * @param {Object} meta - Additional metadata
+ */
+function formatCSRFToken(action, meta = {}) {
+  const requestId = meta.requestId || 'system';
+  
+  console.log(`\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+  console.log(`CSRF TOKEN`);
+  console.log(`   Action: ${action}`);
+  console.log(`   Request ID: ${requestId}`);
+  console.log(`   Time: ${formatTimestamp()}`);
+  console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+}
+
+/**
+ * Format security clearance events
+ * @param {string} event - Security event
+ * @param {Object} meta - Additional metadata
+ */
+function formatSecurityClearance(event, meta = {}) {
+  const user = meta.user || 'unknown';
+  const ip = meta.ip || 'unknown';
+  
+  console.log(`\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+  console.log(`SECURITY CLEARANCE`);
+  console.log(`   Event: ${event}`);
+  console.log(`   User: ${user}`);
+  console.log(`   IP: ${ip}`);
+  console.log(`   Time: ${formatTimestamp()}`);
+  console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+}
+
+/**
+ * Format session events
+ * @param {string} action - Session action
+ * @param {Object} meta - Additional metadata
+ */
+function formatSessionEvent(action, meta = {}) {
+  const requestId = meta.requestId || 'system';
+  
+  console.log(`\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+  console.log(`SESSION EVENT`);
+  console.log(`   Action: ${action}`);
+  console.log(`   Request ID: ${requestId}`);
+  console.log(`   Time: ${formatTimestamp()}`);
+  console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+}
+
+/**
+ * Format warning messages
+ * @param {string} message - Warning message
+ * @param {Object} meta - Additional metadata
+ */
+function formatWarning(message, meta = {}) {
+  const requestId = meta.requestId || 'system';
+  
+  console.log(`\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+  console.log(`WARNING`);
+  console.log(`   Message: ${message}`);
+  console.log(`   Request ID: ${requestId}`);
+  console.log(`   Time: ${formatTimestamp()}`);
+  console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+}
+
 module.exports = {
   formatRequest,
   formatAuthEvent,
@@ -210,5 +301,10 @@ module.exports = {
   formatServerStartup,
   formatConfigSummary,
   formatMiddlewareRegistration,
-  formatGracefulShutdown
+  formatGracefulShutdown,
+  formatCookieParsing,
+  formatCSRFToken,
+  formatSecurityClearance,
+  formatSessionEvent,
+  formatWarning
 };

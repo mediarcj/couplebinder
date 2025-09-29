@@ -5,6 +5,7 @@
 
 // Rate limiting removed - handled at Cloudflare edge
 const crypto = require('crypto');
+const logger = require('../utils/logger');
 
 /**
  * WHAT:
@@ -217,7 +218,10 @@ function clearFailedAttempts(email, ip) {
     loginAttempts.delete(userKey);
     ipAttempts.delete(ipKey);
     
-    console.log(`Security: Cleared failed attempts - User: ${email}, IP: ${ip}`);
+    logger.securityClearance('Cleared failed attempts', {
+        user: email,
+        ip: ip
+    });
 }
 
 /**

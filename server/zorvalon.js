@@ -217,15 +217,15 @@ app.use(cors({
 
 // Rate limiting will be applied after static files
 
-// HTTP request logging middleware
-app.use(morgan('combined', {
-  stream: {
-    write: (message) => {
-      // Use structured logger for HTTP requests
-      logger.info('HTTP request', { message: message.trim() });
-    }
-  }
-}));
+// HTTP request logging middleware - disabled to avoid duplicate logs
+// app.use(morgan('combined', {
+//   stream: {
+//     write: (message) => {
+//       // Use structured logger for HTTP requests
+//       logger.info('HTTP request', { message: message.trim() });
+//     }
+//   }
+// }));
 
 // Body parsers with size limits
 app.use(express.json({ limit: '10mb' }));
@@ -282,8 +282,6 @@ app.use((req, res, next) => {
   
   res.on('finish', () => {
     const duration = Date.now() - startTime;
-    // Use structured logger for file/JSON logs
-    logger.request(req, res, duration);
     // Use formatted logger for terminal display
     consoleLogger.formatRequest(req, res, duration);
   });

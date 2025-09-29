@@ -63,7 +63,7 @@ function parseCookies(req, res, next) {
   // Step 6: Emit a log of how many cookies were successfully parsed for traceability and debugging
   const cookieCount = Object.keys(parsed).length;
   if (cookieCount > 0) {
-    logger.info('Cookies parsed and attached to request', {
+    logger.cookieParsing({
       count: cookieCount,
       requestId: req.requestId
     });

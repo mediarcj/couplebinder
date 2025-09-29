@@ -60,10 +60,7 @@ router.post('/login', createAuthRateLimit(), async (req, res) => {
                     });
                 }
                 
-                logger.info('Session saved successfully', {
-                    requestId: req.requestId
-                });
-                consoleLogger.formatInfo('Session saved successfully', {
+                logger.session('saved successfully', {
                     requestId: req.requestId
                 });
                 res.json({

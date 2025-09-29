@@ -156,7 +156,7 @@ app.use((req, res, next) => {
     const cspDirectives = [
       "default-src 'self'",
       `script-src 'self' 'nonce-${nonce}' https://cdn.jsdelivr.net https://unpkg.com https://www.googletagmanager.com https://www.google-analytics.com https://maps.googleapis.com https://www.gstatic.com`,
-      `style-src 'self' 'nonce-${nonce}' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net https://unpkg.com`,
+      `style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net https://unpkg.com`,
       "img-src 'self' data: https: blob: https://maps.googleapis.com https://maps.gstatic.com",
       "font-src 'self' https://fonts.gstatic.com https://cdn.jsdelivr.net https://unpkg.com",
       "connect-src 'self' https://api.detechify.com wss://detechify.com https://www.google-analytics.com https://analytics.google.com https://maps.googleapis.com",

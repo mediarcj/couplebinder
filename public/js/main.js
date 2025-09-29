@@ -615,5 +615,7 @@ async function handleLogout() {
 }
 
 function handleLogin() {
+    // Reset modal to form state before showing
+    resetToFormState();
     document.getElementById('loginModal').style.display = 'block';
 }

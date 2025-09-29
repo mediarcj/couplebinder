@@ -24,6 +24,9 @@ router.get('/', requireAuth, async (req, res) => {
             return res.redirect('/?error=user_not_found');
         }
 
+        // Add nonce to page model for EJS template
+        pageModel.nonce = res.locals.nonce;
+        
         // Render EJS template with page model
         res.render('dashboard', pageModel);
     } catch (error) {

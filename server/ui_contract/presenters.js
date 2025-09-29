@@ -299,7 +299,8 @@ function buildErrorPageModel(req, res, statusCode, errorMessage) {
     page: {
       title: `Error ${statusCode} - Detechify`,
       description: 'An error occurred',
-      type: 'error'
+      type: 'error',
+      nonce: res.locals.nonce
     },
     user: {
       isAuthenticated: req.session.isAuthenticated || false,

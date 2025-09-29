@@ -17,6 +17,7 @@ const { testConnection } = require('./db/connection');
 const { addCSRFToken, validateCSRF } = require('./middleware/csrf');
 const requestIdMiddleware = require('./middleware/requestId');
 const logger = require('./utils/logger');
+const consoleLogger = require('./utils/consoleLogger');
 // Rate limiting removed - handled at Cloudflare edge
 
 // ============================================================
@@ -38,7 +39,7 @@ const logger = require('./utils/logger');
 const app = express();
 
 console.log('Detechify server starting...');
-logConfigSummary();
+consoleLogger.formatConfigSummary(config);
 
 // ============================================================
 // STEP 2: Database Connection and Testing
@@ -213,19 +214,22 @@ if (redisClient && RedisStore) {
 // Request ID middleware - add unique ID to every request
 app.use(requestIdMiddleware);
 
-// Request timing middleware for structured logging
+// Request timing middleware for formatted logging
 app.use((req, res, next) => {
   const startTime = Date.now();
   
   res.on('finish', () => {
     const duration = Date.now() - startTime;
+    // Use structured logger for file/JSON logs
     logger.request(req, res, duration);
+    // Use formatted logger for terminal display
+    consoleLogger.formatRequest(req, res, duration);
   });
   
   next();
 });
 
-console.log('Core middleware registration completed');
+consoleLogger.formatMiddlewareRegistration('Core middleware');
 
 // ============================================================
 // STEP 5: View Engine and Static Assets
@@ -251,8 +255,8 @@ app.use(express.static('public'));
 
 // Rate limiting removed - handled at Cloudflare edge
 
-console.log('View engine and static assets configured');
-console.log('Rate limiting handled at Cloudflare edge');
+consoleLogger.formatMiddlewareRegistration('View engine and static assets');
+consoleLogger.formatMiddlewareRegistration('Rate limiting (Cloudflare edge)');
 
 // ============================================================
 // STEP 6: Security Middleware Configuration
@@ -273,7 +277,7 @@ console.log('Rate limiting handled at Cloudflare edge');
 // Add CSRF protection middleware
 app.use(addCSRFToken);
 
-console.log('Security middleware configured');
+consoleLogger.formatMiddlewareRegistration('Security middleware');
 
 // ============================================================
 // STEP 7: Routes Registration
@@ -319,7 +323,7 @@ app.get('/', (req, res) => {
   });
 });
 
-console.log('Routes registration completed');
+consoleLogger.formatMiddlewareRegistration('Routes');
 
 // ============================================================
 // STEP 8: Error Handling
@@ -366,7 +370,7 @@ app.use((req, res) => {
   });
 });
 
-console.log('Error handling middleware registered');
+consoleLogger.formatMiddlewareRegistration('Error handling');
 
 // ============================================================
 // STEP 9: Server Startup
@@ -388,11 +392,16 @@ const PORT = config.server.port;
 const HOST = config.server.host;
 
 const server = app.listen(PORT, HOST, () => {
-  console.log(`Detechify server running on http://${HOST}:${PORT}`);
-  console.log(`Environment: ${config.server.nodeEnv}`);
-  console.log(`Database: ${config.database.host}:${config.database.port}/${config.database.name}`);
-  console.log(`Redis: ${redisClient ? 'Connected' : 'Not available'}`);
-  console.log('Server startup completed successfully');
+  consoleLogger.formatServerStartup({
+    host: HOST,
+    port: PORT,
+    nodeEnv: config.server.nodeEnv,
+    database: `${config.database.host}:${config.database.port}/${config.database.name}`,
+    redis: redisClient ? 'Connected' : 'Not available',
+    rateLimit: 'handled at Cloudflare edge',
+    textLimits: `${config.limits.textMinLength}-${config.limits.textMaxLength} chars`,
+    maxSubmissions: config.limits.maxSubmissions
+  });
 });
 
 // ============================================================
@@ -444,7 +453,7 @@ function gracefulShutdown(signal, code = 0) {
   }
   
   isShuttingDown = true;
-  console.log(`${signal} received, initiating graceful shutdown...`);
+  consoleLogger.formatGracefulShutdown(signal);
   
   // Set shutdown timeout (30 seconds max)
   shutdownTimeout = setTimeout(() => {
@@ -513,7 +522,7 @@ process.on('unhandledRejection', (reason, promise) => {
   gracefulShutdown('UNHANDLED_REJECTION', 1);
 });
 
-console.log('Graceful shutdown system initialized');
+consoleLogger.formatMiddlewareRegistration('Graceful shutdown system');
 
 // Export for testing
 module.exports = app;

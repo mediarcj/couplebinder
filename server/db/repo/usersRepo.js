@@ -4,6 +4,7 @@
 // Notes: All user database operations go through this repository
 
 const logger = require('../../utils/logger');
+const consoleLogger = require('../../utils/consoleLogger');
 
 /**
  * WHAT:
@@ -32,6 +33,10 @@ async function findById(trxOrDb, id) {
       .first();
     
     logger.database('SELECT', 'users', {
+      requestId: 'system',
+      duration: Date.now() - startTime
+    });
+    consoleLogger.formatDatabaseOperation('SELECT', 'users', {
       requestId: 'system',
       duration: Date.now() - startTime
     });
@@ -80,6 +85,10 @@ async function create(trxOrDb, userData) {
       .returning('*');
     
     logger.database('INSERT', 'users', {
+      requestId: 'system',
+      duration: Date.now() - startTime
+    });
+    consoleLogger.formatDatabaseOperation('INSERT', 'users', {
       requestId: 'system',
       duration: Date.now() - startTime
     });

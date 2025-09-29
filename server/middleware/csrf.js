@@ -5,6 +5,7 @@
 
 const crypto = require('crypto');
 const logger = require('../utils/logger');
+const consoleLogger = require('../utils/consoleLogger');
 
 /**
  * WHAT:
@@ -141,6 +142,10 @@ function validateCSRF(req, res, next) {
     
     if (!validation.valid) {
         logger.security('csrf_invalid_token', {
+            requestId: req.requestId,
+            ip: req.ip
+        });
+        consoleLogger.formatSecurityEvent('csrf_invalid_token', {
             requestId: req.requestId,
             ip: req.ip
         });

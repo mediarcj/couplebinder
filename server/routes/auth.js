@@ -7,6 +7,7 @@ const express = require('express');
 const { verifyLogin } = require('../middleware/auth');
 const { createAuthRateLimit, getClientIP } = require('../middleware/security');
 const logger = require('../utils/logger');
+const consoleLogger = require('../utils/consoleLogger');
 const router = express.Router();
 
 /**
@@ -40,6 +41,11 @@ router.post('/login', createAuthRateLimit(), async (req, res) => {
                 outcome: 'success',
                 ip: clientIP
             });
+            consoleLogger.formatAuthEvent('login_success', {
+                requestId: req.requestId,
+                outcome: 'success',
+                ip: clientIP
+            });
             
             // Explicitly save the session
             req.session.save((err) => {
@@ -57,6 +63,9 @@ router.post('/login', createAuthRateLimit(), async (req, res) => {
                 logger.info('Session saved successfully', {
                     requestId: req.requestId
                 });
+                consoleLogger.formatInfo('Session saved successfully', {
+                    requestId: req.requestId
+                });
                 res.json({
                     success: true,
                     message: 'Login successful',
@@ -65,6 +74,11 @@ router.post('/login', createAuthRateLimit(), async (req, res) => {
             });
         } else {
             logger.auth('login_failed', {
+                requestId: req.requestId,
+                outcome: 'failed',
+                ip: clientIP
+            });
+            consoleLogger.formatAuthEvent('login_failed', {
                 requestId: req.requestId,
                 outcome: 'failed',
                 ip: clientIP
@@ -106,6 +120,11 @@ router.post('/logout', (req, res) => {
             }
             
             logger.auth('logout_success', {
+                requestId: req.requestId,
+                outcome: 'success',
+                ip: req.ip
+            });
+            consoleLogger.formatAuthEvent('logout_success', {
                 requestId: req.requestId,
                 outcome: 'success',
                 ip: req.ip

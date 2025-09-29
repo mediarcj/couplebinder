@@ -167,7 +167,6 @@ app.use((req, res, next) => {
     ];
     
     const cspHeader = cspDirectives.join('; ');
-    console.log('Setting CSP header:', cspHeader);
     res.setHeader('Content-Security-Policy', cspHeader);
   }
   

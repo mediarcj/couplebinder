@@ -6,6 +6,7 @@
 const express = require('express');
 const router = express.Router();
 const { config } = require('../config');
+const { db } = require('../db/connection');
 const { validateTextServerSide, getClientIP } = require('../middleware/security');
 
 // In-memory storage for submissions (shared with main app)
@@ -75,6 +76,81 @@ router.post('/submit', injectSubmissions, (req, res) => {
     requestId: req.requestId,
     timestamp: new Date().toISOString()
   });
+});
+
+/**
+ * POST /api/submit/db
+ * Database-backed text submission with transaction support
+ * Demonstrates proper transaction handling for data persistence
+ */
+router.post('/submit/db', async (req, res) => {
+  let trx = null;
+  
+  try {
+    // Start transaction
+    trx = await db.transaction();
+    
+    const { text } = req.body;
+    const clientIP = getClientIP(req);
+    
+    // Server-side text validation (never trust client)
+    const textValidation = validateTextServerSide(text);
+    if (!textValidation.valid) {
+      await trx.rollback();
+      console.log(`Security: Invalid text submission attempt from IP: ${clientIP}, Error: ${textValidation.error}`);
+      return res.status(400).json({
+        error: textValidation.error,
+        requestId: req.requestId,
+        timestamp: new Date().toISOString()
+      });
+    }
+    
+    // Create submission record within transaction
+    const submissionData = {
+      id: req.requestId,
+      text: textValidation.sanitized,
+      text_length: textValidation.sanitized.length,
+      client_ip: clientIP,
+      created_at: trx.fn.now(),
+      updated_at: trx.fn.now()
+    };
+    
+    // Insert submission within transaction
+    const [submission] = await trx('submissions')
+      .insert(submissionData)
+      .returning('*');
+    
+    // Commit transaction
+    await trx.commit();
+    
+    console.log(`Security: Valid DB submission created: ${submission.id}, IP: ${clientIP}, Request ID: ${req.requestId}`);
+    
+    res.json({
+      success: true,
+      message: 'Text submitted successfully to database',
+      submission: {
+        id: submission.id,
+        text_length: submission.text_length,
+        created_at: submission.created_at
+      },
+      requestId: req.requestId,
+      timestamp: new Date().toISOString()
+    });
+    
+  } catch (error) {
+    // Rollback transaction on any error
+    if (trx) {
+      await trx.rollback();
+    }
+    
+    console.error('Database submission error:', error);
+    
+    res.status(500).json({
+      error: 'Internal server error',
+      requestId: req.requestId,
+      timestamp: new Date().toISOString()
+    });
+  }
 });
 
 /**

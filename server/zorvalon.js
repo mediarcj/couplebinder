@@ -293,6 +293,7 @@ console.log('Security middleware configured');
 
 // Import modular routes with CSRF protection for state-changing requests
 app.use('/api/auth', validateCSRF, require('./routes/auth'));
+app.use('/api/users', require('./routes/users'));
 app.use('/api', validateCSRF, require('./routes/api'));
 app.use('/api', validateCSRF, require('./routes/submissions'));
 

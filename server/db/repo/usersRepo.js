@@ -71,6 +71,37 @@ async function create(trxOrDb, userData) {
 }
 
 /**
+ * Create a new user with validation and transaction support
+ * @param {Object} trxOrDb - Knex transaction or database instance
+ * @param {Object} userData - User data to insert
+ * @returns {Promise<Object>} Created user object
+ */
+async function createWithValidation(trxOrDb, userData) {
+  try {
+    // Validate required fields
+    if (!userData.email || !userData.password || !userData.first_name || !userData.last_name) {
+      throw new Error('Missing required fields: email, password, first_name, last_name');
+    }
+
+    // Check if email already exists
+    const existingUser = await findByEmail(trxOrDb, userData.email);
+    if (existingUser) {
+      throw new Error('Email already exists');
+    }
+
+    // Create user with transaction
+    const user = await create(trxOrDb, userData);
+    
+    // Return user without password
+    const { password: _, ...userWithoutPassword } = user;
+    return userWithoutPassword;
+  } catch (error) {
+    console.error('Error creating user with validation:', error);
+    throw error;
+  }
+}
+
+/**
  * Update user by ID
  * @param {Object} trxOrDb - Knex transaction or database instance
  * @param {string} id - User ID
@@ -94,5 +125,6 @@ module.exports = {
   findById,
   findByEmail,
   create,
+  createWithValidation,
   updateById
 };

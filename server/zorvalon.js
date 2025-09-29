@@ -80,51 +80,28 @@ testConnection()
  * horizontal scaling with multiple server instances.
  *
  * HOW:
- * We create a Redis client with retry strategy and error handling.
+ * We use the improved Redis client with retry strategy and error handling.
  * If Redis is unavailable, we fall back to in-memory session storage.
  */
 let redisClient = null;
 let RedisStore = null;
 
 try {
-    // Import RedisStore after Redis client creation
+    // Import RedisStore and improved Redis client
     RedisStore = require('connect-redis').default;
+    const { client, connectRedis } = require('./utils/redisClient');
     
-    const redisConfig = {
-        socket: {
-            host: config.redis.host,
-            port: config.redis.port,
-            connectTimeout: 5000,
-            lazyConnect: true
-        }
-    };
-    
-    // Add password if configured
-    if (config.redis.password) {
-        redisConfig.password = config.redis.password;
-    }
-    
-    redisClient = redis.createClient(redisConfig);
-    
-    // Configure retry strategy
-    redisClient.on('error', (err) => {
-        console.error('Redis client error:', err.message);
-        updateRedisStatus(false, new Date().toISOString());
-    });
-    
-    redisClient.on('connect', () => {
-        console.log('Redis client connected');
-        updateRedisStatus(true, new Date().toISOString());
-    });
+    redisClient = client;
     
     // Initialize Redis connection
     const initializeRedis = async () => {
         try {
-            await redisClient.connect();
-            console.log('Redis connection established');
+            await connectRedis();
+            updateRedisStatus(true, new Date().toISOString());
         } catch (error) {
             console.error('Redis connection failed:', error.message);
             console.log('Continuing without Redis sessions...');
+            updateRedisStatus(false, new Date().toISOString());
         }
     };
     
@@ -154,44 +131,130 @@ try {
  * rate limiting, body parsing, sessions, and custom middleware.
  */
 
-// Security headers (Helmet)
+// Security headers (Helmet) - Enterprise-level CSP for better third-party integration
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "'unsafe-inline'"],
-      styleSrc: ["'self'", "'unsafe-inline'"],
-      imgSrc: ["'self'", "data:", "https:"],
+      scriptSrc: [
+        "'self'", 
+        "'unsafe-inline'", // Required for EJS templates
+        "https://cdn.jsdelivr.net", // CDN support
+        "https://unpkg.com" // Package CDN support
+      ],
+      styleSrc: [
+        "'self'", 
+        "'unsafe-inline'", // Required for EJS templates
+        "https://fonts.googleapis.com", // Google Fonts
+        "https://cdn.jsdelivr.net" // CDN support
+      ],
+      imgSrc: [
+        "'self'", 
+        "data:", 
+        "https:",
+        "blob:" // Support for generated images
+      ],
+      fontSrc: [
+        "'self'",
+        "https://fonts.gstatic.com", // Google Fonts
+        "https://cdn.jsdelivr.net" // CDN support
+      ],
+      connectSrc: [
+        "'self'",
+        "https://api.detechify.com", // API endpoints
+        "wss://detechify.com" // WebSocket support
+      ],
+      frameSrc: ["'none'"], // No iframes for security
+      objectSrc: ["'none'"], // No plugins for security
+      baseUri: ["'self'"], // Base URI restriction
+      formAction: ["'self'"], // Form submission restriction
+      upgradeInsecureRequests: config.server.nodeEnv === 'production' ? [] : null
     },
   },
+  crossOriginEmbedderPolicy: false, // Disable for better compatibility
+  crossOriginOpenerPolicy: { policy: "same-origin" },
+  crossOriginResourcePolicy: { policy: "cross-origin" }
 }));
 
-// CORS configuration
+// CORS configuration - Enterprise-level balance of security and usability
 app.use(cors({
-  origin: config.server.nodeEnv === 'production' ? false : true,
+  origin: (origin, callback) => {
+    // Allow requests with no origin (mobile apps, Postman, etc.)
+    if (!origin) return callback(null, true);
+    
+    // In development, allow all origins for easier testing
+    if (config.server.nodeEnv === 'development') {
+      return callback(null, true);
+    }
+    
+    // In production, allow specific trusted domains
+    const allowedOrigins = [
+      'https://detechify.com',
+      'https://www.detechify.com',
+      'https://app.detechify.com',
+      'https://admin.detechify.com'
+    ];
+    
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+    
+    // Log blocked origins for monitoring
+    logger.warn('CORS blocked origin', { origin, nodeEnv: config.server.nodeEnv });
+    callback(new Error('Not allowed by CORS policy'));
+  },
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-CSRF-Token', 'X-Request-ID']
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  allowedHeaders: [
+    'Content-Type', 
+    'Authorization', 
+    'X-CSRF-Token', 
+    'X-Request-ID',
+    'Accept',
+    'Origin',
+    'X-Requested-With'
+  ],
+  exposedHeaders: ['X-CSRF-Token', 'X-Request-ID'],
+  maxAge: 86400 // Cache preflight for 24 hours
 }));
 
 // Rate limiting will be applied after static files
+
+// HTTP request logging middleware
+app.use(morgan('combined', {
+  stream: {
+    write: (message) => {
+      // Use structured logger for HTTP requests
+      logger.info('HTTP request', { message: message.trim() });
+    }
+  }
+}));
 
 // Body parsers with size limits
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
+// Cookie parsing middleware - must be before sessions and CSRF
+const parseCookies = require('./middleware/cookieGuardian');
+app.use(parseCookies);
+
 // Session middleware with Redis store (if available) or memory store
+// Enterprise-level session configuration for better user experience
 if (redisClient && RedisStore) {
   app.use(session({
-    store: new RedisStore({ client: redisClient }),
+    store: new RedisStore({ 
+      client: redisClient,
+      ttl: 7 * 24 * 60 * 60 // 7 days in Redis
+    }),
     secret: config.security.sessionSecret,
     resave: false,
     saveUninitialized: false,
+    rolling: true, // Reset expiration on activity
     cookie: {
       secure: config.server.nodeEnv === 'production',
       httpOnly: true,
-      maxAge: 24 * 60 * 60 * 1000, // 24 hours
-      sameSite: config.server.nodeEnv === 'production' ? 'strict' : 'lax'
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days (enterprise standard)
+      sameSite: 'lax' // Better UX than 'strict' while maintaining security
     },
     name: 'detechify.sid'
   }));
@@ -201,11 +264,12 @@ if (redisClient && RedisStore) {
     secret: config.security.sessionSecret,
     resave: false,
     saveUninitialized: false,
+    rolling: true, // Reset expiration on activity
     cookie: {
       secure: false,
       httpOnly: true,
-      maxAge: 24 * 60 * 60 * 1000, // 24 hours
-      sameSite: 'lax'
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days (enterprise standard)
+      sameSite: 'lax' // Better UX than 'strict' while maintaining security
     },
     name: 'detechify.sid'
   }));
@@ -494,9 +558,9 @@ function gracefulShutdown(signal, code = 0) {
       console.log('All active connections closed');
       
       // Close Redis connection
-      if (redisClient && redisClient.isOpen) {
-        redisClient.quit().then(() => {
-          console.log('Redis connection closed');
+      if (redisClient) {
+        const { disconnectRedis } = require('./utils/redisClient');
+        disconnectRedis().then(() => {
           finalizeShutdown(code);
         }).catch((err) => {
           console.error('Error closing Redis connection:', err.message);

@@ -131,50 +131,46 @@ try {
  * rate limiting, body parsing, sessions, and custom middleware.
  */
 
-// Security headers (Helmet) - Enterprise-level CSP for better third-party integration
+// Nonce generation middleware for CSP
+app.use((req, res, next) => {
+  // Generate a unique nonce for each request
+  const nonce = crypto.randomBytes(16).toString('base64');
+  res.locals.nonce = nonce;
+  next();
+});
+
+// Security headers (Helmet) - Enterprise-level security without CSP (handled by custom middleware)
 app.use(helmet({
-  contentSecurityPolicy: {
-    directives: {
-      defaultSrc: ["'self'"],
-      scriptSrc: [
-        "'self'", 
-        "'unsafe-inline'", // Required for EJS templates
-        "https://cdn.jsdelivr.net", // CDN support
-        "https://unpkg.com" // Package CDN support
-      ],
-      styleSrc: [
-        "'self'", 
-        "'unsafe-inline'", // Required for EJS templates
-        "https://fonts.googleapis.com", // Google Fonts
-        "https://cdn.jsdelivr.net" // CDN support
-      ],
-      imgSrc: [
-        "'self'", 
-        "data:", 
-        "https:",
-        "blob:" // Support for generated images
-      ],
-      fontSrc: [
-        "'self'",
-        "https://fonts.gstatic.com", // Google Fonts
-        "https://cdn.jsdelivr.net" // CDN support
-      ],
-      connectSrc: [
-        "'self'",
-        "https://api.detechify.com", // API endpoints
-        "wss://detechify.com" // WebSocket support
-      ],
-      frameSrc: ["'none'"], // No iframes for security
-      objectSrc: ["'none'"], // No plugins for security
-      baseUri: ["'self'"], // Base URI restriction
-      formAction: ["'self'"], // Form submission restriction
-      upgradeInsecureRequests: config.server.nodeEnv === 'production' ? [] : null
-    },
-  },
+  contentSecurityPolicy: false, // Disable Helmet's CSP, use custom middleware instead
   crossOriginEmbedderPolicy: false, // Disable for better compatibility
   crossOriginOpenerPolicy: { policy: "same-origin" },
   crossOriginResourcePolicy: { policy: "cross-origin" }
 }));
+
+// Custom CSP middleware to add nonces
+app.use((req, res, next) => {
+  const nonce = res.locals.nonce;
+  
+  if (nonce) {
+    // Set CSP header with nonces
+    const cspDirectives = [
+      "default-src 'self'",
+      `script-src 'self' 'nonce-${nonce}' https://cdn.jsdelivr.net https://unpkg.com https://www.googletagmanager.com https://www.google-analytics.com https://maps.googleapis.com https://www.gstatic.com`,
+      `style-src 'self' 'nonce-${nonce}' https://fonts.googleapis.com https://cdn.jsdelivr.net https://unpkg.com`,
+      "img-src 'self' data: https: blob: https://maps.googleapis.com https://maps.gstatic.com",
+      "font-src 'self' https://fonts.gstatic.com https://cdn.jsdelivr.net https://unpkg.com",
+      "connect-src 'self' https://api.detechify.com wss://detechify.com https://www.google-analytics.com https://analytics.google.com https://maps.googleapis.com",
+      "frame-src 'self' https://www.google.com https://maps.google.com",
+      "object-src 'none'",
+      "base-uri 'self'",
+      "form-action 'self'"
+    ];
+    
+    res.setHeader('Content-Security-Policy', cspDirectives.join('; '));
+  }
+  
+  next();
+});
 
 // CORS configuration - Enterprise-level balance of security and usability
 app.use(cors({

@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><%= title %> - Detechify</title>
     <link rel="stylesheet" href="/css/style.css">
-    <style>
+    <style nonce="<%= res.locals.nonce %>">
         .error-container {
             max-width: 600px;
             margin: 100px auto;
@@ -86,7 +86,7 @@
     </div>
 
     <% if (retryAfter) { %>
-    <script>
+    <script nonce="<%= res.locals.nonce %>">
         // Countdown timer for retry
         let timeLeft = <%= retryAfter %>;
         const countdownElement = document.getElementById('countdown');

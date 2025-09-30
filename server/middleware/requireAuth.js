@@ -1,21 +1,32 @@
 // File: server/middleware/requireAuth.js
-// Description: Authentication middleware for protected routes
+// Description: Blocks access if user is not authenticated. Supports both stateless and session-based auth.
 // Purpose: Ensures users are authenticated before accessing protected pages
-// Notes: Redirects unauthenticated users to home page with login modal
+// Notes: Checks both req.user (stateless) and req.session (backward compatibility)
 
 /**
- * Middleware to require authentication for protected routes
- * If user is not authenticated, redirect to home page
+ * WHAT:
+ * We check if user is authenticated via either stateless tokens or session.
+ * 
+ * WHY:
+ * We need to protect routes that require authentication while supporting
+ * both new stateless auth and existing session-based auth.
+ * 
+ * HOW:
+ * We check both req.user.id (stateless) and req.session.isAuthenticated (session).
  */
 function requireAuth(req, res, next) {
-    if (req.session && req.session.isAuthenticated) {
-        // User is authenticated, proceed to next middleware/route
-        next();
-    } else {
-        // User is not authenticated, redirect to home page
-        // The frontend will handle showing login modal
-        res.redirect('/?login=true');
+    // Check stateless authentication first (req.user from authBridge)
+    if (req.user?.id) {
+        return next();
     }
+    
+    // Fallback to session-based authentication for backward compatibility
+    if (req.session?.isAuthenticated) {
+        return next();
+    }
+    
+    // No valid authentication found
+    return res.status(401).send('Unauthorized');
 }
 
 module.exports = {

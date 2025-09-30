@@ -1,14 +1,14 @@
 Detechify
 Building detechify.com
 
-A web application project with Node.js backend, PostgreSQL database, and Redis session management.
+A web application project with Node.js backend, PostgreSQL database, and stateless authentication.
 
 ## Features
 
 - User authentication and session management
 - Text submission and validation
 - Transactional database operations
-- Redis session storage
+- Stateless authentication with Supabase
 - Docker containerization
 - Health check endpoints
 - Graceful server shutdown
@@ -94,10 +94,10 @@ detechify/
 ### Environment Setup
 ```bash
 # Copy environment template
-cp server/env.example server/.env
+cp server/env.example .env
 
 # Update with your configuration
-# Edit server/.env
+# Edit .env
 ```
 
 ### Database Migrations
@@ -131,9 +131,9 @@ curl -X POST http://localhost:3000/api/submit/db \
 ```bash
 NODE_ENV=production
 DATABASE_URL=postgresql://user:password@host:port/database
-REDIS_HOST=redis-host
-REDIS_PORT=6379
-REDIS_PASSWORD=your-redis-password
+SUPABASE_URL=https://your-project-ref.supabase.co
+SUPABASE_ANON_KEY=your-anon-public-key
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 ```
 
 ### Docker Deployment
@@ -171,7 +171,7 @@ docker-compose logs -f detechify-server
 - CSRF protection on state-changing requests
 - Server-side input validation and sanitization
 - Rate limiting (handled at Cloudflare edge)
-- Session management with Redis
+- Stateless authentication with Supabase tokens
 - Password hashing with bcrypt
 - SQL injection prevention
 - XSS protection

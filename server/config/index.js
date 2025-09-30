@@ -3,7 +3,7 @@
 // Notes: Validates required environment variables and provides defaults
 
 const path = require('path');
-require('dotenv').config({ path: path.join(__dirname, '../.env') });
+require('dotenv').config({ path: path.join(__dirname, '../../.env') });
 
 // Configuration schema with validation
 const config = {
@@ -14,9 +14,9 @@ const config = {
     host: process.env.HOST
   },
 
-  // Database configuration
+  // Database configuration (Supabase PostgreSQL)
   database: {
-    url: process.env.DATABASE_URL,
+    url: process.env.SUPABASE_DB_URL || process.env.DATABASE_URL,
     host: process.env.DB_HOST,
     port: parseInt(process.env.DB_PORT),
     name: process.env.DB_NAME,
@@ -31,20 +31,9 @@ const config = {
     bcryptRounds: parseInt(process.env.BCRYPT_ROUNDS)
   },
 
-  // Redis configuration
-  redis: {
-    host: process.env.REDIS_HOST,
-    port: parseInt(process.env.REDIS_PORT),
-    password: process.env.REDIS_PASSWORD,
-    url: process.env.REDIS_URL
-  },
+  // Redis decommissioned - stateless auth enabled
 
-  // Rate limiting configuration (handled at Cloudflare edge)
-  rateLimit: {
-    windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS),
-    max: parseInt(process.env.RATE_LIMIT_MAX),
-    message: 'Too many requests from this IP, please try again later.'
-  },
+  // Rate limiting handled at Cloudflare edge
 
   // Input validation limits
   limits: {
@@ -61,11 +50,13 @@ function validateConfig() {
   // Check required environment variables
   const requiredVars = [
     'PORT', 'NODE_ENV', 'HOST',
-    'DB_HOST', 'DB_PORT', 'DB_NAME', 'DB_USER', 'DB_PASSWORD',
-    'REDIS_HOST', 'REDIS_PORT',
-    'RATE_LIMIT_WINDOW_MS', 'RATE_LIMIT_MAX',
     'TEXT_MIN_LENGTH', 'TEXT_MAX_LENGTH', 'MAX_SUBMISSIONS'
   ];
+
+  // Check for either Supabase DB URL or individual DB variables
+  if (!process.env.SUPABASE_DB_URL && !process.env.DB_HOST) {
+    errors.push('Either SUPABASE_DB_URL or DB_HOST environment variable is required');
+  }
 
   for (const varName of requiredVars) {
     if (!process.env[varName]) {
@@ -84,14 +75,7 @@ function validateConfig() {
     errors.push(`NODE_ENV must be one of: ${validEnvs.join(', ')}`);
   }
 
-  // Validate rate limiting values
-  if (config.rateLimit.windowMs && config.rateLimit.windowMs < 1000) {
-    errors.push('RATE_LIMIT_WINDOW_MS must be at least 1000ms');
-  }
-
-  if (config.rateLimit.max && config.rateLimit.max < 1) {
-    errors.push('RATE_LIMIT_MAX must be at least 1');
-  }
+  // Rate limiting handled at Cloudflare edge - no validation needed
 
   // Validate input limits
   if (config.limits.textMaxLength && config.limits.textMinLength && 
@@ -125,8 +109,8 @@ function logConfigSummary() {
   console.log(`  Rate limiting: handled at Cloudflare edge`);
   console.log(`  Text limits: ${config.limits.textMinLength}-${config.limits.textMaxLength} chars`);
   console.log(`  Max submissions: ${config.limits.maxSubmissions}`);
-  console.log(`  Database: ${config.database.url ? 'configured' : 'not configured'}`);
-        console.log(`  Redis: ${config.redis.host}:${config.redis.port}${config.redis.password ? ' (password protected)' : ' (no password)'}`);
+  console.log(`  Database: ${config.database.url ? 'Supabase PostgreSQL' : 'not configured'}`);
+        console.log(`  Redis: decommissioned (stateless mode)`);
 }
 
 module.exports = {

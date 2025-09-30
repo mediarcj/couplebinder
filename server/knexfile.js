@@ -4,12 +4,12 @@
 // Notes: Uses environment variables for database credentials and connection pooling
 
 const path = require('path');
-require('dotenv').config({ path: path.join(__dirname, '.env') });
+require('dotenv').config({ path: path.join(__dirname, '../../.env') });
 
 module.exports = {
   development: {
     client: 'postgresql',
-    connection: {
+    connection: process.env.SUPABASE_DB_URL || {
       host: process.env.DB_HOST,
       port: parseInt(process.env.DB_PORT),
       database: process.env.DB_NAME,
@@ -30,7 +30,7 @@ module.exports = {
 
   production: {
     client: 'postgresql',
-    connection: {
+    connection: process.env.SUPABASE_DB_URL || {
       host: process.env.DB_HOST,
       port: parseInt(process.env.DB_PORT),
       database: process.env.DB_NAME,

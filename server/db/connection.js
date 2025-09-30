@@ -66,9 +66,9 @@ async function testConnection() {
       code: error.code,
       timestamp: new Date().toISOString(),
       config: {
-        host: dbConfig.connection?.host,
-        port: dbConfig.connection?.port,
-        database: dbConfig.connection?.database
+        host: typeof dbConfig.connection === 'string' ? 'Supabase' : dbConfig.connection?.host,
+        port: typeof dbConfig.connection === 'string' ? '5432' : dbConfig.connection?.port,
+        database: typeof dbConfig.connection === 'string' ? 'Supabase PostgreSQL' : dbConfig.connection?.database
       }
     });
     return false;
@@ -81,9 +81,9 @@ function getConnectionStatus() {
     healthy: connectionHealthy,
     lastTest: lastConnectionTest,
     config: {
-      host: dbConfig.connection?.host,
-      port: dbConfig.connection?.port,
-      database: dbConfig.connection?.database,
+      host: typeof dbConfig.connection === 'string' ? 'Supabase' : dbConfig.connection?.host,
+      port: typeof dbConfig.connection === 'string' ? '5432' : dbConfig.connection?.port,
+      database: typeof dbConfig.connection === 'string' ? 'Supabase PostgreSQL' : dbConfig.connection?.database,
       pool: {
         min: dbConfig.pool?.min || 0,
         max: dbConfig.pool?.max || 10

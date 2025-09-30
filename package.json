@@ -29,5 +29,8 @@
   "bugs": {
     "url": "https://github.com/mediarcj/detechify/issues"
   },
-  "homepage": "https://github.com/mediarcj/detechify#readme"
+  "homepage": "https://github.com/mediarcj/detechify#readme",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.58.0"
+  }
 }

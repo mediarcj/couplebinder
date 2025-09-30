@@ -51,6 +51,7 @@
                 <h2>Text Submission Demo</h2>
                 <p>Enter text below to test backend validation:</p>
                 <form id="textForm">
+                    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
                     <div class="form-group">
                         <textarea 
                             id="textInput" 
@@ -124,6 +125,7 @@
                 <!-- Login Form State -->
                 <div id="loginFormState" class="modal-state">
                     <form id="loginForm">
+                        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
                         <div class="form-group">
                             <label for="loginEmail">Email Address</label>
                             <input 

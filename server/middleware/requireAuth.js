@@ -1,27 +1,21 @@
 // File: server/middleware/requireAuth.js
-// Description: Blocks access if user is not authenticated. Supports both stateless and session-based auth.
+// Description: Blocks access if user is not authenticated. Stateless authentication only.
 // Purpose: Ensures users are authenticated before accessing protected pages
-// Notes: Checks both req.user (stateless) and req.session (backward compatibility)
+// Notes: Uses req.user from authBridge middleware (Supabase token verification)
 
 /**
  * WHAT:
- * We check if user is authenticated via either stateless tokens or session.
+ * We check if user is authenticated via stateless Supabase tokens.
  * 
  * WHY:
- * We need to protect routes that require authentication while supporting
- * both new stateless auth and existing session-based auth.
+ * We need to protect routes that require authentication using stateless tokens.
  * 
  * HOW:
- * We check both req.user.id (stateless) and req.session.isAuthenticated (session).
+ * We check req.user.id from authBridge middleware which verifies Supabase tokens.
  */
 function requireAuth(req, res, next) {
-    // Check stateless authentication first (req.user from authBridge)
+    // Check stateless authentication (req.user from authBridge)
     if (req.user?.id) {
-        return next();
-    }
-    
-    // Fallback to session-based authentication for backward compatibility
-    if (req.session?.isAuthenticated) {
         return next();
     }
     

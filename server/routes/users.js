@@ -7,7 +7,7 @@ const express = require('express');
 const router = express.Router();
 const { db } = require('../db/connection');
 const { usersRepo } = require('../db/repo');
-const { validateCSRF } = require('../middleware/csrf');
+// CSRF protection is handled globally by csrfLite middleware
 
 /**
  * WHAT:
@@ -26,7 +26,7 @@ const { validateCSRF } = require('../middleware/csrf');
  * Create a new user with transaction support
  * Demonstrates proper transaction handling with validation and rollback on error
  */
-router.post('/', validateCSRF, async (req, res) => {
+router.post('/', async (req, res) => {
   let trx = null;
   
   try {

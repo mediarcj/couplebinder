@@ -17,12 +17,7 @@ router.get('/', requireAuth, async (req, res) => {
         // Build page model using presenter
         const pageModel = await buildDashboardPageModel(req, res);
 
-        // Check if user exists in database
-        if (!pageModel.user.profile) {
-            // User not found in database, destroy session and redirect
-            req.session.destroy();
-            return res.redirect('/?error=user_not_found');
-        }
+        // User data comes directly from Supabase token, no database lookup needed
 
         // Add nonce to page model for EJS template
         pageModel.nonce = res.locals.nonce;

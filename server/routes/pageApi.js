@@ -47,16 +47,7 @@ router.get('/dashboard', requireAuth, async (req, res) => {
   try {
     const pageModel = await buildDashboardPageModel(req, res);
     
-    // Check if user exists in database
-    if (!pageModel.user.profile) {
-      req.session.destroy();
-      return res.status(401).json({
-        success: false,
-        error: 'User not found',
-        requestId: req.requestId,
-        timestamp: new Date().toISOString()
-      });
-    }
+    // User data comes directly from Supabase token, no database lookup needed
 
     res.json({
       success: true,

@@ -11,6 +11,7 @@
     <meta name="csrf-token" content="<%= ui.csrfToken || '' %>">
     <title><%= page.title %></title>
     <link rel="stylesheet" href="/css/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
     <header>
@@ -191,7 +192,9 @@
     <!-- Pass server config to client-side JavaScript via data attributes -->
     <div id="app-config" 
          data-text-min-length="<%= features.textLimits.min %>" 
-         data-text-max-length="<%= features.textLimits.max %>" 
+         data-text-max-length="<%= features.textLimits.max %>"
+         data-supabase-url="<%= process.env.SUPABASE_URL %>"
+         data-supabase-anon-key="<%= process.env.SUPABASE_ANON_KEY %>"
          style="display: none;"></div>
     <script src="/js/main.js" nonce="<%= page.nonce %>"></script>
 </body>

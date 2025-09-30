@@ -35,8 +35,51 @@ document.addEventListener('DOMContentLoaded', function() {
     if (configEl) {
         window.appConfig = {
             textMinLength: parseInt(configEl.dataset.textMinLength),
-            textMaxLength: parseInt(configEl.dataset.textMaxLength)
+            textMaxLength: parseInt(configEl.dataset.textMaxLength),
+            supabaseUrl: configEl.dataset.supabaseUrl,
+            supabaseAnonKey: configEl.dataset.supabaseAnonKey
         };
+        
+        // Initialize Supabase client
+        console.log('Initializing Supabase client...');
+        console.log('Supabase URL:', window.appConfig.supabaseUrl);
+        console.log('Supabase Key:', window.appConfig.supabaseAnonKey ? 'Present' : 'Missing');
+        
+        if (window.appConfig.supabaseUrl && window.appConfig.supabaseAnonKey) {
+            try {
+                if (typeof supabase === 'undefined') {
+                    console.error('Supabase library not loaded - check if CDN script loaded correctly');
+                    return;
+                }
+                
+                console.log('Creating Supabase client...');
+                window.supabase = supabase.createClient(window.appConfig.supabaseUrl, window.appConfig.supabaseAnonKey);
+                console.log('Supabase client initialized successfully');
+                
+                // Test the connection
+                window.supabase.auth.getSession().then(({ data: { session }, error }) => {
+                    if (error) {
+                        console.error('Supabase session check error:', error);
+                    } else {
+                        console.log('Supabase connection test successful, current session:', session ? 'Active' : 'None');
+                    }
+                });
+                
+                // Listen for auth state changes
+                window.supabase.auth.onAuthStateChange((event, session) => {
+                    console.log('Auth state changed:', event, session?.user?.email);
+                    if (event === 'SIGNED_IN' && session?.user) {
+                        updateUIForLoggedInUser(session.user.email);
+                    } else if (event === 'SIGNED_OUT') {
+                        updateUIForLoggedOutUser();
+                    }
+                });
+            } catch (error) {
+                console.error('Failed to initialize Supabase client:', error);
+            }
+        } else {
+            console.error('Supabase configuration missing - URL or Key not found');
+        }
     }
     
     // Add smooth scrolling for anchor links
@@ -507,45 +550,62 @@ async function handleLoginSubmit(e) {
     }
     
     if (!hasErrors) {
-        // Submit to backend API with CSRF protection
+        // Use Supabase Auth for login
         try {
-            // Get CSRF token from cookie or meta tag
-            const csrfToken = getCSRFToken();
+            if (!window.supabase) {
+                showLoginGeneralError('Authentication system not initialized. Please refresh the page.');
+                return;
+            }
             
-            const response = await fetch('/api/auth/login', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRF-Token': csrfToken
-                },
-                body: JSON.stringify({ email, password })
+            console.log('Attempting login with Supabase...');
+            console.log('Email:', email);
+            console.log('Supabase client available:', !!window.supabase);
+            
+            const { data, error } = await window.supabase.auth.signInWithPassword({
+                email: email,
+                password: password
             });
             
-            const data = await response.json();
+            console.log('Login response received:', { data: data ? 'Present' : 'None', error: error ? error.message : 'None' });
             
-            if (data.success) {
+            if (error) {
+                console.error('Supabase login error details:', {
+                    message: error.message,
+                    status: error.status,
+                    statusText: error.statusText
+                });
+                showLoginGeneralError(`Login failed: ${error.message}`);
+            } else {
+                console.log('Login successful:', data.user.email);
+                
+                // Set the access token as a cookie for the backend
+                if (data.session?.access_token) {
+                    document.cookie = `sb_access_token=${data.session.access_token}; path=/; SameSite=Strict; Secure`;
+                    console.log('Access token set as cookie');
+                }
+                
                 switchToSuccessState(
                     'Login Successful!', 
-                    `Welcome ${data.user.first_name} ${data.user.last_name}!`,
+                    `Welcome ${data.user.email}!`,
                     () => {
                         closeModal();
-                        // Small delay to ensure session cookie is processed
+                        // Small delay to ensure session is processed
                         setTimeout(() => {
                             window.location.href = '/dashboard';
                         }, 100);
                     }
                 );
-            } else {
-                showLoginGeneralError(`Login failed: ${data.message}`);
             }
         } catch (error) {
             console.error('Login error:', error);
             let errorMessage = 'Network error. Please try again.';
             
             if (error.name === 'TypeError' && error.message.includes('fetch')) {
-                errorMessage = 'Unable to connect to server. Please check your internet connection.';
+                errorMessage = 'Unable to connect to authentication server. Please check your internet connection.';
             } else if (error.name === 'SyntaxError') {
                 errorMessage = 'Server response error. Please try again.';
+            } else if (error.message) {
+                errorMessage = error.message;
             }
             
             showLoginGeneralError(errorMessage);
@@ -555,11 +615,17 @@ async function handleLoginSubmit(e) {
 
 async function checkSessionStatus() {
     try {
-        const response = await fetch('/api/auth/status');
-        const data = await response.json();
+        // Use Supabase Auth to check session status
+        const { data: { user, session }, error } = await window.supabase.auth.getUser();
         
-        if (data.success && data.authenticated) {
-            updateUIForLoggedInUser(data.userEmail);
+        if (error) {
+            console.error('Auth status check failed:', error);
+            updateUIForLoggedOutUser();
+        } else if (user && session?.access_token) {
+            // Set the access token as a cookie for the backend
+            document.cookie = `sb_access_token=${session.access_token}; path=/; SameSite=Strict; Secure`;
+            console.log('Access token set as cookie from existing session');
+            updateUIForLoggedInUser(user.email);
         } else {
             updateUIForLoggedOutUser();
         }
@@ -587,18 +653,21 @@ function updateUIForLoggedOutUser() {
 
 async function handleLogout() {
     try {
-        const csrfToken = getCSRFToken();
-        const response = await fetch('/api/auth/logout', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRF-Token': csrfToken
-            }
-        });
+        if (!window.supabase) {
+            showNotificationModal('Error', 'Authentication system not initialized. Please refresh the page.');
+            return;
+        }
         
-        const data = await response.json();
+        // Use Supabase Auth for logout
+        const { error } = await window.supabase.auth.signOut();
         
-        if (data.success) {
+        if (error) {
+            showNotificationModal('Logout Failed', `Logout failed: ${error.message}`);
+        } else {
+            // Clear the access token cookie
+            document.cookie = 'sb_access_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
+            console.log('Access token cookie cleared');
+            
             showNotificationModal(
                 'Logout Successful!', 
                 'You have been logged out successfully!',
@@ -606,10 +675,9 @@ async function handleLogout() {
                     updateUIForLoggedOutUser();
                 }
             );
-        } else {
-            showNotificationModal('Logout Failed', `Logout failed: ${data.message}`);
         }
     } catch (error) {
+        console.error('Logout error:', error);
         showNotificationModal('Network Error', 'Network error during logout. Please try again.');
     }
 }

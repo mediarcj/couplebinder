@@ -15,7 +15,7 @@
  * Each presenter function takes request context and returns a plain object with display data.
  */
 
-const { usersRepo } = require('../db/repo');
+// Removed usersRepo import - now using Supabase user data directly
 
 /**
  * Build page model for home page
@@ -33,13 +33,13 @@ function buildHomePageModel(req, res) {
       type: 'home'
     },
     user: {
-      isAuthenticated: req.session.isAuthenticated || false,
-      email: req.session.userEmail || null,
-      id: req.session.userId || null
+      isAuthenticated: req.user?.id ? true : false || false,
+      email: req.user?.email || null,
+      id: req.user?.id || null
     },
     // UI instructions from backend - frontend must follow these rules
     ui_instructions: {
-      allowed_actions: req.session.isAuthenticated ? 
+      allowed_actions: req.user?.id ? true : false ? 
         ['submit_text', 'view_dashboard', 'view_submissions', 'logout'] : 
         ['submit_text', 'login', 'view_public_content'],
       
@@ -54,7 +54,7 @@ function buildHomePageModel(req, res) {
       
       feature_flags: {
         text_submission: true,
-        dashboard_access: req.session.isAuthenticated || false,
+        dashboard_access: req.user?.id ? true : false || false,
         admin_panel: false, // Will be set based on user role
         advanced_mode: false
       },
@@ -81,7 +81,7 @@ function buildHomePageModel(req, res) {
       
       display_rules: {
         show_login_modal: req.query.login === 'true',
-        show_user_menu: req.session.isAuthenticated || false,
+        show_user_menu: req.user?.id ? true : false || false,
         show_submission_form: true,
         show_public_submissions: true
       }
@@ -108,23 +108,20 @@ function buildHomePageModel(req, res) {
  * @returns {Object} Page model for dashboard page
  */
 async function buildDashboardPageModel(req, res) {
-  let user = null;
-  
-  if (req.session.userId) {
-    try {
-      const { db } = require('../db/connection');
-      user = await usersRepo.findById(db, req.session.userId);
-      if (user) {
-        // Remove sensitive data
-        delete user.password;
-      }
-    } catch (error) {
-      console.error('Error fetching user for dashboard:', error);
-    }
-  }
+  // Use Supabase user data directly - no database lookup needed
+  const user = req.user ? {
+    id: req.user.id,
+    email: req.user.email,
+    // Add any additional user fields from Supabase if needed
+    user_role: 'user', // Default role, can be enhanced later
+    first_name: req.user.email?.split('@')[0] || 'User', // Extract name from email
+    last_name: '',
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString()
+  } : null;
 
-  const isAuthenticated = req.session.isAuthenticated || false;
-  const isAdmin = user && user.user_role === 'admin';
+  const isAuthenticated = req.user?.id ? true : false;
+  const isAdmin = false; // Can be enhanced later with Supabase user metadata
 
   return {
     page: {
@@ -134,8 +131,8 @@ async function buildDashboardPageModel(req, res) {
     },
     user: {
       isAuthenticated: isAuthenticated,
-      email: req.session.userEmail || null,
-      id: req.session.userId || null,
+      email: req.user?.email || null,
+      id: req.user?.id || null,
       profile: user
     },
     // UI instructions from backend - frontend must follow these rules
@@ -205,18 +202,16 @@ async function buildDashboardPageModel(req, res) {
  * @returns {Object} Page model for user profile page
  */
 async function buildUserProfilePageModel(req, res, userId) {
-  let user = null;
-  
-  try {
-    const { db } = require('../db/connection');
-    user = await usersRepo.findById(db, userId);
-    if (user) {
-      // Remove sensitive data
-      delete user.password;
-    }
-  } catch (error) {
-    console.error('Error fetching user profile:', error);
-  }
+  // Use Supabase user data directly - no database lookup needed
+  const user = req.user ? {
+    id: req.user.id,
+    email: req.user.email,
+    user_role: 'user', // Default role, can be enhanced later
+    first_name: req.user.email?.split('@')[0] || 'User',
+    last_name: '',
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString()
+  } : null;
 
   return {
     page: {
@@ -225,13 +220,13 @@ async function buildUserProfilePageModel(req, res, userId) {
       type: 'user_profile'
     },
     user: {
-      isAuthenticated: req.session.isAuthenticated || false,
-      email: req.session.userEmail || null,
-      id: req.session.userId || null
+      isAuthenticated: req.user?.id ? true : false || false,
+      email: req.user?.email || null,
+      id: req.user?.id || null
     },
     profile: {
       user: user,
-      isOwnProfile: req.session.userId === userId
+      isOwnProfile: req.user?.id === userId
     },
     ui: {
       csrfToken: res.locals.csrfToken || ''
@@ -246,20 +241,16 @@ async function buildUserProfilePageModel(req, res, userId) {
  * @returns {Object} Page model for settings page
  */
 async function buildSettingsPageModel(req, res) {
-  let user = null;
-  
-  if (req.session.userId) {
-    try {
-      const { db } = require('../db/connection');
-      user = await usersRepo.findById(db, req.session.userId);
-      if (user) {
-        // Remove sensitive data
-        delete user.password;
-      }
-    } catch (error) {
-      console.error('Error fetching user for settings:', error);
-    }
-  }
+  // Use Supabase user data directly - no database lookup needed
+  const user = req.user ? {
+    id: req.user.id,
+    email: req.user.email,
+    user_role: 'user', // Default role, can be enhanced later
+    first_name: req.user.email?.split('@')[0] || 'User',
+    last_name: '',
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString()
+  } : null;
 
   return {
     page: {
@@ -268,9 +259,9 @@ async function buildSettingsPageModel(req, res) {
       type: 'settings'
     },
     user: {
-      isAuthenticated: req.session.isAuthenticated || false,
-      email: req.session.userEmail || null,
-      id: req.session.userId || null,
+      isAuthenticated: req.user?.id ? true : false || false,
+      email: req.user?.email || null,
+      id: req.user?.id || null,
       profile: user
     },
     settings: {
@@ -303,9 +294,9 @@ function buildErrorPageModel(req, res, statusCode, errorMessage) {
       nonce: res.locals.nonce
     },
     user: {
-      isAuthenticated: req.session.isAuthenticated || false,
-      email: req.session.userEmail || null,
-      id: req.session.userId || null
+      isAuthenticated: req.user?.id ? true : false || false,
+      email: req.user?.email || null,
+      id: req.user?.id || null
     },
     error: {
       code: statusCode,

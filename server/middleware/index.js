@@ -22,8 +22,6 @@
 const { verifyLogin } = require('./auth');
 const { verifyPassword, createPasswordHash } = require('./password');
 const { requireAuth } = require('./requireAuth');
-const { authGuard } = require('./auth-guard');
-const { supabaseAuth, requireSupabaseAuth } = require('./supabaseAuth');
 
 // Security Middleware
 const { 
@@ -39,12 +37,7 @@ const {
     getClientIP
 } = require('./security');
 
-const { 
-    generateCSRFToken,
-    validateCSRFToken,
-    addCSRFToken,
-    validateCSRF
-} = require('./csrf');
+// CSRF middleware removed - using csrfLite globally
 
 // Validation Middleware
 const {
@@ -69,8 +62,6 @@ function configureSecurityMiddleware(config) {
     return {
         authRateLimit: createAuthRateLimit(),
         csrf: {
-            addToken: addCSRFToken,
-            validate: validateCSRF
         },
         validation: {
             email: validateEmailServerSide,
@@ -92,9 +83,6 @@ function configureAuthMiddleware(db) {
         verifyPassword,
         createPasswordHash,
         requireAuth: db ? requireAuth(db) : requireAuth,
-        authGuard: db ? authGuard(db) : authGuard,
-        supabaseAuth: supabaseAuth,
-        requireSupabaseAuth: requireSupabaseAuth
     };
 }
 
@@ -123,9 +111,6 @@ module.exports = {
         verifyPassword,
         createPasswordHash,
         requireAuth,
-        authGuard,
-        supabaseAuth,
-        requireSupabaseAuth
     },
     
     security: {
@@ -142,10 +127,6 @@ module.exports = {
     },
     
     csrf: {
-        generateCSRFToken,
-        validateCSRFToken,
-        addCSRFToken,
-        validateCSRF
     },
     
     validation: {

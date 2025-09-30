@@ -6,7 +6,6 @@
 const express = require('express');
 const helmet = require('helmet');
 const cors = require('cors');
-const session = require('express-session');
 const morgan = require('morgan');
 const path = require('path');
 const crypto = require('node:crypto');
@@ -18,7 +17,6 @@ const csrfLite = require('./middleware/csrfLite');
 const requestIdMiddleware = require('./middleware/requestId');
 const logger = require('./utils/logger');
 const consoleLogger = require('./utils/consoleLogger');
-const { supabaseAuth } = require('./middleware/supabaseAuth');
 // Rate limiting removed - handled at Cloudflare edge
 
 // ============================================================
@@ -129,7 +127,7 @@ app.use((req, res, next) => {
       `style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net https://unpkg.com`,
       "img-src 'self' data: https: blob: https://maps.googleapis.com https://maps.gstatic.com",
       "font-src 'self' https://fonts.gstatic.com https://cdn.jsdelivr.net https://unpkg.com",
-      "connect-src 'self' https://api.detechify.com wss://detechify.com https://www.google-analytics.com https://analytics.google.com https://maps.googleapis.com",
+      "connect-src 'self' https://api.detechify.com wss://detechify.com https://www.google-analytics.com https://analytics.google.com https://maps.googleapis.com https://zwrstlnfyiqsxbuggiiz.supabase.co",
       "frame-src 'self' https://www.google.com https://maps.google.com",
       "object-src 'none'",
       "base-uri 'self'",
@@ -209,22 +207,8 @@ app.use(parseCookies);
 const authBridge = require('./middleware/authBridge');
 app.use(authBridge);
 
-// Session middleware (memory store only - stateless auth enabled)
-// Basic session support for compatibility with existing code
-app.use(session({
-  secret: config.security.sessionSecret,
-  resave: false,
-  saveUninitialized: false,
-  rolling: true, // Reset expiration on activity
-  cookie: {
-    secure: config.server.nodeEnv === 'production',
-    httpOnly: true,
-    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-    sameSite: 'lax'
-  },
-  name: 'detechify.sid'
-}));
-console.log('Session middleware configured with memory store (stateless auth enabled)');
+// Session middleware removed - using stateless authentication with Supabase tokens
+console.log('Stateless authentication enabled - no server-side sessions');
 
 // Request ID middleware - add unique ID to every request
 app.use(requestIdMiddleware);
@@ -245,7 +229,6 @@ app.use((req, res, next) => {
 consoleLogger.formatMiddlewareRegistration('Core middleware');
 
 // Supabase Auth middleware (stateless token verification)
-app.use(supabaseAuth());
 consoleLogger.formatMiddlewareRegistration('Supabase Auth (token verification)');
 
 // ============================================================

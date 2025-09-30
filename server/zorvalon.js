@@ -1,13 +1,12 @@
 // File: zorvalon.js
 // Description: Entry point for Detechify server - Refactored for better organization
-// Boot order: Express → Database → Redis → Security → Middleware → Routes → Error Handling → Start Server → Graceful Shutdown
+// Boot order: Express → Database → Security → Middleware → Routes → Error Handling → Start Server → Graceful Shutdown
 // Notes: Console logs mark important checkpoints for audit and debugging
 
 const express = require('express');
 const helmet = require('helmet');
 const cors = require('cors');
 const session = require('express-session');
-const redis = require('redis');
 const morgan = require('morgan');
 const path = require('path');
 const crypto = require('node:crypto');
@@ -15,10 +14,11 @@ const crypto = require('node:crypto');
 // Application Configuration and Dependencies
 const { config, logConfigSummary } = require('./config');
 const { testConnection } = require('./db/connection');
-const { addCSRFToken, validateCSRF } = require('./middleware/csrf');
+const csrfLite = require('./middleware/csrfLite');
 const requestIdMiddleware = require('./middleware/requestId');
 const logger = require('./utils/logger');
 const consoleLogger = require('./utils/consoleLogger');
+const { supabaseAuth } = require('./middleware/supabaseAuth');
 // Rate limiting removed - handled at Cloudflare edge
 
 // ============================================================
@@ -68,51 +68,21 @@ testConnection()
     });
 
 // ============================================================
-// STEP 3: Redis Client Creation and Connection
+// STEP 3: Redis decommissioned — stateless auth enabled
 // ============================================================
 
 /**
  * WHAT:
- * We create and configure a Redis client for session storage and caching.
+ * Redis has been removed in favor of stateless authentication.
  *
  * WHY:
- * Redis provides persistent session storage across server restarts and enables
- * horizontal scaling with multiple server instances.
+ * We now use Supabase Auth tokens and stateless CSRF protection,
+ * eliminating the need for server-side session storage.
  *
  * HOW:
- * We use the improved Redis client with retry strategy and error handling.
- * If Redis is unavailable, we fall back to in-memory session storage.
+ * Authentication is handled by authBridge middleware using Supabase tokens.
+ * CSRF protection uses double-submit cookie pattern without server storage.
  */
-let redisClient = null;
-let RedisStore = null;
-
-try {
-    // Import RedisStore and improved Redis client
-    RedisStore = require('connect-redis').default;
-    const { client, connectRedis } = require('./utils/redisClient');
-    
-    redisClient = client;
-    
-    // Initialize Redis connection
-    const initializeRedis = async () => {
-        try {
-            await connectRedis();
-            updateRedisStatus(true, new Date().toISOString());
-        } catch (error) {
-            console.error('Redis connection failed:', error.message);
-            console.log('Continuing without Redis sessions...');
-            updateRedisStatus(false, new Date().toISOString());
-        }
-    };
-    
-    initializeRedis().catch(() => {
-        // Error already handled in initializeRedis
-    });
-    
-} catch (error) {
-    console.error('Redis client creation failed:', error.message);
-    console.log('Continuing without Redis sessions...');
-}
 
 // ============================================================
 // STEP 4: Security and Core Middleware Registration
@@ -235,43 +205,26 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 const parseCookies = require('./middleware/cookieGuardian');
 app.use(parseCookies);
 
-// Session middleware with Redis store (if available) or memory store
-// Enterprise-level session configuration for better user experience
-if (redisClient && RedisStore) {
-  app.use(session({
-    store: new RedisStore({ 
-      client: redisClient,
-      ttl: 7 * 24 * 60 * 60 // 7 days in Redis
-    }),
-    secret: config.security.sessionSecret,
-    resave: false,
-    saveUninitialized: false,
-    rolling: true, // Reset expiration on activity
-    cookie: {
-      secure: config.server.nodeEnv === 'production',
-      httpOnly: true,
-      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days (enterprise standard)
-      sameSite: 'lax' // Better UX than 'strict' while maintaining security
-    },
-    name: 'detechify.sid'
-  }));
-  console.log('Session middleware configured with Redis store');
-} else {
-  app.use(session({
-    secret: config.security.sessionSecret,
-    resave: false,
-    saveUninitialized: false,
-    rolling: true, // Reset expiration on activity
-    cookie: {
-      secure: false,
-      httpOnly: true,
-      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days (enterprise standard)
-      sameSite: 'lax' // Better UX than 'strict' while maintaining security
-    },
-    name: 'detechify.sid'
-  }));
-  console.log('Session middleware configured with memory store');
-}
+// Stateless authentication bridge - reads Supabase tokens
+const authBridge = require('./middleware/authBridge');
+app.use(authBridge);
+
+// Session middleware (memory store only - stateless auth enabled)
+// Basic session support for compatibility with existing code
+app.use(session({
+  secret: config.security.sessionSecret,
+  resave: false,
+  saveUninitialized: false,
+  rolling: true, // Reset expiration on activity
+  cookie: {
+    secure: config.server.nodeEnv === 'production',
+    httpOnly: true,
+    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+    sameSite: 'lax'
+  },
+  name: 'detechify.sid'
+}));
+console.log('Session middleware configured with memory store (stateless auth enabled)');
 
 // Request ID middleware - add unique ID to every request
 app.use(requestIdMiddleware);
@@ -290,6 +243,10 @@ app.use((req, res, next) => {
 });
 
 consoleLogger.formatMiddlewareRegistration('Core middleware');
+
+// Supabase Auth middleware (stateless token verification)
+app.use(supabaseAuth());
+consoleLogger.formatMiddlewareRegistration('Supabase Auth (token verification)');
 
 // ============================================================
 // STEP 5: View Engine and Static Assets
@@ -336,8 +293,8 @@ consoleLogger.formatMiddlewareRegistration('Rate limiting (Cloudflare edge)');
  * We add CSRF token generation middleware and configure
  * validation for protected routes.
  */
-// Add CSRF protection middleware
-app.use(addCSRFToken);
+// Add CSRF protection middleware (stateless double-submit)
+app.use(csrfLite);
 
 consoleLogger.formatMiddlewareRegistration('Security middleware');
 
@@ -358,15 +315,15 @@ consoleLogger.formatMiddlewareRegistration('Security middleware');
  * and organize them by functional areas (auth, API, dashboard, health).
  */
 
-// Import modular routes with CSRF protection for state-changing requests
-app.use('/api/auth', validateCSRF, require('./routes/auth'));
+// Import modular routes (CSRF protection handled globally by csrfLite)
+app.use('/api/auth', require('./routes/auth'));
 app.use('/api/users', require('./routes/users'));
 app.use('/api/page', require('./routes/pageApi'));
-app.use('/api', validateCSRF, require('./routes/api'));
-app.use('/api', validateCSRF, require('./routes/submissions'));
+app.use('/api', require('./routes/api'));
+app.use('/api', require('./routes/submissions'));
 
-// Import health routes with Redis status update function
-const { router: healthRouter, updateRedisStatus } = require('./routes/health');
+// Import health routes
+const { router: healthRouter } = require('./routes/health');
 app.use('/health', healthRouter);
 app.use('/dashboard', require('./routes/dashboard'));
 
@@ -473,8 +430,7 @@ const server = app.listen(PORT, HOST, () => {
     host: HOST,
     port: PORT,
     nodeEnv: config.server.nodeEnv,
-    database: `${config.database.host}:${config.database.port}/${config.database.name}`,
-    redis: redisClient ? 'Connected' : 'Not available',
+    database: config.database.url ? 'Supabase PostgreSQL' : `${config.database.host}:${config.database.port}/${config.database.name}`,
     rateLimit: 'handled at Cloudflare edge',
     textLimits: `${config.limits.textMinLength}-${config.limits.textMaxLength} chars`,
     maxSubmissions: config.limits.maxSubmissions
@@ -555,18 +511,8 @@ function gracefulShutdown(signal, code = 0) {
     Promise.all(closePromises).then(() => {
       console.log('All active connections closed');
       
-      // Close Redis connection
-      if (redisClient) {
-        const { disconnectRedis } = require('./utils/redisClient');
-        disconnectRedis().then(() => {
-          finalizeShutdown(code);
-        }).catch((err) => {
-          console.error('Error closing Redis connection:', err.message);
-          finalizeShutdown(code);
-        });
-      } else {
-        finalizeShutdown(code);
-      }
+      // Redis decommissioned - proceed to finalize
+      finalizeShutdown(code);
     });
   });
 }

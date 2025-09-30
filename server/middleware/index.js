@@ -23,6 +23,7 @@ const { verifyLogin } = require('./auth');
 const { verifyPassword, createPasswordHash } = require('./password');
 const { requireAuth } = require('./requireAuth');
 const { authGuard } = require('./auth-guard');
+const { supabaseAuth, requireSupabaseAuth } = require('./supabaseAuth');
 
 // Security Middleware
 const { 
@@ -91,7 +92,9 @@ function configureAuthMiddleware(db) {
         verifyPassword,
         createPasswordHash,
         requireAuth: db ? requireAuth(db) : requireAuth,
-        authGuard: db ? authGuard(db) : authGuard
+        authGuard: db ? authGuard(db) : authGuard,
+        supabaseAuth: supabaseAuth,
+        requireSupabaseAuth: requireSupabaseAuth
     };
 }
 
@@ -120,7 +123,9 @@ module.exports = {
         verifyPassword,
         createPasswordHash,
         requireAuth,
-        authGuard
+        authGuard,
+        supabaseAuth,
+        requireSupabaseAuth
     },
     
     security: {

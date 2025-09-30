@@ -21,7 +21,7 @@ const consoleLogger = require('../utils/consoleLogger');
  * Tokens are bound to user sessions and expire after a configurable time.
  */
 
-// Store for CSRF tokens (in production, use Redis)
+// Store for CSRF tokens (stateless mode - no server storage needed)
 const csrfTokens = new Map();
 const CSRF_TOKEN_EXPIRY = 8 * 60 * 60 * 1000; // 8 hours (enterprise standard)
 

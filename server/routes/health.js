@@ -20,8 +20,7 @@ const { getConnectionStatus } = require('../db/connection');
  * Each endpoint returns detailed status information for debugging and monitoring.
  */
 
-// Redis connection status (imported from main server)
-let redisStatus = { connected: false, lastCheck: null };
+// Redis decommissioned - stateless auth enabled
 
 /**
  * GET /health
@@ -43,8 +42,8 @@ router.get('/', async (req, res) => {
           port: dbStatus.config.port
         },
         redis: {
-          connected: redisStatus.connected,
-          lastCheck: redisStatus.lastCheck
+          status: 'decommissioned',
+          mode: 'stateless auth enabled'
         },
         server: {
           uptime: process.uptime(),
@@ -55,7 +54,7 @@ router.get('/', async (req, res) => {
     };
 
     // Determine overall health status
-    const overallHealthy = dbStatus.healthy && redisStatus.connected;
+    const overallHealthy = dbStatus.healthy;
     
     res.status(overallHealthy ? 200 : 503).json(healthData);
   } catch (error) {
@@ -105,7 +104,7 @@ router.get('/readiness', async (req, res) => {
     const dbStatus = getConnectionStatus();
     
     // Check if all critical services are ready
-    const isReady = dbStatus.healthy && redisStatus.connected;
+    const isReady = dbStatus.healthy;
     
     const readinessData = {
       status: isReady ? 'ready' : 'not ready',
@@ -117,8 +116,8 @@ router.get('/readiness', async (req, res) => {
           lastTest: dbStatus.lastTest
         },
         redis: {
-          status: redisStatus.connected ? 'ready' : 'not ready',
-          lastCheck: redisStatus.lastCheck
+          status: 'decommissioned',
+          mode: 'stateless auth enabled'
         }
       }
     };
@@ -149,7 +148,10 @@ router.get('/detailed', async (req, res) => {
       environment: process.env.NODE_ENV || 'development',
       services: {
         database: dbStatus,
-        redis: redisStatus,
+        redis: {
+          status: 'decommissioned',
+          mode: 'stateless auth enabled'
+        },
         server: {
           uptime: process.uptime(),
           memory: process.memoryUsage(),
@@ -180,12 +182,4 @@ router.get('/detailed', async (req, res) => {
   }
 });
 
-// Function to update Redis status (called from main server)
-function updateRedisStatus(connected, lastCheck = null) {
-  redisStatus = {
-    connected,
-    lastCheck: lastCheck || new Date()
-  };
-}
-
-module.exports = { router, updateRedisStatus };
+module.exports = { router };

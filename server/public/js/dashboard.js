@@ -98,33 +98,71 @@ function initializeDashboard() {
 
 /**
  * Handle user logout
+ * 
+ * WHAT:
+ * We log the user out and clear all authentication state.
+ * 
+ * WHY:
+ * On logout, we must invalidate the session completely by:
+ * - Clearing the HttpOnly cookie (server-side session)
+ * - Signing out from Supabase (client-side session + localStorage)
+ * - Clearing any JS-readable cookies (legacy cleanup)
+ * - Redirecting to homepage with page reload (clears any cached state)
+ * 
+ * HOW:
+ * 1. Call /auth/clear-cookie to remove HttpOnly cookie (backend session)
+ * 2. Call Supabase signOut to clear client session + localStorage
+ * 3. Clear any old JS-readable cookies (security cleanup)
+ * 4. Show success modal
+ * 5. Redirect to homepage with hard reload (clears all cached state)
  */
 async function handleLogout() {
     try {
-        const csrfToken = getCSRFToken();
-        const response = await fetch('/api/auth/logout', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRF-Token': csrfToken
-            }
-        });
-        
-        const data = await response.json();
-        
-        if (data.success) {
-            showNotificationModal(
-                'Logout Successful!', 
-                'You have been logged out successfully!',
-                () => {
-                    window.location.href = '/';
-                }
-            );
-        } else {
-            showNotificationModal('Logout Failed', `Logout failed: ${data.message}`);
+        // Check if Supabase client is available
+        if (!window.supabase) {
+            showNotificationModal('Error', 'Authentication system not initialized. Please refresh the page.');
+            return;
         }
+        
+        // Step 1: Clear server-side HttpOnly cookie FIRST (most critical)
+        try {
+            await fetch('/auth/clear-cookie', {
+                method: 'POST',
+                credentials: 'include'  // Required for cookies
+            });
+            console.log('Server HttpOnly cookie cleared');
+        } catch (e) {
+            // Continue even if clear-cookie fails (cookie will expire anyway)
+            console.warn('Server cookie clear failed, but continuing logout');
+        }
+        
+        // Step 2: Sign out from Supabase (clears client-side session + localStorage)
+        const { error } = await window.supabase.auth.signOut();
+        
+        if (error) {
+            console.error('Supabase signOut error:', error.message);
+            // Continue anyway - server cookie is already cleared
+        } else {
+            console.log('Supabase session cleared');
+        }
+        
+        // Step 3: Clear any old JS-readable cookies (security cleanup)
+        document.cookie = 'sb-access-token=; Path=/; Max-Age=0; SameSite=Lax';
+        document.cookie = 'sb_access_token=; Path=/; Max-Age=0; SameSite=Lax';
+        document.cookie = 'sb-refresh-token=; Path=/; Max-Age=0; SameSite=Lax';
+        console.log('JS-readable cookies cleared');
+        
+        // Step 4: Show success modal and redirect with hard reload
+        showNotificationModal(
+            'Logout Successful!', 
+            'You have been logged out successfully!',
+            () => {
+                // Force navigation to homepage with hard reload to clear all cached state
+                window.location.href = '/';
+            }
+        );
     } catch (error) {
-        console.error('Logout error:', error);
+        console.error('Logout error:', error.message);
         showNotificationModal('Network Error', 'Network error during logout. Please try again.');
     }
 }

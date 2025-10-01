@@ -30,6 +30,7 @@
                             <button id="logoutBtn" class="btn btn-secondary">Logout</button>
                         <% } else { %>
                             <a href="#" class="login-link">Login</a>
+                            <a href="#" class="signup-link">Sign Up</a>
                         <% } %>
                     </div>
                 </div>
@@ -166,6 +167,115 @@
                         <p id="successMessage">Welcome message</p>
                         <div class="form-actions">
                             <button type="button" class="btn btn-secondary" id="successOkBtn">OK</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Sign Up Modal -->
+    <div id="signupModal" class="modal">
+        <div class="modal-content signup-modal">
+            <div class="modal-header">
+                <h2>Create Account</h2>
+                <span class="close">&times;</span>
+            </div>
+            <div class="modal-body">
+                <!-- Sign Up Form State -->
+                <div id="signupFormState" class="modal-state">
+                    <form id="signupForm">
+                        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                        
+                        <!-- Basic Required Fields -->
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="signupFirstName">First Name *</label>
+                                <input 
+                                    type="text" 
+                                    id="signupFirstName" 
+                                    name="first_name" 
+                                    placeholder="Enter your first name"
+                                    maxlength="50"
+                                    required
+                                >
+                                <div id="firstNameError" class="error-message"></div>
+                            </div>
+                            <div class="form-group">
+                                <label for="signupLastName">Last Name *</label>
+                                <input 
+                                    type="text" 
+                                    id="signupLastName" 
+                                    name="last_name" 
+                                    placeholder="Enter your last name"
+                                    maxlength="50"
+                                    required
+                                >
+                                <div id="lastNameError" class="error-message"></div>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="signupEmail">Email Address *</label>
+                            <input 
+                                type="email" 
+                                id="signupEmail" 
+                                name="email" 
+                                placeholder="Enter your email address"
+                                maxlength="<%= ui_instructions.input_limits.email_max || 40 %>"
+                                autocomplete="email"
+                                required
+                            >
+                            <div id="signupEmailError" class="error-message"></div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="signupPassword">Password *</label>
+                            <input 
+                                type="password" 
+                                id="signupPassword" 
+                                name="password" 
+                                placeholder="Enter your password (min 8 characters)"
+                                minlength="8"
+                                maxlength="50"
+                                autocomplete="new-password"
+                                required
+                            >
+                            <div id="signupPasswordError" class="error-message"></div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="signupConfirmPassword">Confirm Password *</label>
+                            <input 
+                                type="password" 
+                                id="signupConfirmPassword" 
+                                name="confirm_password" 
+                                placeholder="Confirm your password"
+                                minlength="8"
+                                maxlength="50"
+                                autocomplete="new-password"
+                                required
+                            >
+                            <div id="confirmPasswordError" class="error-message"></div>
+                        </div>
+
+
+                        <div class="form-actions">
+                            <button type="button" class="btn btn-secondary" id="signupCancelBtn">Cancel</button>
+                            <button type="submit" class="btn btn-primary">Create Account</button>
+                        </div>
+                        <div id="signupGeneralError" class="error-message" style="display: none;"></div>
+                    </form>
+                </div>
+                
+                <!-- Sign Up Success State -->
+                <div id="signupSuccessState" class="modal-state" style="display: none;">
+                    <div class="success-content">
+                        <div class="success-icon">OK</div>
+                        <h3 id="signupSuccessTitle">Account Created Successfully!</h3>
+                        <p id="signupSuccessMessage">Welcome message</p>
+                        <div class="form-actions">
+                            <button type="button" class="btn btn-secondary" id="signupSuccessOkBtn">OK</button>
                         </div>
                     </div>
                 </div>

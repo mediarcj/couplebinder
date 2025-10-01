@@ -35,4 +35,32 @@ router.get('/', requireAuth, async (req, res) => {
     }
 });
 
+/**
+ * GET /dashboard/profile-edit
+ * User profile edit page for authenticated users
+ */
+router.get('/profile-edit', requireAuth, async (req, res) => {
+    try {
+        // Build page model using presenter
+        const pageModel = await buildDashboardPageModel(req, res);
+
+        // Add nonce to page.nonce for EJS template
+        pageModel.page.nonce = res.locals.nonce;
+        
+        // Add Supabase credentials for client initialization
+        pageModel.ui.supabaseUrl = process.env.SUPABASE_URL;
+        pageModel.ui.supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+        
+        // Update page title for profile edit
+        pageModel.page.title = 'Edit Profile - Detechify';
+        
+        // Render EJS template with page model
+        res.render('profile-edit', pageModel);
+    } catch (error) {
+        console.error('Profile edit route error:', error.message);
+        const pageModel = buildErrorPageModel(req, res, 500, 'Unable to load profile edit page');
+        res.status(500).render('error', pageModel);
+    }
+});
+
 module.exports = router;

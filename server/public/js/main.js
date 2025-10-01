@@ -227,6 +227,9 @@ document.addEventListener('DOMContentLoaded', function() {
     // Login modal functionality
     initializeLoginModal();
     
+    // Sign up modal functionality
+    initializeSignupModal();
+    
     // Attach logout handler if button exists (for server-rendered authenticated pages)
     const logoutBtn = document.getElementById('logoutBtn');
     if (logoutBtn) {
@@ -857,22 +860,23 @@ function updateUIForLoggedInUser(userEmail) {
  * Update UI to show logged-out state
  * 
  * WHAT:
- * We update the navigation to show only Login link.
+ * We update the navigation to show Login and Sign Up links.
  * 
  * WHY:
- * When no user is authenticated, they should only see the Login option.
+ * When no user is authenticated, they should see both Login and Sign Up options.
  * 
  * HOW:
  * 1. Find the auth section in the nav
- * 2. Replace content with Login link only
- * 3. Attach login modal handler
+ * 2. Replace content with Login and Sign Up links
+ * 3. Attach login and signup modal handlers
  */
 function updateUIForLoggedOutUser() {
     const authSection = document.querySelector('.auth-section');
     if (authSection) {
-        // Replace content with Login link only
+        // Replace content with Login and Sign Up links
         authSection.innerHTML = `
             <a href="#" class="login-link">Login</a>
+            <a href="#" class="signup-link">Sign Up</a>
         `;
         
         // Attach login handler
@@ -881,6 +885,15 @@ function updateUIForLoggedOutUser() {
             loginLink.onclick = (e) => {
                 e.preventDefault();
                 handleLogin();
+            };
+        }
+        
+        // Attach signup handler
+        const signupLink = authSection.querySelector('.signup-link');
+        if (signupLink) {
+            signupLink.onclick = (e) => {
+                e.preventDefault();
+                handleSignup();
             };
         }
     }
@@ -979,4 +992,392 @@ async function handleLogout() {
 
 function handleLogin() {
     document.getElementById('loginModal').style.display = 'block';
+}
+
+/**
+ * Initialize sign up modal functionality
+ * 
+ * WHAT:
+ * We set up the sign up modal with form validation and Supabase integration.
+ * 
+ * WHY:
+ * Users need a way to create new accounts with comprehensive profile information.
+ * 
+ * HOW:
+ * We handle modal display, form validation, and Supabase user creation.
+ */
+function initializeSignupModal() {
+    const signupLink = document.querySelector('.signup-link');
+    const modal = document.getElementById('signupModal');
+    const closeBtn = modal?.querySelector('.close');
+    const cancelBtn = document.getElementById('signupCancelBtn');
+    const signupForm = document.getElementById('signupForm');
+    
+    if (!signupLink || !modal) {
+        return; // Modal elements not found
+    }
+    
+    // Show modal when sign up link is clicked
+    signupLink.addEventListener('click', function(e) {
+        e.preventDefault();
+        handleSignup();
+    });
+    
+    // Close modal when close button is clicked
+    if (closeBtn) {
+        closeBtn.addEventListener('click', closeSignupModal);
+    }
+    
+    // Close modal when cancel button is clicked
+    if (cancelBtn) {
+        cancelBtn.addEventListener('click', closeSignupModal);
+    }
+    
+    // Close modal when clicking outside of it
+    window.addEventListener('click', function(event) {
+        if (event.target === modal) {
+            closeSignupModal();
+        }
+    });
+    
+    // Handle form submission
+    if (signupForm) {
+        signupForm.addEventListener('submit', handleSignupSubmit);
+    }
+}
+
+function closeSignupModal() {
+    const modal = document.getElementById('signupModal');
+    if (modal) {
+        modal.style.display = 'none';
+        resetSignupToFormState();
+    }
+}
+
+function clearSignupForm() {
+    const form = document.getElementById('signupForm');
+    if (form) form.reset();
+    
+    // Clear all error messages
+    const errorElements = [
+        'firstNameError', 'lastNameError', 'signupEmailError', 'signupPasswordError',
+        'confirmPasswordError', 'signupGeneralError'
+    ];
+    
+    errorElements.forEach(id => {
+        const element = document.getElementById(id);
+        if (element) {
+            element.textContent = '';
+            element.style.display = 'none';
+        }
+    });
+}
+
+function showSignupGeneralError(message) {
+    const generalError = document.getElementById('signupGeneralError');
+    if (generalError) {
+        generalError.textContent = message;
+        generalError.style.display = 'block';
+    }
+}
+
+// Sign up validation functions
+function validateSignupEmail(email) {
+    if (!email) {
+        return 'Email address is required';
+    }
+    if (email.length > 40) {
+        return 'Email address must be 40 characters or less';
+    }
+    if (email.includes(' ')) {
+        return 'Email address cannot contain spaces';
+    }
+    if (!email.includes('@')) {
+        return 'Email address must contain @ symbol';
+    }
+    if (!email.includes('.')) {
+        return 'Email address must contain a dot (.)';
+    }
+    if (email.indexOf('@') !== email.lastIndexOf('@')) {
+        return 'Email address can only contain one @ symbol';
+    }
+    if (email.indexOf('@') === 0 || email.indexOf('@') === email.length - 1) {
+        return 'Email address cannot start or end with @ symbol';
+    }
+    if (email.indexOf('.') === 0 || email.indexOf('.') === email.length - 1) {
+        return 'Email address cannot start or end with a dot';
+    }
+    if (email.indexOf('@') > email.lastIndexOf('.')) {
+        return 'Dot must come after @ symbol in email address';
+    }
+    const validEmailRegex = /^[a-zA-Z0-9@._-]+$/;
+    if (!validEmailRegex.test(email)) {
+        return 'Email address can only contain letters, numbers, @, ., -, and _';
+    }
+    return '';
+}
+
+function validateSignupPassword(password) {
+    if (!password) {
+        return 'Password is required';
+    }
+    if (password.length < 8) {
+        return 'Password must be at least 8 characters long';
+    }
+    if (password.length > 50) {
+        return 'Password must be 50 characters or less';
+    }
+    const validPasswordRegex = /^[a-zA-Z0-9]+$/;
+    if (!validPasswordRegex.test(password)) {
+        return 'Password can only contain uppercase letters, lowercase letters, and numbers';
+    }
+    return '';
+}
+
+function validateConfirmPassword(password, confirmPassword) {
+    if (!confirmPassword) {
+        return 'Please confirm your password';
+    }
+    if (password !== confirmPassword) {
+        return 'Passwords do not match';
+    }
+    return '';
+}
+
+function validateName(name, fieldName) {
+    if (!name) {
+        return `${fieldName} is required`;
+    }
+    if (name.length > 50) {
+        return `${fieldName} must be 50 characters or less`;
+    }
+    const validNameRegex = /^[a-zA-Z\s'-]+$/;
+    if (!validNameRegex.test(name)) {
+        return `${fieldName} can only contain letters, spaces, hyphens, and apostrophes`;
+    }
+    return '';
+}
+
+function validatePhone(phone) {
+    if (!phone) return ''; // Optional field
+    const phoneRegex = /^\d{1}-\d{3}-\d{3}-\d{4}$/;
+    if (!phoneRegex.test(phone)) {
+        return 'Phone must be in format: 9-999-999-9999';
+    }
+    return '';
+}
+
+function validateBirthday(birthday) {
+    if (!birthday) return ''; // Optional field
+    const birthdayRegex = /^\d{2}\/\d{2}\/\d{4}$/;
+    if (!birthdayRegex.test(birthday)) {
+        return 'Birthday must be in format: MM/DD/YYYY (e.g., 01/30/2026)';
+    }
+    return '';
+}
+
+function validateGender(gender) {
+    if (!gender) return ''; // Optional field
+    if (!['male', 'female'].includes(gender)) {
+        return 'Gender must be either "male" or "female"';
+    }
+    return '';
+}
+
+function validateRelationshipStatus(status) {
+    if (!status) return ''; // Optional field
+    if (!['single', 'married'].includes(status)) {
+        return 'Relationship status must be either "single" or "married"';
+    }
+    return '';
+}
+
+function validateJobStatus(job) {
+    if (!job) return ''; // Optional field
+    if (!['unemployed', 'employed'].includes(job)) {
+        return 'Job status must be either "unemployed" or "employed"';
+    }
+    return '';
+}
+
+function validateAccountPrivacy(privacy) {
+    if (!privacy) return 'Account privacy is required';
+    if (!['public', 'private'].includes(privacy)) {
+        return 'Account privacy must be either "public" or "private"';
+    }
+    return '';
+}
+
+async function handleSignupSubmit(e) {
+    e.preventDefault();
+    
+    // Get form data
+    const formData = new FormData(e.target);
+    const data = Object.fromEntries(formData.entries());
+    
+    // Clear previous errors
+    clearSignupForm();
+    
+    let hasErrors = false;
+    
+    // Validate required fields
+    const firstNameError = validateName(data.first_name, 'First name');
+    if (firstNameError) {
+        showFieldError('firstNameError', firstNameError);
+        hasErrors = true;
+    }
+    
+    const lastNameError = validateName(data.last_name, 'Last name');
+    if (lastNameError) {
+        showFieldError('lastNameError', lastNameError);
+        hasErrors = true;
+    }
+    
+    const emailError = validateSignupEmail(data.email);
+    if (emailError) {
+        showFieldError('signupEmailError', emailError);
+        hasErrors = true;
+    }
+    
+    const passwordError = validateSignupPassword(data.password);
+    if (passwordError) {
+        showFieldError('signupPasswordError', passwordError);
+        hasErrors = true;
+    }
+    
+    const confirmPasswordError = validateConfirmPassword(data.password, data.confirm_password);
+    if (confirmPasswordError) {
+        showFieldError('confirmPasswordError', confirmPasswordError);
+        hasErrors = true;
+    }
+    
+    
+    if (hasErrors) {
+        return;
+    }
+    
+    // Use Supabase Auth for sign up
+    try {
+        if (!window.supabase) {
+            showSignupGeneralError('Authentication system not initialized. Please refresh the page.');
+            return;
+        }
+        
+        logger.info('Attempting sign up with Supabase');
+        
+        // Create user with Supabase Auth
+        const { data: authData, error: authError } = await window.supabase.auth.signUp({
+            email: data.email,
+            password: data.password,
+            options: {
+                data: {
+                    first_name: data.first_name,
+                    last_name: data.last_name
+                }
+            }
+        });
+        
+        if (authError) {
+            logger.error('Sign up failed:', authError.message);
+            showSignupGeneralError(`Sign up failed: ${authError.message}`);
+            return;
+        }
+        
+        if (authData.user) {
+            logger.info('Sign up successful');
+            
+            // Show success state
+            switchToSignupSuccessState(
+                'Account Created Successfully!',
+                `Welcome ${data.first_name}! Please check your email to verify your account.`,
+                () => {
+                    closeSignupModal();
+                    // Redirect to dashboard after email verification
+                    window.location.assign('/dashboard');
+                }
+            );
+        } else {
+            showSignupGeneralError('Sign up failed: No user data returned');
+        }
+        
+    } catch (error) {
+        logger.error('Sign up error:', error);
+        let errorMessage = 'Network error. Please try again.';
+        
+        if (error.name === 'TypeError' && error.message.includes('fetch')) {
+            errorMessage = 'Unable to connect to authentication server. Please check your internet connection.';
+        } else if (error.name === 'SyntaxError') {
+            errorMessage = 'Server response error. Please try again.';
+        } else if (error.message) {
+            errorMessage = error.message;
+        }
+        
+        showSignupGeneralError(errorMessage);
+    }
+}
+
+function showFieldError(fieldId, message) {
+    const errorElement = document.getElementById(fieldId);
+    if (errorElement) {
+        errorElement.textContent = message;
+        errorElement.style.display = 'block';
+    }
+}
+
+function switchToSignupSuccessState(title, message, onComplete = null) {
+    const formState = document.getElementById('signupFormState');
+    const successState = document.getElementById('signupSuccessState');
+    const successTitle = document.getElementById('signupSuccessTitle');
+    const successMessage = document.getElementById('signupSuccessMessage');
+    const successOkBtn = document.getElementById('signupSuccessOkBtn');
+    
+    if (successTitle) successTitle.textContent = title;
+    if (successMessage) successMessage.textContent = message;
+    
+    // Set up OK button handler
+    if (successOkBtn) {
+        successOkBtn.onclick = () => {
+            if (onComplete) onComplete();
+        };
+    }
+    
+    // Start transition
+    if (formState && successState) {
+        // Hide form state with slide out animation
+        formState.classList.add('hidden');
+        
+        // After form is hidden, show success state with slide in animation
+        setTimeout(() => {
+            formState.style.display = 'none';
+            successState.style.display = 'block';
+            successState.classList.add('showing');
+            
+            // Trigger the slide in animation
+            setTimeout(() => {
+                successState.classList.remove('showing');
+            }, 10);
+        }, 300); // Match CSS transition duration
+    }
+}
+
+function resetSignupToFormState() {
+    const formState = document.getElementById('signupFormState');
+    const successState = document.getElementById('signupSuccessState');
+    
+    if (formState && successState) {
+        // Hide success state
+        successState.style.display = 'none';
+        successState.classList.remove('showing');
+        
+        // Show form state
+        formState.style.display = 'block';
+        formState.classList.remove('hidden');
+        
+        // Clear form and errors
+        clearSignupForm();
+    }
+}
+
+function handleSignup() {
+    document.getElementById('signupModal').style.display = 'block';
 }

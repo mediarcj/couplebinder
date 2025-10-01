@@ -10,6 +10,8 @@
 
 const express = require('express');
 const { createAuthRateLimit, getClientIP } = require('../middleware/security');
+const { validateUserRegistration } = require('../middleware/validation');
+const { supabaseAdmin } = require('../utils/supabaseClient');
 const logger = require('../utils/logger');
 const consoleLogger = require('../utils/consoleLogger');
 const router = express.Router();
@@ -101,6 +103,49 @@ router.get('/status', (req, res) => {
         res.status(500).json({
             success: false,
             message: 'Internal server error'
+        });
+    }
+});
+
+/**
+ * POST /api/auth/signup
+ * Creates a new user account using Supabase Auth
+ * Note: This is a server-side validation endpoint - actual user creation is handled by Supabase
+ */
+router.post('/signup', createAuthRateLimit(), validateUserRegistration, async (req, res) => {
+    try {
+        const clientIP = getClientIP(req);
+        const { email, password, first_name, last_name, ...profileData } = req.body;
+        
+        logger.auth('signup_attempt', {
+            requestId: req.requestId,
+            email: email,
+            ip: clientIP
+        });
+        
+        // Note: User creation is handled by Supabase Auth on the frontend
+        // This endpoint only provides server-side validation
+        // The frontend will call Supabase directly for user creation
+        
+        res.json({
+            success: true,
+            message: 'Validation passed. Please proceed with Supabase user creation.',
+            validatedData: {
+                email: email,
+                first_name: first_name,
+                last_name: last_name,
+                profileData: profileData
+            }
+        });
+        
+    } catch (error) {
+        logger.error('Signup validation error', {
+            requestId: req.requestId,
+            error: error.message
+        });
+        res.status(500).json({
+            success: false,
+            message: 'Internal server error during validation'
         });
     }
 });

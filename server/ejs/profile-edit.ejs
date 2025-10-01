@@ -1,0 +1,294 @@
+<!-- File: server/ejs/profile-edit.ejs
+     Description: User profile edit page template
+     Purpose: Allows users to edit their profile information with read/edit mode toggle
+     Notes: Uses EJS templating with server-provided configuration values -->
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="<%= ui.csrfToken || '' %>">
+    <title><%= page.title %></title>
+    <link rel="stylesheet" href="/css/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+    <header>
+        <nav>
+            <div class="container">
+                <h1>Detechify</h1>
+                <div class="nav-content">
+                    <ul>
+                        <li><a href="/">Home</a></li>
+                        <li><a href="/dashboard">Dashboard</a></li>
+                        <li><a href="/health">Health</a></li>
+                    </ul>
+                    <div class="auth-section">
+                        <a href="/dashboard" class="dashboard-link btn btn-primary">Dashboard</a>
+                        <button id="logoutBtn" class="btn btn-secondary">Logout</button>
+                    </div>
+                </div>
+            </div>
+        </nav>
+    </header>
+
+    <main>
+        <div class="container">
+            <div class="profile-header">
+                <h1>Edit Profile</h1>
+                <p>Update your profile information below</p>
+            </div>
+
+            <div class="profile-edit-form">
+                <form id="profileForm">
+                    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                    
+                    <!-- Basic Information Section -->
+                    <div class="form-section">
+                        <h3>Basic Information</h3>
+                        
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="firstName">First Name</label>
+                                <div class="field-container">
+                                    <span id="firstNameDisplay" class="field-display"></span>
+                                    <input type="text" id="firstName" name="first_name" class="field-input" style="display: none;">
+                                    <button type="button" id="editFirstName" class="btn btn-small">Edit</button>
+                                </div>
+                                <div id="firstNameError" class="error-message"></div>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="lastName">Last Name</label>
+                                <div class="field-container">
+                                    <span id="lastNameDisplay" class="field-display"></span>
+                                    <input type="text" id="lastName" name="last_name" class="field-input" style="display: none;">
+                                    <button type="button" id="editLastName" class="btn btn-small">Edit</button>
+                                </div>
+                                <div id="lastNameError" class="error-message"></div>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="email">Email Address</label>
+                            <div class="field-container">
+                                <span id="emailDisplay" class="field-display"></span>
+                                <input type="email" id="email" name="email" class="field-input" style="display: none;" readonly>
+                                <span class="field-note">Email cannot be changed</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Contact Information Section -->
+                    <div class="form-section">
+                        <h3>Contact Information</h3>
+                        
+                        <div class="form-group">
+                            <label for="phone">Phone Number</label>
+                            <div class="field-container">
+                                <span id="phoneDisplay" class="field-display"></span>
+                                <input type="tel" id="phone" name="phone" class="field-input" style="display: none;" placeholder="9-999-999-9999" maxlength="15">
+                                <button type="button" id="editPhone" class="btn btn-small">Edit</button>
+                            </div>
+                            <div id="phoneError" class="error-message"></div>
+                        </div>
+                    </div>
+
+                    <!-- Personal Information Section -->
+                    <div class="form-section">
+                        <h3>Personal Information</h3>
+                        
+                        <div class="form-group">
+                            <label for="birthday">Birthday</label>
+                            <div class="field-container">
+                                <span id="birthdayDisplay" class="field-display"></span>
+                                <input type="text" id="birthday" name="birthday" class="field-input" style="display: none;" placeholder="MM/DD/YYYY" maxlength="10">
+                                <button type="button" id="editBirthday" class="btn btn-small">Edit</button>
+                            </div>
+                            <div id="birthdayError" class="error-message"></div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="gender">Gender</label>
+                            <div class="field-container">
+                                <span id="genderDisplay" class="field-display"></span>
+                                <select id="gender" name="gender" class="field-input" style="display: none;">
+                                    <option value="">Select gender</option>
+                                    <option value="male">Male</option>
+                                    <option value="female">Female</option>
+                                </select>
+                                <button type="button" id="editGender" class="btn btn-small">Edit</button>
+                            </div>
+                            <div id="genderError" class="error-message"></div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="language">Language</label>
+                            <div class="field-container">
+                                <span id="languageDisplay" class="field-display"></span>
+                                <input type="text" id="language" name="language" class="field-input" style="display: none;" placeholder="English" maxlength="50">
+                                <button type="button" id="editLanguage" class="btn btn-small">Edit</button>
+                            </div>
+                            <div id="languageError" class="error-message"></div>
+                        </div>
+                    </div>
+
+                    <!-- Location Information Section -->
+                    <div class="form-section">
+                        <h3>Location Information</h3>
+                        
+                        <div class="form-group">
+                            <label for="cityProvince">City/Province</label>
+                            <div class="field-container">
+                                <span id="cityProvinceDisplay" class="field-display"></span>
+                                <input type="text" id="cityProvince" name="city_province" class="field-input" style="display: none;" placeholder="Enter your city or province" maxlength="100">
+                                <button type="button" id="editCityProvince" class="btn btn-small">Edit</button>
+                            </div>
+                            <div id="cityProvinceError" class="error-message"></div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="country">Country</label>
+                            <div class="field-container">
+                                <span id="countryDisplay" class="field-display"></span>
+                                <input type="text" id="country" name="country" class="field-input" style="display: none;" placeholder="Enter your country" maxlength="100">
+                                <button type="button" id="editCountry" class="btn btn-small">Edit</button>
+                            </div>
+                            <div id="countryError" class="error-message"></div>
+                        </div>
+                    </div>
+
+                    <!-- Profile Information Section -->
+                    <div class="form-section">
+                        <h3>Profile Information</h3>
+                        
+                        <div class="form-group">
+                            <label for="profileTitle">Profile Title</label>
+                            <div class="field-container">
+                                <span id="profileTitleDisplay" class="field-display"></span>
+                                <input type="text" id="profileTitle" name="profile_title" class="field-input" style="display: none;" placeholder="Enter a profile title" maxlength="100">
+                                <button type="button" id="editProfileTitle" class="btn btn-small">Edit</button>
+                            </div>
+                            <div id="profileTitleError" class="error-message"></div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="profileDescription">Profile Description</label>
+                            <div class="field-container">
+                                <span id="profileDescriptionDisplay" class="field-display"></span>
+                                <textarea id="profileDescription" name="profile_description" class="field-input" style="display: none;" placeholder="Tell us about yourself" rows="3" maxlength="500"></textarea>
+                                <button type="button" id="editProfileDescription" class="btn btn-small">Edit</button>
+                            </div>
+                            <div id="profileDescriptionError" class="error-message"></div>
+                        </div>
+                    </div>
+
+                    <!-- Interests Section -->
+                    <div class="form-section">
+                        <h3>Interests</h3>
+                        
+                        <div class="form-group">
+                            <label for="hobbies">Hobbies</label>
+                            <div class="field-container">
+                                <span id="hobbiesDisplay" class="field-display"></span>
+                                <input type="text" id="hobbies" name="hobbies" class="field-input" style="display: none;" placeholder="Enter your hobbies" maxlength="200">
+                                <button type="button" id="editHobbies" class="btn btn-small">Edit</button>
+                            </div>
+                            <div id="hobbiesError" class="error-message"></div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="music">Music Preferences</label>
+                            <div class="field-container">
+                                <span id="musicDisplay" class="field-display"></span>
+                                <input type="text" id="music" name="music" class="field-input" style="display: none;" placeholder="Enter your music preferences" maxlength="200">
+                                <button type="button" id="editMusic" class="btn btn-small">Edit</button>
+                            </div>
+                            <div id="musicError" class="error-message"></div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="favFood">Favorite Food</label>
+                            <div class="field-container">
+                                <span id="favFoodDisplay" class="field-display"></span>
+                                <input type="text" id="favFood" name="fav_food" class="field-input" style="display: none;" placeholder="Enter your favorite food" maxlength="100">
+                                <button type="button" id="editFavFood" class="btn btn-small">Edit</button>
+                            </div>
+                            <div id="favFoodError" class="error-message"></div>
+                        </div>
+                    </div>
+
+                    <!-- Status Information Section -->
+                    <div class="form-section">
+                        <h3>Status Information</h3>
+                        
+                        <div class="form-group">
+                            <label for="relationshipStatus">Relationship Status</label>
+                            <div class="field-container">
+                                <span id="relationshipStatusDisplay" class="field-display"></span>
+                                <select id="relationshipStatus" name="relationship_status" class="field-input" style="display: none;">
+                                    <option value="">Select status</option>
+                                    <option value="single">Single</option>
+                                    <option value="married">Married</option>
+                                </select>
+                                <button type="button" id="editRelationshipStatus" class="btn btn-small">Edit</button>
+                            </div>
+                            <div id="relationshipStatusError" class="error-message"></div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="job">Job Status</label>
+                            <div class="field-container">
+                                <span id="jobDisplay" class="field-display"></span>
+                                <select id="job" name="job" class="field-input" style="display: none;">
+                                    <option value="">Select status</option>
+                                    <option value="unemployed">Unemployed</option>
+                                    <option value="employed">Employed</option>
+                                </select>
+                                <button type="button" id="editJob" class="btn btn-small">Edit</button>
+                            </div>
+                            <div id="jobError" class="error-message"></div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="accountPrivacy">Account Privacy</label>
+                            <div class="field-container">
+                                <span id="accountPrivacyDisplay" class="field-display"></span>
+                                <select id="accountPrivacy" name="account_privacy" class="field-input" style="display: none;">
+                                    <option value="public">Public</option>
+                                    <option value="private">Private</option>
+                                </select>
+                                <button type="button" id="editAccountPrivacy" class="btn btn-small">Edit</button>
+                            </div>
+                            <div id="accountPrivacyError" class="error-message"></div>
+                        </div>
+                    </div>
+
+                    <!-- Form Actions -->
+                    <div class="form-actions">
+                        <button type="button" id="saveAllBtn" class="btn btn-primary" style="display: none;">Save All Changes</button>
+                        <button type="button" id="cancelAllBtn" class="btn btn-secondary" style="display: none;">Cancel All</button>
+                        <a href="/dashboard" class="btn btn-secondary">Back to Dashboard</a>
+                    </div>
+                    
+                    <div id="profileGeneralError" class="error-message" style="display: none;"></div>
+                </form>
+            </div>
+        </div>
+    </main>
+
+    <footer>
+        <div class="container">
+            <p>&copy; 2024 Detechify. Building the future of tech detection.</p>
+        </div>
+    </footer>
+
+    <!-- Pass server config to client-side JavaScript via data attributes -->
+    <div id="app-config" 
+         data-supabase-url="<%= process.env.SUPABASE_URL %>"
+         data-supabase-anon-key="<%= process.env.SUPABASE_ANON_KEY %>"
+         style="display: none;"></div>
+    <script src="/js/profile-edit.js" nonce="<%= page.nonce %>"></script>
+</body>
+</html>

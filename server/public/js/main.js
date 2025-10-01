@@ -1286,14 +1286,20 @@ async function handleSignupSubmit(e) {
         if (authData.user) {
             logger.info('Sign up successful');
             
-            // Show success state
+            // Sign out the user immediately after sign-up to prevent auto-login
+            await window.supabase.auth.signOut();
+            logger.info('User signed out after sign-up to prevent auto-login');
+            
+            // Show success state with login prompt
             switchToSignupSuccessState(
                 'Account Created Successfully!',
-                `Welcome ${data.first_name}! Please check your email to verify your account.`,
+                `Welcome ${data.first_name}! Your account has been created. Please login to continue.`,
                 () => {
                     closeSignupModal();
-                    // Redirect to dashboard after email verification
-                    window.location.assign('/dashboard');
+                    // Open login modal after closing signup modal
+                    setTimeout(() => {
+                        handleLogin();
+                    }, 300);
                 }
             );
         } else {

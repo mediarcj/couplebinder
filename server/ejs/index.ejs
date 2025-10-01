@@ -26,8 +26,8 @@
                     </ul>
                     <div class="auth-section">
                         <% if (user.isAuthenticated) { %>
-                            <a href="/dashboard" class="dashboard-link">Dashboard</a>
-                            <a href="#" class="logout-link">Logout</a>
+                            <a href="/dashboard" class="dashboard-link btn btn-primary">Dashboard</a>
+                            <button id="logoutBtn" class="btn btn-secondary">Logout</button>
                         <% } else { %>
                             <a href="#" class="login-link">Login</a>
                         <% } %>

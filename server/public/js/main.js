@@ -112,13 +112,19 @@ document.addEventListener('DOMContentLoaded', function() {
                 });
                 
                 // Listen for auth state changes
+                // Note: We only update UI for explicit SIGNED_IN and SIGNED_OUT events.
+                // INITIAL_SESSION is ignored because checkSessionStatus() will validate
+                // the session with the backend first before updating UI.
                 window.supabase.auth.onAuthStateChange((event, session) => {
                     logger.info('Auth state changed:', event);
                     if (event === 'SIGNED_IN' && session?.user) {
+                        // User explicitly logged in (not initial session load)
                         updateUIForLoggedInUser(session.user.email);
                     } else if (event === 'SIGNED_OUT') {
+                        // User explicitly logged out
                         updateUIForLoggedOutUser();
                     }
+                    // Ignore INITIAL_SESSION, TOKEN_REFRESHED, etc. - let checkSessionStatus handle it
                 });
             } catch (error) {
                 logger.error('Failed to initialize Supabase client:', error.message);
@@ -193,6 +199,12 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Login modal functionality
     initializeLoginModal();
+    
+    // Attach logout handler if button exists (for server-rendered authenticated pages)
+    const logoutBtn = document.getElementById('logoutBtn');
+    if (logoutBtn) {
+        logoutBtn.onclick = handleLogout;
+    }
     
     // Check session status and update UI
     checkSessionStatus();
@@ -709,68 +721,139 @@ async function handleLoginSubmit(e) {
  * Check session status on page load
  * 
  * WHAT:
- * We check if the user has an existing Supabase session.
+ * We check if the user has an existing valid session.
  * 
  * WHY:
  * When a user refreshes the page or visits after closing the tab,
- * Supabase may still have a valid session. We need to restore the HttpOnly cookie.
+ * Supabase may have a valid session in localStorage. We need to restore
+ * the HttpOnly cookie - but ONLY if the backend accepts the token.
  * 
  * HOW:
  * 1. Check Supabase for existing session
- * 2. If session exists, call /auth/set-cookie to create HttpOnly cookie
- * 3. Update UI based on authentication state
+ * 2. If session exists, try to set HttpOnly cookie via /auth/set-cookie
+ * 3. If backend accepts (200 OK), update UI to logged-in state
+ * 4. If backend rejects (400/401), the token is invalid - update UI to logged-out state
+ * 5. This prevents showing "Logout" briefly for invalid/expired sessions
  */
 async function checkSessionStatus() {
     try {
         // Check if Supabase has an existing session
-        const { data: { user, session }, error } = await window.supabase.auth.getUser();
+        const { data: { session }, error } = await window.supabase.auth.getSession();
         
-        if (error) {
+        if (error || !session?.access_token) {
             logger.info('No existing session found');
             updateUIForLoggedOutUser();
             return;
         }
         
-        if (user && session?.access_token) {
-            // Restore HttpOnly cookie via server endpoint
-            try {
-                await fetch('/auth/set-cookie', {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${session.access_token}`,
-                        'Content-Type': 'application/json'
-                    },
-                    credentials: 'include'
-                });
-                
-                logger.info('Session restored');
-                updateUIForLoggedInUser(user.email);
-            } catch (cookieError) {
-                logger.warn('Failed to restore session cookie');
-                updateUIForLoggedOutUser();
+        // We have a session in localStorage - but is it still valid?
+        // Try to set the HttpOnly cookie. If backend accepts it, we're logged in.
+        try {
+            const response = await fetch('/auth/set-cookie', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${session.access_token}`,
+                    'Content-Type': 'application/json'
+                },
+                credentials: 'include'
+            });
+            
+            if (response.ok) {
+                // Backend accepted the token - session is valid
+                const result = await response.json();
+                if (result.ok) {
+                    logger.info('Session restored');
+                    // Get fresh user data to update UI
+                    const { data: { user } } = await window.supabase.auth.getUser();
+                    if (user) {
+                        updateUIForLoggedInUser(user.email);
+                    } else {
+                        updateUIForLoggedOutUser();
+                    }
+                    return;
+                }
             }
-        } else {
+            
+            // Backend rejected the token - session is invalid
+            logger.info('Session expired or invalid');
+            // Clear the stale Supabase session
+            await window.supabase.auth.signOut();
+            updateUIForLoggedOutUser();
+            
+        } catch (cookieError) {
+            logger.info('Session validation failed');
             updateUIForLoggedOutUser();
         }
     } catch (error) {
-        logger.error('Session check failed:', error.message);
+        logger.info('Session check failed');
         updateUIForLoggedOutUser();
     }
 }
 
+/**
+ * Update UI to show logged-in state
+ * 
+ * WHAT:
+ * We update the navigation to show Dashboard button and Logout button.
+ * 
+ * WHY:
+ * When a user is authenticated, they should see:
+ * - Dashboard button (to navigate to dashboard)
+ * - Logout button (to sign out)
+ * This matches the dashboard page style for consistency.
+ * 
+ * HOW:
+ * 1. Find the auth section in the nav
+ * 2. Replace login link with Dashboard button + Logout button
+ * 3. Attach logout handler to the Logout button
+ */
 function updateUIForLoggedInUser(userEmail) {
-    const loginLink = document.querySelector('.login-link');
-    if (loginLink) {
-        loginLink.textContent = `Logout (${userEmail})`;
-        loginLink.onclick = handleLogout;
+    const authSection = document.querySelector('.auth-section');
+    if (authSection) {
+        // Replace content with Dashboard button + Logout button (matches dashboard style)
+        authSection.innerHTML = `
+            <a href="/dashboard" class="dashboard-link btn btn-primary">Dashboard</a>
+            <button id="logoutBtn" class="btn btn-secondary">Logout</button>
+        `;
+        
+        // Attach logout handler to button
+        const logoutBtn = authSection.querySelector('#logoutBtn');
+        if (logoutBtn) {
+            logoutBtn.onclick = handleLogout;
+        }
     }
 }
 
+/**
+ * Update UI to show logged-out state
+ * 
+ * WHAT:
+ * We update the navigation to show only Login link.
+ * 
+ * WHY:
+ * When no user is authenticated, they should only see the Login option.
+ * 
+ * HOW:
+ * 1. Find the auth section in the nav
+ * 2. Replace content with Login link only
+ * 3. Attach login modal handler
+ */
 function updateUIForLoggedOutUser() {
-    const loginLink = document.querySelector('.login-link');
-    if (loginLink) {
-        loginLink.textContent = 'Login';
-        loginLink.onclick = handleLogin;
+    const authSection = document.querySelector('.auth-section');
+    if (authSection) {
+        // Replace content with Login link only
+        authSection.innerHTML = `
+            <a href="#" class="login-link">Login</a>
+        `;
+        
+        // Attach login handler
+        const loginLink = authSection.querySelector('.login-link');
+        if (loginLink) {
+            loginLink.onclick = (e) => {
+                e.preventDefault();
+                handleLogin();
+            };
+        }
     }
 }
 
@@ -813,13 +896,19 @@ async function handleLogout() {
         }
         
         // Step 2: Sign out from Supabase (clears client-side session + localStorage)
-        const { error } = await window.supabase.auth.signOut();
-        
-        if (error) {
-            logger.error('Supabase signOut error:', error.message);
-            // Continue anyway - server cookie is already cleared
-        } else {
-            logger.info('Supabase session cleared');
+        // CRITICAL: We must wait for signOut to complete before redirecting,
+        // otherwise the page reload will find the stale session in localStorage
+        // and restore it via checkSessionStatus()
+        try {
+            const { error } = await window.supabase.auth.signOut();
+            if (error) {
+                logger.info('Supabase signOut returned error (non-critical):', error.message);
+            } else {
+                logger.info('Supabase session cleared');
+            }
+        } catch (supabaseError) {
+            // Supabase client error - non-critical, server cookie already cleared
+            logger.info('Supabase signOut exception (non-critical):', supabaseError.message);
         }
         
         // Step 3: Clear any old JS-readable cookies (security cleanup)
@@ -828,7 +917,23 @@ async function handleLogout() {
         document.cookie = 'sb-refresh-token=; Path=/; Max-Age=0; SameSite=Lax';
         logger.info('JS-readable cookies cleared');
         
-        // Step 4: Show success modal and redirect with hard reload
+        // Step 4: Force clear Supabase localStorage (manual cleanup)
+        // This ensures no stale session data remains before redirect
+        try {
+            localStorage.removeItem('supabase.auth.token');
+            // Supabase uses a dynamic key like: sb-{project-ref}-auth-token
+            const keys = Object.keys(localStorage);
+            keys.forEach(key => {
+                if (key.startsWith('sb-') && key.includes('auth-token')) {
+                    localStorage.removeItem(key);
+                    logger.info('Cleared Supabase localStorage key:', key);
+                }
+            });
+        } catch (storageError) {
+            logger.info('localStorage cleanup skipped (non-critical)');
+        }
+        
+        // Step 5: Show success modal and redirect with hard reload
         showNotificationModal(
             'Logout Successful!', 
             'You have been logged out successfully!',

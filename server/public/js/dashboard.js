@@ -137,13 +137,19 @@ async function handleLogout() {
         }
         
         // Step 2: Sign out from Supabase (clears client-side session + localStorage)
-        const { error } = await window.supabase.auth.signOut();
-        
-        if (error) {
-            console.error('Supabase signOut error:', error.message);
-            // Continue anyway - server cookie is already cleared
-        } else {
-            console.log('Supabase session cleared');
+        // CRITICAL: We must wait for signOut to complete before redirecting,
+        // otherwise the page reload will find the stale session in localStorage
+        // and restore it via checkSessionStatus()
+        try {
+            const { error } = await window.supabase.auth.signOut();
+            if (error) {
+                console.log('Supabase signOut returned error (non-critical):', error.message);
+            } else {
+                console.log('Supabase session cleared');
+            }
+        } catch (supabaseError) {
+            // Supabase client error - non-critical, server cookie already cleared
+            console.log('Supabase signOut exception (non-critical):', supabaseError.message);
         }
         
         // Step 3: Clear any old JS-readable cookies (security cleanup)
@@ -152,7 +158,23 @@ async function handleLogout() {
         document.cookie = 'sb-refresh-token=; Path=/; Max-Age=0; SameSite=Lax';
         console.log('JS-readable cookies cleared');
         
-        // Step 4: Show success modal and redirect with hard reload
+        // Step 4: Force clear Supabase localStorage (manual cleanup)
+        // This ensures no stale session data remains before redirect
+        try {
+            localStorage.removeItem('supabase.auth.token');
+            // Supabase uses a dynamic key like: sb-{project-ref}-auth-token
+            const keys = Object.keys(localStorage);
+            keys.forEach(key => {
+                if (key.startsWith('sb-') && key.includes('auth-token')) {
+                    localStorage.removeItem(key);
+                    console.log('Cleared Supabase localStorage key:', key);
+                }
+            });
+        } catch (storageError) {
+            console.log('localStorage cleanup skipped (non-critical)');
+        }
+        
+        // Step 5: Show success modal and redirect with hard reload
         showNotificationModal(
             'Logout Successful!', 
             'You have been logged out successfully!',

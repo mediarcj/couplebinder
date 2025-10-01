@@ -67,7 +67,7 @@ async function testRLSSecurity() {
     if (unauthenticatedError) {
       console.log('✓ Unauthenticated access properly blocked:', unauthenticatedError.message);
     } else {
-      console.log('❌ Unauthenticated access should be blocked but returned:', unauthenticatedData.length, 'rows');
+      console.log('FAIL: Unauthenticated access should be blocked but returned:', unauthenticatedData.length, 'rows');
     }
     
     // Test 3: Check if we can see any existing data
@@ -102,7 +102,7 @@ async function testRLSSecurity() {
       });
     }
     
-    console.log('\n🎉 RLS security test completed!');
+    console.log('\nRLS security test completed successfully!');
     console.log('If you see proper error messages for unauthenticated access, RLS is working correctly.');
     console.log('To fully test user isolation, you would need to:');
     console.log('1. Create two test user accounts in Supabase');
@@ -111,7 +111,7 @@ async function testRLSSecurity() {
     console.log('4. Verify that User B cannot see User A\'s data');
     
   } catch (error) {
-    console.error('❌ RLS test failed:', error.message);
+    console.error('RLS test failed:', error.message);
     console.error('Stack:', error.stack);
     process.exit(1);
   } finally {

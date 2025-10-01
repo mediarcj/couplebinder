@@ -212,11 +212,11 @@ async function runRLSMigration() {
     `);
     console.log('✓ Created triggers for automatic user_id setting');
     
-    console.log('🎉 RLS migration completed successfully!');
+    console.log('RLS migration completed successfully!');
     console.log('All tables now have Row Level Security enabled with user isolation policies.');
     
   } catch (error) {
-    console.error('❌ RLS migration failed:', error.message);
+    console.error('RLS migration failed:', error.message);
     console.error('Stack:', error.stack);
     process.exit(1);
   } finally {

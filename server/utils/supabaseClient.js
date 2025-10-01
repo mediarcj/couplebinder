@@ -10,6 +10,7 @@ if (!process.env.SUPABASE_URL || !process.env.SUPABASE_ANON_KEY) {
   throw new Error('Supabase envs missing: SUPABASE_URL or SUPABASE_ANON_KEY');
 }
 
+// Client for regular operations (uses anon key)
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY, {
   auth: {
     persistSession: false,
@@ -17,6 +18,16 @@ const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANO
   }
 });
 
-module.exports = { supabase };
+// Admin client for server-side operations (uses service role key)
+const supabaseAdmin = process.env.SUPABASE_SERVICE_ROLE_KEY 
+  ? createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false
+      }
+    })
+  : null;
+
+module.exports = { supabase, supabaseAdmin };
 
 

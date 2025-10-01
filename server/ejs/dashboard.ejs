@@ -132,7 +132,7 @@
                 const supabaseAnonKey = configEl.dataset.supabaseAnonKey;
                 if (supabaseUrl && supabaseAnonKey) {
                     window.supabase = supabase.createClient(supabaseUrl, supabaseAnonKey);
-                    console.log('Supabase client initialized for dashboard');
+                    // Do not console log.
                 }
             }
         }

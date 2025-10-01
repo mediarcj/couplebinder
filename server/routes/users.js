@@ -1,152 +1,90 @@
 // File: server/routes/users.js
-// Description: Transactional user operations demonstrating clean write/read patterns
-// Purpose: Shows proper transaction handling with rollback on error and commit on success
-// Notes: Demonstrates transaction discipline for data integrity
+// Description: User data retrieval from Supabase Auth
+// Purpose: Provides secure user profile access with ownership protection
+// Notes: Uses Supabase Admin API for user data retrieval
 //
 // AUTH REQUIREMENTS:
-// - POST /: REQUIRES AUTH - creates user data
-// - GET /:id: REQUIRES AUTH - reads user profiles
+// - GET /:id: REQUIRES AUTH + OWNERSHIP - reads user profiles
 
 const express = require('express');
 const router = express.Router();
 const { requireAuth } = require('../middleware/requireAuth');
-const { db } = require('../db/connection');
-const { usersRepo } = require('../db/repo');
+const { requireOwner } = require('../middleware/requireOwner');
+const { supabaseAdmin } = require('../utils/supabaseClient');
 // CSRF protection is handled globally by csrfLite middleware
 
 /**
  * WHAT:
- * We provide transactional user operations that demonstrate proper transaction handling.
+ * We provide user data retrieval from Supabase Auth.
  *
  * WHY:
- * Transactions ensure data integrity by either committing all changes or rolling back on any error.
- * This prevents partial updates and maintains database consistency.
+ * User management is handled by Supabase Auth, so we only need to retrieve user data.
+ * This ensures consistency with the authentication system.
  *
  * HOW:
- * We wrap operations in database transactions with proper error handling and rollback.
+ * We use Supabase Admin API to retrieve user information securely.
  */
-
-/**
- * POST /api/users
- * Create a new user with transaction support
- * Demonstrates proper transaction handling with validation and rollback on error
- */
-router.post('/', requireAuth, async (req, res) => {
-  let trx = null;
-  
-  try {
-    // Start transaction
-    trx = await db.transaction();
-    
-    // Extract and validate user data
-    const { email, password, first_name, last_name, phone, user_role } = req.body;
-    
-    // Server-side validation
-    if (!email || !password || !first_name || !last_name) {
-      await trx.rollback();
-      return res.status(400).json({
-        success: false,
-        message: 'Missing required fields: email, password, first_name, last_name'
-      });
-    }
-    
-    // Prepare user data
-    const userData = {
-      email: email.toLowerCase().trim(),
-      password: password, // In production, this would be hashed
-      first_name: first_name.trim(),
-      last_name: last_name.trim(),
-      phone: phone || null,
-      user_role: user_role || 'user'
-    };
-    
-    // Create user within transaction
-    const newUser = await usersRepo.createWithValidation(trx, userData);
-    
-    // Commit transaction
-    await trx.commit();
-    
-    // Return success response
-    res.status(201).json({
-      success: true,
-      message: 'User created successfully',
-      user: newUser
-    });
-    
-  } catch (error) {
-    // Rollback transaction on any error
-    if (trx) {
-      await trx.rollback();
-    }
-    
-    console.error('User creation error:', error);
-    
-    // Return appropriate error response
-    if (error.message === 'Email already exists') {
-      return res.status(409).json({
-        success: false,
-        message: 'Email already exists'
-      });
-    }
-    
-    res.status(500).json({
-      success: false,
-      message: 'Internal server error'
-    });
-  }
-});
 
 /**
  * GET /api/users/:id
- * Get user by ID with transaction support
- * Demonstrates read operations within transactions
+ * Get user by ID from Supabase
+ * Demonstrates Supabase user data retrieval
+ * SECURITY: requireOwner ensures users can only access their own profile
  */
-router.get('/:id', requireAuth, async (req, res) => {
-  let trx = null;
-  
+router.get('/:id', requireAuth, requireOwner, async (req, res) => {
   try {
-    // Start transaction for read consistency
-    trx = await db.transaction();
-    
     const { id } = req.params;
     
     // Validate UUID format
     if (!id || typeof id !== 'string' || id.length !== 36) {
-      await trx.rollback();
       return res.status(400).json({
         success: false,
         message: 'Invalid user ID format'
       });
     }
     
-    // Find user within transaction
-    const user = await usersRepo.findById(trx, id);
+    // Get user from Supabase Auth using admin client
+    if (!supabaseAdmin) {
+      return res.status(500).json({
+        success: false,
+        message: 'Service configuration error'
+      });
+    }
+    
+    const { data: { user }, error } = await supabaseAdmin.auth.admin.getUserById(id);
+    
+    if (error) {
+      console.error('Supabase user retrieval error:', error);
+      return res.status(500).json({
+        success: false,
+        message: 'Internal server error'
+      });
+    }
     
     if (!user) {
-      await trx.rollback();
       return res.status(404).json({
         success: false,
         message: 'User not found'
       });
     }
     
-    // Commit transaction
-    await trx.commit();
-    
-    // Return user without password
-    const { password: _, ...userWithoutPassword } = user;
-    
+    // Return user data (Supabase already excludes sensitive fields)
     res.json({
       success: true,
-      user: userWithoutPassword
+      user: {
+        id: user.id,
+        email: user.email,
+        email_confirmed_at: user.email_confirmed_at,
+        phone: user.phone,
+        created_at: user.created_at,
+        updated_at: user.updated_at,
+        last_sign_in_at: user.last_sign_in_at,
+        app_metadata: user.app_metadata,
+        user_metadata: user.user_metadata
+      }
     });
     
   } catch (error) {
-    // Rollback transaction on any error
-    if (trx) {
-      await trx.rollback();
-    }
-    
     console.error('User retrieval error:', error);
     
     res.status(500).json({

@@ -37,6 +37,9 @@ const consoleLogger = require('./utils/consoleLogger');
  */
 const app = express();
 
+// Trust proxy for Cloudflare (required for HTTPS redirects)
+app.set('trust proxy', 1);
+
 console.log('Detechify server starting...');
 consoleLogger.formatConfigSummary(config);
 
@@ -107,6 +110,28 @@ app.use((req, res, next) => {
   next();
 });
 
+// HTTPS redirect middleware (for production behind Cloudflare)
+if (config.cors.enforceHttps) {
+  app.use((req, res, next) => {
+    // Trust proxy headers from Cloudflare
+    const forwardedProto = req.get('x-forwarded-proto');
+    const host = req.get('host');
+    
+    // Redirect HTTP to HTTPS
+    if (forwardedProto !== 'https') {
+      const httpsUrl = `https://${host}${req.originalUrl}`;
+      logger.info('HTTPS redirect', { 
+        from: req.originalUrl, 
+        to: httpsUrl,
+        forwardedProto 
+      });
+      return res.redirect(301, httpsUrl);
+    }
+    
+    next();
+  });
+}
+
 // Security headers (Helmet) - Enterprise-level security without CSP (handled by custom middleware)
 app.use(helmet({
   contentSecurityPolicy: false, // Disable Helmet's CSP, use custom middleware instead
@@ -147,25 +172,28 @@ app.use(cors({
     // Allow requests with no origin (mobile apps, Postman, etc.)
     if (!origin) return callback(null, true);
     
-    // In development, allow all origins for easier testing
-    if (config.server.nodeEnv === 'development') {
-      return callback(null, true);
-    }
+    // Use configured allowed origins (even in development for security)
+    const allowedOrigins = config.cors.allowedOrigins;
     
-    // In production, allow specific trusted domains
-    const allowedOrigins = [
-      'https://detechify.com',
-      'https://www.detechify.com',
-      'https://app.detechify.com',
-      'https://admin.detechify.com'
-    ];
+    // If no origins configured, allow localhost in development
+    if (allowedOrigins.length === 0) {
+      if (config.server.nodeEnv === 'development' && origin.includes('localhost')) {
+        return callback(null, true);
+      }
+      logger.warn('CORS: No allowed origins configured', { origin, nodeEnv: config.server.nodeEnv });
+      return callback(new Error('CORS policy not configured'));
+    }
     
     if (allowedOrigins.includes(origin)) {
       return callback(null, true);
     }
     
     // Log blocked origins for monitoring
-    logger.warn('CORS blocked origin', { origin, nodeEnv: config.server.nodeEnv });
+    logger.warn('CORS blocked origin', { 
+      origin, 
+      allowedOrigins: allowedOrigins,
+      nodeEnv: config.server.nodeEnv 
+    });
     callback(new Error('Not allowed by CORS policy'));
   },
   credentials: true,
@@ -299,11 +327,18 @@ consoleLogger.formatMiddlewareRegistration('Security middleware');
  */
 
 // Import modular routes (CSRF protection handled globally by csrfLite)
+app.use('/auth', require('./routes/authCookie'));  // HttpOnly cookie management (set/clear)
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/users', require('./routes/users'));
 app.use('/api/page', require('./routes/pageApi'));
 app.use('/api', require('./routes/api'));
 app.use('/api', require('./routes/submissions'));
+
+// Debug routes (development only)
+if (config.server.nodeEnv === 'development') {
+  app.use('/debug', require('./routes/debug'));
+  console.log('Debug routes enabled (development mode)');
+}
 
 // Import health routes
 const { router: healthRouter } = require('./routes/health');
@@ -317,6 +352,7 @@ submissionsRouter.setSubmissions(submissions);
 
 // Import presenters
 const { buildHomePageModel } = require('./ui_contract/presenters');
+
 
 // Home page route
 app.get('/', (req, res) => {

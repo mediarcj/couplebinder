@@ -20,7 +20,10 @@ function requireAuth(req, res, next) {
     }
     
     // No valid authentication found
-    return res.status(401).send('Unauthorized');
+    return res.status(401).json({
+        success: false,
+        message: 'Authentication required'
+    });
 }
 
 module.exports = {

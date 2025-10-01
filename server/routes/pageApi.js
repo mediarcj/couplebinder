@@ -2,6 +2,12 @@
 // Description: API endpoints that return page models for Next.js compatibility
 // Purpose: Provides JSON endpoints that return the same data as EJS routes
 // Notes: These endpoints enable gradual migration from EJS to Next.js
+//
+// AUTH REQUIREMENTS:
+// - GET /home: PUBLIC - landing page
+// - GET /dashboard: REQUIRES AUTH - user dashboard
+// - GET /user/:id: REQUIRES AUTH - user profile access
+// - GET /settings: REQUIRES AUTH - user settings
 
 const express = require('express');
 const router = express.Router();
@@ -71,7 +77,7 @@ router.get('/dashboard', requireAuth, async (req, res) => {
  * GET /api/page/user/:id
  * Returns page model for user profile page
  */
-router.get('/user/:id', async (req, res) => {
+router.get('/user/:id', requireAuth, async (req, res) => {
   try {
     const pageModel = await buildUserProfilePageModel(req, res, req.params.id);
     

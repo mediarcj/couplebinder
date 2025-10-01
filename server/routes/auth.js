@@ -2,6 +2,11 @@
 // Description: Authentication routes for stateless authentication
 // Purpose: Handles authentication status and token verification
 // Notes: Uses Supabase stateless authentication via authBridge middleware
+//
+// AUTH REQUIREMENTS:
+// - POST /login: PUBLIC - deprecated, redirects to Supabase
+// - POST /logout: PUBLIC - clears client-side tokens
+// - GET /status: PUBLIC - returns current auth status
 
 const express = require('express');
 const { createAuthRateLimit, getClientIP } = require('../middleware/security');

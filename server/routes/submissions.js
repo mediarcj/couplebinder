@@ -2,9 +2,15 @@
 // Description: Text submission endpoints for content handling
 // Purpose: Handles text submission, validation, and retrieval with in-memory storage
 // Notes: Uses in-memory storage for demo purposes, maintains submission history
+// 
+// AUTH REQUIREMENTS:
+// - POST /submit: REQUIRES AUTH - creates user content
+// - POST /submit/db: REQUIRES AUTH - writes to database
+// - GET /submissions: REQUIRES AUTH - reads user data
 
 const express = require('express');
 const router = express.Router();
+const { requireAuth } = require('../middleware/requireAuth');
 const { config } = require('../config');
 const { db } = require('../db/connection');
 const { validateTextServerSide, getClientIP } = require('../middleware/security');
@@ -27,7 +33,7 @@ function injectSubmissions(req, res, next) {
  * Text submission endpoint with validation
  * Validates input and stores in memory with limits
  */
-router.post('/submit', injectSubmissions, (req, res) => {
+router.post('/submit', requireAuth, injectSubmissions, (req, res) => {
   const { text } = req.body;
   const clientIP = getClientIP(req);
   
@@ -84,7 +90,7 @@ router.post('/submit', injectSubmissions, (req, res) => {
  * Database-backed text submission with transaction support
  * Demonstrates proper transaction handling for data persistence
  */
-router.post('/submit/db', async (req, res) => {
+router.post('/submit/db', requireAuth, async (req, res) => {
   let trx = null;
   
   try {
@@ -181,7 +187,7 @@ router.post('/submit/db', async (req, res) => {
  * Recent submissions endpoint
  * Returns list of recent text submissions
  */
-router.get('/submissions', injectSubmissions, (req, res) => {
+router.get('/submissions', requireAuth, injectSubmissions, (req, res) => {
   res.json({
     submissions: req.submissions,
     count: req.submissions.length,

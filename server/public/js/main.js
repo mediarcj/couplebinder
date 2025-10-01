@@ -1,6 +1,54 @@
 // File: server/public/js/main.js
 // Description: Client-side JavaScript for Detechify frontend
 // Purpose: Handles form interactions, character counting, and API calls
+// Notes: Includes text submission form validation and submissions viewing functionality
+
+/**
+ * Frontend Logger with DEBUG flag support
+ * 
+ * WHAT:
+ * A tiny logger that gates verbose logs behind a DEBUG flag.
+ * 
+ * WHY:
+ * Production console should be quiet. Developers can enable verbose logs
+ * by setting ?debug=1 in URL or localStorage.debug=1.
+ * 
+ * HOW:
+ * - info/warn: only log when DEBUG is enabled
+ * - error: always log (critical issues need visibility)
+ * - Check for DEBUG via URL param (?debug=1) or localStorage
+ */
+const logger = {
+    _isDebug: () => {
+        // Check URL parameter first
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.get('debug') === '1') return true;
+        
+        // Check localStorage
+        try {
+            return localStorage.getItem('debug') === '1';
+        } catch (e) {
+            return false;
+        }
+    },
+    
+    info: (message, ...args) => {
+        if (logger._isDebug()) {
+            console.log(message, ...args);
+        }
+    },
+    
+    warn: (message, ...args) => {
+        if (logger._isDebug()) {
+            console.warn(message, ...args);
+        }
+    },
+    
+    error: (message, ...args) => {
+        // Always log errors
+        console.error(message, ...args);
+    }
+};
 
 /**
  * Get CSRF token from cookie or meta tag
@@ -22,13 +70,11 @@ function getCSRFToken() {
         }
     }
     
-    console.warn('CSRF token not found');
     return '';
 }
-// Notes: Includes text submission form validation and submissions viewing functionality
 
 document.addEventListener('DOMContentLoaded', function() {
-    console.log('Detechify frontend loaded');
+    logger.info('Detechify frontend loaded');
     
     // Extract config from data attributes
     const configEl = document.getElementById('app-config');
@@ -41,33 +87,33 @@ document.addEventListener('DOMContentLoaded', function() {
         };
         
         // Initialize Supabase client
-        console.log('Initializing Supabase client...');
-        console.log('Supabase URL:', window.appConfig.supabaseUrl);
-        console.log('Supabase Key:', window.appConfig.supabaseAnonKey ? 'Present' : 'Missing');
+        logger.info('Initializing Supabase client');
+        logger.info('Supabase URL configured');
+        logger.info('Supabase Key:', window.appConfig.supabaseAnonKey ? 'Present' : 'Missing');
         
         if (window.appConfig.supabaseUrl && window.appConfig.supabaseAnonKey) {
             try {
                 if (typeof supabase === 'undefined') {
-                    console.error('Supabase library not loaded - check if CDN script loaded correctly');
+                    logger.error('Supabase library not loaded - check if CDN script loaded correctly');
                     return;
                 }
                 
-                console.log('Creating Supabase client...');
+                logger.info('Creating Supabase client');
                 window.supabase = supabase.createClient(window.appConfig.supabaseUrl, window.appConfig.supabaseAnonKey);
-                console.log('Supabase client initialized successfully');
+                logger.info('Supabase client initialized successfully');
                 
                 // Test the connection
                 window.supabase.auth.getSession().then(({ data: { session }, error }) => {
                     if (error) {
-                        console.error('Supabase session check error:', error);
+                        logger.error('Supabase session check error:', error);
                     } else {
-                        console.log('Supabase connection test successful, current session:', session ? 'Active' : 'None');
+                        logger.info('Supabase connection test successful');
                     }
                 });
                 
                 // Listen for auth state changes
                 window.supabase.auth.onAuthStateChange((event, session) => {
-                    console.log('Auth state changed:', event, session?.user?.email);
+                    logger.info('Auth state changed:', event);
                     if (event === 'SIGNED_IN' && session?.user) {
                         updateUIForLoggedInUser(session.user.email);
                     } else if (event === 'SIGNED_OUT') {
@@ -75,10 +121,10 @@ document.addEventListener('DOMContentLoaded', function() {
                     }
                 });
             } catch (error) {
-                console.error('Failed to initialize Supabase client:', error);
+                logger.error('Failed to initialize Supabase client:', error.message);
             }
         } else {
-            console.error('Supabase configuration missing - URL or Key not found');
+            logger.error('Supabase configuration missing - URL or Key not found');
         }
     }
     
@@ -213,7 +259,7 @@ function initializeTextForm() {
                 showResult('error', `Error: ${data.error}`);
             }
         } catch (error) {
-            console.error('Submission error:', error);
+            logger.error('Submission error:', error.message);
             let errorMessage = 'Network error. Please try again.';
             
             if (error.name === 'TypeError' && error.message.includes('fetch')) {
@@ -270,7 +316,7 @@ function initializeSubmissions() {
                 this.textContent = originalText;
             }
         } catch (error) {
-            console.error('Load submissions error:', error);
+            logger.error('Load submissions error:', error.message);
             let errorMessage = 'Network error loading submissions';
             
             if (error.name === 'TypeError' && error.message.includes('fetch')) {
@@ -557,47 +603,93 @@ async function handleLoginSubmit(e) {
                 return;
             }
             
-            console.log('Attempting login with Supabase...');
-            console.log('Email:', email);
-            console.log('Supabase client available:', !!window.supabase);
+            logger.info('Attempting login with Supabase');
+            logger.info('Supabase client available:', !!window.supabase);
             
             const { data, error } = await window.supabase.auth.signInWithPassword({
                 email: email,
                 password: password
             });
             
-            console.log('Login response received:', { data: data ? 'Present' : 'None', error: error ? error.message : 'None' });
+            logger.info('Login response received');
             
             if (error) {
-                console.error('Supabase login error details:', {
-                    message: error.message,
-                    status: error.status,
-                    statusText: error.statusText
-                });
+                logger.error('Login failed:', error.message);
                 showLoginGeneralError(`Login failed: ${error.message}`);
             } else {
-                console.log('Login successful:', data.user.email);
+                logger.info('Login successful');
                 
-                // Set the access token as a cookie for the backend
-                if (data.session?.access_token) {
-                    document.cookie = `sb_access_token=${data.session.access_token}; path=/; SameSite=Strict; Secure`;
-                    console.log('Access token set as cookie');
+                /**
+                 * WHAT:
+                 * We have a valid Supabase session with an access token.
+                 * 
+                 * WHY:
+                 * The token needs to be stored in an HttpOnly cookie (secure, no JS access).
+                 * JavaScript-set cookies can be stolen via XSS. Server-set HttpOnly cookies cannot.
+                 * 
+                 * HOW:
+                 * 1. Extract access token from Supabase session
+                 * 2. Call /auth/set-cookie endpoint with Bearer token
+                 * 3. Server sets HttpOnly cookie with proper security flags
+                 * 4. Clear any old JS-readable cookies
+                 * 5. Redirect to dashboard
+                 */
+                
+                // Verify we have a proper access token
+                const access = data.session?.access_token;
+                if (!access || access.split('.').length !== 3) {
+                    logger.error('No access token received from authentication');
+                    showLoginGeneralError('Login failed: no access token');
+                    return;
                 }
                 
-                switchToSuccessState(
-                    'Login Successful!', 
-                    `Welcome ${data.user.email}!`,
-                    () => {
-                        closeModal();
-                        // Small delay to ensure session is processed
-                        setTimeout(() => {
-                            window.location.href = '/dashboard';
-                        }, 100);
+                try {
+                    // Call server endpoint to set HttpOnly cookie
+                    const cookieResponse = await fetch('/auth/set-cookie', {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': `Bearer ${access}`,
+                            'Content-Type': 'application/json'
+                        },
+                        credentials: 'include'  // Required for cookies
+                    });
+                    
+                    if (!cookieResponse.ok) {
+                        logger.error('Failed to set authentication cookie');
+                        showLoginGeneralError('Login failed: could not set session');
+                        return;
                     }
-                );
+                    
+                    const cookieResult = await cookieResponse.json();
+                    if (!cookieResult.ok) {
+                        logger.error('Server rejected authentication cookie');
+                        showLoginGeneralError('Login failed: invalid session');
+                        return;
+                    }
+                    
+                    // Clear any old JS-readable cookies (security cleanup)
+                    document.cookie = 'sb-access-token=; Path=/; Max-Age=0';
+                    document.cookie = 'sb_access_token=; Path=/; Max-Age=0';
+                    document.cookie = 'sb-refresh-token=; Path=/; Max-Age=0';
+                    
+                    logger.info('Secure authentication cookie set by server');
+                    
+                    switchToSuccessState(
+                        'Login Successful!', 
+                        `Welcome ${data.user.email}!`,
+                        () => {
+                            closeModal();
+                            // Redirect to dashboard (HttpOnly cookie will be sent automatically)
+                            window.location.assign('/dashboard');
+                        }
+                    );
+                } catch (cookieError) {
+                    logger.error('Cookie setup failed:', cookieError.message);
+                    showLoginGeneralError('Login failed: session setup error');
+                }
             }
         } catch (error) {
-            console.error('Login error:', error);
+            logger.error('Login error:', error);
             let errorMessage = 'Network error. Please try again.';
             
             if (error.name === 'TypeError' && error.message.includes('fetch')) {
@@ -613,24 +705,55 @@ async function handleLoginSubmit(e) {
     }
 }
 
+/**
+ * Check session status on page load
+ * 
+ * WHAT:
+ * We check if the user has an existing Supabase session.
+ * 
+ * WHY:
+ * When a user refreshes the page or visits after closing the tab,
+ * Supabase may still have a valid session. We need to restore the HttpOnly cookie.
+ * 
+ * HOW:
+ * 1. Check Supabase for existing session
+ * 2. If session exists, call /auth/set-cookie to create HttpOnly cookie
+ * 3. Update UI based on authentication state
+ */
 async function checkSessionStatus() {
     try {
-        // Use Supabase Auth to check session status
+        // Check if Supabase has an existing session
         const { data: { user, session }, error } = await window.supabase.auth.getUser();
         
         if (error) {
-            console.error('Auth status check failed:', error);
+            logger.info('No existing session found');
             updateUIForLoggedOutUser();
-        } else if (user && session?.access_token) {
-            // Set the access token as a cookie for the backend
-            document.cookie = `sb_access_token=${session.access_token}; path=/; SameSite=Strict; Secure`;
-            console.log('Access token set as cookie from existing session');
-            updateUIForLoggedInUser(user.email);
+            return;
+        }
+        
+        if (user && session?.access_token) {
+            // Restore HttpOnly cookie via server endpoint
+            try {
+                await fetch('/auth/set-cookie', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${session.access_token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    credentials: 'include'
+                });
+                
+                logger.info('Session restored');
+                updateUIForLoggedInUser(user.email);
+            } catch (cookieError) {
+                logger.warn('Failed to restore session cookie');
+                updateUIForLoggedOutUser();
+            }
         } else {
             updateUIForLoggedOutUser();
         }
     } catch (error) {
-        console.error('Session status check failed:', error);
+        logger.error('Session check failed:', error.message);
         updateUIForLoggedOutUser();
     }
 }
@@ -658,26 +781,56 @@ async function handleLogout() {
             return;
         }
         
-        // Use Supabase Auth for logout
+        /**
+         * WHAT:
+         * We log the user out and clear the authentication cookie.
+         * 
+         * WHY:
+         * On logout, we need to invalidate the session by clearing the HttpOnly cookie.
+         * We also sign out from Supabase to clear their client-side session.
+         * 
+         * HOW:
+         * 1. Call Supabase signOut to clear client session
+         * 2. Call /auth/clear-cookie to remove HttpOnly cookie
+         * 3. Clear any old JS-readable cookies
+         * 4. Update UI to logged-out state
+         */
+        
+        // Step 1: Sign out from Supabase (clears client-side session)
         const { error } = await window.supabase.auth.signOut();
         
         if (error) {
             showNotificationModal('Logout Failed', `Logout failed: ${error.message}`);
-        } else {
-            // Clear the access token cookie
-            document.cookie = 'sb_access_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
-            console.log('Access token cookie cleared');
-            
-            showNotificationModal(
-                'Logout Successful!', 
-                'You have been logged out successfully!',
-                () => {
-                    updateUIForLoggedOutUser();
-                }
-            );
+            return;
         }
+        
+        // Step 2: Clear server-side HttpOnly cookie
+        try {
+            await fetch('/auth/clear-cookie', {
+                method: 'POST',
+                credentials: 'include'  // Required for cookies
+            });
+        } catch (e) {
+            // Continue even if clear-cookie fails (cookie will expire anyway)
+            logger.warn('Server cookie clear failed, but continuing logout');
+        }
+        
+        // Step 3: Clear any old JS-readable cookies (security cleanup)
+        document.cookie = 'sb-access-token=; Path=/; Max-Age=0';
+        document.cookie = 'sb_access_token=; Path=/; Max-Age=0';
+        document.cookie = 'sb-refresh-token=; Path=/; Max-Age=0';
+        
+        logger.info('Authentication session cleared');
+        
+        showNotificationModal(
+            'Logout Successful!', 
+            'You have been logged out successfully!',
+            () => {
+                updateUIForLoggedOutUser();
+            }
+        );
     } catch (error) {
-        console.error('Logout error:', error);
+        logger.error('Logout error:', error.message);
         showNotificationModal('Network Error', 'Network error during logout. Please try again.');
     }
 }

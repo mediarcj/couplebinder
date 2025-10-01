@@ -2,6 +2,7 @@
 // Description: Formatted console logging utility for readable terminal output
 // Purpose: Give clean, organized terminal output in simple English
 // Notes: We keep the same visual style (big lines, clear sections). No emojis.
+// Security: Never logs tokens, authorization headers, or sensitive cookie values
 
 /**
  * WHAT:
@@ -13,7 +14,40 @@
  * HOW:
  * We use simple blocks with clear labels. We avoid secrets/PII where possible.
  * We also fix small things like status labels and duration formatting.
+ * 
+ * SECURITY:
+ * We filter out sensitive values like tokens, authorization headers, and auth cookies.
  */
+
+/**
+ * Sanitize sensitive values from logging
+ * @param {string} key - The key name
+ * @param {string} value - The value to potentially sanitize
+ * @returns {string} - Sanitized value or original if not sensitive
+ */
+function sanitizeSensitiveValue(key, value) {
+  if (!key || !value) return value;
+  
+  const lowerKey = key.toLowerCase();
+  const sensitiveKeys = [
+    'authorization',
+    'sb-access-token',
+    'sb_access_token',
+    'access_token',
+    'refresh_token',
+    'password',
+    'secret',
+    'api_key',
+    'apikey'
+  ];
+  
+  // Check if key contains any sensitive term
+  if (sensitiveKeys.some(term => lowerKey.includes(term))) {
+    return '[REDACTED]';
+  }
+  
+  return value;
+}
 
 // We do not import config here. This file only formats output.
 // If you ever need config values inside logs, you can import when needed.
@@ -294,8 +328,8 @@ function formatServerStartup(serverInfo) {
   console.log(`${LINE}`);
   console.log(`Server: ${serverInfo.host}:${serverInfo.port}`);
   console.log(`Environment: ${serverInfo.nodeEnv}`);
-  console.log(`Database: ${serverInfo.database}`);
-  console.log(`Auth: Stateless (Supabase)`);
+  console.log(`Database: Supabase PostgreSQL`);
+  console.log(`Auth: Stateless (Supabase RS256 + JWKS)`);
   console.log(`Rate Limiting: ${serverInfo.rateLimit}`);
   console.log(`Text Limits: ${serverInfo.textLimits}`);
   console.log(`Max Submissions: ${serverInfo.maxSubmissions}`);
@@ -449,6 +483,7 @@ module.exports = {
   formatConfigSummary,
   formatMiddlewareRegistration,
   formatGracefulShutdown,
+  sanitizeSensitiveValue,
   formatCookieParsing,
   formatCSRFToken,
   formatSecurityClearance,

@@ -31,9 +31,23 @@ const config = {
     bcryptRounds: parseInt(process.env.BCRYPT_ROUNDS)
   },
 
+  // JWT Verification configuration
+  jwt: {
+    jwksUrl: process.env.SUPABASE_JWKS_URL,
+    issuer: process.env.SUPABASE_ISSUER,
+    expectedAud: process.env.SUPABASE_EXPECTED_AUD,
+    clockSkewSec: parseInt(process.env.JWT_CLOCK_SKEW_SEC) || 30
+  },
+
   // Redis decommissioned - stateless auth enabled
 
   // Rate limiting handled at Cloudflare edge
+
+  // CORS and HTTPS configuration
+  cors: {
+    allowedOrigins: process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',') : [],
+    enforceHttps: process.env.ENFORCE_HTTPS === 'true'
+  },
 
   // Input validation limits
   limits: {
@@ -50,7 +64,8 @@ function validateConfig() {
   // Check required environment variables
   const requiredVars = [
     'PORT', 'NODE_ENV', 'HOST',
-    'TEXT_MIN_LENGTH', 'TEXT_MAX_LENGTH', 'MAX_SUBMISSIONS'
+    'TEXT_MIN_LENGTH', 'TEXT_MAX_LENGTH', 'MAX_SUBMISSIONS',
+    'SUPABASE_JWKS_URL', 'SUPABASE_ISSUER', 'SUPABASE_EXPECTED_AUD'
   ];
 
   // Check for either Supabase DB URL or individual DB variables
@@ -106,11 +121,11 @@ if (validationErrors.length > 0) {
 function logConfigSummary() {
   console.log('Configuration loaded:');
   console.log(`  Server: ${config.server.host}:${config.server.port} (${config.server.nodeEnv})`);
+  console.log(`  Database: Supabase PostgreSQL`);
+  console.log(`  Auth: Stateless (Supabase RS256 + JWKS)`);
   console.log(`  Rate limiting: handled at Cloudflare edge`);
   console.log(`  Text limits: ${config.limits.textMinLength}-${config.limits.textMaxLength} chars`);
   console.log(`  Max submissions: ${config.limits.maxSubmissions}`);
-  console.log(`  Database: ${config.database.url ? 'Supabase PostgreSQL' : 'not configured'}`);
-        console.log(`  Redis: decommissioned (stateless mode)`);
 }
 
 module.exports = {

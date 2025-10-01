@@ -2,6 +2,12 @@
 // Description: Health check endpoints for monitoring and status
 // Purpose: Provides server health, liveness, and readiness status for deployment monitoring
 // Notes: Used by load balancers, monitoring systems, and deployment tools
+//
+// AUTH REQUIREMENTS:
+// - GET /: PUBLIC - basic health check
+// - GET /liveness: PUBLIC - liveness probe for containers
+// - GET /readiness: PUBLIC - readiness probe for containers
+// - GET /detailed: PUBLIC - detailed system status
 
 const express = require('express');
 const router = express.Router();

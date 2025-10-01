@@ -2,9 +2,14 @@
 // Description: Transactional user operations demonstrating clean write/read patterns
 // Purpose: Shows proper transaction handling with rollback on error and commit on success
 // Notes: Demonstrates transaction discipline for data integrity
+//
+// AUTH REQUIREMENTS:
+// - POST /: REQUIRES AUTH - creates user data
+// - GET /:id: REQUIRES AUTH - reads user profiles
 
 const express = require('express');
 const router = express.Router();
+const { requireAuth } = require('../middleware/requireAuth');
 const { db } = require('../db/connection');
 const { usersRepo } = require('../db/repo');
 // CSRF protection is handled globally by csrfLite middleware
@@ -26,7 +31,7 @@ const { usersRepo } = require('../db/repo');
  * Create a new user with transaction support
  * Demonstrates proper transaction handling with validation and rollback on error
  */
-router.post('/', async (req, res) => {
+router.post('/', requireAuth, async (req, res) => {
   let trx = null;
   
   try {
@@ -96,7 +101,7 @@ router.post('/', async (req, res) => {
  * Get user by ID with transaction support
  * Demonstrates read operations within transactions
  */
-router.get('/:id', async (req, res) => {
+router.get('/:id', requireAuth, async (req, res) => {
   let trx = null;
   
   try {

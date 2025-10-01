@@ -2,6 +2,10 @@
 // Description: General API utility endpoints
 // Purpose: Provides basic API endpoints for testing and UI configuration
 // Notes: Includes hello world endpoint and backend-driven UI configuration
+//
+// AUTH REQUIREMENTS:
+// - GET /hello: PUBLIC - test endpoint
+// - GET /ui-config: PUBLIC - UI configuration
 
 const express = require('express');
 const router = express.Router();

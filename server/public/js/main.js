@@ -51,6 +51,33 @@ const logger = {
 };
 
 /**
+ * XSS Protection: HTML Escape Function
+ * 
+ * WHAT:
+ * Escapes all HTML special characters to prevent XSS attacks when rendering user content.
+ * 
+ * WHY:
+ * User-submitted text may contain malicious HTML/JavaScript. We must escape it
+ * before inserting into innerHTML to prevent stored XSS vulnerabilities.
+ * 
+ * HOW:
+ * Converts dangerous characters to HTML entities: < becomes &lt;, > becomes &gt;, etc.
+ * This ensures the browser treats user input as plain text, not executable code.
+ * 
+ * @param {string} unsafe - User input that may contain malicious HTML
+ * @returns {string} HTML-safe escaped string
+ */
+function escapeHtml(unsafe) {
+    if (!unsafe) return '';
+    return String(unsafe)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
+/**
  * Get CSRF token from cookie or meta tag
  * @returns {string} CSRF token
  */
@@ -356,14 +383,16 @@ function displaySubmissions(submissions) {
         if (submissions.length === 0) {
             submissionsList.innerHTML = '<p style="text-align: center; color: #6c757d;">No submissions yet. Submit some text above!</p>';
         } else {
+            // SECURITY: Escape all user content to prevent XSS attacks
+            // User submissions may contain malicious HTML/JS - we escape before rendering
             submissionsList.innerHTML = submissions.map(sub => `
                 <div class="submission-item">
                     <div class="submission-header">
-                        <span>${sub.text_length} characters</span>
-                        <span class="submission-id">${sub.id}</span>
-                        <span>${new Date(sub.timestamp).toLocaleString()}</span>
+                        <span>${escapeHtml(String(sub.text_length))} characters</span>
+                        <span class="submission-id">${escapeHtml(sub.id)}</span>
+                        <span>${escapeHtml(new Date(sub.timestamp).toLocaleString())}</span>
                     </div>
-                    <div class="submission-preview">${sub.preview}</div>
+                    <div class="submission-preview">${escapeHtml(sub.preview)}</div>
                 </div>
             `).join('');
         }

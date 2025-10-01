@@ -6,6 +6,7 @@
 // Rate limiting removed - handled at Cloudflare edge
 const crypto = require('crypto');
 const logger = require('../utils/logger');
+const sanitizeHtml = require('sanitize-html');
 
 /**
  * WHAT:
@@ -88,6 +89,19 @@ function validatePasswordServerSide(password) {
 
 /**
  * Server-side text validation matching frontend rules
+ * 
+ * WHAT:
+ * Validates and sanitizes user-submitted text using a proper HTML sanitization library.
+ * 
+ * WHY:
+ * Regex-based sanitization is insufficient and can be bypassed with clever payloads.
+ * We use sanitize-html library which properly parses and strips dangerous HTML/JS.
+ * 
+ * HOW:
+ * 1. Trim whitespace and check length limits
+ * 2. Use sanitize-html with strict config to strip ALL HTML tags and dangerous content
+ * 3. Return validation result with fully sanitized text
+ * 
  * @param {string} text - Text to validate
  * @returns {object} Validation result with sanitized text
  */
@@ -108,11 +122,21 @@ function validateTextServerSide(text) {
         return { valid: false, error: 'Text cannot exceed 5000 characters', sanitized: '' };
     }
 
-    // Basic XSS prevention: remove script tags and dangerous content
-    const xssSanitized = sanitized
-        .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
-        .replace(/javascript:/gi, '')
-        .replace(/on\w+\s*=/gi, '');
+    // SECURITY: Proper XSS prevention using sanitize-html library
+    // Configuration: Strip ALL HTML tags and dangerous content
+    // This prevents XSS attacks like <img src=x onerror=alert(1)>, <svg/onload=...>, etc.
+    const xssSanitized = sanitizeHtml(sanitized, {
+        allowedTags: [], // Strip ALL HTML tags - treat as plain text
+        allowedAttributes: {}, // No attributes allowed
+        disallowedTagsMode: 'discard', // Remove tags completely
+        // Remove any remaining dangerous patterns
+        textFilter: function(text) {
+            return text
+                .replace(/javascript:/gi, '')
+                .replace(/vbscript:/gi, '')
+                .replace(/data:text\/html/gi, '');
+        }
+    });
 
     return { valid: true, error: null, sanitized: xssSanitized };
 }

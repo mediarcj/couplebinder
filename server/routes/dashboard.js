@@ -19,8 +19,12 @@ router.get('/', requireAuth, async (req, res) => {
 
         // User data comes directly from Supabase token, no database lookup needed
 
-        // Add nonce to page model for EJS template
-        pageModel.nonce = res.locals.nonce;
+        // Add nonce to page.nonce for EJS template (matches index.ejs pattern)
+        pageModel.page.nonce = res.locals.nonce;
+        
+        // Add Supabase credentials for client initialization (dashboard needs them for logout)
+        pageModel.ui.supabaseUrl = process.env.SUPABASE_URL;
+        pageModel.ui.supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
         
         // Render EJS template with page model
         res.render('dashboard', pageModel);

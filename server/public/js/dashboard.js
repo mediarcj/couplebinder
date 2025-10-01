@@ -4,6 +4,33 @@
 // Notes: Maintains consistency with main.js functionality
 
 /**
+ * XSS Protection: HTML Escape Function
+ * 
+ * WHAT:
+ * Escapes all HTML special characters to prevent XSS attacks when rendering user content.
+ * 
+ * WHY:
+ * User-submitted text may contain malicious HTML/JavaScript. We must escape it
+ * before inserting into innerHTML to prevent stored XSS vulnerabilities.
+ * 
+ * HOW:
+ * Converts dangerous characters to HTML entities: < becomes &lt;, > becomes &gt;, etc.
+ * This ensures the browser treats user input as plain text, not executable code.
+ * 
+ * @param {string} unsafe - User input that may contain malicious HTML
+ * @returns {string} HTML-safe escaped string
+ */
+function escapeHtml(unsafe) {
+    if (!unsafe) return '';
+    return String(unsafe)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
+/**
  * Get CSRF token from meta tag or cookie
  */
 function getCSRFToken() {
@@ -27,7 +54,6 @@ function getCSRFToken() {
 }
 
 document.addEventListener('DOMContentLoaded', function() {
-    console.log('Dashboard frontend loaded');
     
     // Initialize dashboard functionality
     initializeDashboard();
@@ -235,6 +261,8 @@ async function fetchSubmissions() {
 function displaySubmissions(submissions) {
     const submissionsList = document.getElementById('submissionsList');
     
+    // SECURITY: Escape all user content to prevent XSS attacks
+    // User submissions may contain malicious HTML/JS - we escape before rendering
     const html = `
         <div class="submissions-header">
             <h3>Recent Submissions</h3>
@@ -244,14 +272,14 @@ function displaySubmissions(submissions) {
             ${submissions.map(submission => `
                 <div class="submission-item">
                     <div class="submission-meta">
-                        <span class="submission-id">ID: ${submission.id}</span>
-                        <span class="submission-time">${new Date(submission.timestamp).toLocaleString()}</span>
+                        <span class="submission-id">ID: ${escapeHtml(submission.id)}</span>
+                        <span class="submission-time">${escapeHtml(new Date(submission.timestamp).toLocaleString())}</span>
                     </div>
                     <div class="submission-preview">
-                        ${submission.preview}
+                        ${escapeHtml(submission.preview)}
                     </div>
                     <div class="submission-stats">
-                        <span class="submission-length">${submission.text_length} characters</span>
+                        <span class="submission-length">${escapeHtml(String(submission.text_length))} characters</span>
                     </div>
                 </div>
             `).join('')}

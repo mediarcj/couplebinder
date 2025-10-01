@@ -13,6 +13,7 @@ const router = express.Router();
 const { requireAuth } = require('../middleware/requireAuth');
 const { config } = require('../config');
 const { db } = require('../db/connection');
+const { supabase } = require('../utils/supabaseClient');
 const { validateTextServerSide, getClientIP } = require('../middleware/security');
 const { checkAndConsumeQuota } = require('../db/repo/quotasRepo');
 
@@ -132,6 +133,7 @@ router.post('/submit/db', requireAuth, async (req, res) => {
     // Create submission record within transaction
     const submissionData = {
       id: req.requestId,
+      user_id: req.user.id, // Add user_id for RLS
       text: textValidation.sanitized,
       text_length: textValidation.sanitized.length,
       client_ip: clientIP,
@@ -185,15 +187,80 @@ router.post('/submit/db', requireAuth, async (req, res) => {
 /**
  * GET /api/submissions
  * Recent submissions endpoint
- * Returns list of recent text submissions
+ * Returns list of recent text submissions from database with RLS
  */
-router.get('/submissions', requireAuth, injectSubmissions, (req, res) => {
-  res.json({
-    submissions: req.submissions,
-    count: req.submissions.length,
-    requestId: req.requestId,
-    timestamp: new Date().toISOString()
-  });
+router.get('/submissions', requireAuth, async (req, res) => {
+  try {
+    // Get user's access token from cookie
+    const accessToken = req.cookies?.['sb-access-token'];
+    
+    if (!accessToken) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required',
+        requestId: req.requestId,
+        timestamp: new Date().toISOString()
+      });
+    }
+    
+    // Create Supabase client with user's access token for RLS
+    const { createClient } = require('@supabase/supabase-js');
+    const userSupabase = createClient(
+      process.env.SUPABASE_URL,
+      process.env.SUPABASE_ANON_KEY,
+      {
+        global: {
+          headers: {
+            Authorization: `Bearer ${accessToken}`
+          }
+        }
+      }
+    );
+    
+    // Query submissions with RLS (user can only see their own)
+    const { data: submissions, error } = await userSupabase
+      .from('submissions')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(50); // Limit to recent 50 submissions
+    
+    if (error) {
+      console.error('Error fetching submissions:', error);
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to fetch submissions',
+        requestId: req.requestId,
+        timestamp: new Date().toISOString()
+      });
+    }
+    
+    // Format submissions for response
+    const formattedSubmissions = submissions.map(sub => ({
+      id: sub.id,
+      text: sub.text,
+      text_length: sub.text_length,
+      timestamp: sub.created_at,
+      preview: sub.text.substring(0, 100) + (sub.text.length > 100 ? '...' : '')
+    }));
+    
+    res.json({
+      success: true,
+      submissions: formattedSubmissions,
+      count: formattedSubmissions.length,
+      requestId: req.requestId,
+      timestamp: new Date().toISOString()
+    });
+    
+  } catch (error) {
+    console.error('Submissions retrieval error:', error);
+    
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+      requestId: req.requestId,
+      timestamp: new Date().toISOString()
+    });
+  }
 });
 
 // Export function to set submissions array from main app

@@ -74,15 +74,16 @@ function validatePasswordServerSide(password) {
         return { valid: false, error: 'Password cannot be empty' };
     }
 
-    // Check character restrictions (frontend: alphanumeric only)
-    const validPasswordRegex = /^[a-zA-Z0-9]+$/;
-    if (!validPasswordRegex.test(password)) {
-        return { valid: false, error: 'Password can only contain letters and numbers' };
-    }
+    // No character restrictions - frontend allows any characters
 
     // Additional server-side security: minimum length
-    if (password.length < 6) {
-        return { valid: false, error: 'Password must be at least 6 characters' };
+    if (password.length < 8) {
+        return { valid: false, error: 'Password must be at least 8 characters' };
+    }
+    
+    // Check maximum length
+    if (password.length > 50) {
+        return { valid: false, error: 'Password must be 50 characters or less' };
     }
 
     return { valid: true, error: null };

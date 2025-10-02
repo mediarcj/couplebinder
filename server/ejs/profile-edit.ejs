@@ -48,26 +48,14 @@
                     <div class="form-section">
                         <h3>Basic Information</h3>
                         
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label for="firstName">First Name</label>
-                                <div class="field-container">
-                                    <span id="firstNameDisplay" class="field-display"></span>
-                                    <input type="text" id="firstName" name="first_name" class="field-input" style="display: none;">
-                                    <button type="button" id="editFirstName" class="btn btn-small">Edit</button>
-                                </div>
-                                <div id="firstNameError" class="error-message"></div>
+                        <div class="form-group">
+                            <label for="displayName">Display Name</label>
+                            <div class="field-container">
+                                <span id="displayNameDisplay" class="field-display"></span>
+                                <input type="text" id="displayName" name="display_name" class="field-input" style="display: none;" maxlength="100">
+                                <button type="button" id="editDisplayName" class="btn btn-small">Edit</button>
                             </div>
-                            
-                            <div class="form-group">
-                                <label for="lastName">Last Name</label>
-                                <div class="field-container">
-                                    <span id="lastNameDisplay" class="field-display"></span>
-                                    <input type="text" id="lastName" name="last_name" class="field-input" style="display: none;">
-                                    <button type="button" id="editLastName" class="btn btn-small">Edit</button>
-                                </div>
-                                <div id="lastNameError" class="error-message"></div>
-                            </div>
+                            <div id="displayNameError" class="error-message"></div>
                         </div>
 
                         <div class="form-group">
@@ -280,7 +268,7 @@
 
     <footer>
         <div class="container">
-            <p>&copy; 2024 Detechify. Building the future of tech detection.</p>
+            <p>&copy; 2024 <%= app_info?.name || 'Application' %>. <%= app_info?.description || 'A modern web application' %>.</p>
         </div>
     </footer>
 

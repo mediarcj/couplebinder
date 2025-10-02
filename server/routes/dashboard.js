@@ -29,7 +29,8 @@ router.get('/', requireAuth, async (req, res) => {
         // Render EJS template with page model
         res.render('dashboard', pageModel);
     } catch (error) {
-        console.error('Dashboard route error:', error.message);
+        console.error('Dashboard route error:', error);
+        console.error('Error stack:', error.stack);
         const pageModel = buildErrorPageModel(req, res, 500, 'Unable to load dashboard');
         res.status(500).render('error', pageModel);
     }

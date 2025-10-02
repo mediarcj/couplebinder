@@ -668,14 +668,13 @@ async function handleLoginSubmit(e) {
                  * We have a valid Supabase session with an access token.
                  * 
                  * WHY:
-                 * The token needs to be stored in an HttpOnly cookie (secure, no JS access).
-                 * JavaScript-set cookies can be stolen via XSS. Server-set HttpOnly cookies cannot.
+                 * The token needs to be stored securely for future requests.
                  * 
                  * HOW:
                  * 1. Extract access token from Supabase session
                  * 2. Call /auth/set-cookie endpoint with Bearer token
-                 * 3. Server sets HttpOnly cookie with proper security flags
-                 * 4. Clear any old JS-readable cookies
+                 * 3. Server sets secure cookie with proper security flags
+                 * 4. Clear any old cookies
                  * 5. Redirect to dashboard
                  */
                 
@@ -688,7 +687,7 @@ async function handleLoginSubmit(e) {
                 }
                 
                 try {
-                    // Call server endpoint to set HttpOnly cookie
+                    // Call server endpoint to set secure cookie
                     const cookieResponse = await fetch('/auth/set-cookie', {
                         method: 'POST',
                         headers: {
@@ -716,14 +715,14 @@ async function handleLoginSubmit(e) {
                     document.cookie = 'sb_access_token=; Path=/; Max-Age=0';
                     document.cookie = 'sb-refresh-token=; Path=/; Max-Age=0';
                     
-                    logger.info('Secure authentication cookie set by server');
+                    logger.info('Authentication cookie set by server');
                     
                     switchToSuccessState(
                         'Login Successful!', 
                         `Welcome ${data.user.email}!`,
                         () => {
                             closeModal();
-                            // Redirect to dashboard (HttpOnly cookie will be sent automatically)
+                            // Redirect to dashboard (secure cookie will be sent automatically)
                             window.location.assign('/dashboard');
                         }
                     );
@@ -758,11 +757,11 @@ async function handleLoginSubmit(e) {
  * WHY:
  * When a user refreshes the page or visits after closing the tab,
  * Supabase may have a valid session in localStorage. We need to restore
- * the HttpOnly cookie - but ONLY if the backend accepts the token.
+ * the secure cookie - but ONLY if the backend accepts the token.
  * 
  * HOW:
  * 1. Check Supabase for existing session
- * 2. If session exists, try to set HttpOnly cookie via /auth/set-cookie
+ * 2. If session exists, try to set secure cookie via /auth/set-cookie
  * 3. If backend accepts (200 OK), update UI to logged-in state
  * 4. If backend rejects (400/401), the token is invalid - update UI to logged-out state
  * 5. This prevents showing "Logout" briefly for invalid/expired sessions
@@ -779,7 +778,7 @@ async function checkSessionStatus() {
         }
         
         // We have a session in localStorage - but is it still valid?
-        // Try to set the HttpOnly cookie. If backend accepts it, we're logged in.
+        // Try to set the secure cookie. If backend accepts it, we're logged in.
         try {
             const response = await fetch('/auth/set-cookie', {
                 method: 'POST',
@@ -912,26 +911,26 @@ async function handleLogout() {
          * 
          * WHY:
          * On logout, we must invalidate the session completely by:
-         * - Clearing the HttpOnly cookie (server-side session)
+         * - Clearing the secure cookie (server-side session)
          * - Signing out from Supabase (client-side session + localStorage)
-         * - Clearing any JS-readable cookies (legacy cleanup)
+         * - Clearing any old cookies (legacy cleanup)
          * - Redirecting to homepage with page reload (clears any cached state)
          * 
          * HOW:
-         * 1. Call /auth/clear-cookie to remove HttpOnly cookie (backend session)
+         * 1. Call /auth/clear-cookie to remove secure cookie (backend session)
          * 2. Call Supabase signOut to clear client session + localStorage
-         * 3. Clear any old JS-readable cookies (security cleanup)
+         * 3. Clear any old cookies (security cleanup)
          * 4. Show success modal
          * 5. Redirect to homepage with hard reload (clears all cached state)
          */
         
-        // Step 1: Clear server-side HttpOnly cookie FIRST (most critical)
+        // Step 1: Clear server-side secure cookie FIRST (most critical)
         try {
             await fetch('/auth/clear-cookie', {
                 method: 'POST',
                 credentials: 'include'  // Required for cookies
             });
-            logger.info('Server HttpOnly cookie cleared');
+            logger.info('Server secure cookie cleared');
         } catch (e) {
             // Continue even if clear-cookie fails (cookie will expire anyway)
             logger.warn('Server cookie clear failed, but continuing logout');
@@ -953,11 +952,11 @@ async function handleLogout() {
             logger.info('Supabase signOut exception (non-critical):', supabaseError.message);
         }
         
-        // Step 3: Clear any old JS-readable cookies (security cleanup)
+        // Step 3: Clear any old cookies (security cleanup)
         document.cookie = 'sb-access-token=; Path=/; Max-Age=0; SameSite=Lax';
         document.cookie = 'sb_access_token=; Path=/; Max-Age=0; SameSite=Lax';
         document.cookie = 'sb-refresh-token=; Path=/; Max-Age=0; SameSite=Lax';
-        logger.info('JS-readable cookies cleared');
+        logger.info('Old cookies cleared');
         
         // Step 4: Force clear Supabase localStorage (manual cleanup)
         // This ensures no stale session data remains before redirect
@@ -1060,7 +1059,7 @@ function clearSignupForm() {
     
     // Clear all error messages
     const errorElements = [
-        'firstNameError', 'lastNameError', 'signupEmailError', 'signupPasswordError',
+        'displayNameError', 'signupEmailError', 'signupPasswordError',
         'confirmPasswordError', 'signupGeneralError'
     ];
     
@@ -1158,6 +1157,23 @@ function validateName(name, fieldName) {
     return '';
 }
 
+function validateDisplayName(displayName, fieldName) {
+    if (!displayName) {
+        return `${fieldName} is required`;
+    }
+    if (displayName.length > 100) {
+        return `${fieldName} must be 100 characters or less`;
+    }
+    if (displayName.length < 2) {
+        return `${fieldName} must be at least 2 characters long`;
+    }
+    const validDisplayNameRegex = /^[a-zA-Z0-9\s'-._]+$/;
+    if (!validDisplayNameRegex.test(displayName)) {
+        return `${fieldName} can only contain letters, numbers, spaces, hyphens, apostrophes, periods, and underscores`;
+    }
+    return '';
+}
+
 function validatePhone(phone) {
     if (!phone) return ''; // Optional field
     const phoneRegex = /^\d{1}-\d{3}-\d{3}-\d{4}$/;
@@ -1221,15 +1237,9 @@ async function handleSignupSubmit(e) {
     let hasErrors = false;
     
     // Validate required fields
-    const firstNameError = validateName(data.first_name, 'First name');
-    if (firstNameError) {
-        showFieldError('firstNameError', firstNameError);
-        hasErrors = true;
-    }
-    
-    const lastNameError = validateName(data.last_name, 'Last name');
-    if (lastNameError) {
-        showFieldError('lastNameError', lastNameError);
+    const displayNameError = validateDisplayName(data.display_name, 'Display name');
+    if (displayNameError) {
+        showFieldError('displayNameError', displayNameError);
         hasErrors = true;
     }
     
@@ -1271,8 +1281,7 @@ async function handleSignupSubmit(e) {
             password: data.password,
             options: {
                 data: {
-                    first_name: data.first_name,
-                    last_name: data.last_name
+                    display_name: data.display_name
                 }
             }
         });
@@ -1293,7 +1302,7 @@ async function handleSignupSubmit(e) {
             // Show success state with login prompt
             switchToSignupSuccessState(
                 'Account Created Successfully!',
-                `Welcome ${data.first_name}! Your account has been created. Please login to continue.`,
+                `Welcome ${data.display_name}! Your account has been created. Please login to continue.`,
                 () => {
                     closeSignupModal();
                     // Open login modal after closing signup modal

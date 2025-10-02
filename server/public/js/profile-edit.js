@@ -88,9 +88,8 @@ async function loadUserProfile() {
         userProfile = {
             id: user.id,
             email: user.email,
-            first_name: user.user_metadata?.first_name || '',
-            last_name: user.user_metadata?.last_name || '',
-            phone: user.user_metadata?.phone || '',
+            display_name: user.user_metadata?.display_name || user.email?.split('@')[0] || 'User',
+            phone: user.phone || user.user_metadata?.phone || '',
             birthday: user.user_metadata?.birthday || '',
             gender: user.user_metadata?.gender || '',
             language: user.user_metadata?.language || 'English',
@@ -122,8 +121,7 @@ function displayProfileData() {
     if (!userProfile) return;
     
     // Display all fields
-    displayField('firstName', userProfile.first_name);
-    displayField('lastName', userProfile.last_name);
+    displayField('displayName', userProfile.display_name);
     displayField('email', userProfile.email);
     displayField('phone', userProfile.phone || 'Not provided');
     displayField('birthday', userProfile.birthday || 'Not provided');
@@ -167,7 +165,7 @@ function displayField(fieldName, value) {
 function attachEventHandlers() {
     // Attach edit button handlers for each field
     const editButtons = [
-        'editFirstName', 'editLastName', 'editPhone', 'editBirthday', 'editGender',
+        'editDisplayName', 'editPhone', 'editBirthday', 'editGender',
         'editLanguage', 'editCityProvince', 'editCountry', 'editProfileTitle',
         'editProfileDescription', 'editHobbies', 'editMusic', 'editFavFood',
         'editRelationshipStatus', 'editJob', 'editAccountPrivacy'
@@ -291,8 +289,7 @@ async function saveAllChanges() {
         // Update user metadata in Supabase
         const { error } = await supabase.auth.updateUser({
             data: {
-                first_name: updatedData.first_name,
-                last_name: updatedData.last_name,
+                display_name: updatedData.display_name,
                 phone: updatedData.phone,
                 birthday: updatedData.birthday,
                 gender: updatedData.gender,
@@ -356,9 +353,8 @@ function validateField(fieldName) {
     const value = inputElement.value;
     
     switch (fieldName) {
-        case 'firstName':
-        case 'lastName':
-            return validateName(value, fieldName === 'firstName' ? 'First name' : 'Last name');
+        case 'displayName':
+            return validateDisplayName(value, 'Display name');
         case 'phone':
             return validatePhone(value);
         case 'birthday':
@@ -385,6 +381,23 @@ function validateName(value, fieldName) {
     }
     if (value.length > 50) {
         return `${fieldName} must be 50 characters or less`;
+    }
+    return '';
+}
+
+function validateDisplayName(value, fieldName) {
+    if (!value || value.trim().length === 0) {
+        return `${fieldName} is required`;
+    }
+    if (value.length > 100) {
+        return `${fieldName} must be 100 characters or less`;
+    }
+    if (value.length < 2) {
+        return `${fieldName} must be at least 2 characters long`;
+    }
+    const validDisplayNameRegex = /^[a-zA-Z0-9\s'-._]+$/;
+    if (!validDisplayNameRegex.test(value)) {
+        return `${fieldName} can only contain letters, numbers, spaces, hyphens, apostrophes, periods, and underscores`;
     }
     return '';
 }

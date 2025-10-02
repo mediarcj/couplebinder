@@ -50,16 +50,6 @@ router.post('/submit', requireAuth, injectSubmissions, async (req, res) => {
       });
     }
     
-    // Check submission limit
-    if (req.submissions.length >= req.MAX_SUBMISSIONS) {
-      console.log(`Security: Submission limit exceeded from IP: ${clientIP}`);
-      return res.status(429).json({
-        error: 'Maximum submission limit reached',
-        requestId: req.requestId,
-        timestamp: new Date().toISOString()
-      });
-    }
-    
     // Text is valid - store in memory with sanitized content
     const submission = {
       id: req.requestId,
@@ -78,6 +68,18 @@ router.post('/submit', requireAuth, injectSubmissions, async (req, res) => {
     
     submissionsMutex = true;
     try {
+      // Check submission limit inside critical section to prevent race conditions
+      if (req.submissions.length >= req.MAX_SUBMISSIONS) {
+        console.log(`Security: Submission limit exceeded from IP: ${clientIP}`);
+        // Store error response to send after releasing mutex
+        res.status(429).json({
+          error: 'Maximum submission limit reached',
+          requestId: req.requestId,
+          timestamp: new Date().toISOString()
+        });
+        return; // Exit early but mutex will be released in finally block
+      }
+      
       // Add to beginning of array and keep only MAX_SUBMISSIONS
       req.submissions.unshift(submission);
       if (req.submissions.length > req.MAX_SUBMISSIONS) {

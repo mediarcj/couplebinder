@@ -121,7 +121,7 @@ function formatTimestamp() {
 
 /**
  * Light email masker so we don’t print full PII in logs.
- * Example: "admin@detechify.com" -> "ad***@detechify.com"
+ * Example: "admin@example.com" -> "ad***@example.com"
  */
 function maskEmail(s = '') {
   const at = s.indexOf('@');

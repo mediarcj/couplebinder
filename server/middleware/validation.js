@@ -125,14 +125,14 @@ function validateUserRegistration(req, res, next) {
 
   if (!validateRequiredString(data.password, 8)) {
     errors.push('Password is required and must be at least 8 characters long');
+  } else if (data.password.length > 50) {
+    errors.push('Password must be 50 characters or less');
   }
 
-  if (!validateRequiredString(data.first_name)) {
-    errors.push('First name is required');
-  }
-
-  if (!validateRequiredString(data.last_name)) {
-    errors.push('Last name is required');
+  if (!validateRequiredString(data.display_name)) {
+    errors.push('Display name is required');
+  } else if (data.display_name.length > 100) {
+    errors.push('Display name must be 100 characters or less');
   }
 
   // Optional fields validation

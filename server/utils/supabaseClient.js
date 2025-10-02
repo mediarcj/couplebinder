@@ -4,30 +4,50 @@
 
 const { createClient } = require('@supabase/supabase-js');
 const path = require('path');
-require('dotenv').config({ path: path.join(__dirname, '../../.env') });
 
-if (!process.env.SUPABASE_URL || !process.env.SUPABASE_ANON_KEY) {
-  throw new Error('Supabase envs missing: SUPABASE_URL or SUPABASE_ANON_KEY');
-}
+// Lazy initialization of Supabase clients
+let supabase = null;
+let supabaseAdmin = null;
 
-// Client for regular operations (uses anon key)
-const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY, {
-  auth: {
-    persistSession: false,
-    autoRefreshToken: false
-  }
-});
-
-// Admin client for server-side operations (uses service role key)
-const supabaseAdmin = process.env.SUPABASE_SERVICE_ROLE_KEY 
-  ? createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, {
+function getSupabaseClient() {
+  if (!supabase) {
+    require('dotenv').config({ path: path.join(__dirname, '../../.env') });
+    
+    if (!process.env.SUPABASE_URL || !process.env.SUPABASE_ANON_KEY) {
+      throw new Error('Supabase envs missing: SUPABASE_URL or SUPABASE_ANON_KEY');
+    }
+    
+    supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY, {
       auth: {
         persistSession: false,
         autoRefreshToken: false
       }
-    })
-  : null;
+    });
+  }
+  return supabase;
+}
 
-module.exports = { supabase, supabaseAdmin };
+function getSupabaseAdminClient() {
+  if (!supabaseAdmin) {
+    require('dotenv').config({ path: path.join(__dirname, '../../.env') });
+    
+    if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      throw new Error('Supabase admin envs missing: SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY');
+    }
+    
+    supabaseAdmin = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false
+      }
+    });
+  }
+  return supabaseAdmin;
+}
+
+module.exports = { 
+  get supabase() { return getSupabaseClient(); },
+  get supabaseAdmin() { return getSupabaseAdminClient(); }
+};
 
 

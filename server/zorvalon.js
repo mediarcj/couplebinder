@@ -11,11 +11,51 @@ const path = require('path');
 const crypto = require('node:crypto');
 
 // Application Configuration and Dependencies
-const { config, logConfigSummary } = require('./config');
-const csrfLite = require('./middleware/csrfLite');
-const requestIdMiddleware = require('./middleware/requestId');
-const logger = require('./utils/logger');
-const consoleLogger = require('./utils/consoleLogger');
+// CRITICAL SECTION: Safe module loading to prevent crashes
+let config, logConfigSummary, csrfLite, requestIdMiddleware, logger, consoleLogger;
+
+try {
+  const configModule = require('./config');
+  config = configModule.config;
+  logConfigSummary = configModule.logConfigSummary;
+  console.log('Configuration module loaded successfully');
+} catch (error) {
+  console.error('Failed to load config module:', error.message);
+  process.exit(1); // Critical module - cannot continue without config
+}
+
+try {
+  csrfLite = require('./middleware/csrfLite');
+  console.log('CSRF middleware loaded successfully');
+} catch (error) {
+  console.error('Failed to load CSRF middleware:', error.message);
+  csrfLite = { addCSRFToken: () => {}, validateCSRF: () => (req, res, next) => next() };
+}
+
+try {
+  requestIdMiddleware = require('./middleware/requestId');
+  console.log('Request ID middleware loaded successfully');
+} catch (error) {
+  console.error('Failed to load request ID middleware:', error.message);
+  requestIdMiddleware = (req, res, next) => next();
+}
+
+try {
+  logger = require('./utils/logger');
+  console.log('Logger module loaded successfully');
+} catch (error) {
+  console.error('Failed to load logger module:', error.message);
+  logger = { info: () => {}, error: () => {}, warn: () => {} };
+}
+
+try {
+  consoleLogger = require('./utils/consoleLogger');
+  console.log('Console logger module loaded successfully');
+} catch (error) {
+  console.error('Failed to load console logger module:', error.message);
+  consoleLogger = { formatConfigSummary: () => {}, formatMiddlewareRegistration: () => {} };
+}
+
 // Rate limiting removed - handled at Cloudflare edge
 
 // ============================================================
@@ -143,7 +183,7 @@ app.use((req, res, next) => {
       `style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net https://unpkg.com`,
       "img-src 'self' data: https: blob: https://maps.googleapis.com https://maps.gstatic.com",
       "font-src 'self' https://fonts.gstatic.com https://cdn.jsdelivr.net https://unpkg.com",
-      "connect-src 'self' https://api.detechify.com wss://detechify.com https://www.google-analytics.com https://analytics.google.com https://maps.googleapis.com https://zwrstlnfyiqsxbuggiiz.supabase.co",
+      "connect-src 'self' https://www.google-analytics.com https://analytics.google.com https://maps.googleapis.com https://zwrstlnfyiqsxbuggiiz.supabase.co",
       "frame-src 'self' https://www.google.com https://maps.google.com",
       "object-src 'none'",
       "base-uri 'self'",
@@ -318,31 +358,95 @@ consoleLogger.formatMiddlewareRegistration('Security middleware');
  */
 
 // Import modular routes (CSRF protection handled globally by csrfLite)
-app.use('/auth', require('./routes/authCookie'));  // HttpOnly cookie management (set/clear)
-app.use('/api/auth', require('./routes/auth'));
-app.use('/api/users', require('./routes/users'));
-app.use('/api/page', require('./routes/pageApi'));
-app.use('/api', require('./routes/api'));
-app.use('/api', require('./routes/submissions'));
+// CRITICAL SECTION: Safe route loading to prevent crashes
+try {
+  app.use('/auth', require('./routes/authCookie'));  // HttpOnly cookie management (set/clear)
+  console.log('Auth cookie routes loaded successfully');
+} catch (error) {
+  console.error('Failed to load auth cookie routes:', error.message);
+}
+
+try {
+  app.use('/api/auth', require('./routes/auth'));
+  console.log('Auth API routes loaded successfully');
+} catch (error) {
+  console.error('Failed to load auth API routes:', error.message);
+}
+
+try {
+  app.use('/api/users', require('./routes/users'));
+  console.log('Users API routes loaded successfully');
+} catch (error) {
+  console.error('Failed to load users API routes:', error.message);
+}
+
+try {
+  app.use('/api/page', require('./routes/pageApi'));
+  console.log('Page API routes loaded successfully');
+} catch (error) {
+  console.error('Failed to load page API routes:', error.message);
+}
+
+try {
+  app.use('/api', require('./routes/api'));
+  console.log('General API routes loaded successfully');
+} catch (error) {
+  console.error('Failed to load general API routes:', error.message);
+}
+
+try {
+  app.use('/api', require('./routes/submissions'));
+  console.log('Submissions API routes loaded successfully');
+} catch (error) {
+  console.error('Failed to load submissions API routes:', error.message);
+}
 
 // Debug routes (development only)
 if (config.server.nodeEnv === 'development') {
-  app.use('/debug', require('./routes/debug'));
-  console.log('Debug routes enabled (development mode)');
+  try {
+    app.use('/debug', require('./routes/debug'));
+    console.log('Debug routes enabled (development mode)');
+  } catch (error) {
+    console.error('Failed to load debug routes:', error.message);
+  }
 }
 
 // Import health routes
-const { router: healthRouter } = require('./routes/health');
-app.use('/health', healthRouter);
-app.use('/dashboard', require('./routes/dashboard'));
+try {
+  const { router: healthRouter } = require('./routes/health');
+  app.use('/health', healthRouter);
+  console.log('Health routes loaded successfully');
+} catch (error) {
+  console.error('Failed to load health routes:', error.message);
+}
+
+try {
+  app.use('/dashboard', require('./routes/dashboard'));
+  console.log('Dashboard routes loaded successfully');
+} catch (error) {
+  console.error('Failed to load dashboard routes:', error.message);
+}
 
 // Initialize submissions route with shared storage
-const submissionsRouter = require('./routes/submissions');
-const submissions = [];
-submissionsRouter.setSubmissions(submissions);
+try {
+  const submissionsRouter = require('./routes/submissions');
+  const submissions = [];
+  submissionsRouter.setSubmissions(submissions);
+  console.log('Submissions storage initialized successfully');
+} catch (error) {
+  console.error('Failed to initialize submissions storage:', error.message);
+}
 
 // Import presenters
-const { buildHomePageModel } = require('./ui_contract/presenters');
+let buildHomePageModel;
+try {
+  const presentersModule = require('./ui_contract/presenters');
+  buildHomePageModel = presentersModule.buildHomePageModel;
+  console.log('Presenters module loaded successfully');
+} catch (error) {
+  console.error('Failed to load presenters module:', error.message);
+  buildHomePageModel = () => ({ page: { title: 'Error', description: 'Service unavailable' } });
+}
 
 
 // Home page route

@@ -115,7 +115,7 @@ router.get('/status', (req, res) => {
 router.post('/signup', createAuthRateLimit(), validateUserRegistration, async (req, res) => {
     try {
         const clientIP = getClientIP(req);
-        const { email, password, first_name, last_name, ...profileData } = req.body;
+        const { email, password, display_name, ...profileData } = req.body;
         
         logger.auth('signup_attempt', {
             requestId: req.requestId,

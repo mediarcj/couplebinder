@@ -104,33 +104,6 @@ function sendInternalError(res, message = 'Internal server error') {
   sendError(res, message, 500);
 }
 
-/**
- * Handle database transaction with automatic rollback
- * @param {Object} res - Express response object
- * @param {Function} operation - Database operation function
- * @param {string} operationName - Name of the operation for logging
- */
-async function handleTransaction(res, operation, operationName) {
-  let trx = null;
-  
-  try {
-    const { db } = require('../db/connection');
-    trx = await db.transaction();
-    
-    const result = await operation(trx);
-    await trx.commit();
-    
-    return result;
-  } catch (error) {
-    if (trx) {
-      await trx.rollback();
-    }
-    
-    console.error(`Transaction error in ${operationName}:`, error.message);
-    sendInternalError(res, `Failed to complete ${operationName}`);
-    return null;
-  }
-}
 
 /**
  * Simple validation helper
@@ -177,6 +150,5 @@ module.exports = {
   sendUnauthorized,
   sendForbidden,
   sendInternalError,
-  handleTransaction,
   validate
 };

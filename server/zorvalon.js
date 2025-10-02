@@ -12,7 +12,6 @@ const crypto = require('node:crypto');
 
 // Application Configuration and Dependencies
 const { config, logConfigSummary } = require('./config');
-const { testConnection } = require('./db/connection');
 const csrfLite = require('./middleware/csrfLite');
 const requestIdMiddleware = require('./middleware/requestId');
 const logger = require('./utils/logger');
@@ -49,24 +48,16 @@ consoleLogger.formatConfigSummary(config);
 
 /**
  * WHAT:
- * We test the database connection to ensure we can store and retrieve data.
+ * Database connection testing removed - now using Supabase HTTP API.
  *
  * WHY:
- * The database is critical for user authentication, sessions, and data storage.
- * We need to know if it's working before accepting user requests.
+ * Supabase provides a managed PostgreSQL database accessible via HTTP API.
+ * No local database connection testing needed.
  *
  * HOW:
- * We call the testConnection function which handles errors gracefully.
- * If the database is unavailable, we log the error but continue startup.
+ * All database operations go through Supabase client which handles connectivity.
  */
-testConnection()
-    .then(() => {
-        console.log('Database connection established');
-    })
-    .catch((error) => {
-        console.error('Database connection failed:', error.message);
-        console.log('Continuing startup without database...');
-    });
+console.log('Database: Supabase (HTTP API)');
 
 // ============================================================
 // STEP 3: Redis decommissioned — stateless auth enabled

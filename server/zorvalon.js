@@ -79,7 +79,7 @@ const app = express();
 // Trust proxy for Cloudflare (required for HTTPS redirects)
 app.set('trust proxy', 1);
 
-console.log('Detechify server starting...');
+console.log(`${process.env.APP_NAME || 'Application'} server starting...`);
 consoleLogger.formatConfigSummary(config);
 
 // ============================================================

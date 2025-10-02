@@ -53,7 +53,7 @@ router.get('/profile-edit', requireAuth, async (req, res) => {
         pageModel.ui.supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
         
         // Update page title for profile edit
-        pageModel.page.title = 'Edit Profile - Detechify';
+        pageModel.page.title = `Edit Profile - ${process.env.APP_NAME || 'Application'}`;
         
         // Render EJS template with page model
         res.render('profile-edit', pageModel);

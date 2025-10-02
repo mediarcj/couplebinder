@@ -198,7 +198,7 @@ async function buildDashboardPageModel(req, res) {
 
   return {
     page: {
-      title: 'Dashboard - Detechify',
+      title: `Dashboard - ${process.env.APP_NAME || 'Application'}`,
       description: 'User dashboard and controls',
       type: 'dashboard'
     },
@@ -472,7 +472,7 @@ async function buildSettingsPageModel(req, res) {
 
   return {
     page: {
-      title: 'Settings - Detechify',
+      title: `Settings - ${process.env.APP_NAME || 'Application'}`,
       description: 'User settings and preferences',
       type: 'settings'
     },
@@ -511,7 +511,7 @@ async function buildSettingsPageModel(req, res) {
 function buildErrorPageModel(req, res, statusCode, errorMessage) {
   return {
     page: {
-      title: `Error ${statusCode} - Detechify`,
+      title: `Error ${statusCode} - ${process.env.APP_NAME || 'Application'}`,
       description: 'An error occurred',
       type: 'error',
       nonce: res.locals.nonce

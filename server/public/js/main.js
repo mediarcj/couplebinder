@@ -101,7 +101,7 @@ function getCSRFToken() {
 }
 
 document.addEventListener('DOMContentLoaded', function() {
-    logger.info('Detechify frontend loaded');
+    logger.info('Frontend loaded');
     
     // Extract config from data attributes
     const configEl = document.getElementById('app-config');
@@ -141,7 +141,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 // Listen for auth state changes
                 // Note: We only update UI for explicit SIGNED_IN and SIGNED_OUT events.
                 // INITIAL_SESSION is ignored because checkSessionStatus() will validate
-                // the session with the backend first before updating UI.
+                // the session with the server first before updating UI.
                 window.supabase.auth.onAuthStateChange((event, session) => {
                     logger.info('Auth state changed:', event);
                     if (event === 'SIGNED_IN' && session?.user) {
@@ -434,12 +434,7 @@ function initializeLoginModal() {
         cancelBtn.addEventListener('click', closeModal);
     }
     
-    // Close modal when clicking outside of it
-    window.addEventListener('click', function(event) {
-        if (event.target === modal) {
-            closeModal();
-        }
-    });
+    // Modal can only be closed by Cancel button or OK button (no click outside)
     
     // Handle form submission
     if (loginForm) {
@@ -491,12 +486,7 @@ function showNotificationModal(title, message, onClose = null) {
     if (closeBtn) closeBtn.onclick = closeModal;
     if (okBtn) okBtn.onclick = closeModal;
     
-    // Close on outside click
-    window.onclick = function(event) {
-        if (event.target === modal) {
-            closeModal();
-        }
-    };
+    // Modal can only be closed by Close button or OK button (no click outside)
 }
 
 function showLoginGeneralError(message) {
@@ -757,13 +747,13 @@ async function handleLoginSubmit(e) {
  * WHY:
  * When a user refreshes the page or visits after closing the tab,
  * Supabase may have a valid session in localStorage. We need to restore
- * the secure cookie - but ONLY if the backend accepts the token.
+ * the secure cookie - but ONLY if the server accepts the token.
  * 
  * HOW:
  * 1. Check Supabase for existing session
  * 2. If session exists, try to set secure cookie via /auth/set-cookie
- * 3. If backend accepts (200 OK), update UI to logged-in state
- * 4. If backend rejects (400/401), the token is invalid - update UI to logged-out state
+ * 3. If server accepts (200 OK), update UI to logged-in state
+ * 4. If server rejects (400/401), the token is invalid - update UI to logged-out state
  * 5. This prevents showing "Logout" briefly for invalid/expired sessions
  */
 async function checkSessionStatus() {
@@ -778,7 +768,7 @@ async function checkSessionStatus() {
         }
         
         // We have a session in localStorage - but is it still valid?
-        // Try to set the secure cookie. If backend accepts it, we're logged in.
+        // Try to set the secure cookie. If server accepts it, we're logged in.
         try {
             const response = await fetch('/auth/set-cookie', {
                 method: 'POST',
@@ -790,7 +780,7 @@ async function checkSessionStatus() {
             });
             
             if (response.ok) {
-                // Backend accepted the token - session is valid
+                // Server accepted the token - session is valid
                 const result = await response.json();
                 if (result.ok) {
                     logger.info('Session restored');
@@ -805,7 +795,7 @@ async function checkSessionStatus() {
                 }
             }
             
-            // Backend rejected the token - session is invalid
+            // Server rejected the token - session is invalid
             logger.info('Session expired or invalid');
             // Clear the stale Supabase session
             await window.supabase.auth.signOut();
@@ -911,20 +901,20 @@ async function handleLogout() {
          * 
          * WHY:
          * On logout, we must invalidate the session completely by:
-         * - Clearing the secure cookie (server-side session)
+         * - Clearing the secure cookie (server session)
          * - Signing out from Supabase (client-side session + localStorage)
          * - Clearing any old cookies (legacy cleanup)
          * - Redirecting to homepage with page reload (clears any cached state)
          * 
          * HOW:
-         * 1. Call /auth/clear-cookie to remove secure cookie (backend session)
+         * 1. Call /auth/clear-cookie to remove secure cookie (server session)
          * 2. Call Supabase signOut to clear client session + localStorage
          * 3. Clear any old cookies (security cleanup)
          * 4. Show success modal
          * 5. Redirect to homepage with hard reload (clears all cached state)
          */
         
-        // Step 1: Clear server-side secure cookie FIRST (most critical)
+        // Step 1: Clear server secure cookie FIRST (most critical)
         try {
             await fetch('/auth/clear-cookie', {
                 method: 'POST',
@@ -1032,12 +1022,7 @@ function initializeSignupModal() {
         cancelBtn.addEventListener('click', closeSignupModal);
     }
     
-    // Close modal when clicking outside of it
-    window.addEventListener('click', function(event) {
-        if (event.target === modal) {
-            closeSignupModal();
-        }
-    });
+    // Modal can only be closed by Cancel button or OK button (no click outside)
     
     // Handle form submission
     if (signupForm) {
@@ -1059,7 +1044,7 @@ function clearSignupForm() {
     
     // Clear all error messages
     const errorElements = [
-        'displayNameError', 'signupEmailError', 'signupPasswordError',
+        'displayNameError', 'signupEmailError', 'signupPhoneError', 'signupPasswordError',
         'confirmPasswordError', 'signupGeneralError'
     ];
     
@@ -1176,9 +1161,15 @@ function validateDisplayName(displayName, fieldName) {
 
 function validatePhone(phone) {
     if (!phone) return ''; // Optional field
-    const phoneRegex = /^\d{1}-\d{3}-\d{3}-\d{4}$/;
+    const phoneRegex = /^\d+$/;
     if (!phoneRegex.test(phone)) {
-        return 'Phone must be in format: 9-999-999-9999';
+        return 'Phone must contain only numbers';
+    }
+    if (phone.length < 8) {
+        return 'Phone must be at least 8 digits';
+    }
+    if (phone.length > 15) {
+        return 'Phone must be 15 digits or less';
     }
     return '';
 }
@@ -1261,6 +1252,11 @@ async function handleSignupSubmit(e) {
         hasErrors = true;
     }
     
+    const phoneError = validatePhone(data.phone);
+    if (phoneError) {
+        showFieldError('signupPhoneError', phoneError);
+        hasErrors = true;
+    }
     
     if (hasErrors) {
         return;

@@ -36,7 +36,7 @@ router.get('/', async (req, res) => {
   try {
     const healthData = {
       status: 'ok',
-      message: 'Detechify server is running',
+      message: `${process.env.APP_NAME || 'Application'} server is running`,
       timestamp: new Date().toISOString(),
       requestId: req.requestId,
       services: {

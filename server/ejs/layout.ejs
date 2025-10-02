@@ -8,14 +8,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><%= title %> - Detechify</title>
+    <title><%= title %> - <%= app_info?.name || 'Application' %></title>
     <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
     <header>
         <nav>
             <div class="container">
-                <h1>Detechify</h1>
+                <h1><%= app_info?.name || 'Application' %></h1>
                 <ul>
                     <li><a href="/">Home</a></li>
                     <li><a href="/health">Health</a></li>

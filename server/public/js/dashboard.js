@@ -130,13 +130,13 @@ function initializeDashboard() {
  * 
  * WHY:
  * On logout, we must invalidate the session completely by:
- * - Clearing the secure cookie (server-side session)
+ * - Clearing the secure cookie (server session)
  * - Signing out from Supabase (client-side session + localStorage)
  * - Clearing any old cookies (legacy cleanup)
  * - Redirecting to homepage with page reload (clears any cached state)
  * 
  * HOW:
- * 1. Call /auth/clear-cookie to remove secure cookie (backend session)
+ * 1. Call /auth/clear-cookie to remove secure cookie (server session)
  * 2. Call Supabase signOut to clear client session + localStorage
  * 3. Clear any old cookies (security cleanup)
  * 4. Show success modal
@@ -150,7 +150,7 @@ async function handleLogout() {
             return;
         }
         
-        // Step 1: Clear server-side secure cookie FIRST (most critical)
+        // Step 1: Clear server secure cookie FIRST (most critical)
         try {
             await fetch('/auth/clear-cookie', {
                 method: 'POST',

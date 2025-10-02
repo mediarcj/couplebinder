@@ -324,7 +324,7 @@ function formatInfo(message, meta = {}) {
  * }
  */
 function formatServerStartup(serverInfo) {
-  console.log(`\nDETECHIFY SERVER STARTING`);
+  console.log(`\n${process.env.APP_NAME || 'APPLICATION'} SERVER STARTING`);
   console.log(`${LINE}`);
   console.log(`Server: ${serverInfo.host}:${serverInfo.port}`);
   console.log(`Environment: ${serverInfo.nodeEnv}`);

@@ -19,8 +19,9 @@ function validateEmail(email) {
  * @returns {boolean} True if valid phone format
  */
 function validatePhone(phone) {
-  const phoneRegex = /^\d{1}-\d{3}-\d{3}-\d{4}$/;
-  return phoneRegex.test(phone);
+  if (!phone) return true; // Optional field
+  const phoneRegex = /^\d+$/;
+  return phoneRegex.test(phone) && phone.length >= 8 && phone.length <= 15;
 }
 
 /**
@@ -137,7 +138,7 @@ function validateUserRegistration(req, res, next) {
 
   // Optional fields validation
   if (data.phone && !validatePhone(data.phone)) {
-    errors.push('Phone must be in format: 9-999-999-9999');
+    errors.push('Phone must contain only numbers and be 8-15 digits');
   }
 
   if (data.birthday && !validateDate(data.birthday)) {
@@ -200,7 +201,7 @@ function validateUserUpdate(req, res, next) {
 
   // Optional fields validation (same as registration)
   if (data.phone && !validatePhone(data.phone)) {
-    errors.push('Phone must be in format: 9-999-999-9999');
+    errors.push('Phone must contain only numbers and be 8-15 digits');
   }
 
   if (data.birthday && !validateDate(data.birthday)) {

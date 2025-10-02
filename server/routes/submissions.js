@@ -19,6 +19,9 @@ const { validateTextServerSide, getClientIP } = require('../middleware/security'
 let submissions = [];
 const MAX_SUBMISSIONS = config.limits.maxSubmissions;
 
+// CRITICAL SECTION: Mutex for atomic submissions array operations
+let submissionsMutex = false;
+
 // Middleware to inject submissions array
 function injectSubmissions(req, res, next) {
   req.submissions = submissions;
@@ -31,56 +34,77 @@ function injectSubmissions(req, res, next) {
  * Text submission endpoint with validation
  * Validates input and stores in memory with limits
  */
-router.post('/submit', requireAuth, injectSubmissions, (req, res) => {
-  const { text } = req.body;
-  const clientIP = getClientIP(req);
-  
-  // Server-side text validation (never trust client)
-  const textValidation = validateTextServerSide(text);
-  if (!textValidation.valid) {
-    console.log(`Security: Invalid text submission attempt from IP: ${clientIP}, Error: ${textValidation.error}`);
-    return res.status(400).json({
-      error: textValidation.error,
+router.post('/submit', requireAuth, injectSubmissions, async (req, res) => {
+  try {
+    const { text } = req.body;
+    const clientIP = getClientIP(req);
+    
+    // Server-side text validation (never trust client)
+    const textValidation = validateTextServerSide(text);
+    if (!textValidation.valid) {
+      console.log(`Security: Invalid text submission attempt from IP: ${clientIP}, Error: ${textValidation.error}`);
+      return res.status(400).json({
+        error: textValidation.error,
+        requestId: req.requestId,
+        timestamp: new Date().toISOString()
+      });
+    }
+    
+    // Check submission limit
+    if (req.submissions.length >= req.MAX_SUBMISSIONS) {
+      console.log(`Security: Submission limit exceeded from IP: ${clientIP}`);
+      return res.status(429).json({
+        error: 'Maximum submission limit reached',
+        requestId: req.requestId,
+        timestamp: new Date().toISOString()
+      });
+    }
+    
+    // Text is valid - store in memory with sanitized content
+    const submission = {
+      id: req.requestId,
+      text: textValidation.sanitized, // Use sanitized text
+      text_length: textValidation.sanitized.length,
+      timestamp: new Date().toISOString(),
+      preview: textValidation.sanitized.substring(0, 100) + (textValidation.sanitized.length > 100 ? '...' : ''),
+      clientIP: clientIP // Track client IP for security
+    };
+    
+    // CRITICAL SECTION: Atomic array operations to prevent race conditions
+    // Use mutex to ensure only one operation at a time
+    while (submissionsMutex) {
+      await new Promise(resolve => setTimeout(resolve, 1));
+    }
+    
+    submissionsMutex = true;
+    try {
+      // Add to beginning of array and keep only MAX_SUBMISSIONS
+      req.submissions.unshift(submission);
+      if (req.submissions.length > req.MAX_SUBMISSIONS) {
+        req.submissions.pop();
+      }
+    } finally {
+      submissionsMutex = false;
+    }
+    
+    console.log(`Security: Valid submission created: ${submission.id}, IP: ${clientIP}, Request ID: ${req.requestId}`);
+    
+    res.json({
+      success: true,
+      message: 'Text submitted successfully',
+      text_length: textValidation.sanitized.length,
+      requestId: req.requestId,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Submission route error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Internal server error',
       requestId: req.requestId,
       timestamp: new Date().toISOString()
     });
   }
-  
-  // Check submission limit
-  if (req.submissions.length >= req.MAX_SUBMISSIONS) {
-    console.log(`Security: Submission limit exceeded from IP: ${clientIP}`);
-    return res.status(429).json({
-      error: 'Maximum submission limit reached',
-      requestId: req.requestId,
-      timestamp: new Date().toISOString()
-    });
-  }
-  
-  // Text is valid - store in memory with sanitized content
-  const submission = {
-    id: req.requestId,
-    text: textValidation.sanitized, // Use sanitized text
-    text_length: textValidation.sanitized.length,
-    timestamp: new Date().toISOString(),
-    preview: textValidation.sanitized.substring(0, 100) + (textValidation.sanitized.length > 100 ? '...' : ''),
-    clientIP: clientIP // Track client IP for security
-  };
-  
-  // Add to beginning of array and keep only MAX_SUBMISSIONS
-  req.submissions.unshift(submission);
-  if (req.submissions.length > req.MAX_SUBMISSIONS) {
-    req.submissions.pop();
-  }
-  
-  console.log(`Security: Valid submission created: ${submission.id}, IP: ${clientIP}, Request ID: ${req.requestId}`);
-  
-  res.json({
-    success: true,
-    message: 'Text submitted successfully',
-    text_length: textValidation.sanitized.length,
-    requestId: req.requestId,
-    timestamp: new Date().toISOString()
-  });
 });
 
 /**

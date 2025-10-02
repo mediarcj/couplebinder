@@ -23,6 +23,7 @@ const sanitizeHtml = require('sanitize-html');
  */
 
 // Rate limiting stores for tracking attempts
+// CRITICAL SECTION: These Maps are shared data accessed by multiple requests
 const loginAttempts = new Map();
 const ipAttempts = new Map();
 const codeAttempts = new Map();
@@ -163,13 +164,14 @@ function createAuthRateLimit() {
 /**
  * Account lockout mechanism
  * Tracks failed attempts per user and implements progressive delays
+ * CRITICAL SECTION: Read-only check - no modifications to shared data
  */
 function checkAccountLockout(email, ip) {
     const userKey = `user:${email}`;
     const ipKey = `ip:${ip}`;
     const now = Date.now();
     
-    // Get current attempt counts
+    // Get current attempt counts (read-only, no race condition)
     const userAttempts = loginAttempts.get(userKey) || { count: 0, lastAttempt: 0, lockedUntil: 0 };
     const ipAttemptsData = ipAttempts.get(ipKey) || { count: 0, lastAttempt: 0, lockedUntil: 0 };
     
@@ -199,34 +201,45 @@ function checkAccountLockout(email, ip) {
 /**
  * Record failed login attempt
  * Implements progressive lockout with exponential backoff
+ * CRITICAL SECTION: Atomic update to prevent race conditions
  */
 function recordFailedAttempt(email, ip) {
     const userKey = `user:${email}`;
     const ipKey = `ip:${ip}`;
     const now = Date.now();
     
-    // Update user attempts
-    const userAttempts = loginAttempts.get(userKey) || { count: 0, lastAttempt: 0, lockedUntil: 0 };
-    userAttempts.count++;
-    userAttempts.lastAttempt = now;
+    // CRITICAL SECTION: Atomic update of user attempts
+    // We create a new object to avoid modifying shared references
+    const currentUserAttempts = loginAttempts.get(userKey) || { count: 0, lastAttempt: 0, lockedUntil: 0 };
+    const userAttempts = {
+        count: currentUserAttempts.count + 1,
+        lastAttempt: now,
+        lockedUntil: 0 // Will be calculated below
+    };
     
     // Progressive lockout: 1min, 5min, 15min, 30min, 1hr
     const lockoutDurations = [60, 300, 900, 1800, 3600]; // seconds
     const lockoutDuration = lockoutDurations[Math.min(userAttempts.count - 1, lockoutDurations.length - 1)];
     userAttempts.lockedUntil = now + (lockoutDuration * 1000);
     
+    // Atomic set operation
     loginAttempts.set(userKey, userAttempts);
     
-    // Update IP attempts (separate tracking)
-    const ipAttemptsData = ipAttempts.get(ipKey) || { count: 0, lastAttempt: 0, lockedUntil: 0 };
-    ipAttemptsData.count++;
-    ipAttemptsData.lastAttempt = now;
+    // CRITICAL SECTION: Atomic update of IP attempts
+    // We create a new object to avoid modifying shared references
+    const currentIpAttempts = ipAttempts.get(ipKey) || { count: 0, lastAttempt: 0, lockedUntil: 0 };
+    const ipAttemptsData = {
+        count: currentIpAttempts.count + 1,
+        lastAttempt: now,
+        lockedUntil: 0 // Will be calculated below
+    };
     
     // IP lockout: 5min, 15min, 30min, 1hr, 2hr
     const ipLockoutDurations = [300, 900, 1800, 3600, 7200]; // seconds
     const ipLockoutDuration = ipLockoutDurations[Math.min(ipAttemptsData.count - 1, ipLockoutDurations.length - 1)];
     ipAttemptsData.lockedUntil = now + (ipLockoutDuration * 1000);
     
+    // Atomic set operation
     ipAttempts.set(ipKey, ipAttemptsData);
     
     console.log(`Security: Failed login attempt - User: ${email}, IP: ${ip}, Attempts: ${userAttempts.count}`);
@@ -287,6 +300,7 @@ function generateSecureCode(userId, action, ttlSeconds = 300) {
 
 /**
  * Verify secure code with atomic consumption
+ * CRITICAL SECTION: Atomic check-and-use to prevent double consumption
  * @param {string} code - Code to verify
  * @param {string} userId - Expected user ID
  * @param {string} action - Expected action
@@ -313,6 +327,7 @@ function verifySecureCode(code, userId, action) {
         };
     }
     
+    // CRITICAL SECTION: Atomic check-and-use to prevent double consumption
     // Check if already used (atomic operation)
     if (codeData.used) {
         return {
@@ -324,10 +339,18 @@ function verifySecureCode(code, userId, action) {
     
     // Verify user binding
     if (codeData.userId !== userId) {
-        codeData.attempts++;
-        if (codeData.attempts >= 3) {
+        // Create new object to avoid modifying shared reference
+        const updatedCodeData = {
+            ...codeData,
+            attempts: codeData.attempts + 1
+        };
+        
+        if (updatedCodeData.attempts >= 3) {
             codeAttempts.delete(code); // Delete after 3 failed attempts
+        } else {
+            codeAttempts.set(code, updatedCodeData);
         }
+        
         return {
             valid: false,
             message: 'Code not valid for this user',
@@ -337,10 +360,18 @@ function verifySecureCode(code, userId, action) {
     
     // Verify action binding
     if (codeData.action !== action) {
-        codeData.attempts++;
-        if (codeData.attempts >= 3) {
+        // Create new object to avoid modifying shared reference
+        const updatedCodeData = {
+            ...codeData,
+            attempts: codeData.attempts + 1
+        };
+        
+        if (updatedCodeData.attempts >= 3) {
             codeAttempts.delete(code);
+        } else {
+            codeAttempts.set(code, updatedCodeData);
         }
+        
         return {
             valid: false,
             message: 'Code not valid for this action',
@@ -348,9 +379,16 @@ function verifySecureCode(code, userId, action) {
         };
     }
     
-    // Mark as used atomically
-    codeData.used = true;
-    codeData.usedAt = Date.now();
+    // CRITICAL SECTION: Atomic mark as used
+    // Create new object with used flag to avoid race conditions
+    const usedCodeData = {
+        ...codeData,
+        used: true,
+        usedAt: Date.now()
+    };
+    
+    // Atomic set operation
+    codeAttempts.set(code, usedCodeData);
     
     console.log(`Security: Code verified and consumed - User: ${userId}, Action: ${action}`);
     

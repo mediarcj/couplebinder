@@ -11,7 +11,7 @@
 
 const express = require('express');
 const router = express.Router();
-const { requireAuth } = require('../middleware/requireAuth');
+// requireAuth is applied globally to /api/page routes in zorvalon.js
 const { 
   buildHomePageModel, 
   buildDashboardPageModel, 
@@ -49,7 +49,7 @@ router.get('/home', (req, res) => {
  * GET /api/page/dashboard
  * Returns page model for dashboard page (requires authentication)
  */
-router.get('/dashboard', requireAuth, async (req, res) => {
+router.get('/dashboard', async (req, res) => {
   try {
     const pageModel = await buildDashboardPageModel(req, res);
     
@@ -77,7 +77,7 @@ router.get('/dashboard', requireAuth, async (req, res) => {
  * GET /api/page/user/:id
  * Returns page model for user profile page
  */
-router.get('/user/:id', requireAuth, async (req, res) => {
+router.get('/user/:id', async (req, res) => {
   try {
     const pageModel = await buildUserProfilePageModel(req, res, req.params.id);
     
@@ -112,7 +112,7 @@ router.get('/user/:id', requireAuth, async (req, res) => {
  * GET /api/page/settings
  * Returns page model for settings page (requires authentication)
  */
-router.get('/settings', requireAuth, async (req, res) => {
+router.get('/settings', async (req, res) => {
   try {
     const pageModel = await buildSettingsPageModel(req, res);
     

@@ -9,7 +9,7 @@
 
 const express = require('express');
 const router = express.Router();
-const { requireAuth } = require('../middleware/requireAuth');
+// requireAuth is applied globally to /api routes in zorvalon.js
 const { config } = require('../config');
 const { supabase } = require('../utils/supabaseClient');
 const { validateTextServerSide, getClientIP } = require('../middleware/security');
@@ -34,7 +34,7 @@ function injectSubmissions(req, res, next) {
  * Text submission endpoint with validation
  * Validates input and stores in memory with limits
  */
-router.post('/submit', requireAuth, injectSubmissions, async (req, res) => {
+router.post('/', injectSubmissions, async (req, res) => {
   try {
     const { text } = req.body;
     const clientIP = getClientIP(req);
@@ -67,26 +67,30 @@ router.post('/submit', requireAuth, injectSubmissions, async (req, res) => {
     }
     
     submissionsMutex = true;
+    let limitExceeded = false;
     try {
       // Check submission limit inside critical section to prevent race conditions
       if (req.submissions.length >= req.MAX_SUBMISSIONS) {
         console.log(`Security: Submission limit exceeded from IP: ${clientIP}`);
-        // Store error response to send after releasing mutex
-        res.status(429).json({
-          error: 'Maximum submission limit reached',
-          requestId: req.requestId,
-          timestamp: new Date().toISOString()
-        });
-        return; // Exit early but mutex will be released in finally block
-      }
-      
-      // Add to beginning of array and keep only MAX_SUBMISSIONS
-      req.submissions.unshift(submission);
-      if (req.submissions.length > req.MAX_SUBMISSIONS) {
-        req.submissions.pop();
+        limitExceeded = true;
+      } else {
+        // Add to beginning of array and keep only MAX_SUBMISSIONS
+        req.submissions.unshift(submission);
+        if (req.submissions.length > req.MAX_SUBMISSIONS) {
+          req.submissions.pop();
+        }
       }
     } finally {
       submissionsMutex = false;
+    }
+    
+    // Handle limit exceeded after releasing mutex
+    if (limitExceeded) {
+      return res.status(429).json({
+        error: 'Maximum submission limit reached',
+        requestId: req.requestId,
+        timestamp: new Date().toISOString()
+      });
     }
     
     console.log(`Security: Valid submission created: ${submission.id}, IP: ${clientIP}, Request ID: ${req.requestId}`);
@@ -114,7 +118,7 @@ router.post('/submit', requireAuth, injectSubmissions, async (req, res) => {
  * Recent submissions endpoint
  * Returns list of recent text submissions from database with RLS
  */
-router.get('/submissions', requireAuth, async (req, res) => {
+router.get('/', async (req, res) => {
   try {
     // Get user's access token from cookie
     const accessToken = req.cookies?.['sb-access-token'];

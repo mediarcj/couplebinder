@@ -1,7 +1,7 @@
 {
-  "name": "detechify-server",
+  "name": "application-server",
   "version": "1.0.0",
-  "description": "Detechify server application",
+  "description": "Application server",
   "main": "zorvalon.js",
   "scripts": {
     "start": "node zorvalon.js",

@@ -1,5 +1,5 @@
 // File: zorvalon.js
-// Description: Entry point for Detechify server - Refactored for better organization
+// Description: Entry point for application server - Refactored for better organization
 // Boot order: Express → Database → Security → Middleware → Routes → Error Handling → Start Server → Graceful Shutdown
 // Notes: Console logs mark important checkpoints for audit and debugging
 
@@ -266,6 +266,9 @@ app.use(parseCookies);
 const authBridge = require('./middleware/authBridge');
 app.use(authBridge);
 
+// Centralized authentication middleware
+const { requireAuth } = require('./middleware/requireAuth');
+
 // Session middleware removed - using stateless authentication with Supabase tokens
 console.log('Stateless authentication enabled - no server-side sessions');
 
@@ -374,17 +377,24 @@ try {
 }
 
 try {
-  app.use('/api/users', require('./routes/users'));
+  app.use('/api/users', requireAuth, require('./routes/users'));
   console.log('Users API routes loaded successfully');
 } catch (error) {
   console.error('Failed to load users API routes:', error.message);
 }
 
 try {
-  app.use('/api/page', require('./routes/pageApi'));
+  app.use('/api/page', requireAuth, require('./routes/pageApi'));
   console.log('Page API routes loaded successfully');
 } catch (error) {
   console.error('Failed to load page API routes:', error.message);
+}
+
+try {
+  app.use('/api/submit', requireAuth, require('./routes/submissions'));
+  console.log('Submissions API routes loaded successfully');
+} catch (error) {
+  console.error('Failed to load submissions API routes:', error.message);
 }
 
 try {
@@ -392,13 +402,6 @@ try {
   console.log('General API routes loaded successfully');
 } catch (error) {
   console.error('Failed to load general API routes:', error.message);
-}
-
-try {
-  app.use('/api', require('./routes/submissions'));
-  console.log('Submissions API routes loaded successfully');
-} catch (error) {
-  console.error('Failed to load submissions API routes:', error.message);
 }
 
 // Debug routes (development only)
@@ -421,11 +424,43 @@ try {
 }
 
 try {
-  app.use('/dashboard', require('./routes/dashboard'));
+  app.use('/dashboard', requireAuth, require('./routes/dashboard'));
   console.log('Dashboard routes loaded successfully');
 } catch (error) {
   console.error('Failed to load dashboard routes:', error.message);
 }
+
+// Login page route (public)
+app.get('/login', (req, res) => {
+  try {
+    // If user is already authenticated, redirect to dashboard
+    if (req.user?.id) {
+      return res.redirect('/dashboard');
+    }
+    
+    // Build page model for login page
+    const pageModel = buildHomePageModel(req, res);
+    
+    // Add nonce for EJS template
+    pageModel.page.nonce = res.locals.nonce;
+    
+    // Add Supabase credentials for client initialization
+    pageModel.ui = {
+      supabaseUrl: process.env.SUPABASE_URL,
+      supabaseAnonKey: process.env.SUPABASE_ANON_KEY
+    };
+    
+    // Render login page (reuse index.ejs which has login modal)
+    res.render('index', pageModel);
+  } catch (error) {
+    console.error('Login page error:', error);
+    res.status(500).render('error', {
+      title: 'Login Error',
+      message: 'Unable to load login page',
+      page: { nonce: res.locals.nonce }
+    });
+  }
+});
 
 // Initialize submissions route with shared storage
 try {

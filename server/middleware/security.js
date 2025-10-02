@@ -210,7 +210,7 @@ function recordFailedAttempt(email, ip) {
     const now = Date.now();
     
     // CRITICAL SECTION: Atomic update of user attempts
-    // We create a new object to avoid modifying shared references
+    // Use atomic read-modify-write pattern to prevent race conditions
     const currentUserAttempts = loginAttempts.get(userKey) || { count: 0, lastAttempt: 0, lockedUntil: 0 };
     const userAttempts = {
         count: currentUserAttempts.count + 1,
@@ -223,11 +223,11 @@ function recordFailedAttempt(email, ip) {
     const lockoutDuration = lockoutDurations[Math.min(userAttempts.count - 1, lockoutDurations.length - 1)];
     userAttempts.lockedUntil = now + (lockoutDuration * 1000);
     
-    // Atomic set operation
+    // Atomic set operation - this is atomic in JavaScript single-threaded environment
     loginAttempts.set(userKey, userAttempts);
     
     // CRITICAL SECTION: Atomic update of IP attempts
-    // We create a new object to avoid modifying shared references
+    // Use atomic read-modify-write pattern to prevent race conditions
     const currentIpAttempts = ipAttempts.get(ipKey) || { count: 0, lastAttempt: 0, lockedUntil: 0 };
     const ipAttemptsData = {
         count: currentIpAttempts.count + 1,
@@ -240,7 +240,7 @@ function recordFailedAttempt(email, ip) {
     const ipLockoutDuration = ipLockoutDurations[Math.min(ipAttemptsData.count - 1, ipLockoutDurations.length - 1)];
     ipAttemptsData.lockedUntil = now + (ipLockoutDuration * 1000);
     
-    // Atomic set operation
+    // Atomic set operation - this is atomic in JavaScript single-threaded environment
     ipAttempts.set(ipKey, ipAttemptsData);
     
     console.log(`Security: Failed login attempt - User: ${email}, IP: ${ip}, Attempts: ${userAttempts.count}`);

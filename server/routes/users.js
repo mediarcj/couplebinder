@@ -8,7 +8,7 @@
 
 const express = require('express');
 const router = express.Router();
-const { requireAuth } = require('../middleware/requireAuth');
+// requireAuth is applied globally to /api/users routes in zorvalon.js
 const { requireOwner } = require('../middleware/requireOwner');
 const { supabaseAdmin } = require('../utils/supabaseClient');
 // CSRF protection is handled globally by csrfLite middleware
@@ -31,7 +31,7 @@ const { supabaseAdmin } = require('../utils/supabaseClient');
  * Demonstrates Supabase user data retrieval
  * SECURITY: requireOwner ensures users can only access their own profile
  */
-router.get('/:id', requireAuth, requireOwner, async (req, res) => {
+router.get('/:id', requireOwner, async (req, res) => {
   try {
     const { id } = req.params;
     

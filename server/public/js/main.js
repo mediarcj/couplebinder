@@ -1,5 +1,5 @@
 // File: server/public/js/main.js
-// Description: Client-side JavaScript for Detechify frontend
+// Description: Client-side JavaScript for application frontend
 // Purpose: Handles form interactions, character counting, and API calls
 // Notes: Includes text submission form validation and submissions viewing functionality
 
@@ -655,13 +655,13 @@ async function handleLoginSubmit(e) {
                 
                 /**
                  * WHAT:
-                 * We have a valid Supabase session with an access token.
+                 * We have a valid session with an access token.
                  * 
                  * WHY:
                  * The token needs to be stored securely for future requests.
                  * 
                  * HOW:
-                 * 1. Extract access token from Supabase session
+                 * 1. Extract access token from session
                  * 2. Call /auth/set-cookie endpoint with Bearer token
                  * 3. Server sets secure cookie with proper security flags
                  * 4. Clear any old cookies
@@ -701,9 +701,8 @@ async function handleLoginSubmit(e) {
                     }
                     
                     // Clear any old JS-readable cookies (security cleanup)
-                    document.cookie = 'sb-access-token=; Path=/; Max-Age=0';
-                    document.cookie = 'sb_access_token=; Path=/; Max-Age=0';
-                    document.cookie = 'sb-refresh-token=; Path=/; Max-Age=0';
+                    document.cookie = 'access-token=; Path=/; Max-Age=0';
+                    document.cookie = 'refresh-token=; Path=/; Max-Age=0';
                     
                     logger.info('Authentication cookie set by server');
                     
@@ -712,8 +711,11 @@ async function handleLoginSubmit(e) {
                         `Welcome ${data.user.email}!`,
                         () => {
                             closeModal();
-                            // Redirect to dashboard (secure cookie will be sent automatically)
-                            window.location.assign('/dashboard');
+                            // Check for next parameter and redirect accordingly
+                            const urlParams = new URLSearchParams(window.location.search);
+                            const nextUrl = urlParams.get('next');
+                            const redirectUrl = nextUrl ? decodeURIComponent(nextUrl) : '/dashboard';
+                            window.location.assign(redirectUrl);
                         }
                     );
                 } catch (cookieError) {
@@ -943,21 +945,20 @@ async function handleLogout() {
         }
         
         // Step 3: Clear any old cookies (security cleanup)
-        document.cookie = 'sb-access-token=; Path=/; Max-Age=0; SameSite=Lax';
-        document.cookie = 'sb_access_token=; Path=/; Max-Age=0; SameSite=Lax';
-        document.cookie = 'sb-refresh-token=; Path=/; Max-Age=0; SameSite=Lax';
+        document.cookie = 'access-token=; Path=/; Max-Age=0; SameSite=Lax';
+        document.cookie = 'refresh-token=; Path=/; Max-Age=0; SameSite=Lax';
         logger.info('Old cookies cleared');
         
-        // Step 4: Force clear Supabase localStorage (manual cleanup)
+        // Step 4: Force clear localStorage (manual cleanup)
         // This ensures no stale session data remains before redirect
         try {
-            localStorage.removeItem('supabase.auth.token');
-            // Supabase uses a dynamic key like: sb-{project-ref}-auth-token
+            localStorage.removeItem('auth.token');
+            // Clear any auth-related localStorage keys
             const keys = Object.keys(localStorage);
             keys.forEach(key => {
-                if (key.startsWith('sb-') && key.includes('auth-token')) {
+                if (key.includes('auth-token')) {
                     localStorage.removeItem(key);
-                    logger.info('Cleared Supabase localStorage key:', key);
+                    logger.info('Cleared localStorage key:', key);
                 }
             });
         } catch (storageError) {
@@ -1111,10 +1112,7 @@ function validateSignupPassword(password) {
     if (password.length > 50) {
         return 'Password must be 50 characters or less';
     }
-    const validPasswordRegex = /^[a-zA-Z0-9]+$/;
-    if (!validPasswordRegex.test(password)) {
-        return 'Password can only contain uppercase letters, lowercase letters, and numbers';
-    }
+    // No character restrictions - allow any characters for better security
     return '';
 }
 

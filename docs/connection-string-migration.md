@@ -2,7 +2,7 @@
 
 ## Overview
 
-This guide explains how to transition Detechify from local PostgreSQL to Supabase by updating connection strings and configuration.
+This guide explains how to transition the application from local PostgreSQL to Supabase by updating connection strings and configuration.
 
 ## Current Configuration
 
@@ -73,7 +73,7 @@ cp .env .env.backup
 ### Step 2: Test Connection
 ```bash
 # Test database connection
-docker-compose exec detechify-server npx knex migrate:status
+docker-compose exec application-server npx knex migrate:status
 
 # Test application endpoints
 curl http://localhost:3000/health
@@ -83,7 +83,7 @@ curl http://localhost:3000/api/users
 ### Step 3: Verify Schema Compatibility
 ```bash
 # Check if all tables exist
-docker-compose exec detechify-server npx knex migrate:status
+docker-compose exec application-server npx knex migrate:status
 
 # Verify extensions are enabled
 docker-compose exec detechify-server npx knex raw "SELECT * FROM pg_extension WHERE extname = 'pgcrypto';"

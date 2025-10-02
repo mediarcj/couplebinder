@@ -1,5 +1,5 @@
 // File: server/public/js/main.js
-// Description: Client-side JavaScript for Detechify frontend
+// Description: Client-side JavaScript for application frontend
 // Purpose: Handles form interactions, character counting, and API calls
 
 /**
@@ -28,7 +28,7 @@ function getCSRFToken() {
 // Notes: Includes text submission form validation and submissions viewing functionality
 
 document.addEventListener('DOMContentLoaded', function() {
-    console.log('Detechify frontend loaded');
+    console.log('Application frontend loaded');
     
     // Extract config from data attributes
     const configEl = document.getElementById('app-config');

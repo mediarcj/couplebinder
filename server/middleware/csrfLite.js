@@ -1,122 +1,102 @@
 // File: server/middleware/csrfLite.js
-// Description: Smart CSRF protection - skip for Bearer tokens, enforce for cookies
-// Notes: CSRF only needed for cookie-based requests, not Bearer token API calls
+// Description: Smart CSRF protection — enforce for cookie-based mutations, skip for Bearer
+// Notes: Double-submit cookie pattern; Origin check for form posts
 
 const crypto = require('crypto');
 
 /**
- * WHAT:
- * We provide CSRF protection using double-submit cookie pattern, but only when needed.
- * 
- * WHY:
- * CSRF attacks only work with cookies. Bearer tokens in Authorization headers
- * cannot be exploited via CSRF because browsers don't automatically send them.
- * 
- * HOW:
- * - Skip CSRF for requests with Authorization: Bearer tokens
- * - Skip CSRF for /api/* routes (typically use Bearer tokens)
- * - Enforce CSRF for form submissions using cookies
- * - Add Origin/Referer validation for additional security
+ * DEV TEST (curl)
+ *
+ *   # start clean
+ *   rm -f jar.txt
+ *
+ *   # 0) Prime CSRF cookie (this sets `csrf_token`)
+ *   curl -i -c jar.txt http://localhost:3000/login
+ *
+ *   # 1) Grab the CSRF token from the cookie jar
+ *   CSRF=$(awk '$6~"csrf_token"{print $7}' jar.txt); echo "CSRF=$CSRF"
+ *
+ *   # 2) Log in (correct route!)
+ *   curl -i -b jar.txt -c jar.txt \
+ *     -H 'Content-Type: application/json' \
+ *     -H "X-CSRF-Token: $CSRF" \
+ *     -X POST http://localhost:3000/api/auth/login \
+ *     -d '{"email":"YOUR_EMAIL","password":"YOUR_PASSWORD"}'
+ *
+ *   # 3) Call the protected endpoint using the auth cookie
+ *   curl -i -b jar.txt http://localhost:3000/api/profile/me
  */
+
+/* ----------------- helpers ----------------- */
 
 function setCookie(res, name, val) {
-  // HttpOnly=false on purpose so browser can send token in a form/body
-  // Secure flag for production, SameSite=Strict for CSRF protection
+  // HttpOnly=false by design for double-submit pattern (form can read/send value)
   const secure = process.env.NODE_ENV === 'production' ? '; Secure' : '';
-  res.setHeader('Set-Cookie', `${name}=${encodeURIComponent(val)}; Path=/; SameSite=Strict${secure}`);
+  res.setHeader(
+    'Set-Cookie',
+    `${name}=${encodeURIComponent(val)}; Path=/; SameSite=Strict${secure}`
+  );
 }
 
-/**
- * Check if request uses Bearer token authentication
- */
 function hasBearerToken(req) {
   const authz = req.headers.authorization || '';
-  return authz.startsWith('Bearer ');
+  return /^Bearer\s+/i.test(authz);
+}
+
+function isIdempotent(req) {
+  return req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS';
+}
+
+function usesCookies(req) {
+  return Boolean(req.headers.cookie);
+}
+
+function getCsrfFromCookie(req) {
+  const cookie = req.headers.cookie || '';
+  const m = cookie.match(/(?:^|;\s*)csrf_token=([^;]+)/);
+  return m ? decodeURIComponent(m[1]) : null;
+}
+
+function getProvidedToken(req) {
+  return req.get('x-csrf-token') || (req.body ? req.body._csrf : null) || null;
 }
 
 /**
- * Check if request is to API route
- */
-function isApiRoute(req) {
-  return req.path.startsWith('/api/');
-}
-
-/**
- * Check if request is to auth cookie management endpoints
- * 
- * WHAT:
- * Identifies requests to /auth/set-cookie and /auth/clear-cookie endpoints.
- * 
- * WHY:
- * These endpoints use Bearer tokens for authentication (not cookies), so they
- * don't need CSRF protection. CSRF only applies to cookie-based authentication.
- * 
- * HOW:
- * Check if the request path matches the auth cookie endpoints exactly.
+ * Skip CSRF for these cookie-management endpoints (they authenticate with Bearer)
  */
 function isAuthCookieEndpoint(req) {
   return req.path === '/auth/set-cookie' || req.path === '/auth/clear-cookie';
 }
 
-/**
- * Validate Origin/Referer for form submissions
- */
 function validateOrigin(req) {
-  const origin = req.get('origin');
+  const origin  = req.get('origin');
   const referer = req.get('referer');
-  const host = req.get('host');
-  
-  // Allow same-origin requests
-  if (origin && origin.includes(host)) return true;
+  const host    = req.get('host');
+
+  if (origin && origin.includes(host))  return true;
   if (referer && referer.includes(host)) return true;
-  
-  // Allow localhost in development
+
   if (process.env.NODE_ENV === 'development') {
-    if (origin && origin.includes('localhost')) return true;
+    if (origin && origin.includes('localhost'))  return true;
     if (referer && referer.includes('localhost')) return true;
   }
-  
   return false;
 }
 
+function wantsJson(req) {
+  const acc = req.get('accept') || '';
+  const ct  = req.get('content-type') || '';
+  // Treat API and JSON clients as JSON responders
+  return req.path.startsWith('/api/') || acc.includes('application/json') || ct.includes('application/json');
+}
+
+/* ----------------- middleware ----------------- */
+
 module.exports = function csrfLite(req, res, next) {
-  /**
-   * WHAT:
-   * We apply CSRF protection only where it's needed (cookie-based requests).
-   * 
-   * WHY:
-   * CSRF attacks exploit the browser's automatic cookie sending. If a request
-   * uses Bearer tokens (which browsers don't auto-send), CSRF doesn't apply.
-   * 
-   * HOW:
-   * Skip CSRF for:
-   * 1. Requests with Authorization: Bearer headers
-   * 2. API routes (typically use Bearer tokens)
-   * 3. Auth cookie endpoints (use Bearer tokens to set/clear cookies)
-   * Enforce CSRF for: Form posts and other cookie-based requests
-   */
   try {
-    // Skip CSRF for Bearer token requests (CSRF doesn't apply)
-    if (hasBearerToken(req)) {
-      return next();
-    }
-
-    // Skip CSRF for API routes (typically use Bearer tokens)
-    if (isApiRoute(req)) {
-      return next();
-    }
-
-    // Skip CSRF for auth cookie endpoints (use Bearer tokens)
-    if (isAuthCookieEndpoint(req)) {
-      return next();
-    }
-
-    const cookie = req.headers.cookie || '';
-    const match = cookie.match(/(?:^|;\s*)csrf_token=([^;]+)/);
-    let csrfToken = match ? decodeURIComponent(match[1]) : null;
-
-    // For idempotent requests, ensure a token exists and make it available to views
-    if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') {
+    // For idempotent requests, ensure a CSRF token cookie exists and expose it to views
+    if (isIdempotent(req)) {
+      let csrfToken = getCsrfFromCookie(req);
       if (!csrfToken) {
         csrfToken = crypto.randomBytes(32).toString('base64url');
         setCookie(res, 'csrf_token', csrfToken);
@@ -125,24 +105,37 @@ module.exports = function csrfLite(req, res, next) {
       return next();
     }
 
-    // For state-changing requests, verify CSRF token
-    const headerToken = req.get('x-csrf-token');
-    const bodyToken = req.body?._csrf;
-    const provided = headerToken || bodyToken;
-
-    if (!csrfToken || !provided || provided !== csrfToken) {
-      return res.status(403).send('CSRF check failed');
+    // Not idempotent → mutation
+    // If the request uses Bearer (no CSRF risk) or is an auth-cookie endpoint → skip CSRF
+    if (hasBearerToken(req) || isAuthCookieEndpoint(req)) {
+      return next();
     }
 
-    // Additional security: validate Origin/Referer for form submissions
-    if (req.get('content-type')?.includes('application/x-www-form-urlencoded')) {
+    // If there are no cookies at all, we're likely a pure API client → skip CSRF
+    if (!usesCookies(req)) {
+      return next();
+    }
+
+    // Enforce double-submit token for cookie-based mutations
+    const csrfCookie  = getCsrfFromCookie(req);
+    const provided    = getProvidedToken(req);
+
+    if (!csrfCookie || !provided || provided !== csrfCookie) {
+      const body = { success: false, message: 'CSRF check failed' };
+      return wantsJson(req) ? res.status(403).json(body) : res.status(403).send(body.message);
+    }
+
+    // Extra safety: verify same-origin for form posts
+    if ((req.get('content-type') || '').includes('application/x-www-form-urlencoded')) {
       if (!validateOrigin(req)) {
-        return res.status(403).send('Origin validation failed');
+        const body = { success: false, message: 'Origin validation failed' };
+        return wantsJson(req) ? res.status(403).json(body) : res.status(403).send(body.message);
       }
     }
 
     return next();
   } catch {
-    return res.status(403).send('CSRF check failed');
+    const body = { success: false, message: 'CSRF check failed' };
+    return wantsJson(req) ? res.status(403).json(body) : res.status(403).send(body.message);
   }
 };

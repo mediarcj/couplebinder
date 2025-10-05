@@ -57,8 +57,6 @@ Project structure (essentials)
 detechify/
 ├── package.json
 ├── package-lock.json
-├── scripts/
-│   └── migrate-to-supabase.js
 ├── server/
 │   ├── zorvalon.js
 │   ├── routes/

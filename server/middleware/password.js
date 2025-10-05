@@ -135,50 +135,8 @@ async function verifyPassword(password, stored) {
   }
 }
 
-/**
- * Express middleware to hash password before saving
- * @param {object} req - Express request object
- * @param {object} res - Express response object
- * @param {function} next - Express next function
- */
-function hashPasswordMiddleware(req, res, next) {
-  if (req.body.password) {
-    const passwordData = createPasswordHash(req.body.password);
-    req.body.password_hash = passwordData.stored;
-    delete req.body.password; // Remove plain text password
-  }
-  next();
-}
-
-/**
- * Express middleware to verify password during login
- * @param {object} req - Express request object
- * @param {object} res - Express response object
- * @param {function} next - Express next function
- */
-function verifyPasswordMiddleware(req, res, next) {
-  const { password, stored_hash } = req.body;
-  
-  if (!password || !stored_hash) {
-    return res.status(400).json({ 
-      error: 'Password and stored hash are required for verification' 
-    });
-  }
-  
-  const isValid = verifyPassword(password, stored_hash);
-  
-  if (!isValid) {
-    return res.status(401).json({ 
-      error: 'Invalid password' 
-    });
-  }
-  
-  next();
-}
 
 module.exports = {
   createPasswordHash,
-  verifyPassword,
-  hashPasswordMiddleware,
-  verifyPasswordMiddleware
+  verifyPassword
 };

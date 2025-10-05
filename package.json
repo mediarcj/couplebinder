@@ -4,16 +4,11 @@
   "description": "A web application project",
   "private": true,
   "workspaces": [
-    "server",
-    "nextjs"
+    "server"
   ],
   "scripts": {
     "start": "npm run start --workspace=server",
     "dev": "npm run dev --workspace=server",
-    "docker:build": "docker-compose build",
-    "docker:up": "docker-compose up",
-    "docker:down": "docker-compose down",
-    "docker:logs": "docker-compose logs -f",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],

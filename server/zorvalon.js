@@ -362,6 +362,11 @@ consoleLogger.formatMiddlewareRegistration('Security middleware');
 
 // Import modular routes (CSRF protection handled globally by csrfLite)
 // CRITICAL SECTION: Safe route loading to prevent crashes
+
+const profileRouter = require('./routes/profile');
+
+app.use('/api/profile', requireAuth, profileRouter);
+
 try {
   app.use('/auth', require('./routes/authCookie'));  // HttpOnly cookie management (set/clear)
   console.log('Auth cookie routes loaded successfully');

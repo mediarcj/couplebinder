@@ -19,8 +19,8 @@ const { validateTextServerSide, getClientIP } = require('../middleware/security'
 let submissions = [];
 const MAX_SUBMISSIONS = config.limits.maxSubmissions;
 
-// CRITICAL SECTION: Mutex for atomic submissions array operations
-let submissionsMutex = false;
+// Clean concurrency control using promise-based queue
+const { enqueue } = require('../utils/submissionsQueue');
 
 // Middleware to inject submissions array
 function injectSubmissions(req, res, next) {
@@ -60,16 +60,12 @@ router.post('/', injectSubmissions, async (req, res) => {
       clientIP: clientIP // Track client IP for security
     };
     
-    // CRITICAL SECTION: Atomic array operations to prevent race conditions
-    // Use mutex to ensure only one operation at a time
-    while (submissionsMutex) {
-      await new Promise(resolve => setTimeout(resolve, 1));
-    }
-    
-    submissionsMutex = true;
+    // ATOMIC OPERATION: Use promise-based queue for clean concurrency control
+    // This ensures atomic read-check-write operations without busy-waiting
     let limitExceeded = false;
-    try {
-      // Check submission limit inside critical section to prevent race conditions
+    
+    await enqueue(async () => {
+      // Check submission limit inside atomic operation
       if (req.submissions.length >= req.MAX_SUBMISSIONS) {
         console.log(`Security: Submission limit exceeded from IP: ${clientIP}`);
         limitExceeded = true;
@@ -80,11 +76,9 @@ router.post('/', injectSubmissions, async (req, res) => {
           req.submissions.pop();
         }
       }
-    } finally {
-      submissionsMutex = false;
-    }
+    });
     
-    // Handle limit exceeded after releasing mutex
+    // Handle limit exceeded after atomic operation
     if (limitExceeded) {
       return res.status(429).json({
         error: 'Maximum submission limit reached',

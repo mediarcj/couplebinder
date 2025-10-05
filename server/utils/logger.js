@@ -17,8 +17,15 @@
 const { config } = require('../config');
 const consoleLogger = require('./consoleLogger');
 
-// Sensitive patterns to redact from logs
-const SENSITIVE_PATTERNS = [
+// Comprehensive PII and sensitive data redaction patterns
+const REDACT_PATTERNS = [
+  // Email addresses
+  /([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})/g,
+  // Phone numbers (7+ digits)
+  /(\b\d{7,}\b)/g,
+  // Supabase access tokens
+  /(sb-access-token=[^;]+)/g,
+  // Generic tokens and secrets
   /password/i,
   /secret/i,
   /token/i,
@@ -33,8 +40,31 @@ const SENSITIVE_PATTERNS = [
   /csrf-token/i
 ];
 
+// Legacy patterns for backward compatibility
+const SENSITIVE_PATTERNS = REDACT_PATTERNS;
+
 // Control characters that could be used for log injection
 const CONTROL_CHARS = /[\x00-\x1F\x7F-\x9F]/g;
+
+/**
+ * Safe logging utility that redacts PII and sensitive data
+ * @param {string} message - Message to sanitize
+ * @returns {string} Sanitized message
+ */
+function safe(message = '') {
+  if (typeof message !== 'string') {
+    return '[REDACTED]';
+  }
+  
+  let sanitized = message.replace(CONTROL_CHARS, '');
+  
+  // Apply comprehensive redaction patterns
+  for (const pattern of REDACT_PATTERNS) {
+    sanitized = sanitized.replace(pattern, '[REDACTED]');
+  }
+  
+  return sanitized;
+}
 
 /**
  * Redact sensitive information from log data
@@ -42,6 +72,10 @@ const CONTROL_CHARS = /[\x00-\x1F\x7F-\x9F]/g;
  * @returns {any} Redacted data
  */
 function redactSensitiveData(data) {
+  if (typeof data === 'string') {
+    return safe(data);
+  }
+  
   if (typeof data === 'string') {
     // Strip control characters to prevent log injection
     let redacted = data.replace(CONTROL_CHARS, '');
@@ -280,4 +314,8 @@ class SecureLogger {
 // Create singleton logger instance
 const logger = new SecureLogger();
 
-module.exports = logger;
+// Export both the logger instance and utility functions
+module.exports = Object.assign(logger, {
+  safe,
+  redactSensitiveData
+});

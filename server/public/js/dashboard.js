@@ -3,6 +3,32 @@
 // Purpose: Handles logout, submissions viewing, and dashboard interactions
 // Notes: Maintains consistency with main.js functionality
 
+// Quiet console logger with dev toggle and PII-safe redaction
+const logger = {
+    isDebugEnabled: () => localStorage.getItem('debugProfile') === '1',
+    redact: (obj) => {
+        if (typeof obj === 'string') {
+            return obj.replace(/([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})/g, '[EMAIL]')
+                     .replace(/(\b\d{7,}\b)/g, '[PHONE]')
+                     .replace(/(sb-access-token=[^;]+)/g, '[TOKEN]');
+        }
+        return obj;
+    },
+    info: (message, data = {}) => {
+        if (logger.isDebugEnabled()) {
+            console.log(`[DEBUG] ${message}`, logger.redact(data));
+        }
+    },
+    error: (message, data = {}) => {
+        console.error(`[ERROR] ${message}`, logger.redact(data));
+    },
+    warn: (message, data = {}) => {
+        if (logger.isDebugEnabled()) {
+            console.warn(`[WARN] ${message}`, logger.redact(data));
+        }
+    }
+};
+
 /**
  * XSS Protection: HTML Escape Function
  * 
@@ -156,10 +182,10 @@ async function handleLogout() {
                 method: 'POST',
                 credentials: 'include'  // Required for cookies
             });
-            console.log('Server secure cookie cleared');
+            logger.info('Server secure cookie cleared');
         } catch (e) {
             // Continue even if clear-cookie fails (cookie will expire anyway)
-            console.warn('Server cookie clear failed, but continuing logout');
+            logger.warn('Server cookie clear failed, but continuing logout');
         }
         
         // Step 2: Sign out from Supabase (clears client-side session + localStorage)
@@ -169,20 +195,20 @@ async function handleLogout() {
         try {
             const { error } = await window.supabase.auth.signOut();
             if (error) {
-                console.log('Supabase signOut returned error (non-critical):', error.message);
+                logger.info('Supabase signOut returned error (non-critical)', { error: error.message });
             } else {
-                console.log('Supabase session cleared');
+                logger.info('Supabase session cleared');
             }
         } catch (supabaseError) {
             // Supabase client error - non-critical, server cookie already cleared
-            console.log('Supabase signOut exception (non-critical):', supabaseError.message);
+            logger.info('Supabase signOut exception (non-critical)', { error: supabaseError.message });
         }
         
         // Step 3: Clear any old JS-readable cookies (security cleanup)
         document.cookie = 'sb-access-token=; Path=/; Max-Age=0; SameSite=Lax';
         document.cookie = 'sb_access_token=; Path=/; Max-Age=0; SameSite=Lax';
         document.cookie = 'sb-refresh-token=; Path=/; Max-Age=0; SameSite=Lax';
-        console.log('JS-readable cookies cleared');
+        logger.info('JS-readable cookies cleared');
         
         // Step 4: Force clear Supabase localStorage (manual cleanup)
         // This ensures no stale session data remains before redirect
@@ -193,11 +219,11 @@ async function handleLogout() {
             keys.forEach(key => {
                 if (key.startsWith('sb-') && key.includes('auth-token')) {
                     localStorage.removeItem(key);
-                    console.log('Cleared Supabase localStorage key:', key);
+                    logger.info('Cleared Supabase localStorage key', { key });
                 }
             });
         } catch (storageError) {
-            console.log('localStorage cleanup skipped (non-critical)');
+            logger.info('localStorage cleanup skipped (non-critical)');
         }
         
         // Step 5: Show success modal and redirect with hard reload

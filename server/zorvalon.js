@@ -196,6 +196,23 @@ app.use((req, res, next) => {
   next();
 });
 
+// Permissions-Policy header - Enterprise-grade browser feature restrictions
+app.use((req, res, next) => {
+  res.setHeader(
+    'Permissions-Policy',
+    [
+      'camera=()',
+      'microphone=()',
+      'geolocation=()',
+      'payment=()',
+      'usb=()',
+      'serial=()',
+      'bluetooth=()'
+    ].join(', ')
+  );
+  next();
+});
+
 // CORS configuration - Enterprise-level balance of security and usability
 app.use(cors({
   origin: (origin, callback) => {
@@ -372,6 +389,10 @@ try {
 }
 
 try {
+  // Admin routes (require admin role)
+  app.use('/api/admin', requireAuth, require('./routes/admin'));
+  
+  // User routes (require ownership)
   app.use('/api/users', requireAuth, require('./routes/users'));
   console.log('Users API routes loaded successfully');
 } catch (error) {

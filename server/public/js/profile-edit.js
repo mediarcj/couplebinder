@@ -5,11 +5,50 @@
  * Notes: Uses Supabase for user data management
  */
 
-// Initialize logger
+// Quiet console logger with dev toggle and PII-safe redaction
 const logger = {
-    info: (message, data = {}) => console.log(`[INFO] ${message}`, data),
-    error: (message, data = {}) => console.error(`[ERROR] ${message}`, data),
-    warn: (message, data = {}) => console.warn(`[WARN] ${message}`, data)
+    // Check if debug mode is enabled via localStorage
+    isDebugEnabled: () => localStorage.getItem('debugProfile') === '1',
+    
+    // Redact PII from objects and strings
+    redact: (obj) => {
+        if (typeof obj === 'string') {
+            return obj.replace(/([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})/g, '[EMAIL]')
+                     .replace(/(\b\d{7,}\b)/g, '[PHONE]')
+                     .replace(/(sb-access-token=[^;]+)/g, '[TOKEN]');
+        }
+        if (typeof obj === 'object' && obj !== null) {
+            const redacted = {};
+            for (const [key, value] of Object.entries(obj)) {
+                if (['email', 'phone', 'token', 'password', 'auth'].some(pii => key.toLowerCase().includes(pii))) {
+                    redacted[key] = '[REDACTED]';
+                } else if (typeof value === 'string') {
+                    redacted[key] = logger.redact(value);
+                } else {
+                    redacted[key] = value;
+                }
+            }
+            return redacted;
+        }
+        return obj;
+    },
+    
+    // Gated logging functions
+    info: (message, data = {}) => {
+        if (logger.isDebugEnabled()) {
+            console.log(`[DEBUG] ${message}`, logger.redact(data));
+        }
+    },
+    
+    error: (message, data = {}) => {
+        console.error(`[ERROR] ${message}`, logger.redact(data));
+    },
+    
+    warn: (message, data = {}) => {
+        if (logger.isDebugEnabled()) {
+            console.warn(`[WARN] ${message}`, logger.redact(data));
+        }
+    }
 };
 
 // Global variables
@@ -96,7 +135,7 @@ async function loadUserProfile() {
         }
         
         userProfile = result.profile;
-        console.log('Loaded profile data:', userProfile);
+        logger.info('Profile data loaded', { user_id: userProfile?.id });
         
         // Display profile data
         displayProfileData();
@@ -112,11 +151,11 @@ async function loadUserProfile() {
  */
 function displayProfileData() {
     if (!userProfile) {
-        console.log('No user profile data to display');
+        logger.warn('No user profile data available');
         return;
     }
     
-    console.log('Displaying profile data for user:', userProfile);
+    logger.info('Displaying profile data', { user_id: userProfile.id });
     
     // Display all fields using correct field names from v_profiles_full
     displayField('displayName', userProfile.display_name);
@@ -144,7 +183,7 @@ function displayField(fieldName, value) {
     const displayElement = document.getElementById(`${fieldName}Display`);
     const inputElement = document.getElementById(fieldName);
     
-    console.log(`Displaying field ${fieldName}:`, value, 'Display element:', displayElement, 'Input element:', inputElement);
+    logger.info(`Displaying field: ${fieldName}`);
     
     if (displayElement) {
         // Handle arrays (convert to string or show "Not provided")
@@ -154,7 +193,7 @@ function displayField(fieldName, value) {
         }
         displayElement.textContent = displayValue || 'Not provided';
     } else {
-        console.log(`Display element not found for ${fieldName}`);
+        logger.warn(`Display element not found: ${fieldName}`);
     }
     
     if (inputElement) {
@@ -170,7 +209,7 @@ function displayField(fieldName, value) {
             inputElement.value = inputValue || '';
         }
     } else {
-        console.log(`Input element not found for ${fieldName}`);
+        logger.warn(`Input element not found: ${fieldName}`);
     }
 }
 
@@ -189,27 +228,27 @@ function attachEventHandlers() {
     editButtons.forEach(buttonId => {
         const button = document.getElementById(buttonId);
         if (button) {
-            console.log(`Attaching event handler to button: ${buttonId}`);
+            // Event handler attached silently
             button.addEventListener('click', () => {
                 // Convert buttonId like 'editDisplayName' to 'displayName'
                 const fieldName = buttonId.replace('edit', '');
                 // Convert first letter to lowercase: 'DisplayName' -> 'displayName'
                 const camelCaseFieldName = fieldName.charAt(0).toLowerCase() + fieldName.slice(1);
-                console.log(`Edit button clicked for field: ${camelCaseFieldName}, currently editing:`, editingFields.has(camelCaseFieldName));
+                logger.info(`Edit button clicked: ${camelCaseFieldName}`);
                 
                 // Check if field is currently in edit mode
                 if (editingFields.has(camelCaseFieldName)) {
                     // Save the field
-                    console.log(`Saving field: ${camelCaseFieldName}`);
+                    logger.info(`Saving field: ${camelCaseFieldName}`);
                     saveIndividualField(camelCaseFieldName);
                 } else {
                     // Switch to edit mode
-                    console.log(`Switching to edit mode for field: ${camelCaseFieldName}`);
+                    logger.info(`Switching to edit mode: ${camelCaseFieldName}`);
                     toggleFieldEdit(camelCaseFieldName);
                 }
             });
         } else {
-            console.log(`Button not found: ${buttonId}`);
+            logger.warn(`Button not found: ${buttonId}`);
         }
     });
     
@@ -308,15 +347,15 @@ async function saveIndividualField(fieldName) {
                 break;
         }
         
-        console.log(`Field mapping: ${fieldName} -> ${backendFieldName}`);
+        logger.info(`Field mapping: ${fieldName} -> ${backendFieldName}`);
         
         // Prepare update data
         const updateData = { [backendFieldName]: value };
-        console.log('Sending update data:', updateData);
+        logger.info('Sending update data', updateData);
         
         // Get CSRF token from the form
         const csrfToken = document.querySelector('input[name="_csrf"]')?.value;
-        console.log('CSRF token found for individual save:', csrfToken ? 'Yes' : 'No');
+        logger.info('CSRF token check', { found: !!csrfToken });
         if (!csrfToken) {
             throw new Error('CSRF token not found');
         }

@@ -32,21 +32,44 @@ const logger = {
         }
     },
     
+    // PII-safe redaction
+    _redact: (obj) => {
+        if (typeof obj === 'string') {
+            return obj.replace(/([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})/g, '[EMAIL]')
+                     .replace(/(\b\d{7,}\b)/g, '[PHONE]')
+                     .replace(/(sb-access-token=[^;]+)/g, '[TOKEN]');
+        }
+        if (typeof obj === 'object' && obj !== null) {
+            const redacted = {};
+            for (const [key, value] of Object.entries(obj)) {
+                if (['email', 'phone', 'token', 'password', 'auth'].some(pii => key.toLowerCase().includes(pii))) {
+                    redacted[key] = '[REDACTED]';
+                } else if (typeof value === 'string') {
+                    redacted[key] = logger._redact(value);
+                } else {
+                    redacted[key] = value;
+                }
+            }
+            return redacted;
+        }
+        return obj;
+    },
+    
     info: (message, ...args) => {
         if (logger._isDebug()) {
-            console.log(message, ...args);
+            console.log(message, ...args.map(logger._redact));
         }
     },
     
     warn: (message, ...args) => {
         if (logger._isDebug()) {
-            console.warn(message, ...args);
+            console.warn(message, ...args.map(logger._redact));
         }
     },
     
     error: (message, ...args) => {
-        // Always log errors
-        console.error(message, ...args);
+        // Always log errors, but redact PII
+        console.error(message, ...args.map(logger._redact));
     }
 };
 

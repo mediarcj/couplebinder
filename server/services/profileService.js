@@ -76,13 +76,14 @@ async function getProfileByUserIdAdmin(userId) {
   return data || null;
 }
 
-// Allowlist
+// Allowlist - temporarily excluding account_privacy due to database constraint issue
 const ALLOWED_FIELDS = new Set([
   'email','given_name','family_name','display_name_override','avatar_url',
   'locale','timezone','is_private','birthday','gender','language',
   'city_province','country','social_media1','social_media2','social_media3',
   'relationship_status','job','hobbies','music','fav_food',
-  'profile_title','profile_description','account_privacy','phone'
+  'profile_title','profile_description','phone'
+  // 'account_privacy' - temporarily excluded due to database constraint
 ]);
 
 function pickAllowed(patch) {
@@ -97,11 +98,71 @@ async function updateOwnProfile(userId, patch) {
   ensureAdmin();
   if (!userId) throw new Error('Missing userId');
 
+  console.log('updateOwnProfile received patch:', patch);
   const safePatch = pickAllowed(patch);
+  console.log('updateOwnProfile safePatch:', safePatch);
+  
   if (Object.keys(safePatch).length === 0) {
     return await getProfileByUserIdAdmin(userId);
   }
 
+  // Handle dual updates for display_name_override and phone
+  // These need to be updated in both auth.users and profiles tables
+  const needsAuthUpdate = (safePatch.display_name_override !== undefined && safePatch.display_name_override !== null) || 
+                         (safePatch.phone !== undefined && safePatch.phone !== null);
+  
+  // If display_name_override is being updated, also parse it into given_name and family_name
+  if (safePatch.display_name_override !== undefined && safePatch.display_name_override !== null) {
+    const fullName = safePatch.display_name_override.trim();
+    const nameParts = fullName.split(' ').filter(part => part.length > 0);
+    
+    if (nameParts.length === 1) {
+      // Single name: "John" -> given_name: "John", family_name: null
+      safePatch.given_name = nameParts[0];
+      safePatch.family_name = null;
+    } else if (nameParts.length === 2) {
+      // Two names: "John Doe" -> given_name: "John", family_name: "Doe"
+      safePatch.given_name = nameParts[0];
+      safePatch.family_name = nameParts[1];
+    } else if (nameParts.length >= 3) {
+      // Three or more names: "John Michael Doe" -> given_name: "John", family_name: "Michael Doe"
+      safePatch.given_name = nameParts[0];
+      safePatch.family_name = nameParts.slice(1).join(' ');
+    }
+    
+    console.log('Parsed names:', {
+      display_name: safePatch.display_name_override,
+      given_name: safePatch.given_name,
+      family_name: safePatch.family_name
+    });
+  }
+  
+  let authUpdateData = {};
+  if (safePatch.display_name_override !== undefined && safePatch.display_name_override !== null) {
+    authUpdateData.display_name = safePatch.display_name_override;
+  }
+  if (safePatch.phone !== undefined && safePatch.phone !== null) {
+    authUpdateData.phone = safePatch.phone;
+  }
+
+  // Update auth.users if needed (for display_name and phone)
+  if (needsAuthUpdate && Object.keys(authUpdateData).length > 0) {
+    try {
+      const { error: authError } = await supabaseAdmin.auth.admin.updateUserById(userId, {
+        user_metadata: authUpdateData
+      });
+      
+      if (authError) {
+        console.error('profileService.updateOwnProfile auth update:', authError.message);
+        // Continue with profile update even if auth update fails
+      }
+    } catch (authErr) {
+      console.error('profileService.updateOwnProfile auth update error:', authErr.message);
+      // Continue with profile update even if auth update fails
+    }
+  }
+
+  // Update profiles table
   const { data, error } = await supabaseAdmin
     .from('profiles')
     .update(safePatch)
@@ -113,6 +174,7 @@ async function updateOwnProfile(userId, patch) {
     console.error('profileService.updateOwnProfile:', error.message);
     throw error;
   }
+  
   return data;
 }
 

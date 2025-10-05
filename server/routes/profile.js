@@ -31,7 +31,8 @@ router.put('/me', validateProfileUpdate, async (req, res) => {
     const userId = req.user?.id;
     if (!userId) return res.status(401).json({ success: false, message: 'Authentication required' });
 
-    const updated = await updateOwnProfile(userId, req.body);
+    // Use the validated patch data from middleware
+    const updated = await updateOwnProfile(userId, req.profilePatch);
     res.json({ success: true, profile: updated });
   } catch (e) {
     console.error('PUT /api/profile/me error:', e);

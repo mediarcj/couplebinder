@@ -510,6 +510,12 @@ footer p {
     font-style: italic;
 }
 
+.cancel-btn {
+    font-size: 12px !important;
+    padding: 4px 8px !important;
+    min-width: auto !important;
+}
+
 .form-actions {
     display: flex;
     gap: 1rem;

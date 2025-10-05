@@ -70,40 +70,33 @@ function initializeSupabase() {
 }
 
 /**
- * Load user profile data from Supabase
+ * Load user profile data from server API
  */
 async function loadUserProfile() {
     try {
-        if (!supabase) {
-            throw new Error('Supabase not initialized');
+        // Get profile data from server API (uses v_profiles_full)
+        const response = await fetch('/api/profile/me', {
+            method: 'GET',
+            credentials: 'include',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        if (!response.ok) {
+            if (response.status === 401) {
+                throw new Error('Authentication required. Please login again.');
+            }
+            throw new Error(`Failed to load profile: ${response.status}`);
         }
         
-        // Get current user
-        const { data: { user }, error: userError } = await supabase.auth.getUser();
-        if (userError || !user) {
-            throw new Error('User not authenticated');
+        const result = await response.json();
+        if (!result.success) {
+            throw new Error(result.message || 'Failed to load profile');
         }
         
-        // Get user profile data from Supabase Auth user metadata
-        userProfile = {
-            id: user.id,
-            email: user.email,
-            display_name: user.user_metadata?.display_name || user.email?.split('@')[0] || 'User',
-            phone: user.phone || user.user_metadata?.phone || '',
-            birthday: user.user_metadata?.birthday || '',
-            gender: user.user_metadata?.gender || '',
-            language: user.user_metadata?.language || 'English',
-            city_province: user.user_metadata?.city_province || '',
-            country: user.user_metadata?.country || '',
-            profile_title: user.user_metadata?.profile_title || '',
-            profile_description: user.user_metadata?.profile_description || '',
-            hobbies: user.user_metadata?.hobbies || '',
-            music: user.user_metadata?.music || '',
-            fav_food: user.user_metadata?.fav_food || '',
-            relationship_status: user.user_metadata?.relationship_status || '',
-            job: user.user_metadata?.job || '',
-            account_privacy: user.user_metadata?.account_privacy || 'public'
-        };
+        userProfile = result.profile;
+        console.log('Loaded profile data:', userProfile);
         
         // Display profile data
         displayProfileData();
@@ -118,9 +111,14 @@ async function loadUserProfile() {
  * Display profile data in read mode
  */
 function displayProfileData() {
-    if (!userProfile) return;
+    if (!userProfile) {
+        console.log('No user profile data to display');
+        return;
+    }
     
-    // Display all fields
+    console.log('Displaying profile data for user:', userProfile);
+    
+    // Display all fields using correct field names from v_profiles_full
     displayField('displayName', userProfile.display_name);
     displayField('email', userProfile.email);
     displayField('phone', userProfile.phone || 'Not provided');
@@ -146,16 +144,33 @@ function displayField(fieldName, value) {
     const displayElement = document.getElementById(`${fieldName}Display`);
     const inputElement = document.getElementById(fieldName);
     
+    console.log(`Displaying field ${fieldName}:`, value, 'Display element:', displayElement, 'Input element:', inputElement);
+    
     if (displayElement) {
-        displayElement.textContent = value || 'Not provided';
+        // Handle arrays (convert to string or show "Not provided")
+        let displayValue = value;
+        if (Array.isArray(value)) {
+            displayValue = value.length > 0 ? value.join(', ') : null;
+        }
+        displayElement.textContent = displayValue || 'Not provided';
+    } else {
+        console.log(`Display element not found for ${fieldName}`);
     }
     
     if (inputElement) {
-        if (inputElement.tagName === 'SELECT') {
-            inputElement.value = value || '';
-        } else {
-            inputElement.value = value || '';
+        // Handle arrays (convert to string for input fields)
+        let inputValue = value;
+        if (Array.isArray(value)) {
+            inputValue = value.length > 0 ? value.join(', ') : '';
         }
+        
+        if (inputElement.tagName === 'SELECT') {
+            inputElement.value = inputValue || '';
+        } else {
+            inputElement.value = inputValue || '';
+        }
+    } else {
+        console.log(`Input element not found for ${fieldName}`);
     }
 }
 
@@ -174,24 +189,31 @@ function attachEventHandlers() {
     editButtons.forEach(buttonId => {
         const button = document.getElementById(buttonId);
         if (button) {
+            console.log(`Attaching event handler to button: ${buttonId}`);
             button.addEventListener('click', () => {
-                const fieldName = buttonId.replace('edit', '').toLowerCase();
-                toggleFieldEdit(fieldName);
+                // Convert buttonId like 'editDisplayName' to 'displayName'
+                const fieldName = buttonId.replace('edit', '');
+                // Convert first letter to lowercase: 'DisplayName' -> 'displayName'
+                const camelCaseFieldName = fieldName.charAt(0).toLowerCase() + fieldName.slice(1);
+                console.log(`Edit button clicked for field: ${camelCaseFieldName}, currently editing:`, editingFields.has(camelCaseFieldName));
+                
+                // Check if field is currently in edit mode
+                if (editingFields.has(camelCaseFieldName)) {
+                    // Save the field
+                    console.log(`Saving field: ${camelCaseFieldName}`);
+                    saveIndividualField(camelCaseFieldName);
+                } else {
+                    // Switch to edit mode
+                    console.log(`Switching to edit mode for field: ${camelCaseFieldName}`);
+                    toggleFieldEdit(camelCaseFieldName);
+                }
             });
+        } else {
+            console.log(`Button not found: ${buttonId}`);
         }
     });
     
-    // Attach save all button
-    const saveAllBtn = document.getElementById('saveAllBtn');
-    if (saveAllBtn) {
-        saveAllBtn.addEventListener('click', saveAllChanges);
-    }
-    
-    // Attach cancel all button
-    const cancelAllBtn = document.getElementById('cancelAllBtn');
-    if (cancelAllBtn) {
-        cancelAllBtn.addEventListener('click', cancelAllChanges);
-    }
+    // Save All and Cancel All buttons removed - using individual field saves only
     
     // Attach logout button
     const logoutBtn = document.getElementById('logoutBtn');
@@ -227,121 +249,224 @@ function toggleFieldEdit(fieldName) {
         editButton.classList.add('btn-primary');
         editingFields.add(fieldName);
         
+        // Add cancel button
+        addCancelButton(fieldName);
+        
         // Focus the input
         inputElement.focus();
     }
     
-    // Show/hide save all and cancel all buttons
-    updateFormActions();
+    // Individual field saves only - no global action buttons needed
 }
 
 /**
- * Update form action buttons visibility
+ * Save individual field
  */
-function updateFormActions() {
-    const saveAllBtn = document.getElementById('saveAllBtn');
-    const cancelAllBtn = document.getElementById('cancelAllBtn');
-    
-    if (editingFields.size > 0) {
-        if (saveAllBtn) saveAllBtn.style.display = 'inline-block';
-        if (cancelAllBtn) cancelAllBtn.style.display = 'inline-block';
-    } else {
-        if (saveAllBtn) saveAllBtn.style.display = 'none';
-        if (cancelAllBtn) cancelAllBtn.style.display = 'none';
-    }
-}
-
-/**
- * Save all changes
- */
-async function saveAllChanges() {
+async function saveIndividualField(fieldName) {
     try {
-        if (!supabase || !userProfile) {
-            throw new Error('System not initialized');
+        if (!userProfile) {
+            throw new Error('Profile not loaded');
         }
         
-        // Validate all edited fields
-        let hasErrors = false;
-        for (const fieldName of editingFields) {
-            const error = validateField(fieldName);
-            if (error) {
-                showFieldError(`${fieldName}Error`, error);
-                hasErrors = true;
-            } else {
-                clearFieldError(`${fieldName}Error`);
-            }
+        const inputElement = document.getElementById(fieldName);
+        if (!inputElement) {
+            throw new Error('Field not found');
         }
         
-        if (hasErrors) {
-            showError('Please fix the errors before saving.');
+        const value = inputElement.value || null;
+        
+        // Validate the field
+        const error = validateField(fieldName);
+        if (error) {
+            showFieldError(`${fieldName}Error`, error);
             return;
         }
         
-        // Collect updated data
-        const updatedData = { ...userProfile };
-        for (const fieldName of editingFields) {
-            const inputElement = document.getElementById(fieldName);
-            if (inputElement) {
-                updatedData[fieldName] = inputElement.value || null;
-            }
+        // Clear any previous errors
+        clearFieldError(`${fieldName}Error`);
+        
+        // Map frontend field name to backend field name
+        let backendFieldName = fieldName;
+        switch (fieldName) {
+            case 'displayName':
+                backendFieldName = 'display_name_override';
+                break;
+            case 'cityProvince':
+                backendFieldName = 'city_province';
+                break;
+            case 'profileTitle':
+                backendFieldName = 'profile_title';
+                break;
+            case 'profileDescription':
+                backendFieldName = 'profile_description';
+                break;
+            case 'favFood':
+                backendFieldName = 'fav_food';
+                break;
+            case 'relationshipStatus':
+                backendFieldName = 'relationship_status';
+                break;
         }
         
-        // Update user metadata in Supabase
-        const { error } = await supabase.auth.updateUser({
-            data: {
-                display_name: updatedData.display_name,
-                phone: updatedData.phone,
-                birthday: updatedData.birthday,
-                gender: updatedData.gender,
-                language: updatedData.language,
-                city_province: updatedData.city_province,
-                country: updatedData.country,
-                profile_title: updatedData.profile_title,
-                profile_description: updatedData.profile_description,
-                hobbies: updatedData.hobbies,
-                music: updatedData.music,
-                fav_food: updatedData.fav_food,
-                relationship_status: updatedData.relationship_status,
-                job: updatedData.job,
-                account_privacy: updatedData.account_privacy
-            }
+        console.log(`Field mapping: ${fieldName} -> ${backendFieldName}`);
+        
+        // Prepare update data
+        const updateData = { [backendFieldName]: value };
+        console.log('Sending update data:', updateData);
+        
+        // Get CSRF token from the form
+        const csrfToken = document.querySelector('input[name="_csrf"]')?.value;
+        console.log('CSRF token found for individual save:', csrfToken ? 'Yes' : 'No');
+        if (!csrfToken) {
+            throw new Error('CSRF token not found');
+        }
+        
+        // Send update to server API
+        const response = await fetch('/api/profile/me', {
+            method: 'PUT',
+            credentials: 'include',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-Token': csrfToken
+            },
+            body: JSON.stringify(updateData)
         });
         
-        if (error) {
-            throw new Error(error.message);
+        if (!response.ok) {
+            const errorResult = await response.json();
+            throw new Error(errorResult.message || `Update failed: ${response.status}`);
+        }
+        
+        const result = await response.json();
+        if (!result.success) {
+            throw new Error(result.message || 'Update failed');
         }
         
         // Update local profile data
-        userProfile = updatedData;
+        userProfile = result.profile;
         
-        // Switch all fields back to read mode
-        for (const fieldName of editingFields) {
-            toggleFieldEdit(fieldName);
+        // Switch field back to read mode
+        const saveDisplayElement = document.getElementById(`${fieldName}Display`);
+        const saveInputElement = document.getElementById(fieldName);
+        const saveEditButton = document.getElementById(`edit${fieldName.charAt(0).toUpperCase() + fieldName.slice(1)}`);
+        const saveFieldContainer = saveEditButton.parentElement;
+        const saveCancelButton = saveFieldContainer.querySelector('.cancel-btn');
+        
+        if (saveDisplayElement && saveInputElement && saveEditButton) {
+            saveDisplayElement.style.display = 'inline';
+            saveInputElement.style.display = 'none';
+            saveEditButton.textContent = 'Edit';
+            saveEditButton.classList.remove('btn-primary');
+            saveEditButton.classList.add('btn-small');
+            editingFields.delete(fieldName);
         }
         
+        // Remove cancel button
+        if (saveCancelButton) {
+            saveCancelButton.remove();
+        }
+        
+        // Update the display value
+        displayField(fieldName, value || 'Not provided');
+        
         // Show success message
-        showSuccess('Profile updated successfully!');
+        showSuccess(`${getFieldDisplayName(fieldName)} updated successfully!`);
         
     } catch (error) {
-        logger.error('Failed to save profile:', error);
-        showError(`Failed to save profile: ${error.message}`);
+        logger.error(`Failed to save ${fieldName}:`, error);
+        showFieldError(`${fieldName}Error`, `Failed to save: ${error.message}`);
     }
 }
 
 /**
- * Cancel all changes
+ * Add cancel button for field editing
  */
-function cancelAllChanges() {
-    // Switch all fields back to read mode
-    for (const fieldName of editingFields) {
-        toggleFieldEdit(fieldName);
+function addCancelButton(fieldName) {
+    const editButton = document.getElementById(`edit${fieldName.charAt(0).toUpperCase() + fieldName.slice(1)}`);
+    const fieldContainer = editButton.parentElement;
+    
+    // Check if cancel button already exists
+    if (fieldContainer.querySelector('.cancel-btn')) {
+        return;
     }
     
-    // Reload profile data to reset any changes
-    displayProfileData();
+    // Create cancel button
+    const cancelButton = document.createElement('button');
+    cancelButton.type = 'button';
+    cancelButton.className = 'btn btn-secondary cancel-btn';
+    cancelButton.textContent = 'Cancel';
+    cancelButton.style.marginLeft = '8px';
     
-    showSuccess('Changes cancelled.');
+    // Add click handler
+    cancelButton.addEventListener('click', () => {
+        cancelFieldEdit(fieldName);
+    });
+    
+    // Insert after edit button
+    fieldContainer.insertBefore(cancelButton, editButton.nextSibling);
 }
+
+/**
+ * Cancel field edit and revert changes
+ */
+function cancelFieldEdit(fieldName) {
+    const displayElement = document.getElementById(`${fieldName}Display`);
+    const inputElement = document.getElementById(fieldName);
+    const editButton = document.getElementById(`edit${fieldName.charAt(0).toUpperCase() + fieldName.slice(1)}`);
+    const fieldContainer = editButton.parentElement;
+    const cancelButton = fieldContainer.querySelector('.cancel-btn');
+    
+    if (!displayElement || !inputElement || !editButton) return;
+    
+    // Revert input value to original
+    const originalValue = userProfile[fieldName] || '';
+    inputElement.value = originalValue;
+    
+    // Switch back to read mode
+    displayElement.style.display = 'inline';
+    inputElement.style.display = 'none';
+    editButton.textContent = 'Edit';
+    editButton.classList.remove('btn-primary');
+    editButton.classList.add('btn-small');
+    editingFields.delete(fieldName);
+    
+    // Remove cancel button
+    if (cancelButton) {
+        cancelButton.remove();
+    }
+    
+    // Clear any errors
+    clearFieldError(`${fieldName}Error`);
+}
+
+/**
+ * Get display name for field (for success messages)
+ */
+function getFieldDisplayName(fieldName) {
+    const fieldNames = {
+        'displayName': 'Display name',
+        'phone': 'Phone number',
+        'birthday': 'Birthday',
+        'gender': 'Gender',
+        'language': 'Language',
+        'cityProvince': 'City/Province',
+        'country': 'Country',
+        'profileTitle': 'Profile title',
+        'profileDescription': 'Profile description',
+        'hobbies': 'Hobbies',
+        'music': 'Music preferences',
+        'favFood': 'Favorite food',
+        'relationshipStatus': 'Relationship status',
+        'job': 'Job status',
+        'accountPrivacy': 'Account privacy'
+    };
+    return fieldNames[fieldName] || fieldName;
+}
+
+// updateFormActions function removed - no longer needed without Save All/Cancel All buttons
+
+// Save All Changes and Cancel All Changes functions removed
+// Using individual field saves only for better user experience and data integrity
 
 /**
  * Validate a field
@@ -367,6 +492,22 @@ function validateField(fieldName) {
             return validateJobStatus(value);
         case 'accountPrivacy':
             return validateAccountPrivacy(value);
+        case 'language':
+            return validateLanguage(value);
+        case 'cityProvince':
+            return validateCityProvince(value);
+        case 'country':
+            return validateCountry(value);
+        case 'profileTitle':
+            return validateProfileTitle(value);
+        case 'profileDescription':
+            return validateProfileDescription(value);
+        case 'hobbies':
+            return validateHobbies(value);
+        case 'music':
+            return validateMusic(value);
+        case 'favFood':
+            return validateFavFood(value);
         default:
             return '';
     }
@@ -416,9 +557,10 @@ function validatePhone(value) {
 
 function validateBirthday(value) {
     if (!value) return '';
-    const dateRegex = /^\d{2}\/\d{2}\/\d{4}$/;
+    // Accept both MM/DD/YYYY and YYYY-MM-DD formats
+    const dateRegex = /^(\d{2}\/\d{2}\/\d{4}|\d{4}-\d{2}-\d{2})$/;
     if (!dateRegex.test(value)) {
-        return 'Birthday must be in MM/DD/YYYY format';
+        return 'Birthday must be in MM/DD/YYYY or YYYY-MM-DD format';
     }
     return '';
 }
@@ -455,6 +597,70 @@ function validateAccountPrivacy(value) {
     const validPrivacy = ['public', 'private'];
     if (!validPrivacy.includes(value)) {
         return 'Account privacy must be either public or private';
+    }
+    return '';
+}
+
+function validateLanguage(value) {
+    if (!value) return '';
+    if (value.length > 50) {
+        return 'Language must be 50 characters or less';
+    }
+    return '';
+}
+
+function validateCityProvince(value) {
+    if (!value) return '';
+    if (value.length > 100) {
+        return 'City/Province must be 100 characters or less';
+    }
+    return '';
+}
+
+function validateCountry(value) {
+    if (!value) return '';
+    if (value.length > 100) {
+        return 'Country must be 100 characters or less';
+    }
+    return '';
+}
+
+function validateProfileTitle(value) {
+    if (!value) return '';
+    if (value.length > 140) {
+        return 'Profile title must be 140 characters or less';
+    }
+    return '';
+}
+
+function validateProfileDescription(value) {
+    if (!value) return '';
+    if (value.length > 2000) {
+        return 'Profile description must be 2000 characters or less';
+    }
+    return '';
+}
+
+function validateHobbies(value) {
+    if (!value) return '';
+    if (value.length > 200) {
+        return 'Hobbies must be 200 characters or less';
+    }
+    return '';
+}
+
+function validateMusic(value) {
+    if (!value) return '';
+    if (value.length > 200) {
+        return 'Music preferences must be 200 characters or less';
+    }
+    return '';
+}
+
+function validateFavFood(value) {
+    if (!value) return '';
+    if (value.length > 100) {
+        return 'Favorite food must be 100 characters or less';
     }
     return '';
 }

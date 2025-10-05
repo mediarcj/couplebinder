@@ -18,6 +18,9 @@
 const { getProfileByUserId } = require('../services/profileService');
 // Removed usersRepo import - now using Supabase user data directly
 
+// tiny helpers (no lodash)
+const uniq = (arr) => Array.from(new Set(Array.isArray(arr) ? arr : []));
+const notNil = (x) => x !== null && x !== undefined;
 
 /**
  * Canonical user model builder.
@@ -31,15 +34,37 @@ async function buildCanonicalUser(req) {
   };
   if (!basic.id) return basic;
 
-  // Try DB profile view first
   let profile = null;
   try {
-    profile = await getProfileByUserId(basic.id);
+    // Extract user access token for RLS-compliant profile fetching
+    const userAccessToken = req.cookies?.['sb-access-token'] || 
+                           (req.headers.authorization?.startsWith('Bearer ') ? 
+                            req.headers.authorization.slice(7) : null);
+    profile = await getProfileByUserId(basic.id, userAccessToken);
   } catch (e) {
     console.error('buildCanonicalUser profile fetch failed:', e?.message || e);
   }
 
   if (profile) {
+    const rolesClean = uniq((profile.roles || []).filter(notNil));
+    // Providers: prefer app_metadata.providers (array), else amr, else fallback
+    const amrProviders = Array.isArray(req.user?.amr)
+      ? req.user.amr.map((x) => x?.method).filter(Boolean)
+      : [];
+    const providers =
+      (Array.isArray(req.user?.app_metadata?.providers) && req.user.app_metadata.providers.length
+        ? req.user.app_metadata.providers
+        : amrProviders.length
+          ? amrProviders
+          : (req.user?.app_metadata?.provider ? [req.user.app_metadata.provider] : ['email']));
+
+    // Email confirmed: if you later join this via admin API you can show a timestamp.
+    // For now, use the boolean from user_metadata if present.
+    const emailConfirmed =
+      typeof req.user?.user_metadata?.email_verified === 'boolean'
+        ? req.user.user_metadata.email_verified
+        : null;
+
     return {
       id: basic.id,
       email: basic.email,
@@ -52,7 +77,11 @@ async function buildCanonicalUser(req) {
       timezone: profile.timezone || '',
       created_at: profile.created_at,
       updated_at: profile.updated_at,
-      roles: profile.roles || [],
+      last_sign_in_at: (profile.last_sign_in_at ?? req.user?.last_sign_in_at ?? null),   // from view if exposed
+      email_confirmed_at: null,                            // keep null unless you fetch timestamp
+      email_confirmed: emailConfirmed,                     // boolean for the UI
+      providers,                                           // array
+      roles: rolesClean,                                   // array (no nulls, deduped)
     };
   }
 
@@ -61,6 +90,20 @@ async function buildCanonicalUser(req) {
   const first = md.first_name || '';
   const last = md.last_name || '';
   const display = md.display_name || (first && last ? `${first} ${last}` : first || last || (basic.email ? basic.email.split('@')[0] : 'User'));
+
+  const amrProviders = Array.isArray(req.user?.amr)
+    ? req.user.amr.map((x) => x?.method).filter(Boolean)
+    : [];
+  const providers =
+    (Array.isArray(req.user?.app_metadata?.providers) && req.user.app_metadata.providers.length
+      ? req.user.app_metadata.providers
+      : amrProviders.length
+        ? amrProviders
+        : (req.user?.app_metadata?.provider ? [req.user.app_metadata.provider] : ['email']));
+  const emailConfirmed =
+    typeof req.user?.user_metadata?.email_verified === 'boolean'
+      ? req.user.user_metadata.email_verified
+      : null;
 
   return {
     id: basic.id,
@@ -74,6 +117,10 @@ async function buildCanonicalUser(req) {
     timezone: md.timezone || '',
     created_at: req.user?.created_at || new Date().toISOString(),
     updated_at: req.user?.updated_at || new Date().toISOString(),
+    last_sign_in_at: req.user?.last_sign_in_at || null,
+    email_confirmed_at: null,
+    email_confirmed: emailConfirmed,
+    providers,
     roles: [],
   };
 }
@@ -183,7 +230,8 @@ async function buildDashboardPageModel(req, res) {
     page: {
       title: `Dashboard - ${process.env.APP_NAME || 'Application'}`,
       description: 'User dashboard and controls',
-      type: 'dashboard'
+      type: 'dashboard',
+      nonce: res.locals.nonce || ''   // ← ensure CSP nonce for dashboard.ejs
     },
     user,
     ui_instructions: {
@@ -220,7 +268,11 @@ async function buildDashboardPageModel(req, res) {
         show_analytics: isAdmin
       }
     },
-    ui: { csrfToken: res.locals.csrfToken || '' },
+    ui: { 
+      csrfToken: res.locals.csrfToken || '',
+      supabaseUrl: process.env.SUPABASE_URL || '',
+      supabaseAnonKey: process.env.SUPABASE_ANON_KEY || ''
+    },
     app_info: {
       name: process.env.APP_NAME || 'Application',
       description: process.env.APP_DESCRIPTION || 'A modern web application',
@@ -245,7 +297,11 @@ async function buildUserProfilePageModel(req, res, userId) {
   // If viewing another user's profile, fetch that profile for display
   let viewed = null;
   try {
-    viewed = await getProfileByUserId(userId);
+    // Extract user access token for RLS-compliant profile fetching
+    const userAccessToken = req.cookies?.['sb-access-token'] || 
+                           (req.headers.authorization?.startsWith('Bearer ') ? 
+                            req.headers.authorization.slice(7) : null);
+    viewed = await getProfileByUserId(userId, userAccessToken);
   } catch (e) { console.error('view profile fetch failed:', e?.message || e); }
 
   return {

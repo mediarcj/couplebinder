@@ -1269,13 +1269,21 @@ async function handleSignupSubmit(e) {
         
         logger.info('Attempting sign up with Supabase');
         
+        // Parse display name into first and last name
+        const nameParts = (data.display_name || '').trim().split(' ');
+        const given_name = nameParts[0] || '';
+        const family_name = nameParts.slice(1).join(' ') || null;
+        
         // Create user with Supabase Auth
         const { data: authData, error: authError } = await window.supabase.auth.signUp({
             email: data.email,
             password: data.password,
             options: {
                 data: {
-                    display_name: data.display_name
+                    display_name: data.display_name,
+                    phone: data.phone || null,
+                    given_name: given_name,
+                    family_name: family_name
                 }
             }
         });

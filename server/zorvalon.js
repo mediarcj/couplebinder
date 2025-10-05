@@ -6,7 +6,6 @@
 const express = require('express');
 const helmet = require('helmet');
 const cors = require('cors');
-const morgan = require('morgan');
 const path = require('path');
 const crypto = require('node:crypto');
 
@@ -244,15 +243,6 @@ app.use(cors({
 
 // Rate limiting will be applied after static files
 
-// HTTP request logging middleware - disabled to avoid duplicate logs
-// app.use(morgan('combined', {
-//   stream: {
-//     write: (message) => {
-//       // Use structured logger for HTTP requests
-//       logger.info('HTTP request', { message: message.trim() });
-//     }
-//   }
-// }));
 
 // Body parsers with size limits
 app.use(express.json({ limit: '10mb' }));

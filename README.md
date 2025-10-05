@@ -1,190 +1,76 @@
-Detechify
-Building detechify.com
+# Detechify
 
-A web application project with Node.js backend, PostgreSQL database, and stateless authentication.
+This app began as a tiny Node.js “hello world” with a `/health` check and grew—incrementally—into a security-first, stateless, Supabase-backed web app. Each step favored simplicity, correctness, and concurrency-safe patterns over cleverness.
 
-## Features
+Progress (high level)
+v0 ── minimal server + /health + simple EJS
+v1 ── security middleware (Helmet/CSP/CSRF), strict logging
+v2 ── stateless auth (Supabase), canonical data model
+v3 ── dashboard + profile-edit (CRUD), presenters, API hardening
 
-- User authentication and session management
-- Text submission and validation
-- Transactional database operations
-- Stateless authentication with Supabase
-- Docker containerization
-- Health check endpoints
-- Graceful server shutdown
-- CSRF protection
-- Server-authoritative security
+## Canonical data flow
 
-## Quick Start
+Client (signup / profile-edit)
+│
+▼
+Supabase Auth (auth.users)
+├─ id, email, created_at, last_sign_in_at
+└─ user_metadata: { phone, display_name, … }
+│   (trigger copies initial fields)
+▼
+public.profiles (app-owned)  ← single write surface
+│
+▼
+public.v_profiles_full (read-only view for UI; owner/admin sees last_sign_in_at)
+│
+▼
+Server presenter (buildCanonicalUser)
+├─ reads v_profiles_full (profile fields, roles, last_sign_in_at)
+└─ overlays owner-only auth details when available (e.g., providers)
+│
+▼
+Front-end templates (dash/home/settings)
+← render only canonicalUser (no client-side data mixing)
 
-### Prerequisites
-- Node.js 18+
-- Docker and Docker Compose
-- Git
+## Quick start
 
-### Installation
 ```bash
-# Clone repository
+# Node.js 18+ recommended
 git clone https://github.com/mediarcj/detechify.git
 cd detechify
 
-# Start services
-docker-compose up --build
-```
+# Install and run (workspace script starts the server)
+npm ci
+npm run start
 
-### Access
-- Application: http://localhost:3000
-- Health Check: http://localhost:3000/health
-- API Endpoints: http://localhost:3000/api/*
+# App runs at http://localhost:3000
+# Health check: http://localhost:3000/health
 
-## Migration to Supabase
+Useful endpoints (minimal)
+	•	/ – Home
+	•	/health – Liveness/readiness surface
+	•	/api/hello – Sanity check
+	•	/api/profile/me – Authenticated profile (Bearer token or server auth cookie)
 
-Detechify is designed for easy migration to Supabase. The application uses:
-- Repository pattern for database access
-- Transactional write/read patterns
-- Portable schema design with UUIDs and timezone-aware timestamps
-- Standard SQL with safe defaults
+Project structure (essentials)
 
-### Migration Documentation
-- [Supabase Migration Guide](docs/supabase-migration-guide.md)
-- [Connection String Migration](docs/connection-string-migration.md)
-
-### Automated Migration
-```bash
-# Dry run (recommended first)
-node scripts/migrate-to-supabase.js --dry-run
-
-# Full migration
-node scripts/migrate-to-supabase.js --migrate
-
-# Rollback if needed
-node scripts/migrate-to-supabase.js --rollback
-```
-
-## Project Structure
-
-```
 detechify/
-├── package.json (private workspace root)
-├── package-lock.json (single lockfile)
-├── README.md
-├── docs/
-│   ├── supabase-migration-guide.md
-│   └── connection-string-migration.md
+├── package.json
+├── package-lock.json
 ├── scripts/
 │   └── migrate-to-supabase.js
 ├── server/
-│   ├── package.json (server dependencies)
-│   ├── zorvalon.js (main server file)
-│   ├── config/
-│   ├── db/
-│   │   ├── connection.js
-│   │   ├── knexClient.js
-│   │   └── repo/
+│   ├── zorvalon.js
 │   ├── routes/
 │   ├── middleware/
-│   ├── knex/
-│   │   └── migrations/
+│   ├── services/
+│   ├── ui_contract/
+│   ├── ejs/
 │   └── public/
-└── .gitignore
-```
+└── docs/
 
-## Development
-
-### Environment Setup
-```bash
-# Copy environment template
-cp server/env.example .env
-
-# Update with your configuration
-# Edit .env
-```
-
-### Database Migrations
-```bash
-# Run migrations
-docker-compose exec detechify-server npx knex migrate:latest
-
-# Check migration status
-docker-compose exec detechify-server npx knex migrate:status
-```
-
-### Testing
-```bash
-# Test health endpoint
-curl http://localhost:3000/health
-
-# Test user creation
-curl -X POST http://localhost:3000/api/users \
-  -H "Content-Type: application/json" \
-  -d '{"email":"test@example.com","password":"testpass","first_name":"John","last_name":"Doe"}'
-
-# Test database submission
-curl -X POST http://localhost:3000/api/submit/db \
-  -H "Content-Type: application/json" \
-  -d '{"text":"This is a test submission"}'
-```
-
-## Production Deployment
-
-### Environment Variables
-```bash
-NODE_ENV=production
-DATABASE_URL=postgresql://user:password@host:port/database
-SUPABASE_URL=https://your-project-ref.supabase.co
-SUPABASE_ANON_KEY=your-anon-public-key
-SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
-```
-
-### Docker Deployment
-```bash
-# Production build
-docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
-
-# Check logs
-docker-compose logs -f detechify-server
-```
-
-## API Endpoints
-
-### Health Check
-- `GET /health` - Application health status
-- `GET /health/liveness` - Liveness probe
-- `GET /health/readiness` - Readiness probe
-
-### Authentication
-- `POST /api/auth/login` - User login
-- `POST /api/auth/logout` - User logout
-- `GET /api/auth/status` - Authentication status
-
-### Users
-- `POST /api/users` - Create user (transactional)
-- `GET /api/users/:id` - Get user by ID
-
-### Submissions
-- `POST /api/submit` - Submit text (in-memory)
-- `POST /api/submit/db` - Submit text (database, transactional)
-- `GET /api/submissions` - Get recent submissions
-
-## Security Features
-
-- CSRF protection on state-changing requests
-- Server-side input validation and sanitization
-- Rate limiting (handled at Cloudflare edge)
-- Stateless authentication with Supabase tokens
-- Password hashing with bcrypt
-- SQL injection prevention
-- XSS protection
-- Secure cookie configuration
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Test thoroughly
-5. Submit a pull request
-
-## License
-
-ISC License - see LICENSE file for details
+Notes
+	•	Stateless authentication via Supabase; server remains the authority for what the UI renders.
+	•	Canonical reads come from v_profiles_full; writes go to public.profiles.
+	•	Security posture includes CSP nonces, CSRF (cookie+header for cookie flows), and strict request logging.
+	•	No Docker required.

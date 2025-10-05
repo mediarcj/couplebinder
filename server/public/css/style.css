@@ -502,6 +502,14 @@ footer p {
     min-height: 16px;
 }
 
+.form-help {
+    color: #6c757d;
+    font-size: 12px;
+    margin-top: 4px;
+    display: block;
+    font-style: italic;
+}
+
 .form-actions {
     display: flex;
     gap: 1rem;

@@ -1269,10 +1269,27 @@ async function handleSignupSubmit(e) {
         
         logger.info('Attempting sign up with Supabase');
         
-        // Parse display name into first and last name
-        const nameParts = (data.display_name || '').trim().split(' ');
-        const given_name = nameParts[0] || '';
-        const family_name = nameParts.slice(1).join(' ') || null;
+        // Parse display name into first and last name with smart logic
+        const fullName = (data.display_name || '').trim();
+        const nameParts = fullName.split(' ').filter(part => part.length > 0);
+        
+        let given_name = '';
+        let family_name = null;
+        
+        if (nameParts.length === 1) {
+            // Single name: "John" -> given_name: "John", family_name: null
+            given_name = nameParts[0];
+            family_name = null;
+        } else if (nameParts.length === 2) {
+            // Two names: "John Doe" -> given_name: "John", family_name: "Doe"
+            given_name = nameParts[0];
+            family_name = nameParts[1];
+        } else if (nameParts.length >= 3) {
+            // Three or more names: "John Michael Doe" -> given_name: "John", family_name: "Michael Doe"
+            // This handles middle names by treating them as part of the family name
+            given_name = nameParts[0];
+            family_name = nameParts.slice(1).join(' ');
+        }
         
         // Create user with Supabase Auth
         const { data: authData, error: authError } = await window.supabase.auth.signUp({

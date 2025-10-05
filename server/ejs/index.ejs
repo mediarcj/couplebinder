@@ -189,15 +189,16 @@
                         
                         <!-- Basic Required Fields -->
                         <div class="form-group">
-                            <label for="signupDisplayName">Display Name *</label>
+                            <label for="signupDisplayName">Full Name *</label>
                             <input 
                                 type="text" 
                                 id="signupDisplayName" 
                                 name="display_name" 
-                                placeholder="Enter your display name"
+                                placeholder="Enter your full name (e.g., John Doe or Mary Jane Smith)"
                                 maxlength="100"
                                 required
                             >
+                            <small class="form-help">We'll automatically separate this into first and last names for your profile.</small>
                             <div id="displayNameError" class="error-message"></div>
                         </div>
 

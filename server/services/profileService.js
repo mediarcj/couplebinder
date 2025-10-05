@@ -162,10 +162,36 @@ async function updateOwnProfile(userId, patch) {
     }
   }
 
+  // Handle array fields - convert string to array format for hobbies, music, fav_food
+  const processedPatch = { ...safePatch };
+  
+  // Convert string values to arrays for these specific fields
+  if (processedPatch.hobbies !== undefined && processedPatch.hobbies !== null) {
+    // If it's a string, convert to array; if it's already an array, keep it
+    if (typeof processedPatch.hobbies === 'string') {
+      // Split by comma and clean up
+      processedPatch.hobbies = processedPatch.hobbies.split(',').map(item => item.trim()).filter(item => item.length > 0);
+    }
+  }
+  
+  if (processedPatch.music !== undefined && processedPatch.music !== null) {
+    if (typeof processedPatch.music === 'string') {
+      processedPatch.music = processedPatch.music.split(',').map(item => item.trim()).filter(item => item.length > 0);
+    }
+  }
+  
+  if (processedPatch.fav_food !== undefined && processedPatch.fav_food !== null) {
+    if (typeof processedPatch.fav_food === 'string') {
+      processedPatch.fav_food = processedPatch.fav_food.split(',').map(item => item.trim()).filter(item => item.length > 0);
+    }
+  }
+  
+  console.log('Processed patch for database:', processedPatch);
+
   // Update profiles table
   const { data, error } = await supabaseAdmin
     .from('profiles')
-    .update(safePatch)
+    .update(processedPatch)
     .eq('user_id', userId)
     .select('*')
     .single();

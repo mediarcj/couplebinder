@@ -269,6 +269,9 @@ document.addEventListener('DOMContentLoaded', function() {
     const logoutBtn = document.getElementById('logoutBtn');
     if (logoutBtn) {
         logoutBtn.onclick = handleLogout;
+        logger.info('Logout button event handler attached');
+    } else {
+        logger.error('Logout button not found - event handler not attached');
     }
     
     // Check session status and update UI
@@ -885,13 +888,16 @@ function updateUIForLoggedInUser(userEmail) {
         // Replace content with Dashboard button + Logout button (matches dashboard style)
         authSection.innerHTML = `
             <a href="/dashboard" class="dashboard-link btn btn-primary">Dashboard</a>
-            <button id="logoutBtn" class="btn btn-secondary">Logout</button>
+            <button id="logoutBtn" type="button" class="btn btn-secondary">Logout</button>
         `;
         
         // Attach logout handler to button
         const logoutBtn = authSection.querySelector('#logoutBtn');
         if (logoutBtn) {
             logoutBtn.onclick = handleLogout;
+            logger.info('Logout button event handler attached (UI update)');
+        } else {
+            logger.error('Logout button not found during UI update');
         }
     }
 }
@@ -940,6 +946,7 @@ function updateUIForLoggedOutUser() {
 }
 
 async function handleLogout() {
+    logger.info('handleLogout called');
     try {
         if (!window.supabase) {
             showNotificationModal('Error', 'Authentication system not initialized. Please refresh the page.');

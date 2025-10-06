@@ -474,6 +474,9 @@ function initializeLoginModal() {
     // Handle form submission
     if (loginForm) {
         loginForm.addEventListener('submit', handleLoginSubmit);
+        logger.info('Login form event listener attached');
+    } else {
+        logger.error('Login form not found - event listener not attached');
     }
 }
 
@@ -636,6 +639,7 @@ function validatePassword(password) {
 }
 
 async function handleLoginSubmit(e) {
+    logger.info('handleLoginSubmit called');
     e.preventDefault();
     
     const email = document.getElementById('loginEmail').value;
@@ -674,6 +678,16 @@ async function handleLoginSubmit(e) {
             
             logger.info('Attempting login with Supabase');
             logger.info('Supabase client available:', !!window.supabase);
+            
+            // Check if there's any existing session before attempting login
+            const { data: { session: existingSession } } = await window.supabase.auth.getSession();
+            logger.info('Existing session found before login:', !!existingSession);
+            
+            // Clear any existing session to ensure clean login
+            if (existingSession) {
+                logger.info('Clearing existing session before login');
+                await window.supabase.auth.signOut();
+            }
             
             const { data, error } = await window.supabase.auth.signInWithPassword({
                 email: email,
@@ -1063,6 +1077,9 @@ function initializeSignupModal() {
     // Handle form submission
     if (signupForm) {
         signupForm.addEventListener('submit', handleSignupSubmit);
+        logger.info('Signup form event listener attached');
+    } else {
+        logger.error('Signup form not found - event listener not attached');
     }
 }
 

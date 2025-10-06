@@ -36,17 +36,29 @@ const logger = {
     // Gated logging functions
     info: (message, data = {}) => {
         if (logger.isDebugEnabled()) {
-            console.log(`[DEBUG] ${message}`, logger.redact(data));
+            try {
+                console.log(`[DEBUG] ${message}`, logger.redact(data));
+            } catch (e) {
+                console.log(`[DEBUG] ${message}`, '[Logger error - data not logged]');
+            }
         }
     },
     
     error: (message, data = {}) => {
-        console.error(`[ERROR] ${message}`, logger.redact(data));
+        try {
+            console.error(`[ERROR] ${message}`, logger.redact(data));
+        } catch (e) {
+            console.error(`[ERROR] ${message}`, '[Logger error - data not logged]');
+        }
     },
     
     warn: (message, data = {}) => {
         if (logger.isDebugEnabled()) {
-            console.warn(`[WARN] ${message}`, logger.redact(data));
+            try {
+                console.warn(`[WARN] ${message}`, logger.redact(data));
+            } catch (e) {
+                console.warn(`[WARN] ${message}`, '[Logger error - data not logged]');
+            }
         }
     }
 };

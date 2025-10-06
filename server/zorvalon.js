@@ -507,7 +507,14 @@ app.get('/', (req, res) => {
     const pageModel = buildHomePageModel(req, res);
     
     // Add nonce to page model for EJS template
-    pageModel.nonce = res.locals.nonce;
+    pageModel.page.nonce = res.locals.nonce;
+    
+    // Add Supabase credentials for client initialization
+    pageModel.ui = {
+      supabaseUrl: process.env.SUPABASE_URL,
+      supabaseAnonKey: process.env.SUPABASE_ANON_KEY,
+      csrfToken: res.locals.csrfToken || ''
+    };
     
     // Render EJS template with page model
     res.render('index', pageModel);

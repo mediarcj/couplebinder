@@ -57,19 +57,31 @@ const logger = {
     
     info: (message, ...args) => {
         if (logger._isDebug()) {
-            console.log(message, ...args.map(logger._redact));
+            try {
+                console.log(message, ...args.map(arg => logger._redact(arg)));
+            } catch (e) {
+                console.log(message, '[Logger error - args not logged]');
+            }
         }
     },
     
     warn: (message, ...args) => {
         if (logger._isDebug()) {
-            console.warn(message, ...args.map(logger._redact));
+            try {
+                console.warn(message, ...args.map(arg => logger._redact(arg)));
+            } catch (e) {
+                console.warn(message, '[Logger error - args not logged]');
+            }
         }
     },
     
     error: (message, ...args) => {
         // Always log errors, but redact PII
-        console.error(message, ...args.map(logger._redact));
+        try {
+            console.error(message, ...args.map(arg => logger._redact(arg)));
+        } catch (e) {
+            console.error(message, '[Logger error - args not logged]');
+        }
     }
 };
 

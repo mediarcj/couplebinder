@@ -1,386 +1,228 @@
 /**
- * File: server/public/js/logout.js
- * Description: Modular logout functionality for consistent logout behavior across all pages
- * Purpose: Provides a unified logout process with proper UI feedback and session cleanup
- * Notes: Can be imported and used by any page that needs logout functionality
+ * Modular logout used across pages
+ * Clears server cookie, Supabase session, JS-readable cookies & storage,
+ * shows a modal, and redirects with a hard replace.
  */
 
-/**
- * WHAT:
- * We provide a complete, modular logout system that handles all aspects of user logout.
- *
- * WHY:
- * Consistent logout behavior across all pages prevents user confusion and ensures
- * proper session cleanup. A modular approach makes it easier to maintain and debug.
- *
- * HOW:
- * 1. Clear server-side authentication cookies
- * 2. Clear Supabase client-side session and localStorage
- * 3. Show user-friendly logout confirmation modal
- * 4. Redirect to homepage after user acknowledges logout
- */
-
-// Quiet console logger with dev toggle and PII-safe redaction
+/* ===========================
+   Quiet logger (PII-safe)
+=========================== */
 const logoutLogger = {
-    isDebugEnabled: () => localStorage.getItem('debugProfile') === '1',
-    redact: (obj) => {
-        if (typeof obj === 'string') {
-            return obj.replace(/([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})/g, '[EMAIL]')
-                     .replace(/(\b\d{7,}\b)/g, '[PHONE]')
-                     .replace(/(sb-access-token=[^;]+)/g, '[TOKEN]');
-        }
-        if (typeof obj === 'object' && obj !== null) {
-            const redacted = {};
-            for (const [key, value] of Object.entries(obj)) {
-                if (['email', 'phone', 'token', 'password', 'auth'].some(pii => key.toLowerCase().includes(pii))) {
-                    redacted[key] = '[REDACTED]';
-                } else if (typeof value === 'string') {
-                    redacted[key] = logger.redact(value);
-                } else {
-                    redacted[key] = value;
-                }
-            }
-            return redacted;
-        }
-        return obj;
-    },
-    info: (message, data = {}) => {
-        if (logoutLogger.isDebugEnabled()) {
-            try {
-                console.log(`[DEBUG] ${message}`, logoutLogger.redact(data));
-            } catch (e) {
-                console.log(`[DEBUG] ${message}`, '[Logger error - data not logged]');
-            }
-        }
-    },
-    error: (message, data = {}) => {
-        try {
-            console.error(`[ERROR] ${message}`, logoutLogger.redact(data));
-        } catch (e) {
-            console.error(`[ERROR] ${message}`, '[Logger error - data not logged]');
-        }
-    },
-    warn: (message, data = {}) => {
-        if (logoutLogger.isDebugEnabled()) {
-            try {
-                console.warn(`[WARN] ${message}`, logoutLogger.redact(data));
-            } catch (e) {
-                console.warn(`[WARN] ${message}`, '[Logger error - data not logged]');
-            }
-        }
+  isDebugEnabled: () => localStorage.getItem('debugLogout') === '1', // NEW: specific key
+  redact: (obj) => {
+    if (typeof obj === 'string') {
+      return obj
+        .replace(/([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})/g, '[EMAIL]')
+        .replace(/(\b\d{7,}\b)/g, '[PHONE]')
+        .replace(/(sb-access-token=[^;]+)/g, '[TOKEN]');
     }
+    if (obj && typeof obj === 'object') {
+      const redacted = {};
+      for (const [k, v] of Object.entries(obj)) {
+        if (['email','phone','token','password','auth'].some(pii => k.toLowerCase().includes(pii))) {
+          redacted[k] = '[REDACTED]';
+        } else if (typeof v === 'string') {
+          redacted[k] = logoutLogger.redact(v); // FIX: use logoutLogger
+        } else {
+          redacted[k] = v;
+        }
+      }
+      return redacted;
+    }
+    return obj;
+  },
+  info: (m, d={}) => logoutLogger.isDebugEnabled() && console.log(`[DEBUG] ${m}`, logoutLogger.redact(d)),
+  warn: (m, d={}) => logoutLogger.isDebugEnabled() && console.warn(`[WARN] ${m}`, logoutLogger.redact(d)),
+  error: (m, d={}) => console.error(`[ERROR] ${m}`, logoutLogger.redact(d))
 };
 
-/**
- * Show logout success modal
- * 
- * WHAT:
- * We display a user-friendly modal to confirm successful logout.
- *
- * WHY:
- * Users need clear feedback that logout was successful before being redirected.
- *
- * HOW:
- * We create a modal with success message and OK button that redirects to homepage.
- */
-function showLogoutSuccessModal() {
-    // Create modal HTML if it doesn't exist
-    let modal = document.getElementById('logoutSuccessModal');
-    if (!modal) {
-        modal = document.createElement('div');
-        modal.id = 'logoutSuccessModal';
-        modal.className = 'modal';
-        modal.style.display = 'none';
-        modal.innerHTML = `
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h2>Logout Successful!</h2>
-                </div>
-                <div class="modal-body">
-                    <p>You have been successfully logged out.</p>
-                    <div class="form-actions">
-                        <button type="button" class="btn btn-primary" id="logoutSuccessOkBtn">OK</button>
-                    </div>
-                </div>
-            </div>
-        `;
-        document.body.appendChild(modal);
-    }
-    
-    // Show modal
-    modal.style.display = 'block';
-    
-    // Handle OK button click
-    const okBtn = document.getElementById('logoutSuccessOkBtn');
-    if (okBtn) {
-        okBtn.onclick = () => {
-            modal.style.display = 'none';
-            logoutLogger.info('Logout success modal acknowledged, redirecting to homepage');
-            window.location.assign('/');
-        };
-    }
-    
-    logoutLogger.info('Logout success modal displayed');
+/* ===========================
+   Helpers
+=========================== */
+function getCsrfToken() {
+  const meta = document.querySelector('meta[name="csrf-token"]');
+  return meta ? meta.getAttribute('content') : '';
 }
 
-/**
- * Show error modal
- * 
- * WHAT:
- * We display an error modal when logout fails.
- *
- * WHY:
- * Users need to know if logout failed and what they can do about it.
- *
- * HOW:
- * We show an error modal with retry option.
- */
-function showLogoutErrorModal(errorMessage) {
-    // Create modal HTML if it doesn't exist
-    let modal = document.getElementById('logoutErrorModal');
-    if (!modal) {
-        modal = document.createElement('div');
-        modal.id = 'logoutErrorModal';
-        modal.className = 'modal';
-        modal.style.display = 'none';
-        modal.innerHTML = `
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h2>Logout Failed</h2>
-                </div>
-                <div class="modal-body">
-                    <p id="logoutErrorMessage">An error occurred during logout.</p>
-                    <div class="form-actions">
-                        <button type="button" class="btn btn-secondary" id="logoutErrorCloseBtn">Close</button>
-                        <button type="button" class="btn btn-primary" id="logoutErrorRetryBtn">Retry</button>
-                    </div>
-                </div>
-            </div>
-        `;
-        document.body.appendChild(modal);
-    }
-    
-    // Update error message
-    const errorMsgEl = document.getElementById('logoutErrorMessage');
-    if (errorMsgEl) {
-        errorMsgEl.textContent = errorMessage;
-    }
-    
-    // Show modal
-    modal.style.display = 'block';
-    
-    // Handle close button
-    const closeBtn = document.getElementById('logoutErrorCloseBtn');
-    if (closeBtn) {
-        closeBtn.onclick = () => {
-            modal.style.display = 'none';
-        };
-    }
-    
-    // Handle retry button
-    const retryBtn = document.getElementById('logoutErrorRetryBtn');
-    if (retryBtn) {
-        retryBtn.onclick = () => {
-            modal.style.display = 'none';
-            performLogout(); // Retry logout
-        };
-    }
-    
-    logoutLogger.error('Logout error modal displayed', { error: errorMessage });
+// Singleton modal (no innerHTML injection risks: we use textContent)
+function showNotificationModal(title, message, onClose = null) {
+  let modal = document.getElementById('notificationModal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'notificationModal';
+    modal.className = 'modal';
+    modal.innerHTML = `
+      <div class="modal-content notification-modal" role="dialog" aria-modal="true" aria-labelledby="notificationTitle">
+        <div class="modal-header">
+          <h2 id="notificationTitle">Notification</h2>
+          <button type="button" class="close" id="notificationClose" aria-label="Close">×</button>
+        </div>
+        <div class="modal-body">
+          <p id="notificationMessage">Message</p>
+          <div class="form-actions">
+            <button type="button" class="btn btn-secondary" id="notificationOkBtn">OK</button>
+          </div>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+  }
+
+  const titleEl = document.getElementById('notificationTitle');
+  const messageEl = document.getElementById('notificationMessage');
+  const closeBtn = document.getElementById('notificationClose');
+  const okBtn = document.getElementById('notificationOkBtn');
+
+  if (titleEl) titleEl.textContent = title;
+  if (messageEl) messageEl.textContent = message;
+  modal.style.display = 'block';
+
+  // NEW: scoped listeners + cleanup
+  const onOutside = (evt) => {
+    if (evt.target === modal) closeModal();
+  };
+  const closeModal = () => {
+    modal.style.display = 'none';
+    closeBtn?.removeEventListener('click', closeModal);
+    okBtn?.removeEventListener('click', closeModal);
+    window.removeEventListener('click', onOutside);
+    onClose && onClose();
+  };
+  closeBtn?.addEventListener('click', closeModal);
+  okBtn?.addEventListener('click', closeModal);
+  window.addEventListener('click', onOutside);
 }
 
-/**
- * Perform the actual logout process
- * 
- * WHAT:
- * We execute the complete logout sequence with proper cleanup.
- *
- * WHY:
- * Logout must clear both client-side and server-side authentication
- * to prevent unauthorized access and ensure clean state.
- *
- * HOW:
- * 1. Clear server-side secure cookie
- * 2. Clear Supabase session and localStorage
- * 3. Clear client-side cookies
- * 4. Show success modal
- */
+/* ===========================
+   Logout core
+=========================== */
+let LOGOUT_IN_FLIGHT = false; // NEW: double-click guard
+
 async function performLogout() {
-    logoutLogger.info('Starting logout process');
-    
+  if (LOGOUT_IN_FLIGHT) return; // drop duplicates
+  LOGOUT_IN_FLIGHT = true;
+
+  try {
+    const csrf = getCsrfToken();
+
+    // 1) Tell server to clear HttpOnly cookie (CSRF-protected)
     try {
-        // Step 1: Clear server-side secure cookie
-        try {
-            const response = await fetch('/auth/clear-cookie', {
-                method: 'POST',
-                credentials: 'include'
-            });
-            
-            if (response.ok) {
-                logoutLogger.info('Server secure cookie cleared');
-            } else {
-                logoutLogger.warn('Server cookie clear failed, but continuing logout');
-            }
-        } catch (cookieError) {
-            logoutLogger.warn('Server cookie clear failed, but continuing logout');
-        }
-        
-        // Step 2: Clear Supabase session and localStorage
-        try {
-            // Check if Supabase is available
-            if (window.supabase) {
-                const { error } = await window.supabase.auth.signOut();
-                if (error) {
-                    logoutLogger.info('Supabase signOut returned error (non-critical):', error.message);
-                } else {
-                    logoutLogger.info('Supabase session cleared');
-                }
-            } else {
-                logoutLogger.warn('Supabase not available, skipping Supabase logout');
-            }
-        } catch (supabaseError) {
-            logoutLogger.info('Supabase signOut exception (non-critical):', supabaseError.message);
-        }
-        
-        // Step 3: Clear client-side cookies
-        const cookiesToClear = [
-            'access-token=; Path=/; Max-Age=0; SameSite=Lax',
-            'refresh-token=; Path=/; Max-Age=0; SameSite=Lax',
-            'sb-access-token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;',
-            'sb-refresh-token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;'
-        ];
-        
-        cookiesToClear.forEach(cookie => {
-            document.cookie = cookie;
-        });
-        
-        logoutLogger.info('Client-side cookies cleared');
-        
-        // Step 4: Clear localStorage
-        try {
-            // Clear common Supabase localStorage keys
-            const keysToRemove = [];
-            for (let i = 0; i < localStorage.length; i++) {
-                const key = localStorage.key(i);
-                if (key && key.includes('supabase') || key && key.includes('sb-')) {
-                    keysToRemove.push(key);
-                }
-            }
-            
-            keysToRemove.forEach(key => {
-                localStorage.removeItem(key);
-                logoutLogger.info('Cleared localStorage key', { key });
-            });
-            
-            if (keysToRemove.length === 0) {
-                logoutLogger.info('No Supabase localStorage keys found to clear');
-            }
-        } catch (storageError) {
-            logoutLogger.info('localStorage cleanup skipped (non-critical)');
-        }
-        
-        // Step 5: Show success modal
-        logoutLogger.info('Logout process completed successfully');
-        showLogoutSuccessModal();
-        
-    } catch (error) {
-        logoutLogger.error('Logout process failed:', error);
-        showLogoutErrorModal('An unexpected error occurred during logout. Please try again.');
+      await fetch('/auth/clear-cookie', {
+        method: 'POST',
+        credentials: 'include',
+        headers: csrf ? { 'X-CSRF-Token': csrf } : {}
+      });
+      logoutLogger.info('Server cookie cleared');
+    } catch {
+      logoutLogger.warn('Server cookie clear failed; proceeding');
     }
+
+    // 2) Supabase sign-out (revokes refresh token + clears its storage)
+    try {
+      if (window.supabase?.auth?.signOut) {
+        const { error } = await window.supabase.auth.signOut();
+        if (error) logoutLogger.info('Supabase signOut error (non-fatal)', { error: error.message });
+        else logoutLogger.info('Supabase session cleared');
+      }
+    } catch (e) {
+      logoutLogger.info('Supabase signOut exception (non-fatal)', { error: e?.message || String(e) });
+    }
+
+    // 3) JS-readable cookie nuke (best-effort; HttpOnly is server-only)
+    document.cookie = 'sb-access-token=; Path=/; Max-Age=0; SameSite=Lax';
+    document.cookie = 'sb_access_token=; Path=/; Max-Age=0; SameSite=Lax';
+    document.cookie = 'sb-refresh-token=; Path=/; Max-Age=0; SameSite=Lax';
+    logoutLogger.info('JS cookies cleared');
+
+    // 4) Storage cleanup (local + session + caches)
+    try {
+      // Supabase tokens (dynamic keys)
+      const keys = Object.keys(localStorage);
+      for (const k of keys) {
+        if (k === 'supabase.auth.token' || (k.startsWith('sb-') && k.includes('auth-token'))) {
+          localStorage.removeItem(k);
+          logoutLogger.info('Cleared localStorage key', { k });
+        }
+      }
+      sessionStorage.clear();
+    } catch { /* ignore */ }
+
+    // Optional: clear CacheStorage if you ever add a service worker
+    if (window.caches?.keys) {
+      try {
+        const names = await caches.keys();
+        await Promise.all(names.map(n => caches.delete(n)));
+        logoutLogger.info('CacheStorage cleared');
+      } catch { /* ignore */ }
+    }
+
+    // Optional: WebAuthn/federated silent access prevention
+    try {
+      if (navigator.credentials?.preventSilentAccess) {
+        await navigator.credentials.preventSilentAccess();
+        logoutLogger.info('preventSilentAccess invoked');
+      }
+    } catch { /* ignore */ }
+
+    // 5) Broadcast logout to other tabs for instant UI sync
+    try {
+      const bc = new BroadcastChannel('auth');
+      bc.postMessage({ type: 'LOGOUT' });
+      bc.close();
+      logoutLogger.info('Logout broadcast sent to other tabs');
+    } catch (error) {
+      logoutLogger.info('BroadcastChannel not available - cross-tab sync skipped');
+    }
+
+    // 6) UX + redirect (hard replace)
+    showNotificationModal('Logged out', 'You have been logged out successfully!', () => {
+      window.location.replace('/'); // NEW: replace (no back to authed page)
+    });
+
+  } catch (error) {
+    logoutLogger.error('Logout error', { msg: error?.message || String(error) });
+    showNotificationModal('Logout Error', 'Network error during logout. Please try again.');
+  } finally {
+    LOGOUT_IN_FLIGHT = false;
+  }
 }
 
-/**
- * Main logout handler function
- * 
- * WHAT:
- * We provide the main logout function that can be called by any page.
- *
- * WHY:
- * This provides a consistent interface for logout functionality across all pages.
- *
- * HOW:
- * We validate prerequisites and then call the logout process.
- */
 async function handleLogout() {
-    logoutLogger.info('handleLogout called');
-    
-    try {
-        // Validate that we have the necessary components
-        if (!window.supabase) {
-            logoutLogger.warn('Supabase not available, proceeding with server-side logout only');
-        }
-        
-        // Perform logout
-        await performLogout();
-        
-    } catch (error) {
-        logoutLogger.error('Logout handler failed:', error);
-        showLogoutErrorModal('Logout failed. Please try again.');
-    }
+  logoutLogger.info('handleLogout called');
+  await performLogout();
 }
 
-/**
- * Attach logout button event handler
- * 
- * WHAT:
- * We attach the logout event handler to a logout button.
- *
- * WHY:
- * This provides a consistent way to attach logout functionality to any logout button.
- *
- * HOW:
- * We find the logout button and attach the handleLogout function as click handler.
- */
-function attachLogoutHandler() {
-    const logoutBtn = document.getElementById('logoutBtn');
-    if (logoutBtn) {
-        logoutBtn.addEventListener('click', handleLogout);
-        logoutLogger.info('Logout button event handler attached');
-        return true;
-    } else {
-        logoutLogger.error('Logout button not found');
-        return false;
-    }
+function attachLogoutHandler(selector = '#logoutBtn') {
+  const btn = document.querySelector(selector);
+  if (btn) {
+    btn.removeEventListener('click', handleLogout);
+    btn.addEventListener('click', handleLogout, { passive: true });
+    logoutLogger.info('Logout handler attached', { selector });
+    return true;
+  }
+  logoutLogger.info('Logout button not found (ok on pages without it)', { selector });
+  return false;
 }
 
-/**
- * Initialize logout functionality
- * 
- * WHAT:
- * We initialize the logout system when the page loads.
- *
- * WHY:
- * This ensures logout functionality is ready when the page is loaded.
- *
- * HOW:
- * We attach the logout handler to the logout button if it exists.
- */
 function initializeLogout() {
-    logoutLogger.info('Initializing logout functionality');
-    
-    // Attach logout handler
-    const success = attachLogoutHandler();
-    
-    if (success) {
-        logoutLogger.info('Logout functionality initialized successfully');
-    } else {
-        logoutLogger.warn('Logout button not found - logout functionality not available');
-    }
+  logoutLogger.info('Initializing logout');
+  attachLogoutHandler('#logoutBtn');
 }
 
-// Auto-initialize when DOM is ready
 if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initializeLogout);
+  document.addEventListener('DOMContentLoaded', initializeLogout, { once: true });
 } else {
-    initializeLogout();
+  initializeLogout();
 }
 
-// Export functions for manual use
 window.LogoutModule = {
-    handleLogout,
-    attachLogoutHandler,
-    initializeLogout,
-    performLogout,
-    showLogoutSuccessModal,
-    showLogoutErrorModal
+  handleLogout,
+  attachLogoutHandler,
+  initializeLogout,
+  performLogout,
+  showNotificationModal
+};
+window.reattachLogoutHandler = function (selector='#logoutBtn') {
+  logoutLogger.info('Re-attaching logout handler');
+  return attachLogoutHandler(selector);
 };

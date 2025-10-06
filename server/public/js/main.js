@@ -885,8 +885,11 @@ function updateUIForLoggedInUser(userEmail) {
             <button id="logoutBtn" type="button" class="btn btn-secondary">Logout</button>
         `;
         
-        // Logout functionality is handled by logout.js module
-        logger.info('UI updated for logged-in user - logout handled by logout.js module');
+        // Re-attach logout handler for dynamically created button
+        if (window.reattachLogoutHandler) {
+            window.reattachLogoutHandler();
+        }
+        logger.info('UI updated for logged-in user - logout handler re-attached');
     }
 }
 

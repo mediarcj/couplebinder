@@ -21,7 +21,7 @@
  */
 
 // Quiet console logger with dev toggle and PII-safe redaction
-const logger = {
+const logoutLogger = {
     isDebugEnabled: () => localStorage.getItem('debugProfile') === '1',
     redact: (obj) => {
         if (typeof obj === 'string') {
@@ -45,9 +45,9 @@ const logger = {
         return obj;
     },
     info: (message, data = {}) => {
-        if (logger.isDebugEnabled()) {
+        if (logoutLogger.isDebugEnabled()) {
             try {
-                console.log(`[DEBUG] ${message}`, logger.redact(data));
+                console.log(`[DEBUG] ${message}`, logoutLogger.redact(data));
             } catch (e) {
                 console.log(`[DEBUG] ${message}`, '[Logger error - data not logged]');
             }
@@ -55,15 +55,15 @@ const logger = {
     },
     error: (message, data = {}) => {
         try {
-            console.error(`[ERROR] ${message}`, logger.redact(data));
+            console.error(`[ERROR] ${message}`, logoutLogger.redact(data));
         } catch (e) {
             console.error(`[ERROR] ${message}`, '[Logger error - data not logged]');
         }
     },
     warn: (message, data = {}) => {
-        if (logger.isDebugEnabled()) {
+        if (logoutLogger.isDebugEnabled()) {
             try {
-                console.warn(`[WARN] ${message}`, logger.redact(data));
+                console.warn(`[WARN] ${message}`, logoutLogger.redact(data));
             } catch (e) {
                 console.warn(`[WARN] ${message}`, '[Logger error - data not logged]');
             }
@@ -115,12 +115,12 @@ function showLogoutSuccessModal() {
     if (okBtn) {
         okBtn.onclick = () => {
             modal.style.display = 'none';
-            logger.info('Logout success modal acknowledged, redirecting to homepage');
+            logoutLogger.info('Logout success modal acknowledged, redirecting to homepage');
             window.location.assign('/');
         };
     }
     
-    logger.info('Logout success modal displayed');
+    logoutLogger.info('Logout success modal displayed');
 }
 
 /**
@@ -186,7 +186,7 @@ function showLogoutErrorModal(errorMessage) {
         };
     }
     
-    logger.error('Logout error modal displayed', { error: errorMessage });
+    logoutLogger.error('Logout error modal displayed', { error: errorMessage });
 }
 
 /**
@@ -206,7 +206,7 @@ function showLogoutErrorModal(errorMessage) {
  * 4. Show success modal
  */
 async function performLogout() {
-    logger.info('Starting logout process');
+    logoutLogger.info('Starting logout process');
     
     try {
         // Step 1: Clear server-side secure cookie
@@ -217,12 +217,12 @@ async function performLogout() {
             });
             
             if (response.ok) {
-                logger.info('Server secure cookie cleared');
+                logoutLogger.info('Server secure cookie cleared');
             } else {
-                logger.warn('Server cookie clear failed, but continuing logout');
+                logoutLogger.warn('Server cookie clear failed, but continuing logout');
             }
         } catch (cookieError) {
-            logger.warn('Server cookie clear failed, but continuing logout');
+            logoutLogger.warn('Server cookie clear failed, but continuing logout');
         }
         
         // Step 2: Clear Supabase session and localStorage
@@ -231,15 +231,15 @@ async function performLogout() {
             if (window.supabase) {
                 const { error } = await window.supabase.auth.signOut();
                 if (error) {
-                    logger.info('Supabase signOut returned error (non-critical):', error.message);
+                    logoutLogger.info('Supabase signOut returned error (non-critical):', error.message);
                 } else {
-                    logger.info('Supabase session cleared');
+                    logoutLogger.info('Supabase session cleared');
                 }
             } else {
-                logger.warn('Supabase not available, skipping Supabase logout');
+                logoutLogger.warn('Supabase not available, skipping Supabase logout');
             }
         } catch (supabaseError) {
-            logger.info('Supabase signOut exception (non-critical):', supabaseError.message);
+            logoutLogger.info('Supabase signOut exception (non-critical):', supabaseError.message);
         }
         
         // Step 3: Clear client-side cookies
@@ -254,7 +254,7 @@ async function performLogout() {
             document.cookie = cookie;
         });
         
-        logger.info('Client-side cookies cleared');
+        logoutLogger.info('Client-side cookies cleared');
         
         // Step 4: Clear localStorage
         try {
@@ -269,22 +269,22 @@ async function performLogout() {
             
             keysToRemove.forEach(key => {
                 localStorage.removeItem(key);
-                logger.info('Cleared localStorage key', { key });
+                logoutLogger.info('Cleared localStorage key', { key });
             });
             
             if (keysToRemove.length === 0) {
-                logger.info('No Supabase localStorage keys found to clear');
+                logoutLogger.info('No Supabase localStorage keys found to clear');
             }
         } catch (storageError) {
-            logger.info('localStorage cleanup skipped (non-critical)');
+            logoutLogger.info('localStorage cleanup skipped (non-critical)');
         }
         
         // Step 5: Show success modal
-        logger.info('Logout process completed successfully');
+        logoutLogger.info('Logout process completed successfully');
         showLogoutSuccessModal();
         
     } catch (error) {
-        logger.error('Logout process failed:', error);
+        logoutLogger.error('Logout process failed:', error);
         showLogoutErrorModal('An unexpected error occurred during logout. Please try again.');
     }
 }
@@ -302,19 +302,19 @@ async function performLogout() {
  * We validate prerequisites and then call the logout process.
  */
 async function handleLogout() {
-    logger.info('handleLogout called');
+    logoutLogger.info('handleLogout called');
     
     try {
         // Validate that we have the necessary components
         if (!window.supabase) {
-            logger.warn('Supabase not available, proceeding with server-side logout only');
+            logoutLogger.warn('Supabase not available, proceeding with server-side logout only');
         }
         
         // Perform logout
         await performLogout();
         
     } catch (error) {
-        logger.error('Logout handler failed:', error);
+        logoutLogger.error('Logout handler failed:', error);
         showLogoutErrorModal('Logout failed. Please try again.');
     }
 }
@@ -335,10 +335,10 @@ function attachLogoutHandler() {
     const logoutBtn = document.getElementById('logoutBtn');
     if (logoutBtn) {
         logoutBtn.addEventListener('click', handleLogout);
-        logger.info('Logout button event handler attached');
+        logoutLogger.info('Logout button event handler attached');
         return true;
     } else {
-        logger.error('Logout button not found');
+        logoutLogger.error('Logout button not found');
         return false;
     }
 }
@@ -356,15 +356,15 @@ function attachLogoutHandler() {
  * We attach the logout handler to the logout button if it exists.
  */
 function initializeLogout() {
-    logger.info('Initializing logout functionality');
+    logoutLogger.info('Initializing logout functionality');
     
     // Attach logout handler
     const success = attachLogoutHandler();
     
     if (success) {
-        logger.info('Logout functionality initialized successfully');
+        logoutLogger.info('Logout functionality initialized successfully');
     } else {
-        logger.warn('Logout button not found - logout functionality not available');
+        logoutLogger.warn('Logout button not found - logout functionality not available');
     }
 }
 

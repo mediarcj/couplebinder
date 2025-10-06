@@ -98,14 +98,8 @@ document.addEventListener('DOMContentLoaded', function() {
     // Attach event handlers
     attachEventHandlers();
     
-    // Attach logout button handler
-    const logoutBtn = document.getElementById('logoutBtn');
-    if (logoutBtn) {
-        logoutBtn.addEventListener('click', handleLogout);
-        logger.info('Logout button event handler attached (profile-edit)');
-    } else {
-        logger.error('Logout button not found (profile-edit)');
-    }
+    // Logout functionality is handled by logout.js module
+    logger.info('Profile edit page initialized - logout handled by logout.js module');
 });
 
 /**
@@ -788,85 +782,4 @@ function showSuccess(message) {
     }, 3000);
 }
 
-/**
- * Handle logout
- */
-async function handleLogout() {
-    logger.info('handleLogout called (profile-edit)');
-    try {
-        if (!supabase) {
-            showError('Authentication system not initialized. Please refresh the page.');
-            return;
-        }
-        
-        logger.info('Starting logout process');
-        
-        /**
-         * WHAT:
-         * We log the user out and clear all authentication state.
-         *
-         * WHY:
-         * Logout must clear both client-side and server-side authentication
-         * to prevent unauthorized access and ensure clean state.
-         *
-         * HOW:
-         * 1. Call /auth/clear-cookie to remove secure cookie (server session)
-         * 2. Call Supabase signOut to clear client session + localStorage
-         * 3. Clear any old cookies (security cleanup)
-         * 4. Redirect to homepage with hard reload (clears all cached state)
-         */
-        
-        // Step 1: Clear server-side secure cookie
-        try {
-            const response = await fetch('/auth/clear-cookie', {
-                method: 'POST',
-                credentials: 'include'
-            });
-            
-            if (response.ok) {
-                logger.info('Server secure cookie cleared');
-            } else {
-                logger.warn('Server cookie clear failed, but continuing logout');
-            }
-        } catch (cookieError) {
-            logger.warn('Server cookie clear failed, but continuing logout');
-        }
-        
-        // Step 2: Sign out from Supabase (clears client-side session + localStorage)
-        // CRITICAL: We must wait for signOut to complete before redirecting,
-        // otherwise the page reload will find the stale session in localStorage
-        try {
-            const { error } = await supabase.auth.signOut();
-            if (error) {
-                logger.info('Supabase signOut returned error (non-critical):', error.message);
-            } else {
-                logger.info('Supabase session cleared');
-            }
-        } catch (supabaseError) {
-            logger.info('Supabase signOut exception (non-critical):', supabaseError.message);
-        }
-        
-        // Step 3: Clear any old cookies (security cleanup)
-        document.cookie = 'access-token=; Path=/; Max-Age=0; SameSite=Lax';
-        document.cookie = 'refresh-token=; Path=/; Max-Age=0; SameSite=Lax';
-        document.cookie = 'sb-access-token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
-        document.cookie = 'sb-refresh-token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
-        
-        // Step 4: Clear localStorage
-        try {
-            const supabaseKey = 'sb-' + supabase.supabaseUrl.split('//')[1].split('.')[0] + '-auth-token';
-            localStorage.removeItem(supabaseKey);
-            logger.info('Cleared Supabase localStorage key', { key: supabaseKey });
-        } catch (storageError) {
-            logger.info('localStorage cleanup skipped (non-critical)');
-        }
-        
-        // Step 5: Redirect to homepage with hard reload (clears all cached state)
-        logger.info('Redirecting to homepage after logout');
-        window.location.assign('/');
-        
-    } catch (error) {
-        logger.error('Logout failed:', error);
-        showError('Logout failed. Please try again.');
-    }
-}
+// Logout functionality is now handled by the modular logout.js system

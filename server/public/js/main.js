@@ -265,14 +265,8 @@ document.addEventListener('DOMContentLoaded', function() {
     // Sign up modal functionality
     initializeSignupModal();
     
-    // Attach logout handler if button exists (for server-rendered authenticated pages)
-    const logoutBtn = document.getElementById('logoutBtn');
-    if (logoutBtn) {
-        logoutBtn.onclick = handleLogout;
-        logger.info('Logout button event handler attached');
-    } else {
-        logger.error('Logout button not found - event handler not attached');
-    }
+    // Logout functionality is handled by logout.js module
+    logger.info('Main page initialized - logout handled by logout.js module');
     
     // Check session status and update UI
     checkSessionStatus();
@@ -891,14 +885,8 @@ function updateUIForLoggedInUser(userEmail) {
             <button id="logoutBtn" type="button" class="btn btn-secondary">Logout</button>
         `;
         
-        // Attach logout handler to button
-        const logoutBtn = authSection.querySelector('#logoutBtn');
-        if (logoutBtn) {
-            logoutBtn.onclick = handleLogout;
-            logger.info('Logout button event handler attached (UI update)');
-        } else {
-            logger.error('Logout button not found during UI update');
-        }
+        // Logout functionality is handled by logout.js module
+        logger.info('UI updated for logged-in user - logout handled by logout.js module');
     }
 }
 
@@ -945,96 +933,7 @@ function updateUIForLoggedOutUser() {
     }
 }
 
-async function handleLogout() {
-    logger.info('handleLogout called');
-    try {
-        if (!window.supabase) {
-            showNotificationModal('Error', 'Authentication system not initialized. Please refresh the page.');
-            return;
-        }
-        
-        /**
-         * WHAT:
-         * We log the user out and clear all authentication state.
-         * 
-         * WHY:
-         * On logout, we must invalidate the session completely by:
-         * - Clearing the secure cookie (server session)
-         * - Signing out from Supabase (client-side session + localStorage)
-         * - Clearing any old cookies (legacy cleanup)
-         * - Redirecting to homepage with page reload (clears any cached state)
-         * 
-         * HOW:
-         * 1. Call /auth/clear-cookie to remove secure cookie (server session)
-         * 2. Call Supabase signOut to clear client session + localStorage
-         * 3. Clear any old cookies (security cleanup)
-         * 4. Show success modal
-         * 5. Redirect to homepage with hard reload (clears all cached state)
-         */
-        
-        // Step 1: Clear server secure cookie FIRST (most critical)
-        try {
-            await fetch('/auth/clear-cookie', {
-                method: 'POST',
-                credentials: 'include'  // Required for cookies
-            });
-            logger.info('Server secure cookie cleared');
-        } catch (e) {
-            // Continue even if clear-cookie fails (cookie will expire anyway)
-            logger.warn('Server cookie clear failed, but continuing logout');
-        }
-        
-        // Step 2: Sign out from Supabase (clears client-side session + localStorage)
-        // CRITICAL: We must wait for signOut to complete before redirecting,
-        // otherwise the page reload will find the stale session in localStorage
-        // and restore it via checkSessionStatus()
-        try {
-            const { error } = await window.supabase.auth.signOut();
-            if (error) {
-                logger.info('Supabase signOut returned error (non-critical):', error.message);
-            } else {
-                logger.info('Supabase session cleared');
-            }
-        } catch (supabaseError) {
-            // Supabase client error - non-critical, server cookie already cleared
-            logger.info('Supabase signOut exception (non-critical):', supabaseError.message);
-        }
-        
-        // Step 3: Clear any old cookies (security cleanup)
-        document.cookie = 'access-token=; Path=/; Max-Age=0; SameSite=Lax';
-        document.cookie = 'refresh-token=; Path=/; Max-Age=0; SameSite=Lax';
-        logger.info('Old cookies cleared');
-        
-        // Step 4: Force clear localStorage (manual cleanup)
-        // This ensures no stale session data remains before redirect
-        try {
-            localStorage.removeItem('auth.token');
-            // Clear any auth-related localStorage keys
-            const keys = Object.keys(localStorage);
-            keys.forEach(key => {
-                if (key.includes('auth-token')) {
-                    localStorage.removeItem(key);
-                    logger.info('Cleared localStorage key:', key);
-                }
-            });
-        } catch (storageError) {
-            logger.info('localStorage cleanup skipped (non-critical)');
-        }
-        
-        // Step 5: Show success modal and redirect with hard reload
-        showNotificationModal(
-            'Logout Successful!', 
-            'You have been logged out successfully!',
-            () => {
-                // Force navigation to homepage with hard reload to clear all cached state
-                window.location.href = '/';
-            }
-        );
-    } catch (error) {
-        logger.error('Logout error:', error.message);
-        showNotificationModal('Network Error', 'Network error during logout. Please try again.');
-    }
-}
+// Logout functionality is now handled by the modular logout.js system
 
 function handleLogin() {
     document.getElementById('loginModal').style.display = 'block';

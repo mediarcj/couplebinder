@@ -36,6 +36,105 @@ const logoutLogger = {
 };
 
 /* ===========================
+   Navigation Guard (Authoritative Modal)
+=========================== */
+/**
+ * WHAT:
+ * Freezes ALL navigation (programmatic and user-initiated) until released.
+ * 
+ * WHY:
+ * Ensures the logout modal is the ONLY path forward - no auto-redirects,
+ * no accidental submits, no third-party script navigation, no Esc dismiss.
+ * 
+ * HOW:
+ * Intercepts and blocks:
+ * - Programmatic navigation (location.assign, location.replace, location.reload)
+ * - History changes (pushState, replaceState)
+ * - User clicks on links/buttons
+ * - Form submissions
+ * - Escape key
+ * - Page unload attempts
+ */
+const NavGuard = (() => {
+  let active = false;
+  const orig = {};
+
+  function install() {
+    if (active) return;
+    active = true;
+    logoutLogger.info('NavGuard: Freezing all navigation');
+
+    // Freeze programmatic navigation
+    orig.assign = window.location.assign.bind(window.location);
+    orig.replace = window.location.replace.bind(window.location);
+    orig.reload = window.location.reload.bind(window.location);
+    window.location.assign = () => {};
+    window.location.replace = () => {};
+    window.location.reload = () => {};
+
+    // Freeze history changes
+    orig.pushState = history.pushState.bind(history);
+    orig.replaceState = history.replaceState.bind(history);
+    history.pushState = history.replaceState = () => {};
+
+    // Block user-initiated nav
+    document.addEventListener('click', clickBlocker, true);
+    document.addEventListener('submit', submitBlocker, true);
+    window.addEventListener('keydown', escBlocker, true);
+
+    // Last-ditch: stop unload
+    window.addEventListener('beforeunload', beforeUnloadBlocker, { capture: true });
+  }
+
+  function release() {
+    if (!active) return;
+    active = false;
+    logoutLogger.info('NavGuard: Releasing navigation freeze');
+
+    // Restore programmatic nav
+    if (orig.assign) window.location.assign = orig.assign;
+    if (orig.replace) window.location.replace = orig.replace;
+    if (orig.reload) window.location.reload = orig.reload;
+
+    if (orig.pushState) history.pushState = orig.pushState;
+    if (orig.replaceState) history.replaceState = orig.replaceState;
+
+    document.removeEventListener('click', clickBlocker, true);
+    document.removeEventListener('submit', submitBlocker, true);
+    window.removeEventListener('keydown', escBlocker, true);
+    window.removeEventListener('beforeunload', beforeUnloadBlocker, { capture: true });
+  }
+
+  function clickBlocker(e) {
+    const el = e.target?.closest?.('a,button,[role="button"],input[type="submit"],area');
+    if (!el) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    e.stopPropagation();
+  }
+
+  function submitBlocker(e) {
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    e.stopPropagation();
+  }
+
+  function escBlocker(e) {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+    }
+  }
+
+  function beforeUnloadBlocker(e) {
+    e.preventDefault();
+    e.returnValue = ''; // Some browsers still prompt
+  }
+
+  return { install, release, _orig: orig };
+})();
+
+/* ===========================
    Helpers
 =========================== */
 function getCsrfToken() {
@@ -112,40 +211,6 @@ function _renderLogoutModal(title, message, onClose = null) {
   okBtn?.addEventListener('click', closeModal, { once: true });
 }
 
-/**
- * Hard guard: while HOLD is set, block clicks/submits that could navigate away
- * 
- * WHAT:
- * Global event listeners that prevent navigation while logout modal is visible.
- * 
- * WHY:
- * Prevents accidental page navigation, form submissions, or other actions
- * that could close the modal before the user clicks OK.
- * 
- * HOW:
- * Use capture phase (true) to intercept events before other listeners.
- * Check HOLD flag and preventDefault if set.
- */
-(function registerLogoutHoldGuards() {
-  const guard = (e) => {
-    try {
-      if (localStorage.getItem('logout.ui.hold') === '1') {
-        e.preventDefault?.();
-        e.stopImmediatePropagation?.();
-      }
-    } catch {}
-  };
-  
-  // Capture phase so we win before other listeners
-  window.addEventListener('click', guard, true);
-  window.addEventListener('submit', guard, true);
-  window.addEventListener('keydown', (e) => {
-    if (localStorage.getItem('logout.ui.hold') === '1' && e.key === 'Escape') {
-      e.preventDefault();
-    }
-  }, true);
-})();
-
 /* ===========================
    Logout core
 =========================== */
@@ -158,8 +223,11 @@ async function performLogout() {
 
   try {
     const csrf = getCsrfToken();
-        // Tell any global auth watchers to HOLD redirects until modal OK is clicked
-        try { localStorage.setItem(LOGOUT_HOLD_KEY, '1'); } catch {}
+    
+    // CRITICAL: Hold + freeze navigation immediately
+    // This makes the modal the ONLY path forward
+    try { localStorage.setItem(LOGOUT_HOLD_KEY, '1'); } catch {}
+    NavGuard.install();
 
     // 1) Tell server to clear HttpOnly cookie (CSRF-protected)
     try {
@@ -224,6 +292,10 @@ async function performLogout() {
     // 5) UX + redirect (hard replace)
     // IMPORTANT: Show modal first, THEN broadcast to other tabs after user dismisses it
     window.LogoutModule.showNotificationModal('Logged out', 'You have been logged out successfully!', () => {
+      // Release the guard right before we navigate on OK
+      NavGuard.release();
+      try { localStorage.removeItem(LOGOUT_HOLD_KEY); } catch {}
+      
       // Broadcast logout to other tabs AFTER modal is dismissed
       try {
         const bc = new BroadcastChannel('auth');
@@ -234,9 +306,8 @@ async function performLogout() {
         logoutLogger.info('BroadcastChannel not available - cross-tab sync skipped');
       }
       
-      // Then redirect this tab
-      try { localStorage.removeItem(LOGOUT_HOLD_KEY); } catch {}
-      window.location.replace('/');
+      // Use the original replace in case anything patched the global
+      (NavGuard._orig.replace || window.location.replace).call(window.location, '/');
     });
 
   } catch (error) {

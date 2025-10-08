@@ -39,10 +39,114 @@ const logoutLogger = {
 /* ===========================
    Helpers
 =========================== */
+const LOGOUT_HOLD_KEY = 'logout.ui.hold';
+const MODAL_ID = 'notificationModal';
+
 function getCsrfToken() {
   const meta = document.querySelector('meta[name="csrf-token"]');
   return meta ? meta.getAttribute('content') : '';
 }
+
+/**
+ * Navigation Guard - Allows clicks inside modal, blocks everything else
+ * 
+ * WHAT:
+ * Freezes ALL navigation except clicks inside the logout modal.
+ * 
+ * WHY:
+ * Prevents auto-redirects, form submits, and navigation while allowing
+ * the modal's OK button to work properly.
+ * 
+ * HOW:
+ * Check if click target is inside the modal before blocking.
+ * Use capture phase to intercept events before other listeners.
+ */
+const NavGuard = (() => {
+  let active = false;
+  const orig = {};
+
+  const inModal = (t) => {
+    try { 
+      return !!(t && t.closest && t.closest(`#${MODAL_ID}`)); 
+    } catch { 
+      return false; 
+    }
+  };
+
+  function install() {
+    if (active) return;
+    active = true;
+    logoutLogger.info('NavGuard: Freezing navigation (modal clicks allowed)');
+
+    // Freeze programmatic nav
+    orig.assign = window.location.assign.bind(window.location);
+    window.location.assign = () => {};
+    orig.replace = window.location.replace.bind(window.location);
+    window.location.replace = () => {};
+    orig.reload = window.location.reload.bind(window.location);
+    window.location.reload = () => {};
+
+    // Freeze history nav
+    orig.pushState = history.pushState.bind(history);
+    history.pushState = () => {};
+    orig.replaceState = history.replaceState.bind(history);
+    history.replaceState = () => {};
+
+    // Block user nav, but allow clicks *inside* modal
+    document.addEventListener('click', clickBlocker, true);
+    document.addEventListener('submit', submitBlocker, true);
+    window.addEventListener('keydown', escBlocker, true);
+    window.addEventListener('beforeunload', beforeUnloadBlocker, { capture: true });
+  }
+
+  function release() {
+    if (!active) return;
+    active = false;
+    logoutLogger.info('NavGuard: Releasing navigation freeze');
+
+    if (orig.assign) window.location.assign = orig.assign;
+    if (orig.replace) window.location.replace = orig.replace;
+    if (orig.reload) window.location.reload = orig.reload;
+    if (orig.pushState) history.pushState = orig.pushState;
+    if (orig.replaceState) history.replaceState = orig.replaceState;
+
+    document.removeEventListener('click', clickBlocker, true);
+    document.removeEventListener('submit', submitBlocker, true);
+    window.removeEventListener('keydown', escBlocker, true);
+    window.removeEventListener('beforeunload', beforeUnloadBlocker, { capture: true });
+  }
+
+  function clickBlocker(e) {
+    if (inModal(e.target)) return; // let modal buttons work
+    const el = e.target?.closest?.('a,button,[role="button"],input[type="submit"],area');
+    if (!el) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    e.stopPropagation();
+  }
+
+  function submitBlocker(e) {
+    if (inModal(e.target)) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    e.stopPropagation();
+  }
+
+  function escBlocker(e) {
+    if (inModal(e.target)) return;
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+    }
+  }
+
+  function beforeUnloadBlocker(e) {
+    e.preventDefault();
+    e.returnValue = '';
+  }
+
+  return { install, release, _orig: orig };
+})();
 
 // Singleton modal (no innerHTML injection risks: we use textContent)
 function showNotificationModal(title, message, onClose = null) {
@@ -99,13 +203,17 @@ function showNotificationModal(title, message, onClose = null) {
 let LOGOUT_IN_FLIGHT = false; // NEW: double-click guard
 
 async function performLogout() {
-  if (LOGOUT_IN_FLIGHT) return; // drop duplicates
+  if (LOGOUT_IN_FLIGHT) return;
   LOGOUT_IN_FLIGHT = true;
 
   try {
+    // Tell other code to HOLD and freeze nav immediately
+    try { localStorage.setItem(LOGOUT_HOLD_KEY, '1'); } catch {}
+    NavGuard.install();
+
     const csrf = getCsrfToken();
 
-    // 1) Tell server to clear HttpOnly cookie (CSRF-protected)
+    // 1) Clear HttpOnly cookie
     try {
       await fetch('/auth/clear-cookie', {
         method: 'POST',
@@ -117,46 +225,34 @@ async function performLogout() {
       logoutLogger.warn('Server cookie clear failed; proceeding');
     }
 
-    // 2) Supabase sign-out (revokes refresh token + clears its storage)
+    // 2) Supabase signOut (will emit SIGNED_OUT; main.js must ignore while HOLD is set)
     try {
       if (window.supabase?.auth?.signOut) {
-        const { error } = await window.supabase.auth.signOut();
-        if (error) logoutLogger.info('Supabase signOut error (non-fatal)', { error: error.message });
-        else logoutLogger.info('Supabase session cleared');
+        await window.supabase.auth.signOut();
+        logoutLogger.info('Supabase session cleared');
       }
     } catch (e) {
       logoutLogger.info('Supabase signOut exception (non-fatal)', { error: e?.message || String(e) });
     }
 
-    // 3) JS-readable cookie nuke (best-effort; HttpOnly is server-only)
+    // 3) Clear JS cookies & storage (keep HOLD in localStorage)
     document.cookie = 'sb-access-token=; Path=/; Max-Age=0; SameSite=Lax';
     document.cookie = 'sb_access_token=; Path=/; Max-Age=0; SameSite=Lax';
     document.cookie = 'sb-refresh-token=; Path=/; Max-Age=0; SameSite=Lax';
     logoutLogger.info('JS cookies cleared');
 
-    // 4) Storage cleanup (local + session + caches)
     try {
-      // Supabase tokens (dynamic keys)
-      const keys = Object.keys(localStorage);
-      for (const k of keys) {
-        if (k === 'supabase.auth.token' || (k.startsWith('sb-') && k.includes('auth-token'))) {
-          localStorage.removeItem(k);
-          logoutLogger.info('Cleared localStorage key', { k });
-        }
-      }
       sessionStorage.clear();
     } catch { /* ignore */ }
 
-    // Optional: clear CacheStorage if you ever add a service worker
     if (window.caches?.keys) {
       try {
-        const names = await caches.keys();
-        await Promise.all(names.map(n => caches.delete(n)));
+        const ks = await caches.keys();
+        await Promise.all(ks.map(c => caches.delete(c)));
         logoutLogger.info('CacheStorage cleared');
       } catch { /* ignore */ }
     }
 
-    // Optional: WebAuthn/federated silent access prevention
     try {
       if (navigator.credentials?.preventSilentAccess) {
         await navigator.credentials.preventSilentAccess();
@@ -164,23 +260,16 @@ async function performLogout() {
       }
     } catch { /* ignore */ }
 
-    // 5) Broadcast logout to other tabs for instant UI sync
-    try {
-      const bc = new BroadcastChannel('auth');
-      bc.postMessage({ type: 'LOGOUT' });
-      bc.close();
-      logoutLogger.info('Logout broadcast sent to other tabs');
-    } catch (error) {
-      logoutLogger.info('BroadcastChannel not available - cross-tab sync skipped');
-    }
-
-    // 6) UX + redirect (hard replace)
+    // 4) Show modal; only OK can proceed
     showNotificationModal('Logged out', 'You have been logged out successfully!', () => {
-      window.location.replace('/'); // NEW: replace (no back to authed page)
+      // Release guard, clear HOLD, then navigate via the original replace
+      NavGuard.release();
+      try { localStorage.removeItem(LOGOUT_HOLD_KEY); } catch {}
+      (NavGuard._orig.replace || window.location.replace).call(window.location, '/');
     });
 
-  } catch (error) {
-    logoutLogger.error('Logout error', { msg: error?.message || String(error) });
+  } catch (err) {
+    logoutLogger.error('Logout error', { msg: err?.message || String(err) });
     showNotificationModal('Logout Error', 'Network error during logout. Please try again.');
   } finally {
     LOGOUT_IN_FLIGHT = false;

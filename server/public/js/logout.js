@@ -43,7 +43,19 @@ function getCsrfToken() {
   return meta ? meta.getAttribute('content') : '';
 }
 
-// Singleton modal (no innerHTML injection risks: we use textContent)
+/**
+ * Singleton modal for logout notifications
+ * 
+ * WHAT:
+ * Creates a modal dialog that stays visible until user clicks OK.
+ * 
+ * WHY:
+ * Provides clear feedback for logout action without auto-closing.
+ * 
+ * HOW:
+ * Modal can ONLY be closed by clicking the OK button.
+ * No click-outside, no X button, no escape key - explicit user action required.
+ */
 function showNotificationModal(title, message, onClose = null) {
   let modal = document.getElementById('notificationModal');
   if (!modal) {
@@ -54,12 +66,11 @@ function showNotificationModal(title, message, onClose = null) {
       <div class="modal-content notification-modal" role="dialog" aria-modal="true" aria-labelledby="notificationTitle">
         <div class="modal-header">
           <h2 id="notificationTitle">Notification</h2>
-          <button type="button" class="close" id="notificationClose" aria-label="Close">×</button>
         </div>
         <div class="modal-body">
           <p id="notificationMessage">Message</p>
           <div class="form-actions">
-            <button type="button" class="btn btn-secondary" id="notificationOkBtn">OK</button>
+            <button type="button" class="btn btn-primary" id="notificationOkBtn">OK</button>
           </div>
         </div>
       </div>
@@ -69,27 +80,34 @@ function showNotificationModal(title, message, onClose = null) {
 
   const titleEl = document.getElementById('notificationTitle');
   const messageEl = document.getElementById('notificationMessage');
-  const closeBtn = document.getElementById('notificationClose');
   const okBtn = document.getElementById('notificationOkBtn');
 
   if (titleEl) titleEl.textContent = title;
   if (messageEl) messageEl.textContent = message;
   modal.style.display = 'block';
 
-  // NEW: scoped listeners + cleanup
-  const onOutside = (evt) => {
-    if (evt.target === modal) closeModal();
-  };
+  /**
+   * Close modal handler
+   * 
+   * WHAT:
+   * Closes the modal and triggers the onClose callback.
+   * 
+   * WHY:
+   * Clean up event listeners and execute post-close actions.
+   * 
+   * HOW:
+   * Remove event listener, hide modal, call onClose callback.
+   */
   const closeModal = () => {
     modal.style.display = 'none';
-    closeBtn?.removeEventListener('click', closeModal);
     okBtn?.removeEventListener('click', closeModal);
-    window.removeEventListener('click', onOutside);
-    onClose && onClose();
+    if (onClose) onClose();
   };
-  closeBtn?.addEventListener('click', closeModal);
-  okBtn?.addEventListener('click', closeModal);
-  window.addEventListener('click', onOutside);
+
+  // CRITICAL: Only allow closing via OK button click
+  // No click-outside, no X button, no escape key
+  okBtn?.removeEventListener('click', closeModal); // Remove old listener if any
+  okBtn?.addEventListener('click', closeModal, { once: true });
 }
 
 /* ===========================

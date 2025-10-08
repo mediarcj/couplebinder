@@ -55,6 +55,17 @@ try {
   consoleLogger = { formatConfigSummary: () => {}, formatMiddlewareRegistration: () => {} };
 }
 
+// Server toggles (feature flags for ops)
+let toggles;
+try {
+  toggles = require('./config/toggles');
+  console.log('Server toggles loaded successfully');
+} catch (error) {
+  console.error('Failed to load toggles module:', error.message);
+  // Safe defaults if toggles fail to load
+  toggles = { env: 'production', logLevel: 'info', blockCmsScans: false, corsDebug: false, exposeDebugRoutes: false };
+}
+
 // Rate limiting removed - handled at Cloudflare edge
 
 // ============================================================
@@ -106,6 +117,35 @@ app.use((req, res, next) => {
 
   return res.status(204).end(); // NOTE: no next()
 });
+
+/**
+ * STEP 1.5: Toggle-Based Middleware (Feature Flags)
+ * 
+ * WHAT:
+ * Register optional middleware based on operational toggles (feature flags).
+ * 
+ * WHY:
+ * Allow ops/devops to enable/disable features without code changes.
+ * Useful for debugging, traffic hygiene, and gradual rollouts.
+ * 
+ * HOW:
+ * Check toggle values and conditionally register middleware.
+ * Toggles are read once at boot from environment variables.
+ */
+
+// Block common CMS scanner paths (WordPress, PHP, etc.)
+if (toggles.blockCmsScans) {
+  const blockCmsScans = require('./middleware/blockCmsScans');
+  app.use(blockCmsScans());
+  console.log('Toggle: CMS scan blocking enabled');
+}
+
+// CORS debug logging (noisy, keep off unless actively debugging)
+if (toggles.corsDebug) {
+  const corsDebug = require('./middleware/corsDebug');
+  app.use(corsDebug());
+  console.log('Toggle: CORS debug logging enabled');
+}
 
 console.log(`${process.env.APP_NAME || 'Application'} server starting...`);
 consoleLogger.formatConfigSummary(config);
@@ -475,11 +515,23 @@ try {
   console.error('Failed to load general API routes:', error.message);
 }
 
-// Debug routes (development only)
-if (config.server.nodeEnv === 'development') {
+// Debug routes (toggle-based, off by default)
+/**
+ * WHAT:
+ * Debug routes for operational visibility (/_debug).
+ * 
+ * WHY:
+ * Ops/devops need visibility into feature flags and basic health
+ * without exposing sensitive data or creating security risks.
+ * 
+ * HOW:
+ * Only mount /_debug when EXPOSE_DEBUG_ROUTES=true.
+ * You can guard it further (e.g., IP allowlist) if needed.
+ */
+if (toggles.exposeDebugRoutes) {
   try {
-    app.use('/debug', require('./routes/debug'));
-    console.log('Debug routes enabled (development mode)');
+    app.use('/_debug', require('./routes/debug'));
+    console.log('Toggle: Debug routes enabled (/_debug)');
   } catch (error) {
     console.error('Failed to load debug routes:', error.message);
   }

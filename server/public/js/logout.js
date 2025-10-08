@@ -113,7 +113,8 @@ function showNotificationModal(title, message, onClose = null) {
 /* ===========================
    Logout core
 =========================== */
-let LOGOUT_IN_FLIGHT = false; // NEW: double-click guard
+let LOGOUT_IN_FLIGHT = false; // double-click guard
+const LOGOUT_HOLD_KEY = 'logout.ui.hold'; // tells other code "modal controls redirect"
 
 async function performLogout() {
   if (LOGOUT_IN_FLIGHT) return; // drop duplicates
@@ -121,6 +122,8 @@ async function performLogout() {
 
   try {
     const csrf = getCsrfToken();
+        // Tell any global auth watchers to HOLD redirects until modal OK is clicked
+        try { localStorage.setItem(LOGOUT_HOLD_KEY, '1'); } catch {}
 
     // 1) Tell server to clear HttpOnly cookie (CSRF-protected)
     try {
@@ -161,6 +164,7 @@ async function performLogout() {
           logoutLogger.info('Cleared localStorage key', { k });
         }
       }
+      // Don't nuke ALL localStorage so our HOLD flag survives.
       sessionStorage.clear();
     } catch { /* ignore */ }
 
@@ -195,6 +199,7 @@ async function performLogout() {
       }
       
       // Then redirect this tab
+      try { localStorage.removeItem(LOGOUT_HOLD_KEY); } catch {}
       window.location.replace('/');
     });
 
@@ -206,7 +211,13 @@ async function performLogout() {
   }
 }
 
-async function handleLogout() {
+async function handleLogout(e) {
+  // Prevent default anchor navigation or form submission
+  if (e) {
+    e.preventDefault?.();
+    e.stopPropagation?.();
+    e.stopImmediatePropagation?.();
+  }  
   logoutLogger.info('handleLogout called');
   await performLogout();
 }
@@ -214,8 +225,18 @@ async function handleLogout() {
 function attachLogoutHandler(selector = '#logoutBtn') {
   const btn = document.querySelector(selector);
   if (btn) {
+    // Make sure the control itself cannot trigger navigation/submission
+    if (btn.tagName === 'BUTTON' && !btn.getAttribute('type')) {
+      btn.setAttribute('type', 'button');
+    }
+    if (btn.tagName === 'A') {
+      // Keep href for accessibility, but we’ll preventDefault above.
+      btn.setAttribute('role', 'button');
+      btn.setAttribute('aria-label', btn.getAttribute('aria-label') || 'Logout');
+    }
     btn.removeEventListener('click', handleLogout);
-    btn.addEventListener('click', handleLogout, { passive: true });
+    // IMPORTANT: not passive, so we *can* prevent default.
+    btn.addEventListener('click', handleLogout, { capture: false });    
     logoutLogger.info('Logout handler attached', { selector });
     return true;
   }

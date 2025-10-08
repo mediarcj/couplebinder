@@ -760,29 +760,98 @@ nav ul li a.active {
 }
 
 /* Notification Modal Styles */
+/* Enhanced logout modal - stays visible until OK is clicked */
+#notificationModal.modal {
+    position: fixed;
+    inset: 0;
+    display: none; /* set to block in JS */
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(3px);
+    z-index: 99999;
+    animation: fadeIn 0.2s ease-in;
+}
+
+#notificationModal .modal-content {
+    max-width: 420px;
+    width: 90%;
+    background: #fff;
+    border-radius: 12px;
+    padding: 0;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+    animation: slideIn 0.3s ease-out;
+    margin: 0; /* override default margin */
+}
+
 .notification-modal {
-    max-width: 400px;
+    max-width: 420px;
     text-align: center;
 }
 
+.notification-modal .modal-header {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 1.5rem;
+    border-radius: 12px 12px 0 0;
+}
+
 .notification-modal .modal-header h2 {
-    color: #2c3e50;
+    color: white;
     margin: 0;
+    font-size: 1.5rem;
+    font-weight: 600;
+}
+
+.notification-modal .modal-body {
+    padding: 2rem 1.5rem;
 }
 
 .notification-modal .modal-body p {
-    color: #666;
-    margin: 1rem 0;
+    color: #2c3e50;
+    margin: 0 0 1.5rem 0;
     font-size: 1.1rem;
+    line-height: 1.6;
 }
 
 .notification-modal .form-actions {
     justify-content: center;
-    margin-top: 1.5rem;
+    margin-top: 0;
 }
 
 .notification-modal .form-actions button {
-    min-width: 100px;
+    min-width: 120px;
+    padding: 0.75rem 2rem;
+    font-size: 1rem;
+    font-weight: 600;
+    border-radius: 8px;
+    transition: all 0.3s ease;
+}
+
+.notification-modal .form-actions button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+/* Animations */
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
+}
+
+@keyframes slideIn {
+    from {
+        transform: translateY(-50px);
+        opacity: 0;
+    }
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
 }
 
 /* General error message styling */

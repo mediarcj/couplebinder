@@ -177,13 +177,29 @@ document.addEventListener('DOMContentLoaded', function() {
                 // Note: We only update UI for explicit SIGNED_IN and SIGNED_OUT events.
                 // INITIAL_SESSION is ignored because checkSessionStatus() will validate
                 // the session with the server first before updating UI.
+                
+                // Helper to check if logout modal is controlling the redirect
+                const HOLD = () => {
+                    try {
+                        return localStorage.getItem('logout.ui.hold') === '1';
+                    } catch {
+                        return false;
+                    }
+                };
+                
                 window.supabase.auth.onAuthStateChange((event, session) => {
                     logger.info('Auth state changed:', event);
                     if (event === 'SIGNED_IN' && session?.user) {
                         // User explicitly logged in (not initial session load)
                         updateUIForLoggedInUser(session.user.email);
                     } else if (event === 'SIGNED_OUT') {
-                        // User explicitly logged out
+                        // CRITICAL: Check if logout modal is controlling the redirect
+                        // If HOLD flag is set, the modal will handle the redirect after user clicks OK
+                        if (HOLD()) {
+                            logger.info('Logout modal is controlling redirect - skipping auto-redirect');
+                            return;
+                        }
+                        // User explicitly logged out (without modal control)
                         updateUIForLoggedOutUser();
                     }
                     // Ignore INITIAL_SESSION, TOKEN_REFRESHED, etc. - let checkSessionStatus handle it

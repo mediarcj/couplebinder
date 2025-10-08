@@ -517,25 +517,27 @@ function clearLoginForm() {
 }
 
 // Notification Modal Functions
-/**
- * Defer to the canonical, namespaced modal (defined in logout.js)
- * 
- * WHAT:
- * Wrapper function that delegates to LogoutModule.showNotificationModal.
- * 
- * WHY:
- * Prevents global function name collisions and ensures consistent modal behavior.
- * 
- * HOW:
- * Check if LogoutModule is available and use its modal, otherwise fallback to alert.
- */
 function showNotificationModal(title, message, onClose = null) {
-    if (window.LogoutModule?.showNotificationModal) {
-        return window.LogoutModule.showNotificationModal(title, message, onClose);
-    }
-    // Minimal fallback if logout.js didn't load for some reason
-    alert(title + '\n\n' + message);
-    if (onClose) onClose();
+    const modal = document.getElementById('notificationModal');
+    const titleEl = document.getElementById('notificationTitle');
+    const messageEl = document.getElementById('notificationMessage');
+    const closeBtn = document.getElementById('notificationClose');
+    const okBtn = document.getElementById('notificationOkBtn');
+    
+    if (titleEl) titleEl.textContent = title;
+    if (messageEl) messageEl.textContent = message;
+    if (modal) modal.style.display = 'block';
+    
+    // Close modal handlers
+    const closeModal = () => {
+        modal.style.display = 'none';
+        if (onClose) onClose();
+    };
+    
+    if (closeBtn) closeBtn.onclick = closeModal;
+    if (okBtn) okBtn.onclick = closeModal;
+    
+    // Modal can only be closed by Close button or OK button (no click outside)
 }
 
 function showLoginGeneralError(message) {

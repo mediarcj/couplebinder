@@ -44,21 +44,19 @@ function getCsrfToken() {
 }
 
 /**
- * Namespaced modal for logout notifications
+ * Singleton modal for logout notifications
  * 
  * WHAT:
  * Creates a modal dialog that stays visible until user clicks OK.
- * Namespaced to avoid collisions with other modal functions.
  * 
  * WHY:
  * Provides clear feedback for logout action without auto-closing.
- * Prevents global function name collisions with main.js and dashboard.js.
  * 
  * HOW:
  * Modal can ONLY be closed by clicking the OK button.
  * No click-outside, no X button, no escape key - explicit user action required.
  */
-function _renderLogoutModal(title, message, onClose = null) {
+function showNotificationModal(title, message, onClose = null) {
   let modal = document.getElementById('notificationModal');
   if (!modal) {
     modal = document.createElement('div');
@@ -111,40 +109,6 @@ function _renderLogoutModal(title, message, onClose = null) {
   okBtn?.removeEventListener('click', closeModal); // Remove old listener if any
   okBtn?.addEventListener('click', closeModal, { once: true });
 }
-
-/**
- * Hard guard: while HOLD is set, block clicks/submits that could navigate away
- * 
- * WHAT:
- * Global event listeners that prevent navigation while logout modal is visible.
- * 
- * WHY:
- * Prevents accidental page navigation, form submissions, or other actions
- * that could close the modal before the user clicks OK.
- * 
- * HOW:
- * Use capture phase (true) to intercept events before other listeners.
- * Check HOLD flag and preventDefault if set.
- */
-(function registerLogoutHoldGuards() {
-  const guard = (e) => {
-    try {
-      if (localStorage.getItem('logout.ui.hold') === '1') {
-        e.preventDefault?.();
-        e.stopImmediatePropagation?.();
-      }
-    } catch {}
-  };
-  
-  // Capture phase so we win before other listeners
-  window.addEventListener('click', guard, true);
-  window.addEventListener('submit', guard, true);
-  window.addEventListener('keydown', (e) => {
-    if (localStorage.getItem('logout.ui.hold') === '1' && e.key === 'Escape') {
-      e.preventDefault();
-    }
-  }, true);
-})();
 
 /* ===========================
    Logout core
@@ -223,7 +187,7 @@ async function performLogout() {
 
     // 5) UX + redirect (hard replace)
     // IMPORTANT: Show modal first, THEN broadcast to other tabs after user dismisses it
-    window.LogoutModule.showNotificationModal('Logged out', 'You have been logged out successfully!', () => {
+    showNotificationModal('Logged out', 'You have been logged out successfully!', () => {
       // Broadcast logout to other tabs AFTER modal is dismissed
       try {
         const bc = new BroadcastChannel('auth');
@@ -241,7 +205,7 @@ async function performLogout() {
 
   } catch (error) {
     logoutLogger.error('Logout error', { msg: error?.message || String(error) });
-    window.LogoutModule.showNotificationModal('Logout Error', 'Network error during logout. Please try again.');
+    showNotificationModal('Logout Error', 'Network error during logout. Please try again.');
   } finally {
     LOGOUT_IN_FLIGHT = false;
   }
@@ -296,8 +260,7 @@ window.LogoutModule = {
   attachLogoutHandler,
   initializeLogout,
   performLogout,
-  // Expose a namespaced modal renderer so other files don't clobber it
-  showNotificationModal: _renderLogoutModal
+  showNotificationModal
 };
 window.reattachLogoutHandler = function (selector='#logoutBtn') {
   logoutLogger.info('Re-attaching logout handler');

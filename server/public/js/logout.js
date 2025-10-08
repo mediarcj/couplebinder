@@ -1,8 +1,7 @@
-/**
- * Modular logout used across pages
- * Clears server cookie, Supabase session, JS-readable cookies & storage,
- * shows a modal, and redirects with a hard replace.
- */
+// File: server/public/js/logout.js
+// Modular logout used across pages
+// Clears server cookie, Supabase session, JS-readable cookies & storage,
+// shows a modal, and redirects with a hard replace.
 
 /* ===========================
    Quiet logger (PII-safe)
@@ -164,19 +163,21 @@ async function performLogout() {
       }
     } catch { /* ignore */ }
 
-    // 5) Broadcast logout to other tabs for instant UI sync
-    try {
-      const bc = new BroadcastChannel('auth');
-      bc.postMessage({ type: 'LOGOUT' });
-      bc.close();
-      logoutLogger.info('Logout broadcast sent to other tabs');
-    } catch (error) {
-      logoutLogger.info('BroadcastChannel not available - cross-tab sync skipped');
-    }
-
-    // 6) UX + redirect (hard replace)
+    // 5) UX + redirect (hard replace)
+    // IMPORTANT: Show modal first, THEN broadcast to other tabs after user dismisses it
     showNotificationModal('Logged out', 'You have been logged out successfully!', () => {
-      window.location.replace('/'); // NEW: replace (no back to authed page)
+      // Broadcast logout to other tabs AFTER modal is dismissed
+      try {
+        const bc = new BroadcastChannel('auth');
+        bc.postMessage({ type: 'LOGOUT' });
+        bc.close();
+        logoutLogger.info('Logout broadcast sent to other tabs');
+      } catch (error) {
+        logoutLogger.info('BroadcastChannel not available - cross-tab sync skipped');
+      }
+      
+      // Then redirect this tab
+      window.location.replace('/');
     });
 
   } catch (error) {

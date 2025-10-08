@@ -40,7 +40,7 @@ const logoutLogger = {
    Helpers
 =========================== */
 const LOGOUT_HOLD_KEY = 'logout.ui.hold';
-const MODAL_ID = 'notificationModal';
+const MODAL_ID = 'logoutModal'; // Unique ID to avoid collisions with other modals
 
 function getCsrfToken() {
   const meta = document.querySelector('meta[name="csrf-token"]');
@@ -148,23 +148,35 @@ const NavGuard = (() => {
   return { install, release, _orig: orig };
 })();
 
-// Singleton modal (no innerHTML injection risks: we use textContent)
-function showNotificationModal(title, message, onClose = null) {
-  let modal = document.getElementById('notificationModal');
+/**
+ * Logout-specific modal with unique IDs (no collisions)
+ * 
+ * WHAT:
+ * Creates a modal dialog specifically for logout with unique DOM IDs.
+ * 
+ * WHY:
+ * Prevents collisions with other notification modals (main.js, dashboard.js).
+ * Ensures the logout modal can't be interfered with by other scripts.
+ * 
+ * HOW:
+ * Use unique IDs (logoutModal, logoutModalTitle, etc.) and only allow
+ * closing via the OK button. No X button, no click-outside, no Escape.
+ */
+function showLogoutModal(title, message, onClose = null) {
+  let modal = document.getElementById('logoutModal');
   if (!modal) {
     modal = document.createElement('div');
-    modal.id = 'notificationModal';
+    modal.id = 'logoutModal';
     modal.className = 'modal';
     modal.innerHTML = `
-      <div class="modal-content notification-modal" role="dialog" aria-modal="true" aria-labelledby="notificationTitle">
+      <div class="modal-content logout-modal" role="dialog" aria-modal="true" aria-labelledby="logoutModalTitle">
         <div class="modal-header">
-          <h2 id="notificationTitle">Notification</h2>
-          <button type="button" class="close" id="notificationClose" aria-label="Close">×</button>
+          <h2 id="logoutModalTitle">Notification</h2>
         </div>
         <div class="modal-body">
-          <p id="notificationMessage">Message</p>
+          <p id="logoutModalMessage">Message</p>
           <div class="form-actions">
-            <button type="button" class="btn btn-secondary" id="notificationOkBtn">OK</button>
+            <button type="button" class="btn btn-primary" id="logoutModalOkBtn">OK</button>
           </div>
         </div>
       </div>
@@ -172,29 +184,31 @@ function showNotificationModal(title, message, onClose = null) {
     document.body.appendChild(modal);
   }
 
-  const titleEl = document.getElementById('notificationTitle');
-  const messageEl = document.getElementById('notificationMessage');
-  const closeBtn = document.getElementById('notificationClose');
-  const okBtn = document.getElementById('notificationOkBtn');
+  // Never rely on any global "notification" handlers
+  const titleEl = document.getElementById('logoutModalTitle');
+  const messageEl = document.getElementById('logoutModalMessage');
+  const okBtn = document.getElementById('logoutModalOkBtn');
 
   if (titleEl) titleEl.textContent = title;
   if (messageEl) messageEl.textContent = message;
-  modal.style.display = 'block';
 
-  // NEW: scoped listeners + cleanup
-  const onOutside = (evt) => {
-    if (evt.target === modal) closeModal();
+  // HARD lock: while open, prevent Esc from closing
+  const escBlock = (e) => {
+    if (e.key === 'Escape') e.stopImmediatePropagation();
   };
+  window.addEventListener('keydown', escBlock, { capture: true });
+
   const closeModal = () => {
     modal.style.display = 'none';
-    closeBtn?.removeEventListener('click', closeModal);
     okBtn?.removeEventListener('click', closeModal);
-    window.removeEventListener('click', onOutside);
-    onClose && onClose();
+    window.removeEventListener('keydown', escBlock, { capture: true });
+    if (onClose) onClose();
   };
-  closeBtn?.addEventListener('click', closeModal);
-  okBtn?.addEventListener('click', closeModal);
-  window.addEventListener('click', onOutside);
+
+  okBtn?.removeEventListener('click', closeModal);
+  okBtn?.addEventListener('click', closeModal, { once: true });
+
+  modal.style.display = 'block';
 }
 
 /* ===========================
@@ -261,7 +275,7 @@ async function performLogout() {
     } catch { /* ignore */ }
 
     // 4) Show modal; only OK can proceed
-    showNotificationModal('Logged out', 'You have been logged out successfully!', () => {
+    showLogoutModal('Logged out', 'You have been logged out successfully!', () => {
       // Release guard, clear HOLD, then navigate via the original replace
       NavGuard.release();
       try { localStorage.removeItem(LOGOUT_HOLD_KEY); } catch {}
@@ -270,7 +284,7 @@ async function performLogout() {
 
   } catch (err) {
     logoutLogger.error('Logout error', { msg: err?.message || String(err) });
-    showNotificationModal('Logout Error', 'Network error during logout. Please try again.');
+    showLogoutModal('Logout Error', 'Network error during logout. Please try again.');
   } finally {
     LOGOUT_IN_FLIGHT = false;
   }
@@ -309,7 +323,7 @@ window.LogoutModule = {
   attachLogoutHandler,
   initializeLogout,
   performLogout,
-  showNotificationModal
+  showLogoutModal // Unique, namespaced modal for logout
 };
 window.reattachLogoutHandler = function (selector='#logoutBtn') {
   logoutLogger.info('Re-attaching logout handler');

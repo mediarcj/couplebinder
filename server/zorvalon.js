@@ -78,6 +78,35 @@ const app = express();
 // Trust proxy for Cloudflare (required for HTTPS redirects)
 app.set('trust proxy', 1);
 
+/**
+ * ABSOLUTE TOP: Unconditional preflight short-circuit
+ * 
+ * WHAT:
+ * Handle ALL OPTIONS requests immediately before any other middleware.
+ * 
+ * WHY:
+ * CORS preflight requests must succeed without hitting auth/CSRF/validation.
+ * Any middleware that throws on missing headers will cause 500 errors.
+ * 
+ * HOW:
+ * Check for OPTIONS method first, set CORS headers, return 204 immediately.
+ * CRITICAL: Never call next() after res.end() - this prevents "headers already sent" errors.
+ */
+app.use((req, res, next) => {
+  if (req.method !== 'OPTIONS') return next();
+
+  const origin = req.get('Origin') || '*';
+  const reqHeaders = req.get('Access-Control-Request-Headers') || 'Content-Type, Authorization';
+
+  res.set('Vary', 'Origin');
+  res.set('Access-Control-Allow-Origin', origin);
+  res.set('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
+  res.set('Access-Control-Allow-Headers', reqHeaders);
+  res.set('Access-Control-Allow-Credentials', 'true');
+
+  return res.status(204).end(); // NOTE: no next()
+});
+
 console.log(`${process.env.APP_NAME || 'Application'} server starting...`);
 consoleLogger.formatConfigSummary(config);
 
@@ -141,11 +170,9 @@ app.use((req, res, next) => {
 });
 
 // HTTPS redirect middleware (for production behind Cloudflare)
+// NOTE: OPTIONS requests are handled by the preflight short-circuit at the top
 if (config.cors.enforceHttps) {
   app.use((req, res, next) => {
-    // Never redirect preflight OPTIONS requests
-    if (req.method === 'OPTIONS') return next();
-    
     // Trust proxy headers from Cloudflare
     const forwardedProto = req.get('x-forwarded-proto');
     const host = req.get('host');
@@ -260,9 +287,6 @@ app.use(cors({
   exposedHeaders: ['X-CSRF-Token', 'X-Request-ID'],
   maxAge: 86400 // Cache preflight for 24 hours
 }));
-
-// Ensure all OPTIONS requests are handled by CORS (short-circuit other middleware)
-app.options('*', cors());
 
 // Rate limiting will be applied after static files
 
@@ -554,8 +578,9 @@ consoleLogger.formatMiddlewareRegistration('Routes');
  * logs them with context, and returns appropriate HTTP responses.
  */
 app.use((err, req, res, next) => {
-  const errorId = req.requestId || crypto.randomUUID();
+  const errorId = req.requestId || req.id || req.headers['x-request-id'] || crypto.randomUUID();
   
+  // Log to structured logger
   logger.error('Server error occurred', {
     requestId: errorId,
     message: err.message,
@@ -565,7 +590,15 @@ app.use((err, req, res, next) => {
     ip: req.ip
   });
   
-  res.status(500).json({ 
+  // Also log full stack to console for debugging (especially useful in production logs)
+  console.error('[ERROR]', errorId, err && err.stack ? err.stack : err);
+  
+  // Check if headers were already sent (prevents "headers already sent" errors)
+  if (res.headersSent) {
+    return next(err);
+  }
+  
+  res.status(err.status || 500).json({ 
     error: 'Internal server error',
     requestId: errorId,
     timestamp: new Date().toISOString()

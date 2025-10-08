@@ -53,10 +53,8 @@ function safeNext(nextUrl) {
  * @param {Function} next - Express next function
  */
 function requireAuth(req, res, next) {
-    // Skip authentication for OPTIONS requests (preflight)
-    if (req.method === 'OPTIONS') {
-        return next();
-    }
+    // NOTE: OPTIONS requests are handled by the preflight short-circuit in zorvalon.js
+    // so they never reach this middleware
     
     // Check stateless authentication (req.user from authBridge)
     if (req.user?.id) {

@@ -244,34 +244,59 @@ app.use((req, res, next) => {
 });
 
 // CORS configuration - Enterprise-level balance of security and usability
+/**
+ * WHAT:
+ * CORS origin validation for non-OPTIONS requests.
+ * 
+ * WHY:
+ * OPTIONS preflight is handled at the absolute top unconditionally.
+ * This validates actual requests (GET, POST, etc.) against allowed origins.
+ * 
+ * HOW:
+ * 1. Allow exact matches from CORS_ORIGINS env var
+ * 2. Allow any subdomain of detechify.com (e.g., www, app, dashboard)
+ * 3. Allow localhost in development
+ * 4. Block and log everything else
+ */
+
+// Parse explicit allowed origins from environment
+const allowedList = (process.env.CORS_ORIGINS || '')
+  .split(',')
+  .map(s => s.trim())
+  .filter(Boolean);
+
+// Regex to match any subdomain of detechify.com
+// Format: https?://[subdomain.]detechify.com[:port]
+const allowDetechify = /^https?:\/\/([a-z0-9-]+\.)?detechify\.com(?::\d+)?$/i;
+
 app.use(cors({
   origin: (origin, callback) => {
-    // Allow requests with no origin (mobile apps, Postman, etc.)
+    // Same-origin / server-to-server / mobile apps: allow
     if (!origin) return callback(null, true);
     
-    // Use configured allowed origins (even in development for security)
-    const allowedOrigins = config.cors.allowedOrigins;
-    
-    // If no origins configured, allow localhost in development
-    if (allowedOrigins.length === 0) {
-      if (config.server.nodeEnv === 'development' && origin.includes('localhost')) {
-        return callback(null, true);
-      }
-      logger.warn('CORS: No allowed origins configured', { origin, nodeEnv: config.server.nodeEnv });
-      return callback(new Error('CORS policy not configured'));
-    }
-    
-    if (allowedOrigins.includes(origin)) {
+    // Check explicit allow list from env
+    if (allowedList.includes(origin)) {
       return callback(null, true);
     }
     
-    // Log blocked origins for monitoring
+    // Check if origin matches *.detechify.com pattern
+    if (allowDetechify.test(origin)) {
+      return callback(null, true);
+    }
+    
+    // Development: allow localhost
+    if (config.server.nodeEnv === 'development' && origin.includes('localhost')) {
+      return callback(null, true);
+    }
+    
+    // Block and log unknown origins for monitoring
+    console.warn('CORS block', { origin, allowedList });
     logger.warn('CORS blocked origin', { 
       origin, 
-      allowedOrigins: allowedOrigins,
+      allowedList,
       nodeEnv: config.server.nodeEnv 
     });
-    callback(new Error('Not allowed by CORS policy'));
+    return callback(new Error('Not allowed by CORS policy'));
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],

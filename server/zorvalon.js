@@ -143,6 +143,9 @@ app.use((req, res, next) => {
 // HTTPS redirect middleware (for production behind Cloudflare)
 if (config.cors.enforceHttps) {
   app.use((req, res, next) => {
+    // Never redirect preflight OPTIONS requests
+    if (req.method === 'OPTIONS') return next();
+    
     // Trust proxy headers from Cloudflare
     const forwardedProto = req.get('x-forwarded-proto');
     const host = req.get('host');
@@ -257,6 +260,9 @@ app.use(cors({
   exposedHeaders: ['X-CSRF-Token', 'X-Request-ID'],
   maxAge: 86400 // Cache preflight for 24 hours
 }));
+
+// Ensure all OPTIONS requests are handled by CORS (short-circuit other middleware)
+app.options('*', cors());
 
 // Rate limiting will be applied after static files
 

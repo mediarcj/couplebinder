@@ -53,6 +53,11 @@ function safeNext(nextUrl) {
  * @param {Function} next - Express next function
  */
 function requireAuth(req, res, next) {
+    // Skip authentication for OPTIONS requests (preflight)
+    if (req.method === 'OPTIONS') {
+        return next();
+    }
+    
     // Check stateless authentication (req.user from authBridge)
     if (req.user?.id) {
         return next();

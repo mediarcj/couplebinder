@@ -1,86 +1,96 @@
 /**
  * File: server/middleware/auth/supabaseJwt.js
  * Description: Verify Supabase JWT via JWKS (signature + iss + aud). Adds req.user on success.
+ * Notes: Uses jose with remote JWKS. Works with Supabase RS256 keys. Keep comments short and clear.
  *
- * WHAT:
- * This middleware validates Supabase JWTs by fetching the public keys from Supabase's JWKS endpoint
- * and verifying the token's signature, issuer, audience, and expiration.
+ * ============================================================
+ * WHAT
+ * Validate Supabase Auth tokens on the server using Supabase’s JWKS (public keys).
  *
- * WHY:
- * We never trust the client. Every protected route must verify the JWT server-side to ensure
- * the request is from a legitimate, authenticated user.
+ * WHY
+ * The browser is not trusted. Every protected route must verify the token’s signature and claims.
  *
- * HOW:
- * On success, req.user is populated with { id, email, role }. On failure, returns 401.
- * Uses jose library for modern, secure JWT verification with JWKS support.
+ * HOW
+ * 1) Build a JWKS URL for this project.
+ * 2) Fetch and cache the keys (server only).
+ * 3) Verify signature (RS256), issuer, audience, and time.
+ * 4) On success: set req.user = { id, email, role }. On failure: return 401.
+ * ============================================================
  */
 
 const { createRemoteJWKSet, jwtVerify } = require('jose');
 
+// ============================================================
+// STEP 1: Read env (fail fast on missing core vars)
+// ------------------------------------------------------------
+// WHAT: Resolve base URL and anon key. Normalize URL (no trailing slash).
+// WHY: We need the project URL to reach JWKS, and many projects require apikey to read JWKS.
+// HOW: Read SUPABASE_URL and SUPABASE_ANON_KEY. Warn if anon key is missing (JWKS may 401).
+// ============================================================
 const SUPABASE_URL = process.env.SUPABASE_URL?.replace(/\/+$/, '');
-if (!SUPABASE_URL) {
-  // Keep startup failure obvious
-  throw new Error('SUPABASE_URL env is required');
+if (!SUPABASE_URL) throw new Error('SUPABASE_URL env is required');
+
+const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || '';
+if (!SUPABASE_ANON_KEY) {
+  // We can still boot, but some projects will reject JWKS without an apikey.
+  console.warn('[auth] Warning: SUPABASE_ANON_KEY missing; JWKS fetch may be unauthorized.');
 }
 
 // ============================================================
-// Supabase JWKS endpoint
+// STEP 2: Build JWKS endpoint
+// ------------------------------------------------------------
+// WHAT: Use the GoTrue JWKS path. Add apikey query so Supabase authorizes the read.
+// WHY: Without apikey, many projects return 401. This call is server-side only.
+// HOW: Prefer /auth/v1/jwks. Allow SUPABASE_JWKS_URL override for rare setups.
 // ============================================================
-const JWKS_URL = `${SUPABASE_URL}/auth/v1/keys`;
+const JWKS_URL =
+  process.env.SUPABASE_JWKS_URL?.trim() ||
+  `${SUPABASE_URL}/auth/v1/jwks${SUPABASE_ANON_KEY ? `?apikey=${encodeURIComponent(SUPABASE_ANON_KEY)}` : ''}`;
+
 const JWKS = createRemoteJWKSet(new URL(JWKS_URL), {
   cache: true,
-  cooldownDuration: 600000 // Cache JWKS for 10 minutes
+  cooldownDuration: 600_000 // 10 minutes between failed refetch attempts
 });
 
 // ============================================================
-// Expected claims (Supabase defaults)
+// STEP 3: Expected claims
+// ------------------------------------------------------------
+// WHAT: Set the issuer(s), audience, and clock tolerance.
+// WHY: These claims help prove the token came from your project and is still valid.
+// HOW: Supabase default aud is "authenticated"; issuer usually ends with /auth/v1.
 // ============================================================
-// Supabase defaults: aud=authenticated, iss=https://<project>.supabase.co/auth/v1
-const EXPECTED_AUD = process.env.SUPABASE_JWT_AUD || 'authenticated';
-
-// Accept both base URL and /auth/v1 suffix for issuer flexibility
+const EXPECTED_AUD = process.env.SUPABASE_EXPECTED_AUD || 'authenticated';
 const ALLOWED_ISSUERS = [
-  `${SUPABASE_URL}/auth/v1`,
-  SUPABASE_URL // Fallback for tokens that might use base URL
+  `${SUPABASE_URL}/auth/v1`, // common shape
+  SUPABASE_URL               // lenient fallback (some tokens may use base URL)
 ];
 
-// Clock skew tolerance (configurable via env, default 60 seconds)
-const CLOCK_SKEW_SEC = Number(process.env.JWT_CLOCK_SKEW_SEC || 60);
+const CLOCK_SKEW_SEC = Number(process.env.JWT_CLOCK_SKEW_SEC || 60); // allow 60s time drift
 
-/**
- * Extract bearer token or cookie fallback.
- *
- * WHAT:
- * Looks for token in Authorization header first, then falls back to cookies.
- *
- * WHY:
- * Supports both header-based (API clients) and cookie-based (browser) auth.
- *
- * HOW:
- * Returns token string if found, null otherwise.
- */
+// ============================================================
+// STEP 4: Read token from request
+// ------------------------------------------------------------
+// WHAT: Try "Authorization: Bearer <token>" first, then cookie.
+// WHY: Supports both API clients (header) and browsers (cookie).
+// HOW: Cookie name is configurable; default "sb_session" (Supabase new default).
+// ============================================================
 function readToken(req) {
   const h = req.headers.authorization || '';
   const m = h.match(/^Bearer\s+(.+)$/i);
   if (m && m[1]) return m[1].trim();
-  
-  // Optional cookie names (adjust to your cookie name)
-  return req.cookies?.sb || req.cookies?.sb_session || null;
+
+  const cookieName = process.env.AUTH_COOKIE_NAME || 'sb_session';
+  return req.cookies?.[cookieName] || null;
 }
 
-/**
- * Verify JWT using JWKS and expected claims.
- *
- * WHAT:
- * Performs full JWT verification: signature, issuer, audience, expiration.
- *
- * WHY:
- * This is the core security check. If verification fails, the token is invalid.
- *
- * HOW:
- * Uses jose's jwtVerify with remote JWKS. Returns payload on success, throws on failure.
- * Includes 60-second clock tolerance for time skew and detailed error logging.
- */
+// ============================================================
+// STEP 5: Verify token
+// ------------------------------------------------------------
+// WHAT: Validate signature, issuer, audience, exp/nbf with jose and remote JWKS.
+// WHY: This is the core security gate. Reject anything that does not match.
+// HOW: Limit algorithms to RS256 (matches your current Supabase setup).
+//      If you later rotate to ES256, update algorithms accordingly.
+// ============================================================
 async function verifyToken(token) {
   if (!token) {
     const err = new Error('missing_token');
@@ -90,22 +100,22 @@ async function verifyToken(token) {
 
   try {
     const { payload } = await jwtVerify(token, JWKS, {
-      algorithms: ['RS256'], // Supabase uses RS256
-      issuer: ALLOWED_ISSUERS, // Accept array of issuers
+      algorithms: ['RS256'],
+      issuer: ALLOWED_ISSUERS,
       audience: EXPECTED_AUD,
-      clockTolerance: CLOCK_SKEW_SEC // Configurable clock skew tolerance
+      clockTolerance: CLOCK_SKEW_SEC
     });
 
-    // Sanity check: ensure sub claim exists
+    // Basic sanity: sub must exist
     if (!payload?.sub) {
-      const err = new Error('invalid_token');
+      const err = new Error('missing_sub');
       err.code = 'missing_sub';
       throw err;
     }
 
     return payload;
   } catch (err) {
-    // Log detailed error for debugging (server-side only)
+    // Keep details in server logs only
     const reason = err?.code || err?.message || 'verify_failed';
     const meta = {
       name: err?.name,
@@ -114,10 +124,9 @@ async function verifyToken(token) {
       iss: err?.payload?.iss,
       aud: err?.payload?.aud
     };
-    
     console.warn('[auth] JWT verification failed:', reason, JSON.stringify(meta));
-    
-    // Throw a generic error to avoid leaking details to client
+
+    // Return a generic error to client
     const clientErr = new Error('invalid_token');
     clientErr.code = reason;
     clientErr.cause = err;
@@ -125,19 +134,13 @@ async function verifyToken(token) {
   }
 }
 
-/**
- * Middleware: require valid Supabase JWT
- *
- * WHAT:
- * Express middleware that enforces authentication on protected routes.
- *
- * WHY:
- * Every protected endpoint must validate the JWT before allowing access.
- *
- * HOW:
- * Reads token, verifies it, populates req.user on success. Returns 401 on failure.
- * Does not reveal specific error details to prevent information leakage.
- */
+// ============================================================
+// STEP 6: Express middleware (authRequired)
+// ------------------------------------------------------------
+// WHAT: Require a valid Supabase JWT for protected routes.
+// WHY: Enforces auth on the server even if the UI hides things.
+// HOW: Read → verify → set req.user → next(), else 401.
+// ============================================================
 function authRequired(req, res, next) {
   const token = readToken(req);
   if (!token) return res.status(401).json({ error: 'missing token' });
@@ -155,4 +158,3 @@ function authRequired(req, res, next) {
 }
 
 module.exports = { authRequired, verifyToken };
-

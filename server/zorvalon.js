@@ -1,6 +1,6 @@
 // File: zorvalon.js
 // Description: Entry point for application server - Refactored for better organization
-// Boot order: Express → Database → Security → Middleware → Routes → Error Handling → Start Server → Graceful Shutdown
+// Boot order: Express → MethodGuard → SecurityHeaders → CORS → TrustProxy → Parsers → CacheControl → Auth → CSRF → Routes → Errors
 // Notes: Console logs mark important checkpoints for audit and debugging
 
 const express = require('express');
@@ -65,6 +65,13 @@ try {
   // Safe defaults if toggles fail to load
   toggles = { env: 'production', logLevel: 'info', blockCmsScans: false, corsDebug: false, exposeDebugRoutes: false };
 }
+
+// New security middleware
+const methodGuard = require('./middleware/methodGuard');
+const securityHeaders = require('./middleware/securityHeaders');
+const cacheControl = require('./middleware/cacheControl');
+const trustProxyIp = require('./middleware/trustProxyIp');
+const corsAllowlist = require('./middleware/corsAllowlist');
 
 // Rate limiting removed - handled at Cloudflare edge
 
@@ -146,6 +153,37 @@ if (toggles.corsDebug) {
   app.use(corsDebug());
   console.log('Toggle: CORS debug logging enabled');
 }
+
+// ============================================================
+// NEW SECURITY MIDDLEWARE (Step-by-step integration)
+// ============================================================
+
+/**
+ * WHAT:
+ * Apply new security middleware in the correct order for enterprise-grade protection.
+ * 
+ * WHY:
+ * Middleware order matters. Guards must run before parsers, headers before CORS,
+ * and trust proxy before any IP-based logic.
+ * 
+ * HOW:
+ * 1. Method guard blocks dangerous HTTP verbs
+ * 2. Security headers (Helmet with strict CSP)
+ * 3. Cache control (no-store for dynamic routes)
+ * 4. Trust proxy and extract real client IP
+ */
+
+// 1. Method guard: reject PROPFIND, TRACE, and unknown methods
+app.use(methodGuard());
+console.log('Security: Method guard enabled');
+
+// 2. Cache control: no-store for dynamic routes
+app.use(cacheControl());
+console.log('Security: Cache control enabled');
+
+// 3. Trust proxy and expose real client IP
+app.use(trustProxyIp(app));
+console.log('Security: Trust proxy and clientIp extraction enabled');
 
 console.log(`${process.env.APP_NAME || 'Application'} server starting...`);
 consoleLogger.formatConfigSummary(config);
@@ -233,6 +271,8 @@ if (config.cors.enforceHttps) {
 }
 
 // Security headers (Helmet) - Enterprise-level security without CSP (handled by custom middleware)
+// NOTE: We keep the existing custom CSP with nonces for now to avoid breaking inline scripts.
+// The new securityHeaders middleware will be used for future routes/services.
 app.use(helmet({
   contentSecurityPolicy: false, // Disable Helmet's CSP, use custom middleware instead
   crossOriginEmbedderPolicy: false, // Disable for better compatibility

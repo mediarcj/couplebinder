@@ -4,7 +4,7 @@ This directory contains executable security verification scripts that prove the 
 
 ## Scripts Overview
 
-### 🔐 `test_auth_csrf.sh`
+### `test_auth_csrf.sh`
 **Purpose:** Verifies authentication and CSRF protection mechanisms  
 **Tests:**
 - Unauthenticated access blocking (401)
@@ -18,7 +18,7 @@ This directory contains executable security verification scripts that prove the 
 ./scripts/test_auth_csrf.sh
 ```
 
-### 📊 `verify_canonical_data.sh`
+### `verify_canonical_data.sh`
 **Purpose:** Verifies canonical data flow from database to dashboard  
 **Tests:**
 - Dashboard template data source verification
@@ -32,7 +32,7 @@ This directory contains executable security verification scripts that prove the 
 ./scripts/verify_canonical_data.sh
 ```
 
-### 🗄️ `db_sanity_check.sh`
+### `db_sanity_check.sh`
 **Purpose:** Validates database schema and RLS policies  
 **Tests:**
 - v_profiles_full structure validation
@@ -46,7 +46,7 @@ This directory contains executable security verification scripts that prove the 
 ./scripts/db_sanity_check.sh
 ```
 
-### 🛡️ `edge_hardening_check.sh`
+### `edge_hardening_check.sh`
 **Purpose:** Verifies security headers and edge hardening  
 **Tests:**
 - Security headers comprehensive check
@@ -85,7 +85,7 @@ done
 ## Expected Results
 
 All scripts should complete with:
-- ✅ **VERIFIED** status for all security checks
+- **VERIFIED** status for all security checks
 - **Exit code 0** for successful verification
 - **Comprehensive coverage** of enterprise security requirements
 

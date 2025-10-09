@@ -44,6 +44,9 @@ const ALLOWED_ISSUERS = [
   SUPABASE_URL // Fallback for tokens that might use base URL
 ];
 
+// Clock skew tolerance (configurable via env, default 60 seconds)
+const CLOCK_SKEW_SEC = Number(process.env.JWT_CLOCK_SKEW_SEC || 60);
+
 /**
  * Extract bearer token or cookie fallback.
  *
@@ -90,7 +93,7 @@ async function verifyToken(token) {
       algorithms: ['RS256'], // Supabase uses RS256
       issuer: ALLOWED_ISSUERS, // Accept array of issuers
       audience: EXPECTED_AUD,
-      clockTolerance: 60 // Allow 60 seconds clock skew
+      clockTolerance: CLOCK_SKEW_SEC // Configurable clock skew tolerance
     });
 
     // Sanity check: ensure sub claim exists

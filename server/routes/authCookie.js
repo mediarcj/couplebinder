@@ -19,6 +19,7 @@
 
 const express = require('express');
 const router = express.Router();
+const { verifyToken } = require('../middleware/auth/supabaseJwt');
 
 // Check if we're in production
 const isProd = process.env.NODE_ENV === 'production';
@@ -27,19 +28,20 @@ const isProd = process.env.NODE_ENV === 'production';
  * POST /auth/set-cookie
  * 
  * WHAT:
- * Accepts a Bearer token from the Authorization header and sets it as an HttpOnly cookie.
+ * Accepts a Bearer token from the Authorization header, verifies it server-side,
+ * and sets it as an HttpOnly cookie only if valid.
  * 
  * WHY:
- * After Supabase login on the client, we need to transfer the token to a secure cookie
- * that JavaScript cannot access, making it much harder to steal via XSS.
+ * We never trust the client. Before storing a token in a secure cookie, we must
+ * verify it's legitimate. This prevents attackers from injecting fake tokens.
  * 
  * HOW:
  * 1. Extract token from Authorization: Bearer header
- * 2. Decode (don't verify yet) to get expiration time for Max-Age
- * 3. Set cookie with proper security flags
- * 4. Full verification happens in authBridge middleware on subsequent requests
+ * 2. Verify token signature, issuer, audience, and expiration via JWKS
+ * 3. Only set cookie if verification succeeds
+ * 4. Return user ID on success for client confirmation
  */
-router.post('/set-cookie', (req, res) => {
+router.post('/set-cookie', async (req, res) => {
   try {
     // Extract Bearer token from Authorization header
     const auth = req.get('authorization') || '';
@@ -52,28 +54,28 @@ router.post('/set-cookie', (req, res) => {
       });
     }
 
-    // Light parse to extract expiration for cookie Max-Age
-    // We don't verify the token here - that happens in authBridge middleware
-    let maxAgeMs = 3600_000; // Default: 1 hour
+    // Verify token server-side before setting cookie (CRITICAL SECURITY CHECK)
+    let payload;
     try {
-      const parts = token.split('.');
-      if (parts.length === 3) {
-        const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString());
-        if (payload.exp) {
-          const expiresInMs = Math.max(payload.exp * 1000 - Date.now(), 0);
-          maxAgeMs = expiresInMs > 0 ? expiresInMs : 3600_000;
-        }
-      }
-    } catch (parseError) {
-      // If parsing fails, use default Max-Age
-      // Token verification will happen in authBridge on next request
+      payload = await verifyToken(token);
+    } catch (verifyError) {
+      // Token is invalid (signature, expiration, issuer, or audience mismatch)
+      return res.status(401).json({ 
+        ok: false, 
+        error: 'Invalid token' 
+      });
     }
+
+    // Calculate Max-Age from verified expiration
+    const maxAgeMs = payload.exp 
+      ? Math.max(payload.exp * 1000 - Date.now(), 0) 
+      : 3600_000; // Default: 1 hour
 
     /**
      * Set HttpOnly cookie with proper security flags
      * 
      * WHAT:
-     * We set the access token as a secure, HttpOnly cookie.
+     * We set the verified access token as a secure, HttpOnly cookie.
      * 
      * WHY:
      * HttpOnly prevents XSS attacks (JavaScript cannot read the cookie).
@@ -86,7 +88,7 @@ router.post('/set-cookie', (req, res) => {
      * - secure: true in production (HTTPS only - prevents MITM attacks)
      * - sameSite: 'lax' (prevents CSRF, allows top-level navigation)
      * - path: '/' (available to all routes)
-     * - maxAge: calculated from token expiration
+     * - maxAge: calculated from verified token expiration
      */
     res.cookie('sb-access-token', token, {
       httpOnly: true,
@@ -96,7 +98,7 @@ router.post('/set-cookie', (req, res) => {
       maxAge: maxAgeMs
     });
 
-    return res.json({ ok: true });
+    return res.json({ ok: true, userId: payload.sub });
   } catch (error) {
     return res.status(500).json({ 
       ok: false, 

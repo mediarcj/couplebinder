@@ -357,8 +357,9 @@ app.use(cors({
 
 
 // Body parsers with size limits
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+// Body size limits (32KB to match text input limits and prevent abuse)
+app.use(express.json({ limit: '32kb' }));
+app.use(express.urlencoded({ extended: false, limit: '32kb' }));
 
 // Cookie parsing middleware - must be before sessions and CSRF
 const parseCookies = require('./middleware/cookieGuardian');

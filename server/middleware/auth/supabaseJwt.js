@@ -27,14 +27,22 @@ if (!SUPABASE_URL) {
 // Supabase JWKS endpoint
 // ============================================================
 const JWKS_URL = `${SUPABASE_URL}/auth/v1/keys`;
-const JWKS = createRemoteJWKSet(new URL(JWKS_URL));
+const JWKS = createRemoteJWKSet(new URL(JWKS_URL), {
+  cache: true,
+  cooldownDuration: 600000 // Cache JWKS for 10 minutes
+});
 
 // ============================================================
 // Expected claims (Supabase defaults)
 // ============================================================
 // Supabase defaults: aud=authenticated, iss=https://<project>.supabase.co/auth/v1
 const EXPECTED_AUD = process.env.SUPABASE_JWT_AUD || 'authenticated';
-const EXPECTED_ISS = `${SUPABASE_URL}/auth/v1`;
+
+// Accept both base URL and /auth/v1 suffix for issuer flexibility
+const ALLOWED_ISSUERS = [
+  `${SUPABASE_URL}/auth/v1`,
+  SUPABASE_URL // Fallback for tokens that might use base URL
+];
 
 /**
  * Extract bearer token or cookie fallback.
@@ -68,13 +76,50 @@ function readToken(req) {
  *
  * HOW:
  * Uses jose's jwtVerify with remote JWKS. Returns payload on success, throws on failure.
+ * Includes 60-second clock tolerance for time skew and detailed error logging.
  */
 async function verifyToken(token) {
-  const { payload } = await jwtVerify(token, JWKS, {
-    issuer: EXPECTED_ISS,
-    audience: EXPECTED_AUD
-  });
-  return payload;
+  if (!token) {
+    const err = new Error('missing_token');
+    err.code = 'missing_token';
+    throw err;
+  }
+
+  try {
+    const { payload } = await jwtVerify(token, JWKS, {
+      algorithms: ['RS256'], // Supabase uses RS256
+      issuer: ALLOWED_ISSUERS, // Accept array of issuers
+      audience: EXPECTED_AUD,
+      clockTolerance: 60 // Allow 60 seconds clock skew
+    });
+
+    // Sanity check: ensure sub claim exists
+    if (!payload?.sub) {
+      const err = new Error('invalid_token');
+      err.code = 'missing_sub';
+      throw err;
+    }
+
+    return payload;
+  } catch (err) {
+    // Log detailed error for debugging (server-side only)
+    const reason = err?.code || err?.message || 'verify_failed';
+    const meta = {
+      name: err?.name,
+      code: err?.code,
+      claim: err?.claim,
+      iss: err?.payload?.iss,
+      aud: err?.payload?.aud
+    };
+    
+    console.warn('[auth] JWT verification failed:', reason, JSON.stringify(meta));
+    
+    // Throw a generic error to avoid leaking details to client
+    const clientErr = new Error('invalid_token');
+    clientErr.code = reason;
+    clientErr.cause = err;
+    throw clientErr;
+  }
 }
 
 /**

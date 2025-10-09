@@ -60,8 +60,13 @@ router.post('/set-cookie', async (req, res) => {
       payload = await verifyToken(token);
     } catch (verifyError) {
       // Token is invalid (signature, expiration, issuer, or audience mismatch)
+      // Log the error code for debugging (already logged in verifyToken with details)
+      const code = verifyError?.code || 'verify_failed';
+      console.warn('[auth] set-cookie rejected:', code);
+      
       return res.status(401).json({ 
         ok: false, 
+        code: code,
         error: 'Invalid token' 
       });
     }

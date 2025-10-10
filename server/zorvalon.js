@@ -239,14 +239,6 @@ console.log('Database: Supabase (HTTP API)');
  * rate limiting, body parsing, sessions, and custom middleware.
  */
 
-// Nonce generation middleware for CSP
-app.use((req, res, next) => {
-  // Generate a unique nonce for each request
-  const nonce = crypto.randomBytes(16).toString('base64');
-  res.locals.nonce = nonce;
-  next();
-});
-
 // HTTPS redirect middleware (for production behind Cloudflare)
 // NOTE: OPTIONS requests are handled by the preflight short-circuit at the top
 if (config.cors.enforceHttps) {
@@ -270,41 +262,23 @@ if (config.cors.enforceHttps) {
   });
 }
 
-// Security headers (Helmet) - Enterprise-level security without CSP (handled by custom middleware)
-// NOTE: We keep the existing custom CSP with nonces for now to avoid breaking inline scripts.
-// The new securityHeaders middleware will be used for future routes/services.
+// ============================================================
+// CSP with per-request nonce (tightened for production)
+// ============================================================
+// WHAT: Generate nonce and apply strict CSP that only allows nonce-tagged scripts.
+// WHY: Reduces XSS attack surface by blocking unauthorized inline scripts.
+// HOW: Use new cspNonce middleware that combines nonce generation + Helmet CSP.
+const cspWithNonce = require('./middleware/security/cspNonce');
+app.use(cspWithNonce());
+console.log('Security: CSP with per-request nonce enabled');
+
+// Security headers (Helmet) - Additional security headers (CSP handled above)
 app.use(helmet({
-  contentSecurityPolicy: false, // Disable Helmet's CSP, use custom middleware instead
+  contentSecurityPolicy: false, // Handled by cspNonce middleware above
   crossOriginEmbedderPolicy: false, // Disable for better compatibility
   crossOriginOpenerPolicy: { policy: "same-origin" },
   crossOriginResourcePolicy: { policy: "cross-origin" }
 }));
-
-// Custom CSP middleware to add nonces
-app.use((req, res, next) => {
-  const nonce = res.locals.nonce;
-  
-  if (nonce) {
-    // Set CSP header with nonces
-    const cspDirectives = [
-      "default-src 'self'",
-      `script-src 'self' 'nonce-${nonce}' https://cdn.jsdelivr.net https://unpkg.com https://www.googletagmanager.com https://www.google-analytics.com https://maps.googleapis.com https://www.gstatic.com`,
-      `style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net https://unpkg.com`,
-      "img-src 'self' data: https: blob: https://maps.googleapis.com https://maps.gstatic.com",
-      "font-src 'self' https://fonts.gstatic.com https://cdn.jsdelivr.net https://unpkg.com",
-      "connect-src 'self' https://www.google-analytics.com https://analytics.google.com https://maps.googleapis.com https://zwrstlnfyiqsxbuggiiz.supabase.co",
-      "frame-src 'self' https://www.google.com https://maps.google.com",
-      "object-src 'none'",
-      "base-uri 'self'",
-      "form-action 'self'"
-    ];
-    
-    const cspHeader = cspDirectives.join('; ');
-    res.setHeader('Content-Security-Policy', cspHeader);
-  }
-  
-  next();
-});
 
 // Permissions-Policy header - Enterprise-grade browser feature restrictions
 app.use((req, res, next) => {

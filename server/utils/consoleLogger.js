@@ -472,6 +472,106 @@ function formatWarning(message, meta = {}) {
   console.log(`${LINE}`);
 }
 
+// ───────────────────────────────────────────────────────────────────────────────
+// Pretty-print structured JSON events like {"event":"auth.set_cookie.ok",...}
+// ───────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Use ISO timestamp from payload if present; fallback to "now".
+ */
+function formatIsoTimestamp(isoLike) {
+  try {
+    if (!isoLike) return formatTimestamp();
+    const d = new Date(isoLike);
+    if (Number.isNaN(d.getTime())) return formatTimestamp();
+    return d.toLocaleString();
+  } catch {
+    return formatTimestamp();
+  }
+}
+
+/**
+ * Turn ms into "Xd Yh Zm Ws (NNN ms)".
+ */
+function formatTtlMs(ms) {
+  const n = Number(ms);
+  if (!Number.isFinite(n)) return String(ms);
+
+  let rest = Math.max(0, Math.floor(n));
+  const dayMs = 24 * 60 * 60 * 1000;
+  const hourMs = 60 * 60 * 1000;
+  const minMs = 60 * 1000;
+  const secMs = 1000;
+
+  const days = Math.floor(rest / dayMs); rest -= days * dayMs;
+  const hours = Math.floor(rest / hourMs); rest -= hours * hourMs;
+  const minutes = Math.floor(rest / minMs); rest -= minutes * minMs;
+  const seconds = Math.floor(rest / secMs);
+
+  const parts = [];
+  if (days) parts.push(`${days}d`);
+  if (hours || days) parts.push(`${hours}h`);
+  if (minutes || hours || days) parts.push(`${minutes}m`);
+  parts.push(`${seconds}s`);
+
+  return `${parts.join(' ')} (${n} ms)`;
+}
+
+/**
+ * Pretty block for auth cookie events (set/clear/etc).
+ * Keeps the same visual style as COOKIE PARSING.
+ *
+ * @param {Object} payload - structured event
+ *   { ts, event, request_id, ip, path, method, user_id, ttl_ms }
+ */
+function formatAuthCookieEvent(payload = {}) {
+  const {
+    ts,
+    event = 'auth.event',
+    request_id = 'system',
+    ip = 'unknown',
+    path = 'unknown',
+    method = 'unknown',
+    user_id = 'unknown',
+    ttl_ms
+  } = payload;
+
+  console.log(`\n${LINE}`);
+  console.log(`AUTH COOKIE`);
+  console.log(`   Event: ${event}`);
+  console.log(`   Path: ${method} ${path}`);
+  console.log(`   User ID: ${user_id}`);
+  if (typeof ttl_ms !== 'undefined') {
+    console.log(`   TTL: ${formatTtlMs(ttl_ms)}`);
+  }
+  console.log(`   Request ID: ${request_id ?? 'system'}`);
+  console.log(`   Client IP: ${ip}`);
+  console.log(`   Time: ${formatIsoTimestamp(ts)}`);
+  console.log(`${LINE}`);
+}
+
+/**
+ * Generic pretty printer for future JSON events.
+ * For now we special-case auth cookie events and fall back to a neutral box.
+ */
+function formatJsonEvent(payload = {}) {
+  const { event = '' } = payload;
+  if (event.startsWith('auth.set_cookie') || event.startsWith('auth.clear_cookie')) {
+    return formatAuthCookieEvent(payload);
+  }
+
+  // Fallback generic box (keeps style)
+  console.log(`\n${LINE}`);
+  console.log(`EVENT`);
+  console.log(`   Type: ${payload.event || 'unknown'}`);
+  Object.entries(payload).forEach(([k, v]) => {
+    if (k === 'event') return;
+    console.log(`   ${k}: ${v}`);
+  });
+  console.log(`   Time: ${formatIsoTimestamp(payload.ts)}`);
+  console.log(`${LINE}`);
+}
+
 module.exports = {
   formatRequest,
   formatAuthEvent,
@@ -488,5 +588,7 @@ module.exports = {
   formatCSRFToken,
   formatSecurityClearance,
   formatSessionEvent,
-  formatWarning
+  formatWarning,
+  formatAuthCookieEvent,
+  formatJsonEvent
 };

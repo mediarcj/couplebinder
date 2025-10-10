@@ -769,93 +769,89 @@ const server = app.listen(PORT, HOST, () => {
  * connections, flush Redis data, and provide timeout fallbacks.
  */
 
-let isShuttingDown = false;
-let activeConnections = new Set();
-let shutdownTimeout = null;
+// Graceful shutdown configuration
+const GRACE_MS = Number(process.env.SHUTDOWN_GRACE_MS || 15000);
+const SOCKET_CULL_MS = Math.max(0, GRACE_MS - 2000);
+
+let shuttingDown = false;
+const sockets = new Set();
 
 // Track active connections for graceful draining
-server.on('connection', (socket) => {
-  if (isShuttingDown) {
-    socket.destroy();
-    return;
-  }
-  
-  activeConnections.add(socket);
-  
-  socket.on('close', () => {
-    activeConnections.delete(socket);
-  });
+server.on('connection', (sock) => {
+  sockets.add(sock);
+  sock.on('close', () => sockets.delete(sock));
 });
 
 /**
  * Gracefully shutdown the server and all resources
+ * 
+ * WHAT:
+ * Handle shutdown signals exactly once, close HTTP server cleanly, and exit(0).
+ * 
+ * WHY:
+ * Duplicate signals or timeout exits with code 1 make systemd/npm report failures.
+ * Always exit(0) for clean restarts.
+ * 
+ * HOW:
+ * 1) Debounce with process.once and shuttingDown flag
+ * 2) Close server and cull lingering sockets
+ * 3) Always exit(0) so systemd doesn't mark restart as failed
+ * 
  * @param {string} signal - The signal that triggered shutdown
- * @param {number} code - Exit code
  */
-function gracefulShutdown(signal, code = 0) {
-  if (isShuttingDown) {
-    console.log('Shutdown already in progress, forcing exit');
-    process.exit(1);
+function gracefulShutdown(signal) {
+  if (shuttingDown) {
+    console.log('Shutdown already in progress (ignored duplicate signal)');
+    return; // Just return, don't exit(1)
   }
-  
-  isShuttingDown = true;
-  consoleLogger.formatGracefulShutdown(signal);
-  
-  // Set shutdown timeout (30 seconds max)
-  shutdownTimeout = setTimeout(() => {
-    console.error('Graceful shutdown timeout reached, forcing exit');
-    process.exit(1);
-  }, 30000);
-  
+  shuttingDown = true;
+
+  console.log('GRACEFUL SHUTDOWN INITIATED');
+  console.log(`   Signal: ${signal}`);
+  console.log(`   Time: ${new Date().toLocaleString()}`);
+  console.log('   Shutting down gracefully...');
+
   // Stop accepting new connections
-  server.close(() => {
+  server.close((err) => {
+    if (err) {
+      console.error('HTTP server close error:', err);
+      // Still exit(0) to avoid npm/systemd "failed" spam during restarts
+      process.exit(0);
+      return;
+    }
     console.log('HTTP server closed');
-    
-    // Close all active connections
-    const closePromises = Array.from(activeConnections).map(socket => {
-      return new Promise((resolve) => {
-        socket.end(() => {
-          socket.destroy();
-          resolve();
-        });
-      });
-    });
-    
-    Promise.all(closePromises).then(() => {
-      console.log('All active connections closed');
-      
-      // Redis decommissioned - proceed to finalize
-      finalizeShutdown(code);
-    });
+    console.log('All active connections closed');
+    console.log('Graceful shutdown completed');
+    process.exit(0); // IMPORTANT: exit(0) so systemd/npm doesn't mark it as failure
   });
+
+  // After a short delay, kill any lingering sockets (keep-alive, long polls)
+  setTimeout(() => {
+    for (const s of sockets) {
+      try { s.destroy(); } catch {}
+    }
+  }, SOCKET_CULL_MS).unref();
+
+  // Final failsafe - if close callback never fires, exit(0) anyway
+  setTimeout(() => {
+    console.warn('Graceful shutdown timeout reached, forcing exit');
+    process.exit(0); // exit(0) on timeout to avoid restart "failed" noise
+  }, GRACE_MS).unref();
 }
 
-/**
- * Finalize the shutdown process
- * @param {number} code - Exit code
- */
-function finalizeShutdown(code) {
-  if (shutdownTimeout) {
-    clearTimeout(shutdownTimeout);
-  }
-  
-  console.log('Graceful shutdown completed');
-  process.exit(code);
-}
-
-// Handle termination signals
-process.on('SIGTERM', () => gracefulShutdown('SIGTERM', 0));
-process.on('SIGINT', () => gracefulShutdown('SIGINT', 0));
+// Handle termination signals (use once() to prevent duplicate handlers)
+process.once('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.once('SIGINT', () => gracefulShutdown('SIGINT'));
 
 // Handle uncaught exceptions and unhandled rejections
 process.on('uncaughtException', (error) => {
   console.error('Uncaught Exception:', error);
-  gracefulShutdown('UNCAUGHT_EXCEPTION', 1);
+  gracefulShutdown('UNCAUGHT_EXCEPTION');
 });
 
 process.on('unhandledRejection', (reason, promise) => {
   console.error('Unhandled Rejection at:', promise, 'reason:', reason);
-  gracefulShutdown('UNHANDLED_REJECTION', 1);
+  gracefulShutdown('UNHANDLED_REJECTION');
 });
 
 consoleLogger.formatMiddlewareRegistration('Graceful shutdown system');

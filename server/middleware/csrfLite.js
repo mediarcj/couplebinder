@@ -1,50 +1,40 @@
-// File: server/middleware/csrfLite.js
-// Description: Smart CSRF protection — enforce for cookie-based mutations, skip for Bearer
-// Notes: Double-submit cookie pattern; Origin check for form posts
+/**
+ * File: server/middleware/csrfLite.js
+ * Description: Smart CSRF protection — enforce for cookie-based mutations, skip for Bearer
+ *
+ * WHAT:
+ * Double-submit cookie: we set a readable CSRF cookie and require clients to echo it
+ * in the x-csrf-token header (or form field) for state-changing requests.
+ *
+ * WHY:
+ * Blocks cross-site request forgery. Attackers cannot read your cookies, so they cannot
+ * produce a matching token.
+ *
+ * HOW:
+ * - Issues a CSRF cookie on idempotent requests (GET/HEAD/OPTIONS).
+ * - Enforces token match on POST/PUT/PATCH/DELETE when cookies are present.
+ * - Skips CSRF if Authorization: Bearer is used (pure API clients) or for auth cookie endpoints.
+ * - Uses timing-safe compare to prevent subtle timing attacks.
+ * - Configurable via environment variables for flexibility.
+ */
 
 const crypto = require('crypto');
 
-/**
- * DEV TEST (curl)
- *
- *   # start clean
- *   rm -f jar.txt
- *
- *   # 0) Prime CSRF cookie (this sets `csrf_token`)
- *   curl -i -c jar.txt http://localhost:3000/login
- *
- *   # 1) Grab the CSRF token from the cookie jar
- *   CSRF=$(awk '$6~"csrf_token"{print $7}' jar.txt); echo "CSRF=$CSRF"
- *
- *   # 2) Log in (correct route!)
- *   curl -i -b jar.txt -c jar.txt \
- *     -H 'Content-Type: application/json' \
- *     -H "X-CSRF-Token: $CSRF" \
- *     -X POST http://localhost:3000/api/auth/login \
- *     -d '{"email":"YOUR_EMAIL","password":"YOUR_PASSWORD"}'
- *
- *   # 3) Call the protected endpoint using the auth cookie
- *   curl -i -b jar.txt http://localhost:3000/api/profile/me
- */
+// ============================================================
+// Configuration (override with env for flexibility)
+// ============================================================
+const CSRF_COOKIE_NAME = process.env.CSRF_COOKIE_NAME || 'csrf_token';
+const CSRF_HEADER_NAME = (process.env.CSRF_HEADER_NAME || 'x-csrf-token').toLowerCase();
+const AUTH_COOKIE_DOMAIN = process.env.AUTH_COOKIE_DOMAIN || undefined; // leave undefined if you ever switch to __Host- cookies
 
-/* ----------------- helpers ----------------- */
-
-function setCookie(res, name, val) {
-  // HttpOnly=false by design for double-submit pattern (form can read/send value)
-  const secure = process.env.NODE_ENV === 'production' ? '; Secure' : '';
-  res.setHeader(
-    'Set-Cookie',
-    `${name}=${encodeURIComponent(val)}; Path=/; SameSite=Strict${secure}`
-  );
-}
+// ============================================================
+// Helper Functions
+// ============================================================
+const SAFE = new Set(['GET', 'HEAD', 'OPTIONS']);
 
 function hasBearerToken(req) {
   const authz = req.headers.authorization || '';
   return /^Bearer\s+/i.test(authz);
-}
-
-function isIdempotent(req) {
-  return req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS';
 }
 
 function usesCookies(req) {
@@ -52,90 +42,134 @@ function usesCookies(req) {
 }
 
 function getCsrfFromCookie(req) {
+  // Prefer cookie-parser if present
+  if (req.cookies && Object.prototype.hasOwnProperty.call(req.cookies, CSRF_COOKIE_NAME)) {
+    return req.cookies[CSRF_COOKIE_NAME];
+  }
+  // Fallback: parse header manually
   const cookie = req.headers.cookie || '';
-  const m = cookie.match(/(?:^|;\s*)csrf_token=([^;]+)/);
+  const escapedName = CSRF_COOKIE_NAME.replace(/[-.$?*|{}()[\]\\/+^]/g, '\\$&');
+  const m = cookie.match(new RegExp('(?:^|;\\s*)' + escapedName + '=([^;]+)'));
   return m ? decodeURIComponent(m[1]) : null;
 }
 
 function getProvidedToken(req) {
-  return req.get('x-csrf-token') || (req.body ? req.body._csrf : null) || null;
+  // Header first (case-insensitive)
+  const hdr = req.headers[CSRF_HEADER_NAME];
+  if (hdr) return String(hdr);
+  // Classic HTML forms (URL-encoded)
+  const b = req.body || {};
+  return b._csrf || b.csrf || b.csrf_token || null;
 }
 
 /**
- * Skip CSRF for these cookie-management endpoints (they authenticate with Bearer)
+ * Timing-safe string comparison
+ *
+ * WHAT:
+ * Compares two strings in constant time to prevent timing attacks.
+ *
+ * WHY:
+ * Standard string comparison (===) can leak information about where strings differ
+ * via timing. This prevents attackers from guessing tokens character by character.
+ *
+ * HOW:
+ * Uses crypto.timingSafeEqual which compares buffers in constant time regardless
+ * of where they differ.
  */
-function isAuthCookieEndpoint(req) {
-  return req.path === '/auth/set-cookie' || req.path === '/auth/clear-cookie';
+function timingSafeEqual(a, b) {
+  if (typeof a !== 'string' || typeof b !== 'string') return false;
+  const A = Buffer.from(a);
+  const B = Buffer.from(b);
+  if (A.length !== B.length) return false;
+  try { return crypto.timingSafeEqual(A, B); } catch { return false; }
 }
 
-function validateOrigin(req) {
-  const origin  = req.get('origin');
-  const referer = req.get('referer');
-  const host    = req.get('host');
-
-  if (origin && origin.includes(host))  return true;
-  if (referer && referer.includes(host)) return true;
-
-  if (process.env.NODE_ENV === 'development') {
-    if (origin && origin.includes('localhost'))  return true;
-    if (referer && referer.includes('localhost')) return true;
-  }
-  return false;
+function isAuthCookieEndpoint(req) {
+  // These endpoints authenticate with Bearer, then set/clear cookies server-side
+  return req.path === '/auth/set-cookie' || req.path === '/auth/clear-cookie';
 }
 
 function wantsJson(req) {
   const acc = req.get('accept') || '';
   const ct  = req.get('content-type') || '';
-  // Treat API and JSON clients as JSON responders
   return req.path.startsWith('/api/') || acc.includes('application/json') || ct.includes('application/json');
 }
 
-/* ----------------- middleware ----------------- */
-
+// ============================================================
+// Main Middleware
+// ============================================================
 module.exports = function csrfLite(req, res, next) {
   try {
-    // For idempotent requests, ensure a CSRF token cookie exists and expose it to views
-    if (isIdempotent(req)) {
+    // ============================================================
+    // 1) Idempotent requests: just ensure the cookie exists
+    // ============================================================
+    if (SAFE.has(req.method)) {
       let csrfToken = getCsrfFromCookie(req);
       if (!csrfToken) {
         csrfToken = crypto.randomBytes(32).toString('base64url');
-        setCookie(res, 'csrf_token', csrfToken);
+        // Not HttpOnly so JS can read and echo it
+        res.cookie(CSRF_COOKIE_NAME, csrfToken, {
+          domain: AUTH_COOKIE_DOMAIN, // omit this if you ever switch to __Host- cookies
+          path: '/',
+          sameSite: 'Strict',
+          secure: true,
+          httpOnly: false,
+          maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+        });
       }
       res.locals.csrfToken = csrfToken;
       return next();
     }
 
-    // Not idempotent → mutation
-    // If the request uses Bearer (no CSRF risk) or is an auth-cookie endpoint → skip CSRF
+    // ============================================================
+    // 2) Non-idempotent: mutation request
+    // ============================================================
+    // Skip CSRF if:
+    //   - Bearer token present (pure API client), or
+    //   - This is an auth-cookie endpoint (set/clear happens after JWT verify)
     if (hasBearerToken(req) || isAuthCookieEndpoint(req)) {
       return next();
     }
 
-    // If there are no cookies at all, we're likely a pure API client → skip CSRF
+    // ============================================================
+    // 3) If client sent no cookies, likely not a browser + cookie flow
+    // ============================================================
     if (!usesCookies(req)) {
       return next();
     }
 
-    // Enforce double-submit token for cookie-based mutations
-    const csrfCookie  = getCsrfFromCookie(req);
-    const provided    = getProvidedToken(req);
+    // ============================================================
+    // 4) Enforce double-submit match with timing-safe compare
+    // ============================================================
+    const cookieVal  = getCsrfFromCookie(req);
+    const headerVal  = getProvidedToken(req);
 
-    if (!csrfCookie || !provided || provided !== csrfCookie) {
-      const body = { success: false, message: 'CSRF check failed' };
-      return wantsJson(req) ? res.status(403).json(body) : res.status(403).send(body.message);
+    if (!cookieVal || !headerVal) {
+      const body = { error: 'csrf_invalid', code: 'missing' };
+      console.warn('[csrf] missing token', {
+        method: req.method, path: req.path,
+        cookie: Boolean(cookieVal), header: Boolean(headerVal),
+        reqId: req.headers['x-request-id'] || null
+      });
+      return wantsJson(req) ? res.status(403).json(body) : res.status(403).send('CSRF check failed');
     }
 
-    // Extra safety: verify same-origin for form posts
-    if ((req.get('content-type') || '').includes('application/x-www-form-urlencoded')) {
-      if (!validateOrigin(req)) {
-        const body = { success: false, message: 'Origin validation failed' };
-        return wantsJson(req) ? res.status(403).json(body) : res.status(403).send(body.message);
-      }
+    if (!timingSafeEqual(cookieVal, headerVal)) {
+      const body = { error: 'csrf_invalid', code: 'mismatch' };
+      console.warn('[csrf] mismatch', {
+        method: req.method, path: req.path,
+        reqId: req.headers['x-request-id'] || null
+      });
+      return wantsJson(req) ? res.status(403).json(body) : res.status(403).send('CSRF check failed');
     }
 
     return next();
-  } catch {
-    const body = { success: false, message: 'CSRF check failed' };
-    return wantsJson(req) ? res.status(403).json(body) : res.status(403).send(body.message);
+  } catch (err) {
+    const body = { error: 'csrf_invalid', code: 'exception' };
+    console.error('[csrf] exception', {
+      message: err.message,
+      reqId: req.headers['x-request-id'] || null
+    });
+    return wantsJson(req) ? res.status(403).json(body) : res.status(403).send('CSRF check failed');
   }
 };

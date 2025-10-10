@@ -44,8 +44,12 @@ function jwksFetcher() {
  * 3. Return null if no token found
  */
 function readAccessToken(req) {
-  // Priority 1: HttpOnly cookie (web pages)
-  const cookieToken = req.cookies?.['sb-access-token'] || null;
+  // Priority 1: HttpOnly cookie (web pages) - env-driven name + legacy fallback
+  const cookieName = process.env.AUTH_COOKIE_NAME || 'sb_session';
+  const cookieToken = req.cookies?.[cookieName] 
+    || req.cookies?.['sb-access-token']  // legacy
+    || req.cookies?.['sb_session']       // legacy
+    || null;
   if (cookieToken) return cookieToken;
   
   // Priority 2: Bearer header (API tools, CLI)
@@ -74,6 +78,23 @@ function readAccessToken(req) {
  */
 module.exports = async function authBridge(req, res, next) {
   try {
+    // Debug logging (controlled by AUTH_DEBUG env var)
+    if (String(process.env.AUTH_DEBUG).toLowerCase() === 'true') {
+      const cookieName = process.env.AUTH_COOKIE_NAME || 'sb_session';
+      const hasBearer = /^Bearer\s+/.test(req.headers.authorization || '');
+      const hasCookie = !!(req.cookies && Object.prototype.hasOwnProperty.call(req.cookies, cookieName));
+      
+      console.log(JSON.stringify({
+        ts: new Date().toISOString(),
+        event: 'auth.debug',
+        method: req.method,
+        path: req.originalUrl,
+        hasBearer,
+        hasCookie,
+        cookieName
+      }));
+    }
+    
     // Step 1: Read token from cookie or header
     const token = readAccessToken(req);
     if (!token) {

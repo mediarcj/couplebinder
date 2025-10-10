@@ -498,6 +498,16 @@ try {
   console.error('Failed to load auth API routes:', error.message);
 }
 
+// Debug route (enabled via AUTH_DEBUG=true env var)
+if (String(process.env.AUTH_DEBUG).toLowerCase() === 'true') {
+  try {
+    app.use('/api/auth', require('./routes/authDebug'));
+    console.log('Auth debug routes loaded (AUTH_DEBUG=true)');
+  } catch (error) {
+    console.error('Failed to load auth debug routes:', error.message);
+  }
+}
+
 try {
   // Admin routes (require admin role)
   app.use('/api/admin', requireAuth, require('./routes/admin'));

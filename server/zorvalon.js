@@ -9,6 +9,14 @@ const cors = require('cors');
 const path = require('path');
 const crypto = require('node:crypto');
 
+// Install console shim early to intercept JSON event logs
+try {
+  const { installJsonLogShim } = require('./utils/consoleLogger');
+  installJsonLogShim();
+} catch (err) {
+  console.error('Failed to install console shim:', err.message);
+}
+
 // Application Configuration and Dependencies
 // CRITICAL SECTION: Safe module loading to prevent crashes
 let config, logConfigSummary, csrfLite, requestIdMiddleware, logger, consoleLogger;

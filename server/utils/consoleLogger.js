@@ -572,6 +572,62 @@ function formatJsonEvent(payload = {}) {
   console.log(`${LINE}`);
 }
 
+/**
+ * Install console shim that pretty-prints JSON event lines
+ */
+function installJsonLogShim(options = {}) {
+  const { interceptInfo = true } = options;
+
+  if (console.__jsonPrettyShimInstalled) return;
+  console.__jsonPrettyShimInstalled = true;
+
+  const originalLog = console.log.bind(console);
+  const originalInfo = console.info ? console.info.bind(console) : originalLog;
+
+  let inPretty = false;
+
+  function tryPrettyPrint(args, fallback) {
+    if (inPretty) return fallback(...args);
+
+    try {
+      if (args.length === 1 && args[0] && typeof args[0] === 'object' && !Array.isArray(args[0])) {
+        const obj = args[0];
+        if (obj.event) {
+          inPretty = true;
+          formatJsonEvent(obj);
+          inPretty = false;
+          return;
+        }
+      }
+
+      if (args.length === 1 && typeof args[0] === 'string') {
+        const s = args[0].trim();
+        if (s.startsWith('{') && s.endsWith('}')) {
+          try {
+            const obj = JSON.parse(s);
+            if (obj && typeof obj === 'object' && obj.event) {
+              inPretty = true;
+              formatJsonEvent(obj);
+              inPretty = false;
+              return;
+            }
+          } catch {
+            // Not JSON, fall through
+          }
+        }
+      }
+    } catch {
+      // Swallow errors and fall back
+    }
+    return fallback(...args);
+  }
+
+  console.log = (...args) => tryPrettyPrint(args, originalLog);
+  if (interceptInfo) {
+    console.info = (...args) => tryPrettyPrint(args, originalInfo);
+  }
+}
+
 module.exports = {
   formatRequest,
   formatAuthEvent,
@@ -590,5 +646,6 @@ module.exports = {
   formatSessionEvent,
   formatWarning,
   formatAuthCookieEvent,
-  formatJsonEvent
+  formatJsonEvent,
+  installJsonLogShim
 };

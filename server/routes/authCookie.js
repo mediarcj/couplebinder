@@ -1,45 +1,58 @@
 // File: server/routes/authCookie.js
-// Description: Server-side cookie management endpoints for secure authentication
-// Purpose: Set and clear HttpOnly cookies for access tokens (secure, no JS access)
-// Notes: Cookies are HttpOnly (JS can't read), Secure in prod, SameSite=Lax for redirects
+// Description: Set and clear the auth cookie using __Host- rules
+// Notes: __Host- cookies must be Secure, Path=/, and have no Domain
 
 /**
  * WHAT:
- * We provide two endpoints to manage the authentication cookie on the server side.
- * 
+ * Set the cookie named from env (default: sb_session) and, if it starts
+ * with "__Host-", do NOT set a Domain. Clear old cookie names for safety.
+ *
  * WHY:
- * HttpOnly cookies cannot be stolen via XSS. By setting them server-side, we keep
- * tokens invisible to JavaScript, making attacks much harder.
- * 
+ * "__Host-" prevents subdomain fixation. Clearing old names avoids
+ * conflicting cookies lingering on browsers.
+ *
  * HOW:
- * - POST /set-cookie: reads Bearer token from header, sets sb-access-token cookie
- * - POST /clear-cookie: clears the sb-access-token cookie (logout)
- * Both use proper cookie flags: HttpOnly, Secure (prod), SameSite=Lax, Path=/
+ * 1) Use env-driven cookie name (AUTH_COOKIE_NAME)
+ * 2) If cookie name starts with "__Host-", omit domain (required by spec)
+ * 3) Clear legacy cookie names on set/clear for migration safety
  */
 
 const express = require('express');
 const router = express.Router();
 const { verifyToken } = require('../middleware/auth/supabaseJwt');
 
-// Check if we're in production
-const isProd = process.env.NODE_ENV === 'production';
+// ============================================================
+// Configuration
+// ============================================================
+const COOKIE_NAME = process.env.AUTH_COOKIE_NAME || 'sb_session';
+const COOKIE_TTL_MS = 1000 * 60 * 60 * 24 * 7; // 7 days
+const LEGACY_DOMAIN = '.detechify.com'; // used only to clear old cookies
+
+// Base attributes for our auth cookie
+const baseCookie = {
+  httpOnly: true,
+  secure: true,
+  sameSite: 'lax',
+  path: '/', // REQUIRED for __Host-
+};
 
 /**
  * POST /auth/set-cookie
  * 
  * WHAT:
  * Accepts a Bearer token from the Authorization header, verifies it server-side,
- * and sets it as an HttpOnly cookie only if valid.
+ * and sets it as an HttpOnly cookie only if valid. Supports __Host- prefix.
  * 
  * WHY:
  * We never trust the client. Before storing a token in a secure cookie, we must
- * verify it's legitimate. This prevents attackers from injecting fake tokens.
+ * verify it's legitimate. __Host- prefix prevents subdomain cookie attacks.
  * 
  * HOW:
  * 1. Extract token from Authorization: Bearer header
  * 2. Verify token signature, issuer, audience, and expiration via JWKS
- * 3. Only set cookie if verification succeeds
- * 4. Return user ID on success for client confirmation
+ * 3. Set cookie with proper flags (omit domain if __Host-)
+ * 4. Clear legacy cookie names for migration safety
+ * 5. Return user ID on success for client confirmation
  */
 router.post('/set-cookie', async (req, res) => {
   try {
@@ -71,40 +84,32 @@ router.post('/set-cookie', async (req, res) => {
       });
     }
 
-    // Calculate Max-Age from verified expiration
-    const maxAgeMs = payload.exp 
-      ? Math.max(payload.exp * 1000 - Date.now(), 0) 
-      : 3600_000; // Default: 1 hour
+    // ============================================================
+    // Set the new cookie with __Host- support
+    // ============================================================
+    // IMPORTANT: do not set Domain if using __Host- prefix (spec requirement)
+    const opts = { ...baseCookie };
+    if (!COOKIE_NAME.startsWith('__Host-') && process.env.AUTH_COOKIE_DOMAIN) {
+      opts.domain = process.env.AUTH_COOKIE_DOMAIN;
+    }
 
-    /**
-     * Set HttpOnly cookie with proper security flags
-     * 
-     * WHAT:
-     * We set the verified access token as a secure, HttpOnly cookie.
-     * 
-     * WHY:
-     * HttpOnly prevents XSS attacks (JavaScript cannot read the cookie).
-     * Secure ensures the cookie is only sent over HTTPS in production.
-     * SameSite=Lax protects against CSRF while allowing normal navigation.
-     * 
-     * HOW:
-     * Use Express res.cookie() with security flags:
-     * - httpOnly: true (prevents JavaScript access - XSS protection)
-     * - secure: true in production (HTTPS only - prevents MITM attacks)
-     * - sameSite: 'lax' (prevents CSRF, allows top-level navigation)
-     * - path: '/' (available to all routes)
-     * - maxAge: calculated from verified token expiration
-     */
-    res.cookie('sb-access-token', token, {
-      httpOnly: true,
-      secure: isProd,
-      sameSite: 'lax',
-      path: '/',
-      maxAge: maxAgeMs
+    // Set the new cookie
+    res.cookie(COOKIE_NAME, token, { ...opts, maxAge: COOKIE_TTL_MS });
+
+    // ============================================================
+    // One-time cleanup of legacy cookie names (migration safety)
+    // ============================================================
+    // Clear old cookie names to prevent conflicts during migration
+    ['sb-access-token', 'sb_session'].forEach((n) => {
+      // Clear domain-scoped variant (old deployments)
+      res.clearCookie(n, { path: '/', domain: LEGACY_DOMAIN });
+      // Clear host-scoped variant (old deployments)
+      res.clearCookie(n, { path: '/' });
     });
 
     return res.json({ ok: true, userId: payload.sub });
   } catch (error) {
+    console.error('[auth] set-cookie exception:', error.message);
     return res.status(500).json({ 
       ok: false, 
       error: 'Failed to set cookie' 
@@ -116,27 +121,32 @@ router.post('/set-cookie', async (req, res) => {
  * POST /auth/clear-cookie
  * 
  * WHAT:
- * Clears the sb-access-token cookie by setting Max-Age to 0.
+ * Clears the auth cookie and legacy cookie names for complete logout.
  * 
  * WHY:
- * On logout, we need to remove the authentication cookie from the browser.
+ * On logout, we need to remove all authentication cookies from the browser,
+ * including legacy names from previous deployments.
  * 
  * HOW:
- * Set the same cookie with Max-Age=0 and empty value, using same flags for consistency.
+ * Clear the current cookie name and all legacy names with proper options.
+ * __Host- cookies must NOT have domain set when clearing.
  */
 router.post('/clear-cookie', (req, res) => {
   try {
-    // Clear cookie by setting Max-Age to 0
-    res.cookie('sb-access-token', '', {
-      httpOnly: true,
-      secure: isProd,
-      sameSite: 'lax',
-      path: '/',
-      maxAge: 0
+    // ============================================================
+    // Clear the new name and old names for complete logout
+    // ============================================================
+    ['__Host-sb_session', COOKIE_NAME, 'sb-access-token', 'sb_session'].forEach((n) => {
+      const clearOpts = n.startsWith('__Host-')
+        ? { httpOnly: true, secure: true, sameSite: 'lax', path: '/' } // NO domain (spec requirement)
+        : { path: '/', domain: process.env.AUTH_COOKIE_DOMAIN || undefined };
+
+      res.clearCookie(n, clearOpts);
     });
 
     return res.json({ ok: true });
   } catch (error) {
+    console.error('[auth] clear-cookie exception:', error.message);
     return res.status(500).json({ 
       ok: false, 
       error: 'Failed to clear cookie' 
@@ -145,4 +155,3 @@ router.post('/clear-cookie', (req, res) => {
 });
 
 module.exports = router;
-

@@ -75,12 +75,19 @@ const CLOCK_SKEW_SEC = Number(process.env.JWT_CLOCK_SKEW_SEC || 60); // allow 60
 // HOW: Cookie name is configurable; default "sb_session" (Supabase new default).
 // ============================================================
 function readToken(req) {
+  // 1) Preferred: Authorization header
   const h = req.headers.authorization || '';
   const m = h.match(/^Bearer\s+(.+)$/i);
   if (m && m[1]) return m[1].trim();
 
+  // 2) Cookie fallback (env-driven + legacy for migration safety)
   const cookieName = process.env.AUTH_COOKIE_NAME || 'sb_session';
-  return req.cookies?.[cookieName] || null;
+  return (
+    req.cookies?.[cookieName] ||
+    req.cookies?.['sb-access-token'] || // legacy
+    req.cookies?.['sb_session'] ||      // legacy
+    null
+  );
 }
 
 // ============================================================

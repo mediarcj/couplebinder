@@ -20,6 +20,7 @@
 const express = require('express');
 const router = express.Router();
 const { verifyToken } = require('../middleware/auth/supabaseJwt');
+const { audit } = require('../lib/audit');
 
 // ============================================================
 // Configuration
@@ -77,6 +78,9 @@ router.post('/set-cookie', async (req, res) => {
       const code = verifyError?.code || 'verify_failed';
       console.warn('[auth] set-cookie rejected:', code);
       
+      // Audit log: failed cookie set
+      audit('auth.set_cookie.fail', { reason: code }, req);
+      
       return res.status(401).json({ 
         ok: false, 
         code: code,
@@ -106,6 +110,11 @@ router.post('/set-cookie', async (req, res) => {
       // Clear host-scoped variant (old deployments)
       res.clearCookie(n, { path: '/' });
     });
+
+    // ============================================================
+    // Audit log: successful cookie set
+    // ============================================================
+    audit('auth.set_cookie.ok', { ttl_ms: COOKIE_TTL_MS }, req);
 
     return res.json({ ok: true, userId: payload.sub });
   } catch (error) {
@@ -143,6 +152,11 @@ router.post('/clear-cookie', (req, res) => {
 
       res.clearCookie(n, clearOpts);
     });
+
+    // ============================================================
+    // Audit log: successful cookie clear
+    // ============================================================
+    audit('auth.clear_cookie.ok', {}, req);
 
     return res.json({ ok: true });
   } catch (error) {

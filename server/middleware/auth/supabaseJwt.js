@@ -19,6 +19,7 @@
  */
 
 const { createRemoteJWKSet, jwtVerify } = require('jose');
+const { audit } = require('../../lib/audit');
 
 // ============================================================
 // STEP 1: Read env (fail fast on missing core vars)
@@ -132,7 +133,12 @@ async function verifyToken(token) {
       aud: err?.payload?.aud
     };
     console.warn('[auth] JWT verification failed:', reason, JSON.stringify(meta));
-
+    
+    // ============================================================
+    // Audit log: JWT verification failure
+    // ============================================================
+    audit('auth.verify.fail', { reason, claim: err?.claim }, null);
+    
     // Return a generic error to client
     const clientErr = new Error('invalid_token');
     clientErr.code = reason;

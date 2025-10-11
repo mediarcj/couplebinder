@@ -1,0 +1,14 @@
+# File: server/public/robots.txt
+# Description: Allow all crawlers; remove 404 noise for /robots.txt
+# Notes: Console logs mark important checkpoints for audit and debugging
+# CAUSE: Crawlers and monitors request /robots.txt; your server returned 404s.
+# WHAT: Serve a simple, permissive robots.txt (and optionally advertise sitemap).
+# WHY: Prevents log noise and ensures search engines can crawl/index properly.
+# HOW: Place this file in the static assets directory already served by Express.
+
+User-agent: *
+Disallow:
+
+# If/when you have a sitemap, uncomment the next line:
+# Sitemap: https://detechify.com/sitemap.xml
+

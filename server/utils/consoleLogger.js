@@ -60,7 +60,7 @@ function sanitizeSensitiveValue(key, value) {
 /**
  * A single line we reuse to draw nice boxes in the terminal.
  */
-const LINE = '';
+const LINE = '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━';
 
 /**
  * Map some common HTTP codes to friendly labels.

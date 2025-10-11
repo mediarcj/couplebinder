@@ -53,14 +53,14 @@ function sanitizeSensitiveValue(key, value) {
 // If you ever need config values inside logs, you can import when needed.
 // const { config } = require('../config');
 
-// ───────────────────────────────────────────────────────────────────────────────
+// 
 // Shared helpers (kept tiny and explained)
-// ───────────────────────────────────────────────────────────────────────────────
+// 
 
 /**
  * A single line we reuse to draw nice boxes in the terminal.
  */
-const LINE = '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━';
+const LINE = '';
 
 /**
  * Map some common HTTP codes to friendly labels.
@@ -120,7 +120,7 @@ function formatTimestamp() {
 }
 
 /**
- * Light email masker so we don’t print full PII in logs.
+ * Light email masker so we dont print full PII in logs.
  * Example: "admin@example.com" -> "ad***@example.com"
  */
 function maskEmail(s = '') {
@@ -129,9 +129,9 @@ function maskEmail(s = '') {
   return s.slice(0, Math.min(2, at)) + '***' + s.slice(at);
 }
 
-// ───────────────────────────────────────────────────────────────────────────────
+// 
 // Request log block
-// ───────────────────────────────────────────────────────────────────────────────
+// 
 
 /**
  * Format request information for display.
@@ -177,9 +177,9 @@ function formatRequest(req, res, duration) {
   console.log(`${statusColor}${LINE}${resetColor}`);
 }
 
-// ───────────────────────────────────────────────────────────────────────────────
+// 
 // Domain event blocks (Auth, Security, DB, Errors, etc.)
-// ───────────────────────────────────────────────────────────────────────────────
+// 
 
 /**
  * Print an auth event.
@@ -472,9 +472,9 @@ function formatWarning(message, meta = {}) {
   console.log(`${LINE}`);
 }
 
-// ───────────────────────────────────────────────────────────────────────────────
+// 
 // Pretty-print structured JSON events like {"event":"auth.set_cookie.ok",...}
-// ───────────────────────────────────────────────────────────────────────────────
+// 
 
 /**
  * Use ISO timestamp from payload if present; fallback to "now".

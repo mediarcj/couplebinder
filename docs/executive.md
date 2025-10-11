@@ -55,8 +55,8 @@ You now have enterprise-grade, banking/military-level security across:
 | server/ejs/index.ejs | +1 nonce | Added nonce to Supabase CDN script |
 | server/ejs/profile-edit.ejs | +1 nonce | Added nonce to Supabase CDN script |
 | scripts/ moved to secrets/scripts/ | Moved | Repo cleanup |
-| secrets/scripts/*.sh | Emojis removed | Building Laws compliance |
-| secrets/scripts/README.md | Emojis removed | Building Laws compliance |
+| secrets/scripts/*.sh | Emojis removed | Code standards compliance |
+| secrets/scripts/README.md | Emojis removed | Code standards compliance |
 
 ---
 
@@ -703,8 +703,8 @@ module.exports = function trustProxyIp(app) {
 **Boot order documented in header:**
 
 ```
-Express → MethodGuard → SecurityHeaders → CORS → TrustProxy → 
-Parsers → CacheControl → Auth → CSRF → Routes → Errors
+Express  MethodGuard  SecurityHeaders  CORS  TrustProxy  
+Parsers  CacheControl  Auth  CSRF  Routes  Errors
 ```
 
 **Detailed Order:**
@@ -1124,7 +1124,7 @@ curl -i http://localhost:3000/
 # Look for: Set-Cookie: csrf_token=...
 
 # Check if header is sent
-# In browser DevTools → Network → Request Headers
+# In browser DevTools  Network  Request Headers
 # Should see: x-csrf-token: <token>
 ```
 
@@ -1433,7 +1433,7 @@ LOG_LEVEL=info                          # Default: info
 1. **SOC 2 compliance audit** - Third-party security assessment
 2. **Penetration testing** - Professional pen test
 3. **Bug bounty program** - Crowdsourced security testing
-4. **Migrate to Next.js** - Modern framework (as planned in Building Laws)
+4. **Migrate to Next.js** - Modern framework (as planned in frontend roadmap)
 
 ---
 
@@ -1496,26 +1496,26 @@ curl -I https://detechify.com/ | grep -i content-security
 
 ---
 
-## BUILDING LAWS COMPLIANCE
+## CODE QUALITY STANDARDS
 
-All 21 commits followed the Building Laws strictly:
+All 21 commits followed strict development standards:
 
-| Law | Compliance | Evidence |
-|-----|------------|----------|
-| Law 2 (Commits) | Pass | 21 focused commits, single sentences, no emojis |
-| Law 3 (One thing) | Pass | Each commit addresses one component |
-| Law 4 (Test first) | Pass | Server tested after each change |
-| Law 7 (Code style) | Pass | Simple names, clean logic |
-| Law 8 (Modular) | Pass | Each middleware self-contained |
-| Law 9 (Backend enforces) | Pass | All validation server-side |
-| Law 10-11 (Middleware) | Pass | Centralized, global application |
-| Law 12 (Boot order) | Pass | Strict order, documented |
-| Law 13 (Documentation) | Pass | WHAT/WHY/HOW format throughout |
-| Law 14 (No emojis) | Pass | Zero emojis anywhere |
-| Law 17 (Secrets) | Pass | All config from env |
-| Law 18 (Dependencies) | Pass | Added trusted libs: jose, sanitize-html |
-| Law 19 (Small changes) | Pass | Each commit ~30-110 lines |
-| Law 24 (Post-build check) | Pass | Multiple compliance reviews |
+| Standard | Compliance | Evidence |
+|----------|------------|----------|
+| Commit Quality | Pass | 21 focused commits, single sentences, clean messages |
+| Single Responsibility | Pass | Each commit addresses one component |
+| Testing | Pass | Server tested after each change |
+| Code Style | Pass | Simple names, clean logic |
+| Modularity | Pass | Each middleware self-contained |
+| Security First | Pass | All validation server-side |
+| Centralization | Pass | Centralized, global middleware |
+| Documentation | Pass | Strict order, well-documented |
+| Clear Headers | Pass | WHAT/WHY/HOW format throughout |
+| Professional | Pass | Clean, professional codebase |
+| Configuration | Pass | All config from env |
+| Dependencies | Pass | Added trusted libs: jose, sanitize-html |
+| Small Changes | Pass | Each commit ~30-110 lines |
+| Quality Checks | Pass | Multiple reviews and testing |
 
 ---
 

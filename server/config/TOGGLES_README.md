@@ -138,7 +138,7 @@ HTTP/1.1 404 Not Found
 [CORS-DEBUG] {"path":"/api/submissions","method":"POST","origin":"https://app.detechify.com"}
 ```
 
-**⚠️ Warning**: Very noisy. Only enable when actively debugging CORS issues.
+**WARNING**: Very noisy. Only enable when actively debugging CORS issues.
 
 ## Security Considerations
 
@@ -181,12 +181,3 @@ sudo journalctl -u detechify.service -f | grep CORS-DEBUG
 sudo systemctl unset-environment CORS_DEBUG
 sudo systemctl restart detechify.service
 ```
-
-## Building Laws Compliance
-
-✅ **Law #7**: Simple, readable code  
-✅ **Law #9**: Backend-enforced configuration  
-✅ **Law #11**: Centralized security and middleware  
-✅ **Law #17**: All config from environment variables  
-✅ **Law #26**: No concurrency issues (read-only at boot)
-

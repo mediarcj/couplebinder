@@ -210,8 +210,8 @@ consoleLogger.formatConfigSummary(config);
  *
  * HOW:
  * All database operations go through Supabase client which handles connectivity.
+ * Database info is now logged once in the configuration summary above.
  */
-console.log('Database: Supabase (HTTP API)');
 
 // ============================================================
 // STEP 3: Redis decommissioned  stateless auth enabled
@@ -249,7 +249,7 @@ console.log('Database: Supabase (HTTP API)');
 
 // HTTPS redirect middleware (for production behind Cloudflare)
 // NOTE: OPTIONS requests are handled by the preflight short-circuit at the top
-if (config.cors.enforceHttps) {
+if (config.security.enforceHttps) {
   app.use((req, res, next) => {
     // Trust proxy headers from Cloudflare
     const forwardedProto = req.get('x-forwarded-proto');
@@ -751,7 +751,7 @@ const server = app.listen(PORT, HOST, () => {
     host: HOST,
     port: PORT,
     nodeEnv: config.server.nodeEnv,
-    database: config.database.url ? 'Supabase PostgreSQL' : `${config.database.host}:${config.database.port}/${config.database.name}`,
+    database: config.database,  // pass provider-aware object
     rateLimit: 'handled at Cloudflare edge',
     textLimits: `${config.limits.textMinLength}-${config.limits.textMaxLength} chars`,
     maxSubmissions: config.limits.maxSubmissions

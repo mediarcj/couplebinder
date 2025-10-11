@@ -14,10 +14,14 @@
  * HOW:
  * We use simple blocks with clear labels. We avoid secrets/PII where possible.
  * We also fix small things like status labels and duration formatting.
- * 
+ *
  * SECURITY:
  * We filter out sensitive values like tokens, authorization headers, and auth cookies.
  */
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Sensitive value scrubbing
+// ──────────────────────────────────────────────────────────────────────────────
 
 /**
  * Sanitize sensitive values from logging
@@ -27,52 +31,43 @@
  */
 function sanitizeSensitiveValue(key, value) {
   if (!key || !value) return value;
-  
-  const lowerKey = key.toLowerCase();
+
+  const lowerKey = String(key).toLowerCase();
   const sensitiveKeys = [
     'authorization',
-    'sb-access-token',
-    'sb_access_token',
-    'access_token',
-    'refresh_token',
-    'password',
-    'secret',
-    'api_key',
-    'apikey'
+    'sb-access-token', 'sb_access_token',
+    'sb-refresh-token', 'sb_refresh_token',
+    'access_token', 'refresh_token',
+    'password', 'secret',
+    'api_key', 'apikey', 'service_role_key',
+    'jwt', 'jwt_secret'
   ];
-  
-  // Check if key contains any sensitive term
+
   if (sensitiveKeys.some(term => lowerKey.includes(term))) {
     return '[REDACTED]';
   }
-  
   return value;
 }
 
-// We do not import config here. This file only formats output.
-// If you ever need config values inside logs, you can import when needed.
-// const { config } = require('../config');
+// We do not import app config here; this module formats output.
+// If you pass us a config/serverInfo object, we’ll use it; otherwise we derive
+// safe fallbacks from process.env so we never print undefined.
 
-// 
+// ──────────────────────────────────────────────────────────────────────────────
 // Shared helpers (kept tiny and explained)
-// 
+// ──────────────────────────────────────────────────────────────────────────────
 
-/**
- * A single line we reuse to draw nice boxes in the terminal.
- */
+/** A single line we reuse to draw nice boxes in the terminal. */
 const LINE = '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━';
 
-/**
- * Map some common HTTP codes to friendly labels.
- * NOTE: 304 is "NOT MODIFIED", not a redirect. We fix that here.
- */
+/** Map some common HTTP codes to friendly labels. */
 const STATUS_LABELS = new Map([
   [200, 'SUCCESS'],
   [201, 'CREATED'],
   [204, 'NO CONTENT'],
   [301, 'MOVED PERMANENTLY'],
   [302, 'FOUND'],
-  [304, 'NOT MODIFIED'],        // correct label for 304
+  [304, 'NOT MODIFIED'],
   [307, 'TEMP REDIRECT'],
   [308, 'PERM REDIRECT'],
   [400, 'BAD REQUEST'],
@@ -84,10 +79,7 @@ const STATUS_LABELS = new Map([
   [500, 'SERVER ERROR']
 ]);
 
-/**
- * Turn a status code into a short label.
- * If we do not have an exact match, fall back to a range-based label.
- */
+/** Turn a status code into a short label. */
 function statusLabel(status) {
   if (STATUS_LABELS.has(status)) return STATUS_LABELS.get(status);
   if (status >= 200 && status < 300) return 'SUCCESS';
@@ -97,11 +89,7 @@ function statusLabel(status) {
   return 'UNKNOWN';
 }
 
-/**
- * Make sure duration always prints once like "12ms" (no "msms").
- * - If a number comes in, clamp to a non-negative integer and add "ms".
- * - If a string comes in, remove any double "ms".
- */
+/** Ensure duration prints like "12ms" (no "msms"). */
 function formatDurationMs(val) {
   if (typeof val === 'number' && isFinite(val)) {
     return `${Math.max(0, Math.round(val))}ms`;
@@ -112,39 +100,109 @@ function formatDurationMs(val) {
   return 'unknown';
 }
 
-/**
- * A simple human timestamp for the terminal.
- */
+/** Human timestamp for terminal. */
 function formatTimestamp() {
   return new Date().toLocaleString();
 }
 
-/**
- * Light email masker so we dont print full PII in logs.
- * Example: "admin@example.com" -> "ad***@example.com"
- */
+/** Light email masker so we do not print full PII in logs. */
 function maskEmail(s = '') {
   const at = s.indexOf('@');
   if (at <= 1) return '***';
   return s.slice(0, Math.min(2, at)) + '***' + s.slice(at);
 }
 
-// 
+// ──────────────────────────────────────────────────────────────────────────────
+// DB summarization (provider-aware, with safe fallbacks)
+// ──────────────────────────────────────────────────────────────────────────────
+
+function int(v, def) {
+  const n = Number.parseInt(v, 10);
+  return Number.isFinite(n) ? n : def;
+}
+
+/**
+ * Best-effort provider normalization.
+ */
+function normalizeProvider(p) {
+  const s = (p || process.env.DB_PROVIDER || 'supabase-http').toLowerCase();
+  if (s === 'postgres' || s === 'postgresql') return 'postgres';
+  return s; // 'supabase-http' or anything else -> we’ll still be safe
+}
+
+/**
+ * Parse DB host/port/name from env if they’re not provided by caller.
+ * - For Supabase HTTP: derive host/port/name from SUPABASE_URL.
+ * - For Postgres: use SUPABASE_DB_URL/DATABASE_URL if present; else DB_* trio.
+ */
+function parseDbFromEnv(provider) {
+  provider = normalizeProvider(provider);
+
+  try {
+    if (provider === 'supabase-http') {
+      const supa = process.env.SUPABASE_URL;
+      if (supa) {
+        const u = new URL(supa);
+        const host = u.host || 'unknown';
+        const port = u.port ? int(u.port, 443) : (u.protocol === 'https:' ? 443 : 80);
+        const name = (host.split('.')[0] || 'supabase');
+        return { host, port, name, provider };
+      }
+      // No SUPABASE_URL—fall back to "unknown" but keep valid numbers/strings.
+      return { host: 'unknown', port: 443, name: 'supabase', provider };
+    }
+
+    // postgres
+    const url = process.env.SUPABASE_DB_URL || process.env.DATABASE_URL;
+    if (url) {
+      const u = new URL(url);
+      const host = u.hostname || 'localhost';
+      const port = u.port ? int(u.port, 5432) : 5432;
+      const name = (u.pathname || '/').replace(/^\//, '') || process.env.DB_NAME || 'postgres';
+      return { host, port, name, provider: 'postgres' };
+    }
+    // discrete vars
+    return {
+      host: process.env.DB_HOST || 'localhost',
+      port: int(process.env.DB_PORT, 5432),
+      name: process.env.DB_NAME || 'postgres',
+      provider: 'postgres'
+    };
+  } catch {
+    // Never crash log formatting
+    if (provider === 'supabase-http') {
+      return { host: 'unknown', port: 443, name: 'supabase', provider };
+    }
+    return { host: 'localhost', port: 5432, name: 'postgres', provider: 'postgres' };
+  }
+}
+
+/**
+ * Build a human-readable DB summary string, with safe fallbacks:
+ *   "<host>:<port>/<name> — <flavor>"
+ * where flavor is "Supabase (HTTP API)" or "PostgreSQL".
+ *
+ * @param {object} db - e.g. { provider, host, port, name, url }
+ * @returns {string}
+ */
+function summarizeDb(db = {}) {
+  const provider = normalizeProvider(db.provider);
+  const envParts = parseDbFromEnv(provider);
+
+  const host = db.host || envParts.host;
+  const port = Number.isFinite(db.port) ? db.port : envParts.port;
+  const name = db.name || envParts.name;
+
+  const flavor = provider === 'supabase-http' ? 'Supabase (HTTP API)' : 'PostgreSQL';
+  return `${host}:${port}/${name} — ${flavor}`;
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
 // Request log block
-// 
+// ──────────────────────────────────────────────────────────────────────────────
 
 /**
  * Format request information for display.
- *
- * WHAT:
- * Shows method, path, status, duration, request id, client IP, and timestamp.
- *
- * WHY:
- * This is the basic "who hit what" line you look at first.
- *
- * HOW:
- * We color by status range, add a correct label, and make the duration clean.
- *
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
  * @param {number|string} duration - Request duration in ms
@@ -155,7 +213,7 @@ function formatRequest(req, res, duration) {
   const url = req.originalUrl || req.url;
   const requestId = req.requestId || 'unknown';
 
-  // Color coding by status range
+  // Color by status range
   let statusColor = '';
   if (status >= 200 && status < 300) statusColor = '\x1b[32m';      // Green
   else if (status >= 300 && status < 400) statusColor = '\x1b[33m'; // Yellow
@@ -177,25 +235,10 @@ function formatRequest(req, res, duration) {
   console.log(`${statusColor}${LINE}${resetColor}`);
 }
 
-// 
+// ──────────────────────────────────────────────────────────────────────────────
 // Domain event blocks (Auth, Security, DB, Errors, etc.)
-// 
+// ──────────────────────────────────────────────────────────────────────────────
 
-/**
- * Print an auth event.
- *
- * WHAT:
- * Login, logout, token refresh, etc.
- *
- * WHY:
- * Auth flows are sensitive. We want a clean, short record.
- *
- * HOW:
- * We show event name, optional masked user, outcome, request id, ip, time.
- *
- * @param {string} event - Event type
- * @param {Object} meta - { requestId, ip, outcome, user }
- */
 function formatAuthEvent(event, meta = {}) {
   const requestId = meta.requestId || 'system';
   const ip = meta.ip || 'unknown';
@@ -213,21 +256,6 @@ function formatAuthEvent(event, meta = {}) {
   console.log(`${LINE}`);
 }
 
-/**
- * Print a security event.
- *
- * WHAT:
- * Things like blocked actions, policy checks, clearance events, etc.
- *
- * WHY:
- * Security events deserve their own box so they do not get lost.
- *
- * HOW:
- * Keep it short. Do not leak secrets or internal keys here.
- *
- * @param {string} event - Security event type
- * @param {Object} meta - { requestId, ip }
- */
 function formatSecurityEvent(event, meta = {}) {
   const requestId = meta.requestId || 'system';
   const ip = meta.ip || 'unknown';
@@ -241,22 +269,6 @@ function formatSecurityEvent(event, meta = {}) {
   console.log(`${LINE}`);
 }
 
-/**
- * Print a database operation summary.
- *
- * WHAT:
- * Show which table and which type of query ran, with duration.
- *
- * WHY:
- * Useful to spot slow spots and to trace high-level DB activity.
- *
- * HOW:
- * We do not print SQL or secrets. Just operation, table, time, request id.
- *
- * @param {string} operation - SELECT/INSERT/UPDATE/DELETE
- * @param {string} table - Table name
- * @param {Object} meta - { requestId, duration }
- */
 function formatDatabaseOperation(operation, table, meta = {}) {
   const requestId = meta.requestId || 'system';
   const duration = formatDurationMs(meta.duration);
@@ -271,21 +283,6 @@ function formatDatabaseOperation(operation, table, meta = {}) {
   console.log(`${LINE}`);
 }
 
-/**
- * Print an error block.
- *
- * WHAT:
- * A short error summary you can read quickly.
- *
- * WHY:
- * When things go wrong, you want the message and a little context.
- *
- * HOW:
- * Avoid dumping giant stacks by default. Keep it short unless debugging.
- *
- * @param {string} message - Error message
- * @param {Object} meta - { requestId, error }
- */
 function formatError(message, meta = {}) {
   const requestId = meta.requestId || 'system';
   const error = meta.error || 'No details available';
@@ -299,12 +296,6 @@ function formatError(message, meta = {}) {
   console.log(`${LINE}`);
 }
 
-/**
- * Print a plain info block.
- *
- * @param {string} message - Info message
- * @param {Object} meta - { requestId }
- */
 function formatInfo(message, meta = {}) {
   const requestId = meta.requestId || 'system';
 
@@ -316,23 +307,39 @@ function formatInfo(message, meta = {}) {
   console.log(`${LINE}`);
 }
 
+// ──────────────────────────────────────────────────────────────────────────────
+// Startup/config summaries (provider-aware & discrepancy-proof)
+// ──────────────────────────────────────────────────────────────────────────────
+
 /**
  * Print server startup info once the app is ready.
  *
- * @param {Object} serverInfo - {
- *   host, port, nodeEnv, database, rateLimit, textLimits, maxSubmissions
- * }
+ * @param {Object} serverInfo
+ *   {
+ *     host, port, nodeEnv,
+ *     database: { provider, host, port, name }  // optional
+ *     databaseSummary: string                    // optional (overrides)
+ *     rateLimit, textLimits, maxSubmissions
+ *   }
  */
-function formatServerStartup(serverInfo) {
+function formatServerStartup(serverInfo = {}) {
+  const dbSummary = serverInfo.databaseSummary || summarizeDb(serverInfo.database || {});
+
+  const rate = serverInfo.rateLimit || 'handled at Cloudflare edge';
+  const textLimits = serverInfo.textLimits || 'unknown';
+  const maxSubs = (typeof serverInfo.maxSubmissions !== 'undefined')
+    ? serverInfo.maxSubmissions
+    : 'unknown';
+
   console.log(`\n${process.env.APP_NAME || 'APPLICATION'} SERVER STARTING`);
   console.log(`${LINE}`);
   console.log(`Server: ${serverInfo.host}:${serverInfo.port}`);
   console.log(`Environment: ${serverInfo.nodeEnv}`);
-  console.log(`Database: Supabase PostgreSQL`);
+  console.log(`Database: ${dbSummary}`);
   console.log(`Auth: Stateless (Supabase RS256 + JWKS)`);
-  console.log(`Rate Limiting: ${serverInfo.rateLimit}`);
-  console.log(`Text Limits: ${serverInfo.textLimits}`);
-  console.log(`Max Submissions: ${serverInfo.maxSubmissions}`);
+  console.log(`Rate Limiting: ${rate}`);
+  console.log(`Text Limits: ${textLimits}`);
+  console.log(`Max Submissions: ${maxSubs}`);
   console.log(`${LINE}`);
   console.log(`Server startup completed successfully`);
   console.log(`Started at: ${formatTimestamp()}`);
@@ -341,32 +348,36 @@ function formatServerStartup(serverInfo) {
 /**
  * Print a short config summary at boot.
  *
- * @param {Object} config - full app config object
+ * @param {Object} config
+ *   {
+ *     server: { host, port, nodeEnv },
+ *     database: { provider, host, port, name },
+ *     limits: { textMinLength, textMaxLength, maxSubmissions }
+ *   }
  */
-function formatConfigSummary(config) {
+function formatConfigSummary(config = {}) {
+  const dbSummary = summarizeDb(config.database || {});
+  const minLen = config?.limits?.textMinLength ?? 'unknown';
+  const maxLen = config?.limits?.textMaxLength ?? 'unknown';
+  const maxSubs = config?.limits?.maxSubmissions ?? 'unknown';
+
   console.log(`\nCONFIGURATION LOADED`);
-  console.log(`   Server: ${config.server.host}:${config.server.port} (${config.server.nodeEnv})`);
-  console.log(`   Database: ${config.database.host}:${config.database.port}/${config.database.name}`);
-  console.log(`   Auth: Stateless (Supabase)`);
-  console.log(`   Rate Limiting: ${config.rateLimit ? 'enabled' : 'disabled'}`);
-  console.log(`   Text Limits: ${config.limits.textMinLength}-${config.limits.textMaxLength} chars`);
-  console.log(`   Max Submissions: ${config.limits.maxSubmissions}`);
+  console.log(`   Server: ${config?.server?.host}:${config?.server?.port} (${config?.server?.nodeEnv})`);
+  console.log(`   Database: ${dbSummary}`);
+  console.log(`   Auth: Stateless (Supabase RS256 + JWKS)`);
+  console.log(`   Rate Limiting: handled at Cloudflare edge`);
+  console.log(`   Text Limits: ${minLen}-${maxLen} chars`);
+  console.log(`   Max Submissions: ${maxSubs}`);
 }
 
-/**
- * Print a one-line note when we register a middleware.
- *
- * @param {string} middleware - name of the middleware
- */
+// ──────────────────────────────────────────────────────────────────────────────
+// Other operational blocks
+// ──────────────────────────────────────────────────────────────────────────────
+
 function formatMiddlewareRegistration(middleware) {
   console.log(`${middleware} registered`);
 }
 
-/**
- * Print a small block when we start a graceful shutdown.
- *
- * @param {string} signal - the signal received (e.g., SIGTERM)
- */
 function formatGracefulShutdown(signal) {
   console.log(`\nGRACEFUL SHUTDOWN INITIATED`);
   console.log(`   Signal: ${signal}`);
@@ -374,14 +385,6 @@ function formatGracefulShutdown(signal) {
   console.log(`   Shutting down gracefully...`);
 }
 
-/**
- * Print cookie parsing info.
- *
- * WHAT:
- * Just the count. No cookie values, no secrets.
- *
- * @param {Object} meta - { count }
- */
 function formatCookieParsing(meta = {}) {
   const count = meta.count || 0;
 
@@ -393,15 +396,6 @@ function formatCookieParsing(meta = {}) {
   console.log(`${LINE}`);
 }
 
-/**
- * Print CSRF token events.
- *
- * WHAT:
- * When a token is generated or validated.
- *
- * @param {string} action - "generated" | "validated"
- * @param {Object} meta - { requestId }
- */
 function formatCSRFToken(action, meta = {}) {
   const requestId = meta.requestId || 'system';
 
@@ -413,18 +407,6 @@ function formatCSRFToken(action, meta = {}) {
   console.log(`${LINE}`);
 }
 
-/**
- * Print security clearance events.
- *
- * WHAT:
- * Admin things like "cleared failed attempts".
- *
- * HOW:
- * Mask email if present. Never dump secrets.
- *
- * @param {string} event
- * @param {Object} meta - { user, ip }
- */
 function formatSecurityClearance(event, meta = {}) {
   const userMasked = meta.user ? maskEmail(meta.user) : 'unknown';
   const ip = meta.ip || 'unknown';
@@ -438,12 +420,6 @@ function formatSecurityClearance(event, meta = {}) {
   console.log(`${LINE}`);
 }
 
-/**
- * Print session events like "saved" or "destroyed".
- *
- * @param {string} action
- * @param {Object} meta - { requestId }
- */
 function formatSessionEvent(action, meta = {}) {
   const requestId = meta.requestId || 'system';
 
@@ -455,12 +431,6 @@ function formatSessionEvent(action, meta = {}) {
   console.log(`${LINE}`);
 }
 
-/**
- * Print a warning block.
- *
- * @param {string} message
- * @param {Object} meta - { requestId }
- */
 function formatWarning(message, meta = {}) {
   const requestId = meta.requestId || 'system';
 
@@ -472,13 +442,10 @@ function formatWarning(message, meta = {}) {
   console.log(`${LINE}`);
 }
 
-// 
+// ──────────────────────────────────────────────────────────────────────────────
 // Pretty-print structured JSON events like {"event":"auth.set_cookie.ok",...}
-// 
+// ──────────────────────────────────────────────────────────────────────────────
 
-/**
- * Use ISO timestamp from payload if present; fallback to "now".
- */
 function formatIsoTimestamp(isoLike) {
   try {
     if (!isoLike) return formatTimestamp();
@@ -490,9 +457,6 @@ function formatIsoTimestamp(isoLike) {
   }
 }
 
-/**
- * Turn ms into "Xd Yh Zm Ws (NNN ms)".
- */
 function formatTtlMs(ms) {
   const n = Number(ms);
   if (!Number.isFinite(n)) return String(ms);
@@ -550,17 +514,13 @@ function formatAuthCookieEvent(payload = {}) {
   console.log(`${LINE}`);
 }
 
-/**
- * Generic pretty printer for future JSON events.
- * For now we special-case auth cookie events and fall back to a neutral box.
- */
+/** Generic pretty printer for future JSON events. */
 function formatJsonEvent(payload = {}) {
   const { event = '' } = payload;
   if (event.startsWith('auth.set_cookie') || event.startsWith('auth.clear_cookie')) {
     return formatAuthCookieEvent(payload);
   }
 
-  // Fallback generic box (keeps style)
   console.log(`\n${LINE}`);
   console.log(`EVENT`);
   console.log(`   Type: ${payload.event || 'unknown'}`);
@@ -628,24 +588,42 @@ function installJsonLogShim(options = {}) {
   }
 }
 
+// ──────────────────────────────────────────────────────────────────────────────
+// Exports
+// ──────────────────────────────────────────────────────────────────────────────
+
 module.exports = {
+  // Request
   formatRequest,
+
+  // Domain/event blocks
   formatAuthEvent,
   formatSecurityEvent,
   formatDatabaseOperation,
   formatError,
   formatInfo,
+  formatWarning,
+
+  // Startup/config summaries
   formatServerStartup,
   formatConfigSummary,
+
+  // Ops lifecycle
   formatMiddlewareRegistration,
   formatGracefulShutdown,
+
+  // Cookie/CSRF/session/security extras
   sanitizeSensitiveValue,
   formatCookieParsing,
   formatCSRFToken,
   formatSecurityClearance,
   formatSessionEvent,
-  formatWarning,
+
+  // Structured JSON events
   formatAuthCookieEvent,
   formatJsonEvent,
-  installJsonLogShim
+  installJsonLogShim,
+
+  // Useful helper (optional import by callers)
+  summarizeDb,
 };

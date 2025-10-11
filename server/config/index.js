@@ -3,6 +3,7 @@
 // Notes: Validates required environment variables and provides defaults
 
 const path = require('path');
+const { formatConfigSummary } = require('../utils/consoleLogger');
 
 // Load .env from project root (works in dev; in prod systemd injects EnvironmentFile too)
 require('dotenv').config({ path: path.join(__dirname, '../../.env') });
@@ -212,20 +213,9 @@ if (validationErrors.length > 0) {
 }
 
 // Log configuration summary (without secrets)
+// Delegates to consoleLogger so there's only one accurate "Database:" line
 function logConfigSummary() {
-  const providerPretty =
-    config.database.provider === 'supabase-http'
-      ? 'Supabase (HTTP API)'
-      : 'PostgreSQL';
-
-  console.log('CONFIGURATION LOADED');
-  console.log(`   Server: ${config.server.host}:${config.server.port} (${config.server.nodeEnv})`);
-  console.log(`   Database: ${config.database.host}:${config.database.port}/${config.database.name}`);
-  console.log(`   Auth: Stateless (Supabase RS256 + JWKS)`);
-  console.log(`   Rate Limiting: handled at Cloudflare edge`);
-  console.log(`   Text Limits: ${config.limits.textMinLength}-${config.limits.textMaxLength} chars`);
-  console.log(`   Max Submissions: ${config.limits.maxSubmissions}`);
-  console.log(`Database: ${providerPretty}`);
+  formatConfigSummary(config);
 }
 
 module.exports = {

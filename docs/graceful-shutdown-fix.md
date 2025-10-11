@@ -40,9 +40,9 @@ GRACEFUL SHUTDOWN INITIATED
    Shutting down gracefully...
 HTTP server closed
 All active connections closed
-Shutdown already in progress, forcing exit  ← DUPLICATE SIGNAL
+Shutdown already in progress, forcing exit   DUPLICATE SIGNAL
 Graceful shutdown completed
-npm ERR! code 1  ← NON-ZERO EXIT CODE
+npm ERR! code 1   NON-ZERO EXIT CODE
 npm ERR! path /opt/detechify/server
 npm ERR! command failed
 ```
@@ -77,7 +77,7 @@ process.on('SIGINT', () => gracefulShutdown('SIGINT', 0));
 function gracefulShutdown(signal, code = 0) {
   if (isShuttingDown) {
     console.log('Shutdown already in progress, forcing exit');
-    process.exit(1);  ← EXITS WITH CODE 1!
+    process.exit(1);   EXITS WITH CODE 1!
   }
   // ...
 }
@@ -97,7 +97,7 @@ function gracefulShutdown(signal, code = 0) {
 // Line 805-808 (timeout handler)
 shutdownTimeout = setTimeout(() => {
   console.error('Graceful shutdown timeout reached, forcing exit');
-  process.exit(1);  ← EXITS WITH CODE 1!
+  process.exit(1);   EXITS WITH CODE 1!
 }, 30000);
 ```
 
@@ -112,23 +112,23 @@ shutdownTimeout = setTimeout(() => {
 
 ```
 1. systemd sends SIGTERM
-   → process.on('SIGTERM') fires
-   → gracefulShutdown('SIGTERM', 0) called
-   → isShuttingDown = true
-   → server.close() initiated
+    process.on('SIGTERM') fires
+    gracefulShutdown('SIGTERM', 0) called
+    isShuttingDown = true
+    server.close() initiated
 
 2. (Slow shutdown, takes 5 seconds)
 
 3. systemd sends second SIGTERM (impatient)
-   → process.on('SIGTERM') fires again (not .once!)
-   → gracefulShutdown('SIGTERM', 0) called again
-   → isShuttingDown already true
-   → Logs: "Shutdown already in progress, forcing exit"
-   → process.exit(1)  ← PROBLEM!
+    process.on('SIGTERM') fires again (not .once!)
+    gracefulShutdown('SIGTERM', 0) called again
+    isShuttingDown already true
+    Logs: "Shutdown already in progress, forcing exit"
+    process.exit(1)   PROBLEM!
 
 4. systemd sees exit code 1
-   → Marks restart as "failed"
-   → Logs error to journal
+    Marks restart as "failed"
+    Logs error to journal
 ```
 
 ---
@@ -197,7 +197,7 @@ function gracefulShutdown(signal) {
 - If duplicate signal somehow arrives, just log and return
 - Don't call `exit(1)` - that makes systemd think it failed
 - First shutdown handler (via `process.once`) will complete normally
-- Renamed `isShuttingDown` → `shuttingDown` for consistency
+- Renamed `isShuttingDown`  `shuttingDown` for consistency
 
 ---
 
@@ -223,7 +223,7 @@ setTimeout(() => {
 - Timeout is not a failure - it's a safety mechanism
 - Long-running requests are acceptable during shutdown
 - Exiting with code 0 tells systemd "clean restart"
-- Changed `console.error` → `console.warn` (not an error)
+- Changed `console.error`  `console.warn` (not an error)
 - Added `.unref()` so timer doesn't keep process alive
 
 ---
@@ -299,23 +299,23 @@ setTimeout(() => {
 server.close((err) => {
   if (err) {
     console.error('HTTP server close error:', err);
-    process.exit(0);  // ← exit(0) even on error
+    process.exit(0);  //  exit(0) even on error
     return;
   }
   console.log('Graceful shutdown completed');
-  process.exit(0);  // ← exit(0) on success
+  process.exit(0);  //  exit(0) on success
 });
 
 // Path 2: Timeout
 setTimeout(() => {
   console.warn('Graceful shutdown timeout reached, forcing exit');
-  process.exit(0);  // ← exit(0) on timeout
+  process.exit(0);  //  exit(0) on timeout
 }, GRACE_MS).unref();
 
 // Path 3: Duplicate signal (won't reach exit now)
 if (shuttingDown) {
   console.log('Shutdown already in progress (ignored duplicate signal)');
-  return;  // ← Just return, don't exit
+  return;  //  Just return, don't exit
 }
 ```
 
@@ -465,7 +465,7 @@ kill -TERM <pid>
 function gracefulShutdown(signal, code = 0) {
   if (isShuttingDown) {
     console.log('Shutdown already in progress, forcing exit');
-    process.exit(1);  ← PROBLEM
+    process.exit(1);   PROBLEM
   }
   // ...
 }
@@ -480,11 +480,11 @@ function gracefulShutdown(signal, code = 0) {
 **systemd Behavior:**
 ```
 TimeoutStopSec=90s (default)
-→ Send SIGTERM
-→ Wait 2 seconds
-→ If still running, send SIGTERM again
-→ Wait 2 seconds
-→ Repeat until timeout or process exits
+ Send SIGTERM
+ Wait 2 seconds
+ If still running, send SIGTERM again
+ Wait 2 seconds
+ Repeat until timeout or process exits
 ```
 
 **Result:** Second SIGTERM almost always hits duplicate check.
@@ -497,7 +497,7 @@ TimeoutStopSec=90s (default)
 ```javascript
 shutdownTimeout = setTimeout(() => {
   console.error('Graceful shutdown timeout reached, forcing exit');
-  process.exit(1);  ← PROBLEM
+  process.exit(1);   PROBLEM
 }, 30000);
 ```
 
@@ -641,7 +641,7 @@ setTimeout(() => {
 ```
 
 **Benefits:**
-- Much simpler (8 lines → 3 lines)
+- Much simpler (8 lines  3 lines)
 - More reliable (no Promise.all edge cases)
 - Happens automatically after SOCKET_CULL_MS
 - Errors caught gracefully
@@ -682,7 +682,7 @@ GRACEFUL SHUTDOWN INITIATED
 HTTP server closed
 All active connections closed
 Graceful shutdown completed
-Exit code: 0  ← SUCCESS
+Exit code: 0   SUCCESS
 ```
 
 ---
@@ -717,7 +717,7 @@ GRACEFUL SHUTDOWN INITIATED
 Shutdown already in progress (ignored duplicate signal)
 HTTP server closed
 Graceful shutdown completed
-Exit code: 0  ← SUCCESS
+Exit code: 0   SUCCESS
 ```
 
 ---
@@ -740,7 +740,7 @@ Exit code: 1
 GRACEFUL SHUTDOWN INITIATED
 (15 seconds pass)
 Graceful shutdown timeout reached, forcing exit
-Exit code: 0  ← SUCCESS (not marked as failure)
+Exit code: 0   SUCCESS (not marked as failure)
 ```
 
 ---
@@ -837,28 +837,28 @@ Environment="SHUTDOWN_GRACE_MS=20000"
 
 **Specific Changes:**
 - Added GRACE_MS, SOCKET_CULL_MS constants
-- Renamed isShuttingDown → shuttingDown
-- Renamed activeConnections → sockets
+- Renamed isShuttingDown  shuttingDown
+- Renamed activeConnections  sockets
 - Simplified socket tracking (removed complex logic)
-- Changed all exit(1) → exit(0) in shutdown paths
-- Changed process.on → process.once for signals
+- Changed all exit(1)  exit(0) in shutdown paths
+- Changed process.on  process.once for signals
 - Removed finalizeShutdown() function (merged into main function)
 - Removed shutdownTimeout variable (use inline setTimeout)
 - Added .unref() to timers
 
 ---
 
-## BUILDING LAWS COMPLIANCE
+## CODE QUALITY COMPLIANCE
 
-| Law | Compliance | Evidence |
-|-----|------------|----------|
-| Law 3 | One thing at a time | Single focused fix: graceful shutdown |
-| Law 4 | Test first | Server tested, shutdown tested with SIGTERM |
-| Law 7 | Code style | Simpler, cleaner shutdown logic |
-| Law 13 | Documentation | Clear WHAT/WHY/HOW comments |
-| Law 14 | No emojis | Zero emojis |
-| Law 17 | Secrets from env | SHUTDOWN_GRACE_MS configurable |
-| Law 19 | Small changes | 1 file, ~40 lines modified |
+| Standard | Compliance | Evidence |
+|----------|------------|----------|
+| Single Responsibility | Pass | Single focused fix: graceful shutdown |
+| Testing | Pass | Server tested, shutdown tested with SIGTERM |
+| Code Style | Pass | Simpler, cleaner shutdown logic |
+| Documentation | Pass | Clear WHAT/WHY/HOW comments |
+| Professional | Pass | Clean, professional code |
+| Configuration | Pass | SHUTDOWN_GRACE_MS configurable |
+| Small Changes | Pass | 1 file, ~40 lines modified |
 
 ---
 

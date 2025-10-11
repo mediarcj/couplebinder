@@ -53,7 +53,7 @@ curl -i -X POST https://detechify.com/auth/set-cookie \
 
 **Step 2: Verify Cookie is Sent to Server**
 ```bash
-# Browser DevTools → Application → Cookies
+# Browser DevTools  Application  Cookies
 # Shows: __Host-sb_session with correct value
 ```
 **Conclusion:** Browser stores and sends cookie correctly.
@@ -91,25 +91,25 @@ function readAccessToken(req) {
 ```
 1. User logs in
 2. POST /auth/set-cookie
-   → Verifies JWT
-   → Sets cookie: __Host-sb_session=TOKEN
-   → Returns: {"ok":true,"userId":"..."}
+    Verifies JWT
+    Sets cookie: __Host-sb_session=TOKEN
+    Returns: {"ok":true,"userId":"..."}
 
 3. Browser navigates to /dashboard
-   → Sends cookie: __Host-sb_session=TOKEN
+    Sends cookie: __Host-sb_session=TOKEN
    
 4. Server middleware chain:
-   → cookieParser: parses cookie into req.cookies['__Host-sb_session']
-   → authBridge: reads req.cookies['sb-access-token'] ← NOT FOUND!
-   → authBridge: token = null
-   → authBridge: req.user = null
-   → requireAuth: sees req.user = null
-   → requireAuth: redirects to /login?next=%2Fdashboard
+    cookieParser: parses cookie into req.cookies['__Host-sb_session']
+    authBridge: reads req.cookies['sb-access-token']  NOT FOUND!
+    authBridge: token = null
+    authBridge: req.user = null
+    requireAuth: sees req.user = null
+    requireAuth: redirects to /login?next=%2Fdashboard
 
 5. Frontend (main.js):
-   → supabase.auth.getSession() returns session (from localStorage)
-   → Shows "Logout" button
-   → But server doesn't recognize user!
+    supabase.auth.getSession() returns session (from localStorage)
+    Shows "Logout" button
+    But server doesn't recognize user!
 ```
 
 **Conclusion:** Cookie name mismatch prevents server from reading the auth cookie.
@@ -356,12 +356,12 @@ curl -s -b "__Host-sb_session=VALID_TOKEN" http://localhost:3000/api/auth/whoami
    Parses into: req.cookies['__Host-sb_session'] = TOKEN
    
 4. authBridge middleware
-   Looks for: req.cookies['sb-access-token']  ← NOT FOUND
+   Looks for: req.cookies['sb-access-token']   NOT FOUND
    Result: token = null
    Result: req.user = null
    
 5. requireAuth middleware
-   Checks: req.user?.id  ← null
+   Checks: req.user?.id   null
    Action: Redirect to /login?next=%2Fdashboard
    
 6. User sees login page (broken!)
@@ -384,13 +384,13 @@ curl -s -b "__Host-sb_session=VALID_TOKEN" http://localhost:3000/api/auth/whoami
    
 4. authBridge middleware (FIXED)
    cookieName = process.env.AUTH_COOKIE_NAME || 'sb_session'
-   Looks for: req.cookies['__Host-sb_session']  ← FOUND!
+   Looks for: req.cookies['__Host-sb_session']   FOUND!
    Result: token = TOKEN
    Verifies JWT: payload = {...}
    Result: req.user = { id, email, role }
    
 5. requireAuth middleware
-   Checks: req.user?.id  ← has value
+   Checks: req.user?.id   has value
    Action: next() (allow access)
    
 6. Dashboard route handler
@@ -576,7 +576,7 @@ Configuration module loaded successfully
 CSRF middleware loaded successfully
 ...
 Auth API routes loaded successfully
-Auth debug routes loaded (AUTH_DEBUG=true)  ← NEW
+Auth debug routes loaded (AUTH_DEBUG=true)   NEW
 ...
 Server startup completed successfully
 ```
@@ -659,7 +659,7 @@ curl -s http://localhost:3000/api/auth/whoami
 **Step 3: Login and get real token (browser)**
 1. Open http://localhost:3000
 2. Login with valid credentials
-3. Open DevTools → Application → Cookies
+3. Open DevTools  Application  Cookies
 4. Copy value of sb_session or __Host-sb_session
 
 **Step 4: Test with cookie**
@@ -807,7 +807,7 @@ sudo journalctl -u detechify.service -f | grep auth.debug
 
 **Problem:** Unit testing each piece doesn't catch integration issues.
 
-**Lesson:** Test the complete user flow (login → navigate → access protected route).
+**Lesson:** Test the complete user flow (login  navigate  access protected route).
 
 **Applied:** Testing now includes:
 1. Set cookie (POST /auth/set-cookie)
@@ -903,7 +903,7 @@ server/zorvalon.js              |  9 ++++++++
 ### Recommended (Next Sprint):
 
 1. **Add integration test**
-   - Automated test: login → get cookie → access dashboard
+   - Automated test: login  get cookie  access dashboard
    - Verifies end-to-end flow
    - Catches regressions early
 
@@ -939,11 +939,11 @@ Updated authBridge.js to read cookie name from AUTH_COOKIE_NAME environment vari
 - No redirect loop
 - Debug tools available for future troubleshooting
 - Zero security regression
-- Building Laws compliance maintained
+- Code quality standards maintained
 
 ---
 
-**Laws check: OK**
+**Quality check: OK**
 
-This fix restores cookie-based authentication while maintaining all security improvements and following the Building Laws strictly.
+This fix restores cookie-based authentication while maintaining all security improvements and following strict development standards.
 

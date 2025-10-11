@@ -231,7 +231,7 @@ async function buildDashboardPageModel(req, res) {
       title: `Dashboard - ${process.env.APP_NAME || 'Application'}`,
       description: 'User dashboard and controls',
       type: 'dashboard',
-      nonce: res.locals.nonce || ''   // ← ensure CSP nonce for dashboard.ejs
+      nonce: res.locals.nonce || ''   //  ensure CSP nonce for dashboard.ejs
     },
     user,
     ui_instructions: {

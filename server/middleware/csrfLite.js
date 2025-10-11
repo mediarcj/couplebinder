@@ -1,6 +1,6 @@
 /**
  * File: server/middleware/csrfLite.js
- * Description: Smart CSRF protection — enforce for cookie-based mutations, skip for Bearer
+ * Description: Smart CSRF protection  enforce for cookie-based mutations, skip for Bearer
  *
  * WHAT:
  * Double-submit cookie: we set a readable CSRF cookie and require clients to echo it

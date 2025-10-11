@@ -5,10 +5,10 @@
  *
  * ============================================================
  * WHAT
- * Validate Supabase Auth tokens on the server using Supabase’s JWKS (public keys).
+ * Validate Supabase Auth tokens on the server using Supabases JWKS (public keys).
  *
  * WHY
- * The browser is not trusted. Every protected route must verify the token’s signature and claims.
+ * The browser is not trusted. Every protected route must verify the tokens signature and claims.
  *
  * HOW
  * 1) Build a JWKS URL for this project.
@@ -152,7 +152,7 @@ async function verifyToken(token) {
 // ------------------------------------------------------------
 // WHAT: Require a valid Supabase JWT for protected routes.
 // WHY: Enforces auth on the server even if the UI hides things.
-// HOW: Read → verify → set req.user → next(), else 401.
+// HOW: Read  verify  set req.user  next(), else 401.
 // ============================================================
 function authRequired(req, res, next) {
   const token = readToken(req);

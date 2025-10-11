@@ -1,6 +1,6 @@
 // File: zorvalon.js
 // Description: Entry point for application server - Refactored for better organization
-// Boot order: Express → MethodGuard → SecurityHeaders → CORS → TrustProxy → Parsers → CacheControl → Auth → CSRF → Routes → Errors
+// Boot order: Express  MethodGuard  SecurityHeaders  CORS  TrustProxy  Parsers  CacheControl  Auth  CSRF  Routes  Errors
 // Notes: Console logs mark important checkpoints for audit and debugging
 
 const express = require('express');
@@ -214,7 +214,7 @@ consoleLogger.formatConfigSummary(config);
 console.log('Database: Supabase (HTTP API)');
 
 // ============================================================
-// STEP 3: Redis decommissioned — stateless auth enabled
+// STEP 3: Redis decommissioned  stateless auth enabled
 // ============================================================
 
 /**

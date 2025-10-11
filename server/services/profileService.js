@@ -94,6 +94,31 @@ function pickAllowed(patch) {
   return out;
 }
 
+/**
+ * CRITICAL SECTION: Profile dual-update (auth.users + profiles)
+ *
+ * WHAT:
+ * Updates user profile across two separate Supabase services (Auth API and Data API).
+ *
+ * WHY:
+ * Some fields (display_name, phone) must stay in sync between auth.users and profiles.
+ *
+ * HOW:
+ * Since Supabase Auth and Data APIs are separate services, we cannot use a single transaction.
+ * Instead, we apply these mitigations:
+ * 1. Update auth.users first (less critical if it fails)
+ * 2. Update profiles second (source of truth)
+ * 3. Log both operations for audit trail
+ * 4. Accept eventual consistency (auth.users and profiles may briefly diverge)
+ *
+ * RISK:
+ * If auth.users succeeds but profiles fails, the two tables will be inconsistent until
+ * the next update. This is acceptable because profiles is the source of truth and the
+ * view (v_profiles_full) always reads from profiles.
+ *
+ * FUTURE IMPROVEMENT:
+ * Add a background job to reconcile auth.users with profiles periodically.
+ */
 async function updateOwnProfile(userId, patch) {
   ensureAdmin();
   if (!userId) throw new Error('Missing userId');
@@ -145,20 +170,24 @@ async function updateOwnProfile(userId, patch) {
     authUpdateData.phone = safePatch.phone;
   }
 
-  // Update auth.users if needed (for display_name and phone)
+  // STEP 1: Update auth.users if needed (for display_name and phone)
+  // Note: This update is non-critical. If it fails, profiles table is still updated (source of truth)
   if (needsAuthUpdate && Object.keys(authUpdateData).length > 0) {
     try {
+      console.log('[profile] Updating auth.users metadata:', { userId, fields: Object.keys(authUpdateData) });
       const { error: authError } = await supabaseAdmin.auth.admin.updateUserById(userId, {
         user_metadata: authUpdateData
       });
       
       if (authError) {
-        console.error('profileService.updateOwnProfile auth update:', authError.message);
-        // Continue with profile update even if auth update fails
+        console.error('[profile] auth.users update failed (non-critical):', authError.message);
+        // Continue with profile update - profiles table is source of truth
+      } else {
+        console.log('[profile] auth.users metadata updated successfully');
       }
     } catch (authErr) {
-      console.error('profileService.updateOwnProfile auth update error:', authErr.message);
-      // Continue with profile update even if auth update fails
+      console.error('[profile] auth.users update error (non-critical):', authErr.message);
+      // Continue with profile update - profiles table is source of truth
     }
   }
 
@@ -186,9 +215,11 @@ async function updateOwnProfile(userId, patch) {
     }
   }
   
-  console.log('Processed patch for database:', processedPatch);
+  console.log('[profile] Processed patch for database:', processedPatch);
 
-  // Update profiles table
+  // STEP 2: Update profiles table (source of truth)
+  // This is the critical update - must succeed
+  console.log('[profile] Updating profiles table:', { userId, fields: Object.keys(processedPatch) });
   const { data, error } = await supabaseAdmin
     .from('profiles')
     .update(processedPatch)
@@ -197,10 +228,11 @@ async function updateOwnProfile(userId, patch) {
     .single();
 
   if (error) {
-    console.error('profileService.updateOwnProfile:', error.message);
+    console.error('[profile] profiles table update failed (critical):', error.message);
     throw error;
   }
   
+  console.log('[profile] Profile update completed successfully:', { userId });
   return data;
 }
 

@@ -26,6 +26,7 @@ const falsy = new Set(['0', 'false', 'no', 'off', 'n']);
  * @param {boolean} def - Default value if not set
  * @returns {boolean}
  */
+
 function bool(name, def = false) {
   const v = (process.env[name] ?? '').trim().toLowerCase();
   if (v === '') return def;

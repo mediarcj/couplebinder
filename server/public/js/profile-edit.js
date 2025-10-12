@@ -269,11 +269,7 @@ function attachEventHandlers() {
     
     // Save All and Cancel All buttons removed - using individual field saves only
     
-    // Attach logout button
-    const logoutBtn = document.getElementById('logoutBtn');
-    if (logoutBtn) {
-        logoutBtn.addEventListener('click', handleLogout);
-    }
+    // Logout button is handled by logout.js module (no local handler needed)
 }
 
 /**

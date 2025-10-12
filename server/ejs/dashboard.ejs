@@ -168,8 +168,9 @@
     <!-- Centralized Modals (login, signup, notifications) -->
     <%- include('partials/modals') %>
 
-    <!-- Supabase client initialization -->
+    <!-- Supabase client initialization (shared singleton) -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" nonce="<%= page.nonce %>"></script>
+    <script src="/js/sbClient.js" nonce="<%= page.nonce %>"></script>
     <script src="/js/logout.js" nonce="<%= page.nonce %>"></script>
     <script src="/js/modalManager.js" nonce="<%= page.nonce %>"></script>
     <div id="app-config" 
@@ -177,20 +178,7 @@
          data-supabase-url="<%= ui.supabaseUrl %>" 
          data-supabase-anon-key="<%= ui.supabaseAnonKey %>">
     </div>
-    <script nonce="<%= page.nonce %>">
-        // Initialize Supabase client for dashboard
-        if (typeof supabase !== 'undefined') {
-            const configEl = document.getElementById('app-config');
-            if (configEl) {
-                const supabaseUrl = configEl.dataset.supabaseUrl;
-                const supabaseAnonKey = configEl.dataset.supabaseAnonKey;
-                if (supabaseUrl && supabaseAnonKey) {
-                    window.supabase = supabase.createClient(supabaseUrl, supabaseAnonKey);
-                    // Do not console log.
-                }
-            }
-        }
-    </script>
+    <!-- Supabase client is initialized by sbClient.js (shared singleton) -->
     <script src="/js/dashboard.js" nonce="<%= page.nonce %>"></script>
 </body>
 </html>

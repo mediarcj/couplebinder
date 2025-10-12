@@ -43,6 +43,27 @@ async function getSessionSafe() {
 }
 
 /**
+ * Wait for Supabase client to be ready
+ * 
+ * WHAT:
+ * Helper that waits for window.SB to be initialized.
+ * 
+ * WHY:
+ * sbClient.js initializes asynchronously. Code that uses window.SB
+ * must wait for the sb-ready event to avoid undefined errors.
+ * 
+ * HOW:
+ * If window.SB exists, call callback immediately.
+ * Otherwise, wait for sb-ready event (emitted by sbClient.js).
+ */
+function onSBReady(callback) {
+  if (window.SB) {
+    return callback();
+  }
+  document.addEventListener('sb-ready', () => callback(), { once: true });
+}
+
+/**
  * Frontend Logger with DEBUG flag support
  * 
  * WHAT:
@@ -177,20 +198,20 @@ function getCSRFToken() {
 document.addEventListener('DOMContentLoaded', function() {
     logger.info('Frontend loaded');
     
-    // Extract config from data attributes
-    const configEl = document.getElementById('app-config');
-    if (configEl) {
+    // Extract feature config from data attributes
+    const featureConfigEl = document.getElementById('feature-config');
+    if (featureConfigEl) {
         window.appConfig = {
-            textMinLength: parseInt(configEl.dataset.textMinLength),
-            textMaxLength: parseInt(configEl.dataset.textMaxLength),
-            supabaseUrl: configEl.dataset.supabaseUrl,
-            supabaseAnonKey: configEl.dataset.supabaseAnonKey
+            textMinLength: parseInt(featureConfigEl.dataset.textMinLength),
+            textMaxLength: parseInt(featureConfigEl.dataset.textMaxLength)
         };
-        
-        // Use shared Supabase client (initialized by sbClient.js)
-        const client = window.SB || window.supabase;
+    }
+    
+    // Wait for Supabase client to be ready before using it
+    onSBReady(() => {
+        const client = window.SB;
         if (!client) {
-            logger.error('Supabase client not available - check if sbClient.js loaded');
+            logger.error('Supabase client not available after ready event');
             return;
         }
         
@@ -221,7 +242,7 @@ document.addEventListener('DOMContentLoaded', function() {
             }
             // Ignore INITIAL_SESSION, TOKEN_REFRESHED - let checkSessionStatus handle it
         });
-    }
+    });
     
     // Add smooth scrolling for anchor links
     const links = document.querySelectorAll('a[href^="#"]');
@@ -295,8 +316,10 @@ document.addEventListener('DOMContentLoaded', function() {
     // Logout functionality is handled by logout.js module
     logger.info('Main page initialized - logout handled by logout.js module');
     
-    // Check session status and update UI
-    checkSessionStatus();
+    // Check session status and update UI (wait for SB to be ready)
+    onSBReady(() => {
+        checkSessionStatus();
+    });
 });
 
 function initializeTextForm() {

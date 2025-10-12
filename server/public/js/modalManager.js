@@ -255,17 +255,8 @@ const modalManager = {
    * Initialize modal system (call on page load)
    */
   init() {
+    // Wire only explicit close controls; no backdrop (outside) close
     this.initCloseHandlers();
-    
-    // Close modals on outside click (optional)
-    document.querySelectorAll('.modal').forEach(modal => {
-      modal.addEventListener('click', (e) => {
-        if (e.target === modal) {
-          modal.classList.remove('show');
-          this.resetModalState(modal.id);
-        }
-      });
-    });
   }
 };
 

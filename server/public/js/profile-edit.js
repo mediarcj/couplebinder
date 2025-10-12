@@ -449,7 +449,6 @@ function addCancelButton(fieldName) {
     cancelButton.type = 'button';
     cancelButton.className = 'btn btn-secondary cancel-btn';
     cancelButton.textContent = 'Cancel';
-    cancelButton.style.marginLeft = '8px';
     
     // Add click handler
     cancelButton.addEventListener('click', () => {
@@ -756,29 +755,14 @@ function showError(message) {
  * Show success message
  */
 function showSuccess(message) {
-    // Create a temporary success message
-    const successDiv = document.createElement('div');
-    successDiv.className = 'success-message';
-    successDiv.textContent = message;
-    successDiv.style.cssText = `
-        position: fixed;
-        top: 20px;
-        right: 20px;
-        background: #4CAF50;
-        color: white;
-        padding: 15px 20px;
-        border-radius: 5px;
-        z-index: 1000;
-        box-shadow: 0 2px 10px rgba(0,0,0,0.2);
-    `;
-    
-    document.body.appendChild(successDiv);
-    
-    // Remove after 3 seconds
+    // CSP-friendly toast (styled via CSS)
+    const el = document.createElement('div');
+    el.className = 'success-message success-toast is-visible';
+    el.textContent = message;
+    document.body.appendChild(el);
     setTimeout(() => {
-        if (successDiv.parentNode) {
-            successDiv.parentNode.removeChild(successDiv);
-        }
+        el.classList.remove('is-visible');
+        setTimeout(() => el.remove(), 300); // allow fade-out
     }, 3000);
 }
 

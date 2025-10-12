@@ -456,12 +456,9 @@ function displaySubmissions(submissions) {
 
 function initializeLoginModal() {
     const loginLink = document.querySelector('.login-link');
-    const modal = document.getElementById('loginModal');
-    const closeBtn = document.querySelector('.close');
-    const cancelBtn = document.querySelector('.form-actions .btn-secondary');
     const loginForm = document.getElementById('loginForm');
     
-    if (!loginLink || !modal) {
+    if (!loginLink) {
         return; // Modal elements not found
     }
     
@@ -471,17 +468,7 @@ function initializeLoginModal() {
         handleLogin();
     });
     
-    // Close modal when close button is clicked
-    if (closeBtn) {
-        closeBtn.addEventListener('click', closeModal);
-    }
-    
-    // Close modal when cancel button is clicked
-    if (cancelBtn) {
-        cancelBtn.addEventListener('click', closeModal);
-    }
-    
-    // Modal can only be closed by Cancel button or OK button (no click outside)
+    // Closing is handled centrally by data-modal-close + modalManager
     
     // Handle form submission
     if (loginForm) {
@@ -766,18 +753,12 @@ async function handleLoginSubmit(e) {
                     
                     logger.info('Authentication cookie set by server');
                     
-                    switchToSuccessState(
-                        'Login Successful!', 
-                        `Welcome ${data.user.email}!`,
-                        () => {
-                            closeModal();
-                            // Check for next parameter and redirect accordingly
-                            const urlParams = new URLSearchParams(window.location.search);
-                            const nextUrl = urlParams.get('next');
-                            const redirectUrl = nextUrl ? decodeURIComponent(nextUrl) : '/dashboard';
-                            window.location.assign(redirectUrl);
-                        }
-                    );
+                    // Immediate, deterministic redirect (no success modal)
+                    closeModal();
+                    const urlParams = new URLSearchParams(window.location.search);
+                    const nextUrl = urlParams.get('next');
+                    const redirectUrl = nextUrl ? decodeURIComponent(nextUrl) : '/dashboard';
+                    window.location.replace(redirectUrl);
                 } catch (cookieError) {
                     logger.error('Cookie setup failed:', cookieError.message);
                     showLoginGeneralError('Login failed: session setup error');
@@ -1021,7 +1002,7 @@ function clearSignupForm() {
     
     // Clear all error messages (use CSS class)
     const errorElements = [
-        'displayNameError', 'signupEmailError', 'signupPhoneError', 'signupPasswordError',
+        'signupDisplayNameError', 'signupEmailError', 'signupPhoneError', 'signupPasswordError',
         'confirmPasswordError', 'signupGeneralError'
     ];
     
@@ -1204,7 +1185,7 @@ async function handleSignupSubmit(e) {
     // Validate required fields
     const displayNameError = validateDisplayName(data.display_name, 'Display name');
     if (displayNameError) {
-        showFieldError('displayNameError', displayNameError);
+        showFieldError('signupDisplayNameError', displayNameError);
         hasErrors = true;
     }
     

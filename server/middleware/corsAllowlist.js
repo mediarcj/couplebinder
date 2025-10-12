@@ -1,69 +1,82 @@
 /**
  * File: server/middleware/corsAllowlist.js
- * Description: Strict CORS allowlist. All others receive an error.
+ * Description: Strict CORS allowlist with environment-based configuration
  *
  * WHAT:
  * Configures CORS to only allow requests from explicitly approved origins.
+ * Supports explicit list, subdomain patterns, and development localhost.
  *
  * WHY:
  * We never trust the client. Only our own domains should be able to make
- * cross-origin requests to our API. This prevents unauthorized sites from
- * accessing user data or making API calls on behalf of users.
+ * cross-origin requests to our API.
  *
  * HOW:
- * Maintains a strict allowlist of approved origins. Denies all others with an error.
- * Supports credentials (cookies) and standard HTTP methods.
- * For non-browser requests (no Origin header), we deny by default to be safe.
+ * 1. Check explicit CORS_ORIGINS env var
+ * 2. Allow detechify.com and all subdomains
+ * 3. Allow localhost in development
+ * 4. Deny all others with error
  */
 
 const cors = require('cors');
 
-// ============================================================
-// Approved origins (production domains)
-// ============================================================
-const ALLOW = new Set([
-  'https://detechify.com',
-  'https://www.detechify.com',
-  'https://app.detechify.com'
-]);
+// Parse explicit allowed origins from environment
+const allowedList = (process.env.CORS_ORIGINS || '')
+  .split(',')
+  .map(s => s.trim())
+  .filter(Boolean);
 
-module.exports = cors({
-  origin(origin, cb) {
-    // ============================================================
-    // No Origin header: non-browser request
-    // ============================================================
-    // Treat as non-browser; do not enable CORS (safer default)
-    if (!origin) return cb(null, false);
+// Regex to match any subdomain of detechify.com
+const allowDetechify = /^https?:\/\/([a-z0-9-]+\.)?detechify\.com(?::\d+)?$/i;
+
+const corsOptions = {
+  origin: (origin, callback) => {
+    // Same-origin / server-to-server / mobile apps: allow (no Origin header)
+    if (!origin) return callback(null, true);
     
-    // ============================================================
-    // Check against allowlist
-    // ============================================================
-    if (ALLOW.has(origin)) return cb(null, true);
+    // Check explicit allow list from CORS_ORIGINS env var
+    if (allowedList.length > 0 && allowedList.includes(origin)) {
+      return callback(null, true);
+    }
     
-    // ============================================================
+    // Check if origin matches *.detechify.com pattern
+    if (allowDetechify.test(origin)) {
+      return callback(null, true);
+    }
+    
+    // Development: allow localhost
+    const nodeEnv = process.env.NODE_ENV || 'production';
+    if (nodeEnv === 'development' && origin.includes('localhost')) {
+      return callback(null, true);
+    }
+    
     // Deny all other origins
-    // ============================================================
-    cb(new Error('Not allowed by CORS policy'));
+    console.warn('CORS: Blocked origin', { origin, allowedList: allowedList.slice(0, 3) });
+    return callback(new Error('Not allowed by CORS policy'));
   },
   
-  // ============================================================
   // Allow credentials (cookies, authorization headers)
-  // ============================================================
   credentials: true,
   
-  // ============================================================
   // Allowed HTTP methods
-  // ============================================================
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   
-  // ============================================================
   // Allowed request headers
-  // ============================================================
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-CSRF-Token'],
+  allowedHeaders: [
+    'Content-Type',
+    'Authorization',
+    'X-CSRF-Token',
+    'X-Request-ID',
+    'X-Idempotency-Key',
+    'Accept',
+    'Origin',
+    'X-Requested-With'
+  ],
   
-  // ============================================================
-  // Cache preflight for 10 minutes
-  // ============================================================
-  maxAge: 600
-});
+  // Exposed headers (client can read these)
+  exposedHeaders: ['X-CSRF-Token', 'X-Request-ID', 'X-RateLimit-Limit', 'X-RateLimit-Remaining'],
+  
+  // Cache preflight for 24 hours
+  maxAge: 86400
+};
 
+module.exports = cors(corsOptions);

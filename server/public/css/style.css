@@ -408,6 +408,11 @@ footer p {
     backdrop-filter: blur(2px);
 }
 
+/* Modal show state (CSP-compliant) */
+.modal.show {
+    display: block;
+}
+
 .modal-content {
     background-color: #fff;
     margin: 10% auto;
@@ -873,6 +878,11 @@ nav ul li a.active {
     opacity: 0;
     transform: translateX(-20px);
     pointer-events: none;
+}
+
+/* General hidden utility class (CSP-compliant, no inline styles needed) */
+.hidden {
+    display: none !important;
 }
 
 .modal-state.showing {

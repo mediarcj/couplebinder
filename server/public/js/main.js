@@ -495,7 +495,7 @@ function initializeLoginModal() {
 function closeModal() {
     const modal = document.getElementById('loginModal');
     if (modal) {
-        modal.style.display = 'none';
+        modal.classList.remove('show');
         resetToFormState();
     }
 }
@@ -511,11 +511,11 @@ function clearLoginForm() {
     if (passwordError) passwordError.textContent = '';
     if (generalError) {
         generalError.textContent = '';
-        generalError.style.display = 'none';
+        generalError.classList.add('hidden');
     }
 }
 
-// Notification Modal Functions
+// Notification Modal Functions (CSP-compliant)
 function showNotificationModal(title, message, onClose = null) {
     const modal = document.getElementById('notificationModal');
     const titleEl = document.getElementById('notificationTitle');
@@ -525,16 +525,16 @@ function showNotificationModal(title, message, onClose = null) {
     
     if (titleEl) titleEl.textContent = title;
     if (messageEl) messageEl.textContent = message;
-    if (modal) modal.style.display = 'block';
+    if (modal) modal.classList.add('show');
     
     // Close modal handlers
-    const closeModal = () => {
-        modal.style.display = 'none';
+    const closeModalFn = () => {
+        modal.classList.remove('show');
         if (onClose) onClose();
     };
     
-    if (closeBtn) closeBtn.onclick = closeModal;
-    if (okBtn) okBtn.onclick = closeModal;
+    if (closeBtn) closeBtn.onclick = closeModalFn;
+    if (okBtn) okBtn.onclick = closeModalFn;
     
     // Modal can only be closed by Close button or OK button (no click outside)
 }
@@ -543,11 +543,11 @@ function showLoginGeneralError(message) {
     const generalError = document.getElementById('loginGeneralError');
     if (generalError) {
         generalError.textContent = message;
-        generalError.style.display = 'block';
+        generalError.classList.remove('hidden');
     }
 }
 
-// Modal State Transition Functions
+// Modal State Transition Functions (CSP-compliant, no inline styles)
 function switchToSuccessState(title, message, onComplete = null) {
     const formState = document.getElementById('loginFormState');
     const successState = document.getElementById('loginSuccessState');
@@ -565,15 +565,15 @@ function switchToSuccessState(title, message, onComplete = null) {
         };
     }
     
-    // Start transition
+    // Start transition (use CSS classes only, no inline styles)
     if (formState && successState) {
         // Hide form state with slide out animation
         formState.classList.add('hidden');
         
         // After form is hidden, show success state with slide in animation
         setTimeout(() => {
-            formState.style.display = 'none';
-            successState.style.display = 'block';
+            // Keep form hidden, show success state
+            successState.classList.remove('hidden');
             successState.classList.add('showing');
             
             // Trigger the slide in animation
@@ -589,12 +589,11 @@ function resetToFormState() {
     const successState = document.getElementById('loginSuccessState');
     
     if (formState && successState) {
-        // Hide success state
-        successState.style.display = 'none';
+        // Hide success state (use CSS class)
+        successState.classList.add('hidden');
         successState.classList.remove('showing');
         
-        // Show form state
-        formState.style.display = 'block';
+        // Show form state (use CSS class)
         formState.classList.remove('hidden');
         
         // Clear form and errors
@@ -954,7 +953,8 @@ function updateUIForLoggedOutUser() {
 // Logout functionality is now handled by the modular logout.js system
 
 function handleLogin() {
-    document.getElementById('loginModal').style.display = 'block';
+    const modal = document.getElementById('loginModal');
+    if (modal) modal.classList.add('show');
 }
 
 /**
@@ -1010,7 +1010,7 @@ function initializeSignupModal() {
 function closeSignupModal() {
     const modal = document.getElementById('signupModal');
     if (modal) {
-        modal.style.display = 'none';
+        modal.classList.remove('show');
         resetSignupToFormState();
     }
 }
@@ -1019,7 +1019,7 @@ function clearSignupForm() {
     const form = document.getElementById('signupForm');
     if (form) form.reset();
     
-    // Clear all error messages
+    // Clear all error messages (use CSS class)
     const errorElements = [
         'displayNameError', 'signupEmailError', 'signupPhoneError', 'signupPasswordError',
         'confirmPasswordError', 'signupGeneralError'
@@ -1029,7 +1029,7 @@ function clearSignupForm() {
         const element = document.getElementById(id);
         if (element) {
             element.textContent = '';
-            element.style.display = 'none';
+            element.classList.add('hidden');
         }
     });
 }
@@ -1038,7 +1038,7 @@ function showSignupGeneralError(message) {
     const generalError = document.getElementById('signupGeneralError');
     if (generalError) {
         generalError.textContent = message;
-        generalError.style.display = 'block';
+        generalError.classList.remove('hidden');
     }
 }
 
@@ -1330,7 +1330,7 @@ function showFieldError(fieldId, message) {
     const errorElement = document.getElementById(fieldId);
     if (errorElement) {
         errorElement.textContent = message;
-        errorElement.style.display = 'block';
+        errorElement.classList.remove('hidden');
     }
 }
 
@@ -1351,15 +1351,15 @@ function switchToSignupSuccessState(title, message, onComplete = null) {
         };
     }
     
-    // Start transition
+    // Start transition (CSP-compliant, no inline styles)
     if (formState && successState) {
         // Hide form state with slide out animation
         formState.classList.add('hidden');
         
         // After form is hidden, show success state with slide in animation
         setTimeout(() => {
-            formState.style.display = 'none';
-            successState.style.display = 'block';
+            // Keep form hidden, show success state
+            successState.classList.remove('hidden');
             successState.classList.add('showing');
             
             // Trigger the slide in animation
@@ -1375,12 +1375,11 @@ function resetSignupToFormState() {
     const successState = document.getElementById('signupSuccessState');
     
     if (formState && successState) {
-        // Hide success state
-        successState.style.display = 'none';
+        // Hide success state (use CSS class)
+        successState.classList.add('hidden');
         successState.classList.remove('showing');
         
-        // Show form state
-        formState.style.display = 'block';
+        // Show form state (use CSS class)
         formState.classList.remove('hidden');
         
         // Clear form and errors
@@ -1389,5 +1388,6 @@ function resetSignupToFormState() {
 }
 
 function handleSignup() {
-    document.getElementById('signupModal').style.display = 'block';
+    const modal = document.getElementById('signupModal');
+    if (modal) modal.classList.add('show');
 }

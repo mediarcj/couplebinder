@@ -4,6 +4,28 @@
 // Notes: Includes text submission form validation and submissions viewing functionality
 
 /**
+ * Logout HOLD guard (prevents re-login during logout)
+ * 
+ * WHAT:
+ * Check if logout is in progress to prevent auth re-hydration.
+ * 
+ * WHY:
+ * When logout.js clears the session, homepage might try to re-set the cookie
+ * before the redirect completes. This creates a logout → instant re-login race.
+ * 
+ * HOW:
+ * Check localStorage for logout.ui.hold key. If present, skip all auth hydration.
+ */
+const LOGOUT_HOLD_KEY = 'logout.ui.hold';
+const logoutHoldActive = () => {
+  try {
+    return localStorage.getItem(LOGOUT_HOLD_KEY) === '1';
+  } catch {
+    return false;
+  }
+};
+
+/**
  * Frontend Logger with DEBUG flag support
  * 
  * WHAT:
@@ -724,6 +746,12 @@ async function handleLoginSubmit(e) {
                 }
                 
                 try {
+                    // Skip hydration if logout is in progress
+                    if (logoutHoldActive()) {
+                        logger.info('HOLD active - skipping cookie hydration during logout');
+                        return;
+                    }
+                    
                     // Call server endpoint to set secure cookie
                     const cookieResponse = await fetch('/auth/set-cookie', {
                         method: 'POST',
@@ -801,8 +829,22 @@ async function handleLoginSubmit(e) {
  */
 async function checkSessionStatus() {
     try {
-        // Check if Supabase has an existing session
-        const { data: { session }, error } = await window.supabase.auth.getSession();
+        // Skip if logout is in progress
+        if (logoutHoldActive()) {
+            logger.info('HOLD active - skipping session check during logout');
+            updateUIForLoggedOutUser();
+            return;
+        }
+        
+        // Check if Supabase has an existing session (use shared client)
+        const client = window.SB || window.supabase;
+        if (!client) {
+            logger.warn('No Supabase client available');
+            updateUIForLoggedOutUser();
+            return;
+        }
+        
+        const { data: { session }, error } = await client.auth.getSession();
         
         if (error || !session?.access_token) {
             logger.info('No existing session found');

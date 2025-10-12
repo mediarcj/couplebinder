@@ -239,11 +239,17 @@ async function performLogout() {
       logoutLogger.warn('Server cookie clear failed; proceeding');
     }
 
-    // 2) Supabase signOut (will emit SIGNED_OUT; main.js must ignore while HOLD is set)
+    // 2) Supabase signOut (use the shared singleton)
     try {
-      if (window.supabase?.auth?.signOut) {
-        await window.supabase.auth.signOut();
+      if (window.SB?.auth?.signOut) {
+        await window.SB.auth.signOut();
         logoutLogger.info('Supabase session cleared');
+      } else if (window.supabase?.auth?.signOut) {
+        // legacy fallback if a client was stashed there
+        await window.supabase.auth.signOut();
+        logoutLogger.info('Supabase session cleared (legacy ref)');
+      } else {
+        logoutLogger.warn('No Supabase client available to sign out');
       }
     } catch (e) {
       logoutLogger.info('Supabase signOut exception (non-fatal)', { error: e?.message || String(e) });

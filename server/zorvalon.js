@@ -91,6 +91,7 @@ try {
 
 // New security middleware
 const methodGuard = require('./middleware/methodGuard');
+const credentialGuard = require('./middleware/credentialGuard');
 const { generateCspNonce, securityHeaders } = require('./middleware/securityHeaders');
 const cacheControl = require('./middleware/cacheControl');
 const trustProxyIp = require('./middleware/trustProxyIp');
@@ -202,6 +203,10 @@ console.log('Security: CSP nonce generation enabled');
 // 1. Method guard: reject PROPFIND, TRACE, and unknown methods
 app.use(methodGuard());
 console.log('Security: Method guard enabled');
+
+// Credential guard (block credentials in GET params - CRITICAL)
+app.use(credentialGuard);
+console.log('Security: Credential guard enabled (blocks credentials in GET)');
 
 // 2. Strict security headers with nonce-based CSP
 app.use(securityHeaders());

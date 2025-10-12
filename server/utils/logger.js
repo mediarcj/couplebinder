@@ -1,17 +1,20 @@
 // File: server/utils/logger.js
-// Description: Secure logging utility with redaction and structured output
-// Purpose: Provides safe logging with request tracking and sensitive data protection
-// Notes: Strips secrets, prevents log injection, and uses structured format
+// Description: Structured logging with automatic PII redaction
+// Purpose: Enterprise-grade logging that never exposes sensitive data
+// Notes: Use logger.info/debug/error instead of console.log to prevent PII leaks
 
 /**
  * WHAT:
- * We provide a secure logging system that protects sensitive data and prevents log injection.
+ * Structured logging system with automatic PII and secret redaction.
  *
  * WHY:
- * Logging sensitive information can help attackers. We need safe logging with proper redaction.
+ * Logging raw user data or secrets violates compliance and aids attackers.
+ * We need safe logging that strips all sensitive information automatically.
  *
  * HOW:
- * We create a logger that strips secrets, prevents injection, and provides structured output.
+ * Provides pino-like interface (logger.info/debug/error) with built-in redaction.
+ * Logs structured JSON for machine parsing while protecting PII.
+ * In production, outputs JSON. In development, outputs pretty format.
  */
 
 const { config } = require('../config');
@@ -138,22 +141,78 @@ function formatLogMessage(level, message, meta = {}) {
 }
 
 /**
- * Secure logger class
+ * Redact object values, keep only keys (for logging field names without PII)
+ */
+function extractFieldNames(obj) {
+  if (!obj || typeof obj !== 'object') return {};
+  const fields = {};
+  for (const key of Object.keys(obj)) {
+    fields[key] = '[VALUE_REDACTED]';
+  }
+  return fields;
+}
+
+/**
+ * Secure logger class with structured logging
+ * Use this instead of console.log to prevent PII leaks
  */
 class SecureLogger {
   constructor() {
     this.isDevelopment = config.server.nodeEnv === 'development';
+    this.logLevel = process.env.LOG_LEVEL || 'info';
   }
   
   /**
-   * Log info message
-   * @param {string} message - Log message
-   * @param {Object} meta - Additional metadata
+   * Log info message with optional metadata (PII-safe)
+   * @param {Object|string} msgOrData - Message string or data object
+   * @param {string} message - Optional message if first param is data object
    */
-  info(message, meta = {}) {
+  info(msgOrData, message = '') {
+    let data = {};
+    let msg = '';
+    
+    if (typeof msgOrData === 'string') {
+      msg = msgOrData;
+      data = typeof message === 'object' ? message : {};
+    } else {
+      data = msgOrData || {};
+      msg = message;
+    }
+    
+    // Redact sensitive data from metadata
+    const safeMeta = redactSensitiveData(data);
+    
     if (this.isDevelopment) {
-      // Use consoleLogger for formatted display instead of raw JSON
-      consoleLogger.formatInfo(message, meta);
+      consoleLogger.formatInfo(msg || JSON.stringify(safeMeta), { ...safeMeta, requestId: data.requestId || 'system' });
+    } else {
+      // Production: JSON line for log aggregation
+      console.log(JSON.stringify({ level: 'info', ts: new Date().toISOString(), msg, ...safeMeta }));
+    }
+  }
+  
+  /**
+   * Debug logging (only in development or if LOG_LEVEL=debug)
+   */
+  debug(msgOrData, message = '') {
+    if (this.logLevel !== 'debug' && !this.isDevelopment) return;
+    
+    let data = {};
+    let msg = '';
+    
+    if (typeof msgOrData === 'string') {
+      msg = msgOrData;
+      data = typeof message === 'object' ? message : {};
+    } else {
+      data = msgOrData || {};
+      msg = message;
+    }
+    
+    // For debug, log field names only (not values) to avoid PII
+    const fieldNames = typeof data === 'object' ? Object.keys(data).join(', ') : '';
+    const safeMsg = `${msg} [fields: ${fieldNames}]`;
+    
+    if (this.isDevelopment) {
+      console.log(`[DEBUG] ${safeMsg}`);
     }
   }
   

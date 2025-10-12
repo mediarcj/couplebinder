@@ -2,6 +2,8 @@
 // Purpose: enforce the same limits your DB enforces; reject bad payloads early with 400.
 // Plug this in BEFORE your handler that updates public.profiles.
 
+const logger = require('../utils/logger');
+
 const MAX = {
   display_name_override: 100,
   phone: 32,
@@ -41,7 +43,8 @@ function tooLong(s, max) {
 module.exports = function validateProfileUpdate(req, res, next) {
   try {
     const body = req.body || {};
-    console.log('validateProfileUpdate received body:', body);
+    // Log field names only, never values (PII protection)
+    logger.debug({ fields: Object.keys(body || {}), requestId: req.requestId }, 'profile.validate.received');
 
         // Build a sanitized patch object; only include fields that have actual values
         const patch = {};
@@ -156,7 +159,8 @@ module.exports = function validateProfileUpdate(req, res, next) {
       });
     }
 
-    console.log('validateProfileUpdate sanitized patch:', patch);
+    // Log sanitized patch (field names only, no values)
+    logger.debug({ fields: Object.keys(patch || {}), requestId: req.requestId }, 'profile.validate.sanitized');
     
     // Attach sanitized patch for the handler
     req.profilePatch = patch;

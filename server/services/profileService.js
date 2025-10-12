@@ -3,6 +3,7 @@
 
 const { supabaseAdmin } = require('../utils/supabaseClient');
 const { createClient } = require('@supabase/supabase-js');
+const logger = require('../utils/logger');
 
 function ensureAdmin() {
   if (!supabaseAdmin) {
@@ -123,9 +124,10 @@ async function updateOwnProfile(userId, patch) {
   ensureAdmin();
   if (!userId) throw new Error('Missing userId');
 
-  console.log('updateOwnProfile received patch:', patch);
+  // Log field names only, never values (PII protection)
+  logger.debug({ userId, fields: Object.keys(patch || {}) }, 'profile.update.received');
   const safePatch = pickAllowed(patch);
-  console.log('updateOwnProfile safePatch:', safePatch);
+  logger.debug({ userId, fields: Object.keys(safePatch || {}) }, 'profile.update.sanitized');
   
   if (Object.keys(safePatch).length === 0) {
     return await getProfileByUserIdAdmin(userId);
@@ -155,11 +157,8 @@ async function updateOwnProfile(userId, patch) {
       safePatch.family_name = nameParts.slice(1).join(' ');
     }
     
-    console.log('Parsed names:', {
-      display_name: safePatch.display_name_override,
-      given_name: safePatch.given_name,
-      family_name: safePatch.family_name
-    });
+    // Log name parsing result (field names only, no values)
+    logger.debug({ userId, parsedFields: ['display_name', 'given_name', 'family_name'] }, 'profile.names.parsed');
   }
   
   let authUpdateData = {};
@@ -215,11 +214,12 @@ async function updateOwnProfile(userId, patch) {
     }
   }
   
-  console.log('[profile] Processed patch for database:', processedPatch);
+  // Log database payload (field names only, no values)
+  logger.debug({ userId, fields: Object.keys(processedPatch || {}) }, 'profile.update.dbPayload');
 
   // STEP 2: Update profiles table (source of truth)
   // This is the critical update - must succeed
-  console.log('[profile] Updating profiles table:', { userId, fields: Object.keys(processedPatch) });
+  logger.info({ userId, fields: Object.keys(processedPatch || {}) }, 'profile.update.executing');
   const { data, error } = await supabaseAdmin
     .from('profiles')
     .update(processedPatch)
@@ -232,7 +232,7 @@ async function updateOwnProfile(userId, patch) {
     throw error;
   }
   
-  console.log('[profile] Profile update completed successfully:', { userId });
+  logger.info({ userId, operation: 'profile_update_success' }, 'profile.update.completed');
   return data;
 }
 

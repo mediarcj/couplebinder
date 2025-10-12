@@ -3,6 +3,19 @@
 // Boot order: Express  MethodGuard  SecurityHeaders  CORS  TrustProxy  Parsers  CacheControl  Auth  CSRF  Routes  Errors
 // Notes: Console logs mark important checkpoints for audit and debugging
 
+// CRITICAL: Global error handlers - exit immediately on unhandled errors
+process.on('uncaughtException', (err) => {
+  console.error('FATAL: Uncaught exception detected', err);
+  console.error('Server cannot continue safely. Exiting.');
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (err) => {
+  console.error('FATAL: Unhandled promise rejection detected', err);
+  console.error('Server cannot continue safely. Exiting.');
+  process.exit(1);
+});
+
 const express = require('express');
 const helmet = require('helmet');
 const cors = require('cors');
@@ -35,16 +48,18 @@ try {
   csrfLite = require('./middleware/csrfLite');
   console.log('CSRF middleware loaded successfully');
 } catch (error) {
-  console.error('Failed to load CSRF middleware:', error.message);
-  csrfLite = { addCSRFToken: () => {}, validateCSRF: () => (req, res, next) => next() };
+  console.error('FATAL: Cannot load CSRF middleware:', error);
+  console.error('CRITICAL: CSRF protection is mandatory. Server cannot start.');
+  process.exit(1);
 }
 
 try {
   requestIdMiddleware = require('./middleware/requestId');
   console.log('Request ID middleware loaded successfully');
 } catch (error) {
-  console.error('Failed to load request ID middleware:', error.message);
-  requestIdMiddleware = (req, res, next) => next();
+  console.error('FATAL: Cannot load request ID middleware:', error);
+  console.error('CRITICAL: Request tracking is mandatory for audit trails. Server cannot start.');
+  process.exit(1);
 }
 
 try {
@@ -76,12 +91,11 @@ try {
 
 // New security middleware
 const methodGuard = require('./middleware/methodGuard');
-const securityHeaders = require('./middleware/securityHeaders');
+const { generateCspNonce, securityHeaders } = require('./middleware/securityHeaders');
 const cacheControl = require('./middleware/cacheControl');
 const trustProxyIp = require('./middleware/trustProxyIp');
 const corsAllowlist = require('./middleware/corsAllowlist');
-
-// Rate limiting removed - handled at Cloudflare edge
+const { generalLimiter, authLimiter } = require('./middleware/rateLimiter');
 
 // ============================================================
 // STEP 1: Application Initialization
@@ -181,15 +195,23 @@ if (toggles.corsDebug) {
  * 4. Trust proxy and extract real client IP
  */
 
+// 0. Generate CSP nonce for each request (MUST come first for security headers)
+app.use(generateCspNonce());
+console.log('Security: CSP nonce generation enabled');
+
 // 1. Method guard: reject PROPFIND, TRACE, and unknown methods
 app.use(methodGuard());
 console.log('Security: Method guard enabled');
 
-// 2. Cache control: no-store for dynamic routes
+// 2. Strict security headers with nonce-based CSP
+app.use(securityHeaders());
+console.log('Security: Strict CSP and security headers enabled');
+
+// 3. Cache control: no-store for dynamic routes
 app.use(cacheControl());
 console.log('Security: Cache control enabled');
 
-// 3. Trust proxy and expose real client IP
+// 4. Trust proxy and expose real client IP
 app.use(trustProxyIp(app));
 console.log('Security: Trust proxy and clientIp extraction enabled');
 
@@ -270,23 +292,8 @@ if (config.security.enforceHttps) {
   });
 }
 
-// ============================================================
-// CSP with per-request nonce (tightened for production)
-// ============================================================
-// WHAT: Generate nonce and apply strict CSP that only allows nonce-tagged scripts.
-// WHY: Reduces XSS attack surface by blocking unauthorized inline scripts.
-// HOW: Use new cspNonce middleware that combines nonce generation + Helmet CSP.
-const cspWithNonce = require('./middleware/security/cspNonce');
-app.use(cspWithNonce());
-console.log('Security: CSP with per-request nonce enabled');
-
-// Security headers (Helmet) - Additional security headers (CSP handled above)
-app.use(helmet({
-  contentSecurityPolicy: false, // Handled by cspNonce middleware above
-  crossOriginEmbedderPolicy: false, // Disable for better compatibility
-  crossOriginOpenerPolicy: { policy: "same-origin" },
-  crossOriginResourcePolicy: { policy: "cross-origin" }
-}));
+// Note: CSP with nonce is now handled by securityHeaders() middleware above
+// No additional Helmet configuration needed here
 
 // Permissions-Policy header - Enterprise-grade browser feature restrictions
 app.use((req, res, next) => {
@@ -305,75 +312,23 @@ app.use((req, res, next) => {
   next();
 });
 
-// CORS configuration - Enterprise-level balance of security and usability
+// CORS configuration using dedicated middleware
 /**
  * WHAT:
- * CORS origin validation for non-OPTIONS requests.
+ * CORS origin validation using centralized corsAllowlist middleware.
  * 
  * WHY:
  * OPTIONS preflight is handled at the absolute top unconditionally.
  * This validates actual requests (GET, POST, etc.) against allowed origins.
  * 
  * HOW:
- * 1. Allow exact matches from CORS_ORIGINS env var
- * 2. Allow any subdomain of detechify.com (e.g., www, app, dashboard)
- * 3. Allow localhost in development
- * 4. Block and log everything else
+ * Uses corsAllowlist.js which supports:
+ * 1. Explicit CORS_ORIGINS env var
+ * 2. Any subdomain of detechify.com (*.detechify.com)
+ * 3. Localhost in development
+ * 4. Blocks and logs all others
  */
-
-// Parse explicit allowed origins from environment
-const allowedList = (process.env.CORS_ORIGINS || '')
-  .split(',')
-  .map(s => s.trim())
-  .filter(Boolean);
-
-// Regex to match any subdomain of detechify.com
-// Format: https?://[subdomain.]detechify.com[:port]
-const allowDetechify = /^https?:\/\/([a-z0-9-]+\.)?detechify\.com(?::\d+)?$/i;
-
-app.use(cors({
-  origin: (origin, callback) => {
-    // Same-origin / server-to-server / mobile apps: allow
-    if (!origin) return callback(null, true);
-    
-    // Check explicit allow list from env
-    if (allowedList.includes(origin)) {
-      return callback(null, true);
-    }
-    
-    // Check if origin matches *.detechify.com pattern
-    if (allowDetechify.test(origin)) {
-      return callback(null, true);
-    }
-    
-    // Development: allow localhost
-    if (config.server.nodeEnv === 'development' && origin.includes('localhost')) {
-      return callback(null, true);
-    }
-    
-    // Block and log unknown origins for monitoring
-    console.warn('CORS block', { origin, allowedList });
-    logger.warn('CORS blocked origin', { 
-      origin, 
-      allowedList,
-      nodeEnv: config.server.nodeEnv 
-    });
-    return callback(new Error('Not allowed by CORS policy'));
-  },
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
-  allowedHeaders: [
-    'Content-Type', 
-    'Authorization', 
-    'X-CSRF-Token', 
-    'X-Request-ID',
-    'Accept',
-    'Origin',
-    'X-Requested-With'
-  ],
-  exposedHeaders: ['X-CSRF-Token', 'X-Request-ID'],
-  maxAge: 86400 // Cache preflight for 24 hours
-}));
+app.use(corsAllowlist);
 
 // Rate limiting will be applied after static files
 
@@ -467,6 +422,31 @@ consoleLogger.formatMiddlewareRegistration('Rate limiting (Cloudflare edge)');
 app.use(csrfLite);
 
 consoleLogger.formatMiddlewareRegistration('Security middleware');
+
+// ============================================================
+// STEP 6.5: Application-Layer Rate Limiting (Defense-in-Depth)
+// ============================================================
+
+/**
+ * WHAT:
+ * Apply rate limiting at the application layer as a safety net.
+ *
+ * WHY:
+ * Cloudflare handles rate limiting at the edge, but we add a local layer
+ * for defense-in-depth. If edge protection fails or misconfigures, we're protected.
+ *
+ * HOW:
+ * 1. General limiter for /api and /dashboard (120 req/min)
+ * 2. Strict auth limiter for /auth endpoints (10 attempts per 15 min)
+ */
+
+// Apply general rate limiting to API and dashboard routes
+app.use(['/api', '/dashboard'], generalLimiter());
+console.log('Rate limiting: General limiter enabled (120 req/min)');
+
+// Apply strict rate limiting to auth endpoints (set-cookie, clear-cookie, login, signup)
+app.use(['/auth/set-cookie', '/auth/clear-cookie', '/api/auth/signup', '/api/auth/login'], authLimiter());
+console.log('Rate limiting: Auth limiter enabled (10 attempts per 15 min)');
 
 // ============================================================
 // STEP 7: Routes Registration
@@ -618,12 +598,13 @@ app.get('/login', (req, res) => {
   }
 });
 
-// Initialize submissions route with shared storage
+// Initialize submissions storage (now using database)
 try {
   const submissionsRouter = require('./routes/submissions');
-  const submissions = [];
-  submissionsRouter.setSubmissions(submissions);
-  console.log('Submissions storage initialized successfully');
+  if (submissionsRouter.initSubmissionsStorage) {
+    submissionsRouter.initSubmissionsStorage();
+  }
+  console.log('Submissions storage initialized successfully (Supabase database)');
 } catch (error) {
   console.error('Failed to initialize submissions storage:', error.message);
 }

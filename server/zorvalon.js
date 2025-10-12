@@ -347,6 +347,10 @@ app.use(express.urlencoded({ extended: false, limit: '32kb' }));
 const parseCookies = require('./middleware/cookieGuardian');
 app.use(parseCookies);
 
+// App config injection (makes config available to all views)
+const appConfig = require('./middleware/appConfig');
+app.use(appConfig);
+
 // Stateless authentication bridge - reads Supabase tokens
 const authBridge = require('./middleware/authBridge');
 app.use(authBridge);

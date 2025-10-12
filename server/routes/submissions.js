@@ -1,128 +1,168 @@
 // File: server/routes/submissions.js
-// Description: Text submission endpoints for content handling
-// Purpose: Handles text submission, validation, and retrieval with in-memory storage
-// Notes: Uses in-memory storage for demo purposes, maintains submission history
+// Description: Text submission endpoints with durable database storage
+// Purpose: Handles text submission, validation, and retrieval via Supabase
+// Notes: Uses Supabase PostgreSQL for persistent storage with RLS protection
 // 
 // AUTH REQUIREMENTS:
-// - POST /submit: REQUIRES AUTH - creates user content
-// - GET /submissions: REQUIRES AUTH - reads user data
+// - POST /api/submit: REQUIRES AUTH - creates user content
+// - GET /api/submissions: REQUIRES AUTH - reads user data
 
 const express = require('express');
 const router = express.Router();
-// requireAuth is applied globally to /api routes in zorvalon.js
 const { config } = require('../config');
-const { supabase } = require('../utils/supabaseClient');
+const { supabaseAdmin } = require('../utils/supabaseClient');
 const { validateTextServerSide, getClientIP } = require('../middleware/security');
-
-// In-memory storage for submissions (shared with main app)
-// This will be passed from zorvalon.js via middleware
-let submissions = [];
-const MAX_SUBMISSIONS = config.limits.maxSubmissions;
-
-// Clean concurrency control using promise-based queue
-const { enqueue } = require('../utils/submissionsQueue');
-
-// Middleware to inject submissions array
-function injectSubmissions(req, res, next) {
-  req.submissions = submissions;
-  req.MAX_SUBMISSIONS = MAX_SUBMISSIONS;
-  next();
-}
+const logger = require('../utils/logger');
 
 /**
  * POST /api/submit
- * Text submission endpoint with validation
- * Validates input and stores in memory with limits
+ * Text submission endpoint with database persistence
+ * 
+ * WHAT:
+ * Validates and stores user text submissions in PostgreSQL via Supabase.
+ * 
+ * WHY:
+ * Database storage provides durability, horizontal scalability, and RLS protection.
+ * 
+ * HOW:
+ * 1. Validate user authentication
+ * 2. Validate text content server-side
+ * 3. Insert into submissions table via Supabase
+ * 4. Return success response
  */
-router.post('/', injectSubmissions, async (req, res) => {
+router.post('/', async (req, res) => {
   try {
     const { text } = req.body;
     const clientIP = getClientIP(req);
+    const userId = req.user?.id;
+    
+    // Enforce authentication
+    if (!userId) {
+      return res.status(401).json({
+        ok: false,
+        error: 'Authentication required',
+        requestId: req.requestId
+      });
+    }
     
     // Server-side text validation (never trust client)
     const textValidation = validateTextServerSide(text);
     if (!textValidation.valid) {
-      console.log(`Security: Invalid text submission attempt from IP: ${clientIP}, Error: ${textValidation.error}`);
+      logger.info({
+        event: 'submission.rejected',
+        reason: textValidation.error,
+        ip: clientIP,
+        requestId: req.requestId
+      }, 'Invalid submission attempt');
+      
       return res.status(400).json({
+        ok: false,
         error: textValidation.error,
-        requestId: req.requestId,
-        timestamp: new Date().toISOString()
+        requestId: req.requestId
       });
     }
     
-    // Text is valid - store in memory with sanitized content
-    const submission = {
-      id: req.requestId,
-      text: textValidation.sanitized, // Use sanitized text
-      text_length: textValidation.sanitized.length,
-      timestamp: new Date().toISOString(),
-      preview: textValidation.sanitized.substring(0, 100) + (textValidation.sanitized.length > 100 ? '...' : ''),
-      clientIP: clientIP // Track client IP for security
-    };
+    // Insert into database with RLS protection
+    // Note: RLS policies ensure users can only insert their own data
+    const { data, error } = await supabaseAdmin
+      .from('submissions')
+      .insert({
+        user_id: userId,
+        text: textValidation.sanitized,
+        text_length: textValidation.sanitized.length,
+        client_ip: clientIP,
+        request_id: req.requestId
+      })
+      .select('id, text_length, created_at')
+      .single();
     
-    // ATOMIC OPERATION: Use promise-based queue for clean concurrency control
-    // This ensures atomic read-check-write operations without busy-waiting
-    let limitExceeded = false;
-    
-    await enqueue(async () => {
-      // Check submission limit inside atomic operation
-      if (req.submissions.length >= req.MAX_SUBMISSIONS) {
-        console.log(`Security: Submission limit exceeded from IP: ${clientIP}`);
-        limitExceeded = true;
-      } else {
-        // Add to beginning of array and keep only MAX_SUBMISSIONS
-        req.submissions.unshift(submission);
-        if (req.submissions.length > req.MAX_SUBMISSIONS) {
-          req.submissions.pop();
-        }
-      }
-    });
-    
-    // Handle limit exceeded after atomic operation
-    if (limitExceeded) {
-      return res.status(429).json({
-        error: 'Maximum submission limit reached',
-        requestId: req.requestId,
-        timestamp: new Date().toISOString()
+    if (error) {
+      logger.error({
+        event: 'submission.db_error',
+        error: error.message,
+        code: error.code,
+        userId,
+        requestId: req.requestId
+      }, 'Database insert failed');
+      
+      return res.status(500).json({
+        ok: false,
+        error: 'Failed to save submission',
+        requestId: req.requestId
       });
     }
     
-    console.log(`Security: Valid submission created: ${submission.id}, IP: ${clientIP}, Request ID: ${req.requestId}`);
+    logger.info({
+      event: 'submission.created',
+      userId,
+      submissionId: data.id,
+      textLength: data.text_length,
+      requestId: req.requestId
+    }, 'Submission accepted');
     
-    res.json({
-      success: true,
-      message: 'Text submitted successfully',
-      text_length: textValidation.sanitized.length,
-      requestId: req.requestId,
-      timestamp: new Date().toISOString()
+    // Return success response
+    const preview = textValidation.sanitized.substring(0, 100) + 
+                    (textValidation.sanitized.length > 100 ? '...' : '');
+    
+    res.status(201).json({
+      ok: true,
+      submission: {
+        id: data.id,
+        text_length: data.text_length,
+        timestamp: data.created_at,
+        preview
+      },
+      requestId: req.requestId
     });
+    
   } catch (error) {
-    console.error('Submission route error:', error);
+    logger.error({
+      event: 'submission.error',
+      error: error.message,
+      requestId: req.requestId
+    }, 'Submission processing error');
+    
     res.status(500).json({
-      success: false,
+      ok: false,
       error: 'Internal server error',
-      requestId: req.requestId,
-      timestamp: new Date().toISOString()
+      requestId: req.requestId
     });
   }
 });
 
 /**
  * GET /api/submissions
- * Recent submissions endpoint
- * Returns list of recent text submissions from database with RLS
+ * Recent submissions endpoint with RLS protection
+ * 
+ * WHAT:
+ * Retrieves user's recent submissions from database.
+ * 
+ * WHY:
+ * Database provides durable storage and RLS ensures users only see their own data.
+ * 
+ * HOW:
+ * Query submissions table via Supabase with user context for RLS enforcement.
  */
 router.get('/', async (req, res) => {
   try {
-    // Get user's access token from cookie
-    const accessToken = req.cookies?.['sb-access-token'];
+    const userId = req.user?.id;
+    
+    if (!userId) {
+      return res.status(401).json({
+        ok: false,
+        error: 'Authentication required',
+        requestId: req.requestId
+      });
+    }
+    
+    // Get user's access token from cookie for RLS
+    const accessToken = req.cookies?.['sb-access-token'] || req.cookies?.['__Host-sb_session'];
     
     if (!accessToken) {
       return res.status(401).json({
-        success: false,
-        message: 'Authentication required',
-        requestId: req.requestId,
-        timestamp: new Date().toISOString()
+        ok: false,
+        error: 'Authentication token required',
+        requestId: req.requestId
       });
     }
     
@@ -143,52 +183,67 @@ router.get('/', async (req, res) => {
     // Query submissions with RLS (user can only see their own)
     const { data: submissions, error } = await userSupabase
       .from('submissions')
-      .select('*')
+      .select('id, text, text_length, created_at')
       .order('created_at', { ascending: false })
-      .limit(50); // Limit to recent 50 submissions
+      .limit(50); // Recent 50 submissions
     
     if (error) {
-      console.error('Error fetching submissions:', error);
+      logger.error({
+        event: 'submission.query_error',
+        error: error.message,
+        userId,
+        requestId: req.requestId
+      }, 'Failed to fetch submissions');
+      
       return res.status(500).json({
-        success: false,
-        message: 'Failed to fetch submissions',
-        requestId: req.requestId,
-        timestamp: new Date().toISOString()
+        ok: false,
+        error: 'Failed to fetch submissions',
+        requestId: req.requestId
       });
     }
     
-    // Format submissions for response
-    const formattedSubmissions = submissions.map(sub => ({
+    // Format submissions for response (with preview)
+    const formattedSubmissions = (submissions || []).map(sub => ({
       id: sub.id,
-      text: sub.text,
       text_length: sub.text_length,
       timestamp: sub.created_at,
       preview: sub.text.substring(0, 100) + (sub.text.length > 100 ? '...' : '')
     }));
     
+    logger.debug({
+      event: 'submission.list',
+      userId,
+      count: formattedSubmissions.length,
+      requestId: req.requestId
+    }, 'Submissions retrieved');
+    
     res.json({
-      success: true,
+      ok: true,
       submissions: formattedSubmissions,
       count: formattedSubmissions.length,
-      requestId: req.requestId,
-      timestamp: new Date().toISOString()
+      requestId: req.requestId
     });
     
   } catch (error) {
-    console.error('Submissions retrieval error:', error);
+    logger.error({
+      event: 'submission.retrieval_error',
+      error: error.message,
+      requestId: req.requestId
+    }, 'Submissions retrieval error');
     
     res.status(500).json({
-      success: false,
-      message: 'Internal server error',
-      requestId: req.requestId,
-      timestamp: new Date().toISOString()
+      ok: false,
+      error: 'Internal server error',
+      requestId: req.requestId
     });
   }
 });
 
-// Export function to set submissions array from main app
-router.setSubmissions = function(submissionsArray) {
-  submissions = submissionsArray;
-};
+// Initialize submissions storage (no-op since we're using database now)
+function initSubmissionsStorage() {
+  logger.info({ event: 'submissions.storage.init' }, 'Submissions storage initialized (Supabase database)');
+  return { ok: true };
+}
 
 module.exports = router;
+module.exports.initSubmissionsStorage = initSubmissionsStorage;

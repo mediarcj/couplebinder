@@ -1,60 +1,66 @@
 /**
  * File: server/public/js/sbClient.js
- * Description: Shared Supabase client singleton
+ * Description: Shared Supabase client singleton with ready event
  * Purpose: Single source of truth for Supabase client across all pages
- * Notes: Prevents multiple client instances and logout inconsistencies
+ * Notes: Waits for DOM and library, emits sb-ready event when initialized
  */
 
 /**
  * WHAT:
- * Creates a single shared Supabase client instance (window.SB).
+ * Creates a single shared Supabase client instance (window.SB) and emits ready event.
  *
  * WHY:
- * Multiple client instances cause logout bugs where signing out one instance
- * doesn't affect others. This creates a race where logout → home re-login happens.
+ * Multiple client instances cause logout bugs. Production needs guaranteed
+ * initialization after DOM and library are ready.
  *
  * HOW:
- * Initialize once after DOM ready, read config from app-config div, store in window.SB.
- * All pages (main.js, dashboard.js, profile-edit.js, logout.js) use this.
+ * Wait for DOM ready, verify library loaded, read config from meta tag,
+ * create singleton, emit sb-ready event for downstream code to wait on.
  */
 
-(function() {
-  function initializeSharedSupabaseClient() {
-    // Already initialized
-    if (window.SB) {
-      return;
-    }
-    
-    // Get configuration from server-injected data
-    const config = document.getElementById('app-config');
-    const supabaseUrl = config?.dataset?.supabaseUrl;
-    const supabaseAnonKey = config?.dataset?.supabaseAnonKey;
-    
-    // Validation
-    if (!supabaseUrl || !supabaseAnonKey) {
-      console.error('[SB] Missing Supabase config in app-config element');
-      return;
-    }
-    
-    if (!window.supabase?.createClient) {
-      console.error('[SB] Supabase library not loaded');
-      return;
-    }
-    
-    // Create shared singleton
-    window.SB = window.supabase.createClient(supabaseUrl, supabaseAnonKey);
-    
-    // Silent success (no PII in logs)
-    if (localStorage.getItem('debugAuth') === '1') {
-      console.log('[SB] Shared Supabase client initialized');
+(function initSharedSupabase() {
+  if (window.SB) return;
+
+  function tryInit() {
+    try {
+      // Check if library is loaded
+      if (!window.supabase?.createClient) {
+        console.error('[SB] supabase-js not loaded yet');
+        return false;
+      }
+      
+      // Get configuration from meta tag (in <head>, always present)
+      const cfg = document.getElementById('app-config');
+      const url = cfg?.dataset?.supabaseUrl;
+      const key = cfg?.dataset?.supabaseAnonKey;
+
+      if (!url || !key) {
+        console.error('[SB] Missing Supabase config in app-config element');
+        return false;
+      }
+      
+      // Create shared singleton
+      window.SB = window.supabase.createClient(url, key);
+      
+      // Emit ready event for downstream code
+      document.dispatchEvent(new Event('sb-ready'));
+      
+      // Silent success (debug mode only)
+      if (localStorage.getItem('debugAuth') === '1') {
+        console.log('[SB] Shared Supabase client initialized');
+      }
+      
+      return true;
+    } catch (e) {
+      console.error('[SB] init error', e);
+      return false;
     }
   }
-  
+
   // Wait for DOM ready before accessing app-config element
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initializeSharedSupabaseClient, { once: true });
+    document.addEventListener('DOMContentLoaded', tryInit, { once: true });
   } else {
-    initializeSharedSupabaseClient();
+    tryInit();
   }
 })();
-

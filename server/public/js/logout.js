@@ -282,9 +282,8 @@ async function performLogout() {
 
     // 4) Show modal; only OK can proceed
     showLogoutModal('Logged out', 'You have been logged out successfully!', () => {
-      // Release guard, clear HOLD, then navigate via the original replace
+      // Release guard and navigate (KEEP HOLD active - main.js will clear it)
       NavGuard.release();
-      try { localStorage.removeItem(LOGOUT_HOLD_KEY); } catch {}
       (NavGuard._orig.replace || window.location.replace).call(window.location, '/');
     });
 

@@ -37,9 +37,13 @@ function generateCspNonce() {
 function securityHeaders() {
   // Extract Supabase origin for CSP connectSrc
   let supabaseOrigin = '';
+  // Include both HTTPS and WSS protocols for real-time subscriptions
+  let supabaseWss = null;
   try {
     if (process.env.SUPABASE_URL) {
-      supabaseOrigin = new URL(process.env.SUPABASE_URL).origin;
+      const url = new URL(process.env.SUPABASE_URL);
+      supabaseOrigin = url.origin;
+      supabaseWss = `wss://${url.hostname}`;
     }
   } catch (err) {
     console.warn('Could not parse SUPABASE_URL for CSP:', err.message);
@@ -83,8 +87,8 @@ function securityHeaders() {
         // Fonts: self-hosted only
         fontSrc: ["'self'"],
         
-        // AJAX/WebSocket: self + Supabase
-        connectSrc: ["'self'", supabaseOrigin].filter(Boolean),
+        // AJAX/WebSocket: self + Supabase (HTTPS and WSS)
+        connectSrc: ["'self'", supabaseOrigin, supabaseWss].filter(Boolean),
         
         // No iframes allowed
         frameAncestors: ["'none'"],

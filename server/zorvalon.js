@@ -95,7 +95,7 @@ const { generateCspNonce, securityHeaders } = require('./middleware/securityHead
 const cacheControl = require('./middleware/cacheControl');
 const trustProxyIp = require('./middleware/trustProxyIp');
 const corsAllowlist = require('./middleware/corsAllowlist');
-const { generalLimiter, authLimiter } = require('./middleware/rateLimiter');
+const { generalLimiter, loginLimiter, signupLimiter, logoutLimiter, cookieSetLimiter } = require('./middleware/rateLimiter');
 
 // ============================================================
 // STEP 1: Application Initialization
@@ -429,24 +429,36 @@ consoleLogger.formatMiddlewareRegistration('Security middleware');
 
 /**
  * WHAT:
- * Apply rate limiting at the application layer as a safety net.
+ * Per-route rate limiting at the application layer.
  *
  * WHY:
- * Cloudflare handles rate limiting at the edge, but we add a local layer
- * for defense-in-depth. If edge protection fails or misconfigures, we're protected.
+ * Defense-in-depth behind Cloudflare edge protection.
+ * Different routes need different limits (login strict, logout lenient).
  *
  * HOW:
- * 1. General limiter for /api and /dashboard (120 req/min)
- * 2. Strict auth limiter for /auth endpoints (10 attempts per 15 min)
+ * Five tiers of rate limiting:
+ * 1. General API limiter (300 req/min) - generous for normal use
+ * 2. Cookie set limiter (300 req/min) - lenient for post-login flow
+ * 3. Logout limiter (120 req/10min) - very lenient, users click around
+ * 4. Login limiter (10 attempts/15min) - strict to prevent brute force
+ * 5. Signup limiter (5 attempts/hour) - very strict to prevent abuse
  */
+// Apply general rate limiting to API endpoints
+app.use(['/api'], generalLimiter());
+console.log('Rate limiting: General limiter enabled (300 req/min)');
 
-// Apply general rate limiting to API and dashboard routes
-app.use(['/api', '/dashboard'], generalLimiter());
-console.log('Rate limiting: General limiter enabled (120 req/min)');
+// Apply per-route rate limiting to auth endpoints
+app.use('/auth/set-cookie', cookieSetLimiter());
+console.log('Rate limiting: Cookie set limiter enabled (300 req/min)');
 
-// Apply strict rate limiting to auth endpoints (set-cookie, clear-cookie, login, signup)
-app.use(['/auth/set-cookie', '/auth/clear-cookie', '/api/auth/signup', '/api/auth/login'], authLimiter());
-console.log('Rate limiting: Auth limiter enabled (10 attempts per 15 min)');
+app.use('/auth/clear-cookie', logoutLimiter());
+console.log('Rate limiting: Logout limiter enabled (120 req/10min)');
+
+app.use(['/auth/login', '/api/auth/login'], loginLimiter());
+console.log('Rate limiting: Login limiter enabled (10 attempts per 15 min)');
+
+app.use(['/auth/signup', '/api/auth/signup'], signupLimiter());
+console.log('Rate limiting: Signup limiter enabled (5 attempts per hour)');
 
 // ============================================================
 // STEP 7: Routes Registration

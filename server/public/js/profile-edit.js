@@ -103,20 +103,21 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 /**
- * Initialize Supabase client
+ * Initialize Supabase client (use shared singleton)
  */
 function initializeSupabase() {
     try {
-        const config = document.getElementById('app-config');
-        const supabaseUrl = config.dataset.supabaseUrl;
-        const supabaseAnonKey = config.dataset.supabaseAnonKey;
-        
-        if (!supabaseUrl || !supabaseAnonKey) {
-            throw new Error('Supabase configuration missing');
+        if (!window.SB) {
+            const config = document.getElementById('app-config');
+            const supabaseUrl = config?.dataset?.supabaseUrl;
+            const supabaseAnonKey = config?.dataset?.supabaseAnonKey;
+            if (!supabaseUrl || !supabaseAnonKey) {
+                throw new Error('Supabase configuration missing');
+            }
+            window.SB = window.supabase.createClient(supabaseUrl, supabaseAnonKey);
         }
-        
-        supabase = window.supabase.createClient(supabaseUrl, supabaseAnonKey);
-        logger.info('Supabase client initialized');
+        supabase = window.SB; // shared singleton
+        logger.info('Supabase client initialized (shared)');
     } catch (error) {
         logger.error('Failed to initialize Supabase:', error);
         showError('Failed to initialize authentication system. Please refresh the page.');

@@ -29,7 +29,7 @@
         <div class="modal-body">
             <!-- Login Form State -->
             <div id="loginFormState" class="modal-state">
-                <form id="loginForm">
+                <form id="loginForm" method="post" action="/auth/login">
                     <input type="hidden" name="_csrf" value="<%= ui?.csrfToken || '' %>">
                     
                     <div class="form-group">
@@ -95,7 +95,7 @@
         <div class="modal-body">
             <!-- Sign Up Form State -->
             <div id="signupFormState" class="modal-state">
-                <form id="signupForm">
+                <form id="signupForm" method="post" action="/api/auth/signup">
                     <input type="hidden" name="_csrf" value="<%= ui?.csrfToken || '' %>">
                     
                     <div class="form-group">

@@ -5,7 +5,9 @@
   "main": "zorvalon.js",
   "scripts": {
     "start": "node zorvalon.js",
-    "dev": "node zorvalon.js"
+    "dev": "node zorvalon.js",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "engines": {
     "node": ">=18"
@@ -19,6 +21,10 @@
     "helmet": "^7.1.0",
     "jose": "^6.1.0",
     "sanitize-html": "^2.17.0"
+  },
+  "devDependencies": {
+    "vitest": "^1.0.0",
+    "supertest": "^6.3.3"
   },
   "keywords": [],
   "author": "",

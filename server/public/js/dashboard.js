@@ -103,53 +103,10 @@ document.addEventListener('DOMContentLoaded', function() {
 
 // Notification Modal Functions
 function showNotificationModal(title, message, onClose = null) {
-    // Create modal if it doesn't exist
-    let modal = document.getElementById('notificationModal');
-    if (!modal) {
-        modal = document.createElement('div');
-        modal.id = 'notificationModal';
-        modal.className = 'modal';
-        modal.innerHTML = `
-            <div class="modal-content notification-modal">
-                <div class="modal-header">
-                    <h2 id="notificationTitle">Notification</h2>
-                    <span class="close" id="notificationClose">&times;</span>
-                </div>
-                <div class="modal-body">
-                    <p id="notificationMessage">Message content</p>
-                    <div class="form-actions">
-                        <button type="button" class="btn btn-secondary" id="notificationOkBtn">OK</button>
-                    </div>
-                </div>
-            </div>
-        `;
-        document.body.appendChild(modal);
+    // Use centralized modalManager (loaded from modalManager.js)
+    if (typeof modalManager !== 'undefined') {
+        modalManager.showNotification(title, message, onClose);
     }
-    
-    const titleEl = document.getElementById('notificationTitle');
-    const messageEl = document.getElementById('notificationMessage');
-    const closeBtn = document.getElementById('notificationClose');
-    const okBtn = document.getElementById('notificationOkBtn');
-    
-    if (titleEl) titleEl.textContent = title;
-    if (messageEl) messageEl.textContent = message;
-    if (modal) modal.style.display = 'block';
-    
-    // Close modal handlers
-    const closeModal = () => {
-        modal.style.display = 'none';
-        if (onClose) onClose();
-    };
-    
-    if (closeBtn) closeBtn.onclick = closeModal;
-    if (okBtn) okBtn.onclick = closeModal;
-    
-    // Close on outside click
-    window.onclick = function(event) {
-        if (event.target === modal) {
-            closeModal();
-        }
-    };
 }
 
 /**
@@ -188,15 +145,15 @@ async function fetchSubmissions() {
         
         if (data.submissions && data.submissions.length > 0) {
             displaySubmissions(data.submissions);
-            submissionsList.style.display = 'block';
+            submissionsList.classList.remove('hidden');
         } else {
             submissionsList.innerHTML = '<p>No submissions found.</p>';
-            submissionsList.style.display = 'block';
+            submissionsList.classList.remove('hidden');
         }
     } catch (error) {
         console.error('Error fetching submissions:', error);
         submissionsList.innerHTML = '<p>Error loading submissions. Please try again.</p>';
-        submissionsList.style.display = 'block';
+        submissionsList.classList.remove('hidden');
     }
 }
 
@@ -237,7 +194,7 @@ function displaySubmissions(submissions) {
     const hideBtn = document.getElementById('hideSubmissionsBtn');
     if (hideBtn) {
         hideBtn.addEventListener('click', function() {
-            submissionsList.style.display = 'none';
+            submissionsList.classList.add('hidden');
         });
     }
 }

@@ -199,7 +199,7 @@ function showLogoutModal(title, message, onClose = null) {
   window.addEventListener('keydown', escBlock, { capture: true });
 
   const closeModal = () => {
-    modal.style.display = 'none';
+    modal.classList.remove('show');
     okBtn?.removeEventListener('click', closeModal);
     window.removeEventListener('keydown', escBlock, { capture: true });
     if (onClose) onClose();
@@ -208,7 +208,7 @@ function showLogoutModal(title, message, onClose = null) {
   okBtn?.removeEventListener('click', closeModal);
   okBtn?.addEventListener('click', closeModal, { once: true });
 
-  modal.style.display = 'block';
+  modal.classList.add('show');
 }
 
 /* ===========================

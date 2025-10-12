@@ -163,15 +163,19 @@
     </footer>
 
     <!-- Hidden submissions list for dashboard -->
-    <div id="submissionsList" class="submissions-list" style="display: none;"></div>
+    <div id="submissionsList" class="submissions-list hidden"></div>
+
+    <!-- Centralized Modals (login, signup, notifications) -->
+    <%- include('partials/modals') %>
 
     <!-- Supabase client initialization -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" nonce="<%= page.nonce %>"></script>
     <script src="/js/logout.js" nonce="<%= page.nonce %>"></script>
+    <script src="/js/modalManager.js" nonce="<%= page.nonce %>"></script>
     <div id="app-config" 
+         class="hidden"
          data-supabase-url="<%= ui.supabaseUrl %>" 
-         data-supabase-anon-key="<%= ui.supabaseAnonKey %>" 
-         style="display:none;">
+         data-supabase-anon-key="<%= ui.supabaseAnonKey %>">
     </div>
     <script nonce="<%= page.nonce %>">
         // Initialize Supabase client for dashboard

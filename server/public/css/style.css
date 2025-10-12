@@ -885,6 +885,35 @@ nav ul li a.active {
     display: none !important;
 }
 
+/* Profile edit mode utility classes (CSP-compliant) */
+.field-input-hidden {
+    display: none !important;
+}
+
+.field-display-hidden {
+    display: none !important;
+}
+
+.field-display-inline {
+    display: inline !important;
+}
+
+.field-input-inline {
+    display: inline !important;
+}
+
+.text-success {
+    color: #28a745 !important;
+}
+
+.text-center {
+    text-align: center !important;
+}
+
+.text-muted {
+    color: #6c757d !important;
+}
+
 .modal-state.showing {
     opacity: 0;
     transform: translateX(20px);

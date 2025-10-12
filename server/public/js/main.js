@@ -372,11 +372,11 @@ function showResult(type, message) {
     
     resultDiv.className = `result-message ${type}`;
     resultDiv.textContent = message;
-    resultDiv.style.display = 'block';
+    resultDiv.classList.remove('hidden');
     
     // Auto-hide after 5 seconds
     setTimeout(() => {
-        resultDiv.style.display = 'none';
+        resultDiv.classList.add('hidden');
     }, 5000);
 }
 
@@ -428,10 +428,10 @@ function displaySubmissions(submissions) {
     
     if (!submissionsList) return;
     
-    if (submissionsList.style.display === 'none' || submissionsList.style.display === '') {
+    if (submissionsList.classList.contains('hidden')) {
         // Show submissions
         if (submissions.length === 0) {
-            submissionsList.innerHTML = '<p style="text-align: center; color: #6c757d;">No submissions yet. Submit some text above!</p>';
+            submissionsList.innerHTML = '<p class="text-center text-muted">No submissions yet. Submit some text above!</p>';
         } else {
             // SECURITY: Escape all user content to prevent XSS attacks
             // User submissions may contain malicious HTML/JS - we escape before rendering
@@ -446,10 +446,10 @@ function displaySubmissions(submissions) {
                 </div>
             `).join('');
         }
-        submissionsList.style.display = 'block';
+        submissionsList.classList.remove('hidden');
     } else {
         // Hide submissions
-        submissionsList.style.display = 'none';
+        submissionsList.classList.add('hidden');
         viewBtn.textContent = 'View Recent Submissions';
     }
 }

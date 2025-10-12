@@ -98,10 +98,14 @@
             if (timeLeft <= 0) {
                 clearInterval(timer);
                 countdownElement.textContent = 'You can try again now!';
-                countdownElement.style.color = '#28a745';
+                countdownElement.classList.add('text-success');
             }
         }, 1000);
     </script>
     <% } %>
+
+    <!-- Centralized Modals (for consistent UX across all pages) -->
+    <%- include('partials/modals') %>
+    <script src="/js/modalManager.js" nonce="<%= page.nonce %>"></script>
 </body>
 </html>

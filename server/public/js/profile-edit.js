@@ -288,16 +288,16 @@ function toggleFieldEdit(fieldName) {
     
     if (editingFields.has(fieldName)) {
         // Switch to read mode
-        displayElement.style.display = 'inline';
-        inputElement.style.display = 'none';
+        displayElement.classList.remove('field-display-hidden'); displayElement.classList.add('field-display-inline');
+        inputElement.classList.add('field-input-hidden'); inputElement.classList.remove('field-input-inline');
         editButton.textContent = 'Edit';
         editButton.classList.remove('btn-primary');
         editButton.classList.add('btn-small');
         editingFields.delete(fieldName);
     } else {
         // Switch to edit mode
-        displayElement.style.display = 'none';
-        inputElement.style.display = 'inline';
+        displayElement.classList.add('field-display-hidden'); displayElement.classList.remove('field-display-inline');
+        inputElement.classList.remove('field-input-hidden'); inputElement.classList.add('field-input-inline');
         editButton.textContent = 'Save';
         editButton.classList.remove('btn-small');
         editButton.classList.add('btn-primary');
@@ -407,8 +407,8 @@ async function saveIndividualField(fieldName) {
         const saveCancelButton = saveFieldContainer.querySelector('.cancel-btn');
         
         if (saveDisplayElement && saveInputElement && saveEditButton) {
-            saveDisplayElement.style.display = 'inline';
-            saveInputElement.style.display = 'none';
+            saveDisplayElement.classList.remove('field-display-hidden'); saveDisplayElement.classList.add('field-display-inline');
+            saveInputElement.classList.add('field-input-hidden'); saveInputElement.classList.remove('field-input-inline');
             saveEditButton.textContent = 'Edit';
             saveEditButton.classList.remove('btn-primary');
             saveEditButton.classList.add('btn-small');
@@ -477,8 +477,8 @@ function cancelFieldEdit(fieldName) {
     inputElement.value = originalValue;
     
     // Switch back to read mode
-    displayElement.style.display = 'inline';
-    inputElement.style.display = 'none';
+    displayElement.classList.remove('field-display-hidden'); displayElement.classList.add('field-display-inline');
+    inputElement.classList.add('field-input-hidden'); inputElement.classList.remove('field-input-inline');
     editButton.textContent = 'Edit';
     editButton.classList.remove('btn-primary');
     editButton.classList.add('btn-small');
@@ -726,7 +726,7 @@ function showFieldError(fieldId, message) {
     const errorElement = document.getElementById(fieldId);
     if (errorElement) {
         errorElement.textContent = message;
-        errorElement.style.display = 'block';
+        errorElement.classList.remove('hidden');
     }
 }
 
@@ -737,7 +737,7 @@ function clearFieldError(fieldId) {
     const errorElement = document.getElementById(fieldId);
     if (errorElement) {
         errorElement.textContent = '';
-        errorElement.style.display = 'none';
+        errorElement.classList.add('hidden');
     }
 }
 
@@ -748,7 +748,7 @@ function showError(message) {
     const errorElement = document.getElementById('profileGeneralError');
     if (errorElement) {
         errorElement.textContent = message;
-        errorElement.style.display = 'block';
+        errorElement.classList.remove('hidden');
     }
 }
 

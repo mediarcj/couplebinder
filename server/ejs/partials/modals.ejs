@@ -1,0 +1,215 @@
+<!-- File: server/ejs/partials/modals.ejs -->
+<!-- Description: Centralized modal templates for all pages -->
+<!-- Purpose: Single source of truth for login, signup, and notification modals -->
+<!-- Notes: Enforces consistent CSRF, input limits, and CSP-compliant styling -->
+
+<!-- 
+  WHAT:
+  Provides reusable modal templates that work on any page.
+  
+  WHY:
+  Security: One place to enforce CSRF tokens, input sanitization, and CSP.
+  Consistency: Same UX and error handling everywhere.
+  Maintenance: Fix once, applies to all pages.
+  
+  HOW:
+  Include this partial in any page that needs modals.
+  Use the centralized modalManager.js to control behavior.
+-->
+
+<!-- ============================================================ -->
+<!-- Login Modal -->
+<!-- ============================================================ -->
+<div id="loginModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2>Login to <%= app_info?.name || 'Detechify' %></h2>
+            <span class="close" data-modal-close="loginModal">&times;</span>
+        </div>
+        <div class="modal-body">
+            <!-- Login Form State -->
+            <div id="loginFormState" class="modal-state">
+                <form id="loginForm">
+                    <input type="hidden" name="_csrf" value="<%= ui?.csrfToken || '' %>">
+                    
+                    <div class="form-group">
+                        <label for="loginEmail">Email Address</label>
+                        <input 
+                            type="email" 
+                            id="loginEmail" 
+                            name="email" 
+                            placeholder="Enter your email address"
+                            maxlength="<%= ui_instructions?.input_limits?.email_max || 100 %>"
+                            autocomplete="email"
+                            required
+                        >
+                        <div id="emailError" class="error-message"></div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="loginPassword">Password</label>
+                        <input 
+                            type="password" 
+                            id="loginPassword" 
+                            name="password" 
+                            placeholder="Enter your password"
+                            autocomplete="current-password"
+                            required
+                        >
+                        <div id="passwordError" class="error-message"></div>
+                    </div>
+                    
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-secondary" data-modal-close="loginModal">Cancel</button>
+                        <button type="submit" class="btn btn-primary">Login</button>
+                    </div>
+                    
+                    <div id="loginGeneralError" class="error-message hidden"></div>
+                </form>
+            </div>
+            
+            <!-- Login Success State -->
+            <div id="loginSuccessState" class="modal-state hidden">
+                <div class="success-content">
+                    <div class="success-icon">OK</div>
+                    <h3 id="successTitle">Login Successful!</h3>
+                    <p id="successMessage">Welcome back!</p>
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-primary" id="successOkBtn">OK</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- Sign Up Modal -->
+<!-- ============================================================ -->
+<div id="signupModal" class="modal">
+    <div class="modal-content signup-modal">
+        <div class="modal-header">
+            <h2>Create Account</h2>
+            <span class="close" data-modal-close="signupModal">&times;</span>
+        </div>
+        <div class="modal-body">
+            <!-- Sign Up Form State -->
+            <div id="signupFormState" class="modal-state">
+                <form id="signupForm">
+                    <input type="hidden" name="_csrf" value="<%= ui?.csrfToken || '' %>">
+                    
+                    <div class="form-group">
+                        <label for="displayName">Full Name *</label>
+                        <input 
+                            type="text" 
+                            id="displayName" 
+                            name="display_name" 
+                            placeholder="Enter your full name"
+                            maxlength="100"
+                            autocomplete="name"
+                            required
+                        >
+                        <div id="displayNameError" class="error-message"></div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="signupEmail">Email Address *</label>
+                        <input 
+                            type="email" 
+                            id="signupEmail" 
+                            name="email" 
+                            placeholder="Enter your email address"
+                            maxlength="<%= ui_instructions?.input_limits?.email_max || 100 %>"
+                            autocomplete="email"
+                            required
+                        >
+                        <div id="signupEmailError" class="error-message"></div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="signupPhone">Phone Number (Optional)</label>
+                        <input 
+                            type="tel" 
+                            id="signupPhone" 
+                            name="phone" 
+                            placeholder="Enter your phone number"
+                            minlength="8"
+                            maxlength="15"
+                            pattern="[0-9]+"
+                            autocomplete="tel"
+                        >
+                        <div id="signupPhoneError" class="error-message"></div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="signupPassword">Password *</label>
+                        <input 
+                            type="password" 
+                            id="signupPassword" 
+                            name="password" 
+                            placeholder="Min 8 characters"
+                            minlength="8"
+                            maxlength="50"
+                            autocomplete="new-password"
+                            required
+                        >
+                        <div id="signupPasswordError" class="error-message"></div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="signupConfirmPassword">Confirm Password *</label>
+                        <input 
+                            type="password" 
+                            id="signupConfirmPassword" 
+                            name="confirm_password" 
+                            placeholder="Confirm your password"
+                            minlength="8"
+                            maxlength="50"
+                            autocomplete="new-password"
+                            required
+                        >
+                        <div id="confirmPasswordError" class="error-message"></div>
+                    </div>
+                    
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-secondary" data-modal-close="signupModal">Cancel</button>
+                        <button type="submit" class="btn btn-primary">Create Account</button>
+                    </div>
+                    
+                    <div id="signupGeneralError" class="error-message hidden"></div>
+                </form>
+            </div>
+            
+            <!-- Sign Up Success State -->
+            <div id="signupSuccessState" class="modal-state hidden">
+                <div class="success-content">
+                    <div class="success-icon">OK</div>
+                    <h3 id="signupSuccessTitle">Account Created!</h3>
+                    <p id="signupSuccessMessage">Welcome! Please login to continue.</p>
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-primary" id="signupSuccessOkBtn">OK</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- Notification Modal (Generic) -->
+<!-- ============================================================ -->
+<div id="notificationModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2 id="notificationTitle">Notification</h2>
+            <span class="close" data-modal-close="notificationModal">&times;</span>
+        </div>
+        <div class="modal-body">
+            <p id="notificationMessage">Message goes here</p>
+            <div class="form-actions">
+                <button type="button" class="btn btn-primary" id="notificationOkBtn">OK</button>
+            </div>
+        </div>
+    </div>
+</div>
+

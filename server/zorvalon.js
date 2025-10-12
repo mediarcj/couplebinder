@@ -274,28 +274,10 @@ consoleLogger.formatConfigSummary(config);
  * rate limiting, body parsing, sessions, and custom middleware.
  */
 
-// HTTPS redirect middleware (for production behind Cloudflare)
+// HTTPS enforcement (respects Cloudflare proxy headers, uses canonical PUBLIC_ORIGIN)
 // NOTE: OPTIONS requests are handled by the preflight short-circuit at the top
-if (config.security.enforceHttps) {
-  app.use((req, res, next) => {
-    // Trust proxy headers from Cloudflare
-    const forwardedProto = req.get('x-forwarded-proto');
-    const host = req.get('host');
-    
-    // Redirect HTTP to HTTPS
-    if (forwardedProto !== 'https') {
-      const httpsUrl = `https://${host}${req.originalUrl}`;
-      logger.info('HTTPS redirect', { 
-        from: req.originalUrl, 
-        to: httpsUrl,
-        forwardedProto 
-      });
-      return res.redirect(301, httpsUrl);
-    }
-    
-    next();
-  });
-}
+const enforceHttps = require('./middleware/enforceHttps');
+app.use(enforceHttps);
 
 // Note: CSP with nonce is now handled by securityHeaders() middleware above
 // No additional Helmet configuration needed here

@@ -14,16 +14,33 @@
  * before the redirect completes. This creates a logout → instant re-login race.
  * 
  * HOW:
- * Check localStorage for logout.ui.hold key. If present, skip all auth hydration.
+ * Check localStorage for logout.ui.hold key (set by logout.js module).
+ * If present, skip all auth hydration.
  */
-const LOGOUT_HOLD_KEY = 'logout.ui.hold';
 const logoutHoldActive = () => {
   try {
-    return localStorage.getItem(LOGOUT_HOLD_KEY) === '1';
+    return localStorage.getItem('logout.ui.hold') === '1';
   } catch {
     return false;
   }
 };
+
+const clearLogoutHold = () => {
+  try {
+    localStorage.removeItem('logout.ui.hold');
+  } catch {}
+};
+
+async function getSessionSafe() {
+  try {
+    const client = window.SB || window.supabase;
+    if (!client?.auth?.getSession) return null;
+    const { data } = await client.auth.getSession();
+    return data?.session ?? null;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Frontend Logger with DEBUG flag support
@@ -170,67 +187,40 @@ document.addEventListener('DOMContentLoaded', function() {
             supabaseAnonKey: configEl.dataset.supabaseAnonKey
         };
         
-        // Initialize Supabase client
-        logger.info('Initializing Supabase client');
-        logger.info('Supabase URL configured');
-        logger.info('Supabase Key:', window.appConfig.supabaseAnonKey ? 'Present' : 'Missing');
+        // Use shared Supabase client (initialized by sbClient.js)
+        const client = window.SB || window.supabase;
+        if (!client) {
+            logger.error('Supabase client not available - check if sbClient.js loaded');
+            return;
+        }
         
-        if (window.appConfig.supabaseUrl && window.appConfig.supabaseAnonKey) {
-            try {
-                if (typeof supabase === 'undefined') {
-                    logger.error('Supabase library not loaded - check if CDN script loaded correctly');
+        logger.info('Using shared Supabase client');
+        
+        // Listen for auth state changes
+        client.auth.onAuthStateChange(async (event, session) => {
+            logger.info('Auth state changed:', event);
+            
+            if (event === 'SIGNED_OUT') {
+                // Clear HOLD when we observe a genuine sign-out
+                if (logoutHoldActive()) {
+                    logger.info('SIGNED_OUT observed - clearing HOLD');
+                    clearLogoutHold();
+                }
+                updateUIForLoggedOutUser();
+                return;
+            }
+            
+            if (event === 'SIGNED_IN' && session?.user) {
+                // Skip hydration if HOLD is active
+                if (logoutHoldActive()) {
+                    logger.info('SIGNED_IN observed but HOLD active - skipping hydration');
                     return;
                 }
-                
-                logger.info('Creating Supabase client');
-                window.supabase = supabase.createClient(window.appConfig.supabaseUrl, window.appConfig.supabaseAnonKey);
-                logger.info('Supabase client initialized successfully');
-                
-                // Test the connection
-                window.supabase.auth.getSession().then(({ data: { session }, error }) => {
-                    if (error) {
-                        logger.error('Supabase session check error:', error);
-                    } else {
-                        logger.info('Supabase connection test successful');
-                    }
-                });
-                
-                // Listen for auth state changes
-                // Note: We only update UI for explicit SIGNED_IN and SIGNED_OUT events.
-                // INITIAL_SESSION is ignored because checkSessionStatus() will validate
-                // the session with the server first before updating UI.
-                
-                // Helper to check if logout modal is controlling the redirect
-                const HOLD = () => {
-                    try {
-                        return localStorage.getItem('logout.ui.hold') === '1';
-                    } catch {
-                        return false;
-                    }
-                };
-                
-                window.supabase.auth.onAuthStateChange((event, session) => {
-                    logger.info('Auth state changed:', event);
-                    if (event === 'SIGNED_IN' && session?.user) {
-                        // User explicitly logged in (not initial session load)
-                        updateUIForLoggedInUser(session.user.email);
-                    } else if (event === 'SIGNED_OUT') {
-                        // Check if logout modal is controlling the redirect
-                        if (HOLD()) {
-                            logger.info('Logout modal is controlling redirect - skipping auto-redirect');
-                            return;
-                        }
-                        // User explicitly logged out
-                        updateUIForLoggedOutUser();
-                    }
-                    // Ignore INITIAL_SESSION, TOKEN_REFRESHED, etc. - let checkSessionStatus handle it
-                });
-            } catch (error) {
-                logger.error('Failed to initialize Supabase client:', error.message);
+                // User explicitly logged in (handled by handleLoginSubmit)
+                updateUIForLoggedInUser(session.user.email);
             }
-        } else {
-            logger.error('Supabase configuration missing - URL or Key not found');
-        }
+            // Ignore INITIAL_SESSION, TOKEN_REFRESHED - let checkSessionStatus handle it
+        });
     }
     
     // Add smooth scrolling for anchor links
@@ -689,27 +679,28 @@ async function handleLoginSubmit(e) {
     }
     
     if (!hasErrors) {
-        // Use Supabase Auth for login
+        // Use Supabase Auth for login (shared client)
         try {
-            if (!window.supabase) {
+            const client = window.SB || window.supabase;
+            if (!client) {
                 showLoginGeneralError('Authentication system not initialized. Please refresh the page.');
                 return;
             }
             
             logger.info('Attempting login with Supabase');
-            logger.info('Supabase client available:', !!window.supabase);
+            logger.info('Supabase client available:', !!client);
             
             // Check if there's any existing session before attempting login
-            const { data: { session: existingSession } } = await window.supabase.auth.getSession();
+            const { data: { session: existingSession } } = await client.auth.getSession();
             logger.info('Existing session found before login:', !!existingSession);
             
             // Clear any existing session to ensure clean login
             if (existingSession) {
                 logger.info('Clearing existing session before login');
-                await window.supabase.auth.signOut();
+                await client.auth.signOut();
             }
             
-            const { data, error } = await window.supabase.auth.signInWithPassword({
+            const { data, error } = await client.auth.signInWithPassword({
                 email: email,
                 password: password
             });
@@ -829,13 +820,6 @@ async function handleLoginSubmit(e) {
  */
 async function checkSessionStatus() {
     try {
-        // Skip if logout is in progress
-        if (logoutHoldActive()) {
-            logger.info('HOLD active - skipping session check during logout');
-            updateUIForLoggedOutUser();
-            return;
-        }
-        
         // Check if Supabase has an existing session (use shared client)
         const client = window.SB || window.supabase;
         if (!client) {
@@ -844,9 +828,23 @@ async function checkSessionStatus() {
             return;
         }
         
-        const { data: { session }, error } = await client.auth.getSession();
+        const session = await getSessionSafe();
         
-        if (error || !session?.access_token) {
+        // If HOLD is active AND session is null, clear HOLD (logout complete)
+        if (logoutHoldActive()) {
+            if (!session) {
+                logger.info('HOLD active but session null - clearing HOLD (logout complete)');
+                clearLogoutHold();
+                updateUIForLoggedOutUser();
+            } else {
+                logger.info('HOLD active with live session - skipping hydration');
+                updateUIForLoggedOutUser();
+            }
+            return;
+        }
+        
+        // No session found - show logged out
+        if (!session?.access_token) {
             logger.info('No existing session found');
             updateUIForLoggedOutUser();
             return;
@@ -870,7 +868,7 @@ async function checkSessionStatus() {
                 if (result.ok) {
                     logger.info('Session restored');
                     // Get fresh user data to update UI
-                    const { data: { user } } = await window.supabase.auth.getUser();
+                    const { data: { user } } = await client.auth.getUser();
                     if (user) {
                         updateUIForLoggedInUser(user.email);
                     } else {
@@ -883,7 +881,7 @@ async function checkSessionStatus() {
             // Server rejected the token - session is invalid
             logger.info('Session expired or invalid');
             // Clear the stale Supabase session
-            await window.supabase.auth.signOut();
+            await client.auth.signOut();
             updateUIForLoggedOutUser();
             
         } catch (cookieError) {
@@ -1259,9 +1257,10 @@ async function handleSignupSubmit(e) {
         return;
     }
     
-    // Use Supabase Auth for sign up
+    // Use Supabase Auth for sign up (shared client)
     try {
-        if (!window.supabase) {
+        const client = window.SB || window.supabase;
+        if (!client) {
             showSignupGeneralError('Authentication system not initialized. Please refresh the page.');
             return;
         }
@@ -1291,7 +1290,7 @@ async function handleSignupSubmit(e) {
         }
         
         // Create user with Supabase Auth
-        const { data: authData, error: authError } = await window.supabase.auth.signUp({
+        const { data: authData, error: authError } = await client.auth.signUp({
             email: data.email,
             password: data.password,
             options: {
@@ -1314,7 +1313,7 @@ async function handleSignupSubmit(e) {
             logger.info('Sign up successful');
             
             // Sign out the user immediately after sign-up to prevent auto-login
-            await window.supabase.auth.signOut();
+            await client.auth.signOut();
             logger.info('User signed out after sign-up to prevent auto-login');
             
             // Show success state with login prompt

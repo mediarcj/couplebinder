@@ -612,7 +612,7 @@ function installJsonLogShim(options = {}) {
     try {
       if (args.length === 1 && args[0] && typeof args[0] === 'object' && !Array.isArray(args[0])) {
         const obj = args[0];
-        if (obj.event) {
+        if (obj.event || obj.msg) {
           inPretty = true;
           formatJsonEvent(obj);
           inPretty = false;
@@ -625,7 +625,7 @@ function installJsonLogShim(options = {}) {
         if (s.startsWith('{') && s.endsWith('}')) {
           try {
             const obj = JSON.parse(s);
-            if (obj && typeof obj === 'object' && obj.event) {
+            if (obj && typeof obj === 'object' && (obj.event || obj.msg)) {
               inPretty = true;
               formatJsonEvent(obj);
               inPretty = false;

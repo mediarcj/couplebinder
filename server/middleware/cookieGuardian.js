@@ -60,16 +60,20 @@ function parseCookies(req, res, next) {
   // Step 5: Attach the final parsed cookie object to the request so other modules can use it
   req.cookies = parsed;
 
-  // Step 6: Emit a log of how many cookies were successfully parsed for traceability and debugging
-  const cookieCount = Object.keys(parsed).length;
-  if (cookieCount > 0) {
-    logger.cookieParsing({
-      count: cookieCount,
-      requestId: req.requestId
-    });
-  }
+  /**
+   * WHAT:
+   * Cookie parsing is now complete and silent.
+   * 
+   * WHY:
+   * Cookie parsing is a routine middleware operation that happens on every request.
+   * Logging success on every request creates massive log volume with no value.
+   * 
+   * HOW:
+   * We only log cookie parsing errors (in the catch block above).
+   * Success is silent. This keeps production logs clean and actionable.
+   */
 
-  // Step 7: Move on to the next middleware in the Express chain
+  // Step 6: Move on to the next middleware in the Express chain
   next();
 }
 

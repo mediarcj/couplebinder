@@ -393,6 +393,19 @@ async function saveIndividualField(fieldName) {
             throw new Error(result.message || 'Update failed');
         }
         
+        /**
+         * WHAT:
+         * Check if server detected unchanged data.
+         * 
+         * WHY:
+         * Backend is source of truth (Building Law 9).
+         * Better UX - tell user "no change" instead of fake success.
+         * 
+         * HOW:
+         * Server returns unchanged: true if data didn't change.
+         * Show appropriate message based on server response.
+         */
+        
         // Update local profile data
         userProfile = result.profile;
         
@@ -420,8 +433,12 @@ async function saveIndividualField(fieldName) {
         // Update the display value
         displayField(fieldName, value || 'Not provided');
         
-        // Show success message
-        showSuccess(`${getFieldDisplayName(fieldName)} updated successfully!`);
+        // Show appropriate message based on server response
+        if (result.unchanged) {
+            showInfo(`No changes made to ${getFieldDisplayName(fieldName)}`);
+        } else {
+            showSuccess(`${getFieldDisplayName(fieldName)} updated successfully!`);
+        }
         
     } catch (error) {
         logger.error(`Failed to save ${fieldName}:`, error);
@@ -755,6 +772,31 @@ function showSuccess(message) {
     // CSP-friendly toast (styled via CSS)
     const el = document.createElement('div');
     el.className = 'success-message success-toast is-visible';
+    el.textContent = message;
+    document.body.appendChild(el);
+    setTimeout(() => {
+        el.classList.remove('is-visible');
+        setTimeout(() => el.remove(), 300); // allow fade-out
+    }, 3000);
+}
+
+/**
+ * WHAT:
+ * Show info message for neutral events (like "no change").
+ * 
+ * WHY:
+ * Better UX - distinguish between success (green) and info (blue).
+ * Server tells us when data didn't change (Building Law 9).
+ * 
+ * HOW:
+ * Uses info-toast class (blue color) instead of success-toast (green).
+ * Same animation and timing as success message.
+ * CSP-friendly (no inline styles).
+ */
+function showInfo(message) {
+    // CSP-friendly toast (styled via CSS)
+    const el = document.createElement('div');
+    el.className = 'info-message info-toast is-visible';
     el.textContent = message;
     document.body.appendChild(el);
     setTimeout(() => {

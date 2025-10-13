@@ -216,7 +216,6 @@ async function updateOwnProfile(userId, patch) {
 
   // STEP 2: Update profiles table (source of truth)
   // This is the critical update - must succeed
-  logger.profile('profile.update.executing', { userId, fields: Object.keys(processedPatch || {}) });
   const { data, error } = await supabaseAdmin
     .from('profiles')
     .update(processedPatch)
@@ -229,7 +228,13 @@ async function updateOwnProfile(userId, patch) {
     throw error;
   }
   
-  logger.profile('profile.update.completed', { userId, operation: 'profile_update_success' });
+  // Log consolidated profile update (all info in one block)
+  logger.profile('profile.update.success', { 
+    userId, 
+    fields: Object.keys(processedPatch || {}),
+    status: 'completed'
+  });
+  
   return data;
 }
 

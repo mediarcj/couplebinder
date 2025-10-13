@@ -173,7 +173,6 @@ async function updateOwnProfile(userId, patch) {
   // Note: This update is non-critical. If it fails, profiles table is still updated (source of truth)
   if (needsAuthUpdate && Object.keys(authUpdateData).length > 0) {
     try {
-      console.log('[profile] Updating auth.users metadata:', { userId, fields: Object.keys(authUpdateData) });
       const { error: authError } = await supabaseAdmin.auth.admin.updateUserById(userId, {
         user_metadata: authUpdateData
       });
@@ -181,8 +180,6 @@ async function updateOwnProfile(userId, patch) {
       if (authError) {
         console.error('[profile] auth.users update failed (non-critical):', authError.message);
         // Continue with profile update - profiles table is source of truth
-      } else {
-        console.log('[profile] auth.users metadata updated successfully');
       }
     } catch (authErr) {
       console.error('[profile] auth.users update error (non-critical):', authErr.message);

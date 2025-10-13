@@ -218,8 +218,24 @@ function logConfigSummary() {
   formatConfigSummary(config);
 }
 
+/**
+ * WHAT:
+ * Cache-busting version for static assets (JS/CSS).
+ * 
+ * WHY:
+ * Browsers cache JavaScript and CSS files aggressively.
+ * When we deploy new code, users see old cached files.
+ * 
+ * HOW:
+ * Use current timestamp as version query string.
+ * Example: /js/profile-edit.js?v=1697234567890
+ * Forces browser to fetch fresh files after deployment.
+ */
+const ASSET_VERSION = process.env.ASSET_VERSION || Date.now().toString();
+
 module.exports = {
   config,
   validateConfig,
-  logConfigSummary
+  logConfigSummary,
+  ASSET_VERSION
 };

@@ -526,6 +526,7 @@ function formatAuthCookieEvent(payload = {}) {
  * Detects profile.update.* events and formats them with orange ANSI color.
  * Shows user ID, fields being updated, and operation status.
  * Keeps consistent visual style with other formatters.
+ * Orange color for lines and field labels, white text for data values.
  * 
  * @param {Object} payload - structured event
  *   { ts, msg, userId, fields, operation, level }
@@ -543,27 +544,26 @@ function formatProfileUpdateEvent(payload = {}) {
   // Orange color for warmth and positivity (ANSI escape code)
   const ORANGE = '\x1b[38;5;214m';
   const RESET = '\x1b[0m';
-  const BRIGHT = '\x1b[1m';
 
-  console.log(`\n${LINE}`);
-  console.log(`${ORANGE}${BRIGHT}PROFILE UPDATE${RESET}`);
-  console.log(`   Event: ${msg}`);
-  console.log(`   User ID: ${userId}`);
+  console.log(`\n${ORANGE}${LINE}${RESET}`);
+  console.log(`${ORANGE}PROFILE UPDATE${RESET}`);
+  console.log(`${ORANGE}Event:${RESET}      ${msg}`);
+  console.log(`${ORANGE}User ID:${RESET}    ${userId}`);
   
   if (fields && typeof fields === 'object') {
     const fieldList = Array.isArray(fields) ? fields : Object.keys(fields);
     if (fieldList.length > 0) {
-      console.log(`   Fields: ${fieldList.join(', ')}`);
+      console.log(`${ORANGE}Fields:${RESET}     ${fieldList.join(', ')}`);
     }
   }
   
   if (operation) {
-    console.log(`   Operation: ${operation}`);
+    console.log(`${ORANGE}Operation:${RESET}  ${operation}`);
   }
   
-  console.log(`   Level: ${level}`);
-  console.log(`   Time: ${formatIsoTimestamp(ts)}`);
-  console.log(`${LINE}`);
+  console.log(`${ORANGE}Level:${RESET}      ${level}`);
+  console.log(`${ORANGE}Time:${RESET}       ${formatIsoTimestamp(ts)}`);
+  console.log(`${ORANGE}${LINE}${RESET}`);
 }
 
 /** Generic pretty printer for future JSON events. */
@@ -612,7 +612,7 @@ function installJsonLogShim(options = {}) {
     try {
       if (args.length === 1 && args[0] && typeof args[0] === 'object' && !Array.isArray(args[0])) {
         const obj = args[0];
-        if (obj.event || obj.msg) {
+        if (obj.event) {
           inPretty = true;
           formatJsonEvent(obj);
           inPretty = false;
@@ -625,7 +625,7 @@ function installJsonLogShim(options = {}) {
         if (s.startsWith('{') && s.endsWith('}')) {
           try {
             const obj = JSON.parse(s);
-            if (obj && typeof obj === 'object' && (obj.event || obj.msg)) {
+            if (obj && typeof obj === 'object' && obj.event) {
               inPretty = true;
               formatJsonEvent(obj);
               inPretty = false;

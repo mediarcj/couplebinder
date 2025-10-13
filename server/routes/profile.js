@@ -76,9 +76,11 @@ router.put('/me', validateProfileUpdate, async (req, res) => {
      */
     if (updated._unchanged) {
       // Don't store idempotency key for unchanged requests
+      // Remove internal flag before sending to client
+      const { _unchanged, ...cleanProfile } = updated;
       return res.json({ 
         success: true, 
-        profile: updated, 
+        profile: cleanProfile, 
         unchanged: true 
       });
     }

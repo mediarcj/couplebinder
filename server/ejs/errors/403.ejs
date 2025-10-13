@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Access denied - <%= app_info?.name || 'Detechify' %></title>
+  <link rel="stylesheet" href="/css/style.css?v=<%= page.assetVersion || Date.now() %>">
+</head>
+<body>
+  <header>
+    <nav class="container">
+      <a href="/" class="btn btn-small">Home</a>
+    </nav>
+  </header>
+  
+  <main class="container" style="padding: 4rem 1rem; text-align: center;">
+    <h1 style="font-size: 3rem; margin-bottom: 1rem;">403</h1>
+    <h2 style="margin-bottom: 1.5rem;">Access denied</h2>
+    <p style="margin-bottom: 2rem;">You don't have permission to view this page.</p>
+    <p class="text-muted" style="font-size: 0.875rem;">Request ID: <%= requestId %></p>
+  </main>
+  
+  <footer class="container" style="text-align: center; padding: 2rem 0;">
+    <p>&copy; <%= new Date().getFullYear() %> <%= app_info?.name || 'Detechify' %></p>
+  </footer>
+</body>
+</html>
+

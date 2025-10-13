@@ -516,20 +516,21 @@ function formatAuthCookieEvent(payload = {}) {
 
 /**
  * WHAT:
- * Pretty block for profile update events (executing/completed).
+ * Pretty block for profile update events (consolidated single log).
  * 
  * WHY:
  * Profile updates are positive user actions that deserve clear, friendly visibility.
  * Orange color conveys warmth and success without being alarming.
+ * Consolidated format reduces log clutter and shows all info at once.
  * 
  * HOW:
  * Detects profile.update.* events and formats them with orange ANSI color.
- * Shows user ID, fields being updated, and operation status.
+ * Shows user ID, fields being updated, status, and operation in one block.
  * Keeps consistent visual style with other formatters.
  * Orange color for lines and field labels, white text for data values.
  * 
  * @param {Object} payload - structured event
- *   { ts, msg, userId, fields, operation, level }
+ *   { ts, msg, userId, fields, operation, status, level }
  */
 function formatProfileUpdateEvent(payload = {}) {
   const {
@@ -538,6 +539,7 @@ function formatProfileUpdateEvent(payload = {}) {
     userId = 'unknown',
     fields = {},
     operation = '',
+    status = '',
     level = 'info'
   } = payload;
 
@@ -555,6 +557,10 @@ function formatProfileUpdateEvent(payload = {}) {
     if (fieldList.length > 0) {
       console.log(`${ORANGE}Fields:${RESET}     ${fieldList.join(', ')}`);
     }
+  }
+  
+  if (status) {
+    console.log(`${ORANGE}Status:${RESET}     ${status}`);
   }
   
   if (operation) {

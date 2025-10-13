@@ -514,18 +514,78 @@ function formatAuthCookieEvent(payload = {}) {
   console.log(`${LINE}`);
 }
 
+/**
+ * WHAT:
+ * Pretty block for profile update events (executing/completed).
+ * 
+ * WHY:
+ * Profile updates are positive user actions that deserve clear, friendly visibility.
+ * Orange color conveys warmth and success without being alarming.
+ * 
+ * HOW:
+ * Detects profile.update.* events and formats them with orange ANSI color.
+ * Shows user ID, fields being updated, and operation status.
+ * Keeps consistent visual style with other formatters.
+ * 
+ * @param {Object} payload - structured event
+ *   { ts, msg, userId, fields, operation, level }
+ */
+function formatProfileUpdateEvent(payload = {}) {
+  const {
+    ts,
+    msg = 'profile.update',
+    userId = 'unknown',
+    fields = {},
+    operation = '',
+    level = 'info'
+  } = payload;
+
+  // Orange color for warmth and positivity (ANSI escape code)
+  const ORANGE = '\x1b[38;5;214m';
+  const RESET = '\x1b[0m';
+  const BRIGHT = '\x1b[1m';
+
+  console.log(`\n${LINE}`);
+  console.log(`${ORANGE}${BRIGHT}PROFILE UPDATE${RESET}`);
+  console.log(`   Event: ${msg}`);
+  console.log(`   User ID: ${userId}`);
+  
+  if (fields && typeof fields === 'object') {
+    const fieldList = Array.isArray(fields) ? fields : Object.keys(fields);
+    if (fieldList.length > 0) {
+      console.log(`   Fields: ${fieldList.join(', ')}`);
+    }
+  }
+  
+  if (operation) {
+    console.log(`   Operation: ${operation}`);
+  }
+  
+  console.log(`   Level: ${level}`);
+  console.log(`   Time: ${formatIsoTimestamp(ts)}`);
+  console.log(`${LINE}`);
+}
+
 /** Generic pretty printer for future JSON events. */
 function formatJsonEvent(payload = {}) {
-  const { event = '' } = payload;
+  const { event = '', msg = '' } = payload;
+  
+  // Auth cookie events
   if (event.startsWith('auth.set_cookie') || event.startsWith('auth.clear_cookie')) {
     return formatAuthCookieEvent(payload);
   }
+  
+  // Profile update events
+  if (msg && (msg.startsWith('profile.update.') || msg === 'profile.update')) {
+    return formatProfileUpdateEvent(payload);
+  }
 
+  // Generic fallback
   console.log(`\n${LINE}`);
   console.log(`EVENT`);
-  console.log(`   Type: ${payload.event || 'unknown'}`);
+  console.log(`   Type: ${payload.event || payload.msg || 'unknown'}`);
   Object.entries(payload).forEach(([k, v]) => {
-    if (k === 'event') return;
+    if (k === 'event' || k === 'msg') return;
     console.log(`   ${k}: ${v}`);
   });
   console.log(`   Time: ${formatIsoTimestamp(payload.ts)}`);
@@ -621,6 +681,7 @@ module.exports = {
 
   // Structured JSON events
   formatAuthCookieEvent,
+  formatProfileUpdateEvent,
   formatJsonEvent,
   installJsonLogShim,
 

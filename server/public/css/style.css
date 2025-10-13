@@ -939,6 +939,27 @@ nav ul li a.active {
     transform: translateY(0);
 }
 
+/* Info toast for neutral messages (no change, etc.) */
+.info-toast {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    background: #2196f3;
+    color: #fff;
+    padding: 12px 16px;
+    border-radius: 6px;
+    box-shadow: 0 2px 10px rgba(0,0,0,.2);
+    opacity: 0;
+    transform: translateY(-6px);
+    transition: opacity .2s ease, transform .2s ease;
+    z-index: 1000;
+}
+
+.info-toast.is-visible {
+    opacity: 1;
+    transform: translateY(0);
+}
+
 .modal-state.showing {
     opacity: 0;
     transform: translateX(20px);

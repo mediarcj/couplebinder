@@ -368,6 +368,39 @@ class SecureLogger {
     // Also format for console display
     consoleLogger.formatSessionEvent(action, safeMeta);
   }
+  
+  /**
+   * WHAT:
+   * Log profile update events with pretty orange formatting.
+   * 
+   * WHY:
+   * Profile updates are positive user actions that deserve clear visibility.
+   * Direct formatting ensures consistent display with other domain events.
+   * 
+   * HOW:
+   * Accepts event type (executing/completed) and metadata (userId, fields, operation).
+   * Calls consoleLogger.formatProfileUpdateEvent() for pretty display.
+   * Keeps PII-safe by only logging field names, not values.
+   * 
+   * @param {string} event - Event type (profile.update.executing or profile.update.completed)
+   * @param {Object} meta - Additional metadata
+   *   {userId, fields: string[] or object, operation}
+   */
+  profile(event, meta = {}) {
+    const safeMeta = {
+      userId: meta.userId,
+      fields: meta.fields,
+      operation: meta.operation,
+      level: 'info'
+    };
+    
+    // Format for console display with orange color
+    consoleLogger.formatProfileUpdateEvent({
+      ts: new Date().toISOString(),
+      msg: event,
+      ...safeMeta
+    });
+  }
 }
 
 // Create singleton logger instance

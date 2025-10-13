@@ -214,6 +214,45 @@ async function updateOwnProfile(userId, patch) {
   // Log database payload (field names only, no values)
   logger.debug({ userId, fields: Object.keys(processedPatch || {}) }, 'profile.update.dbPayload');
 
+  /**
+   * WHAT:
+   * Fetch current profile to detect if data actually changed.
+   * 
+   * WHY:
+   * Better UX - tell user "no change" instead of fake success.
+   * Prevents unnecessary database writes and log noise.
+   * 
+   * HOW:
+   * Compare processedPatch values with current profile values.
+   * Use JSON.stringify for deep comparison of arrays.
+   * Return early with unchanged flag if nothing changed.
+   */
+  const currentProfile = await getProfileByUserIdAdmin(userId);
+  
+  // Check if any field actually changed
+  let hasChanges = false;
+  for (const [key, newValue] of Object.entries(processedPatch)) {
+    const currentValue = currentProfile[key];
+    
+    // Deep comparison for arrays and objects
+    const newStr = JSON.stringify(newValue);
+    const currentStr = JSON.stringify(currentValue);
+    
+    if (newStr !== currentStr) {
+      hasChanges = true;
+      break;
+    }
+  }
+  
+  // If nothing changed, return early with unchanged flag
+  if (!hasChanges) {
+    logger.debug({ userId, fields: Object.keys(processedPatch || {}) }, 'profile.update.unchanged');
+    return { 
+      ...currentProfile, 
+      _unchanged: true 
+    };
+  }
+
   // STEP 2: Update profiles table (source of truth)
   // This is the critical update - must succeed
   const { data, error } = await supabaseAdmin

@@ -101,13 +101,16 @@ document.addEventListener('DOMContentLoaded', function() {
     logger.info('Dashboard page initialized - logout handled by logout.js module');
 });
 
-// Notification Modal Functions
-function showNotificationModal(title, message, onClose = null) {
-    // Use centralized modalManager (loaded from modalManager.js)
-    if (typeof modalManager !== 'undefined') {
-        modalManager.showNotification(title, message, onClose);
-    }
-}
+/**
+ * WHAT:
+ * Notification modal wrapper removed - use modalManager directly.
+ * 
+ * WHY:
+ * Centralized modal management - no local wrappers needed.
+ * 
+ * HOW:
+ * All notification calls now use: modalManager.showNotification(title, message, onClose)
+ */
 
 /**
  * Initialize dashboard-specific functionality

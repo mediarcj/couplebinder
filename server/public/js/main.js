@@ -514,12 +514,11 @@ function initializeLoginModal() {
     }
 }
 
+/**
+ * Close login modal (delegates to centralized modalManager)
+ */
 function closeModal() {
-    const modal = document.getElementById('loginModal');
-    if (modal) {
-        modal.classList.remove('show');
-        resetToFormState();
-    }
+    modalManager.closeLogin();
 }
 
 function clearLoginForm() {
@@ -795,12 +794,34 @@ async function handleLoginSubmit(e) {
                     
                     logger.info('Authentication cookie set by server');
                     
-                    // Immediate, deterministic redirect (no success modal)
-                    closeModal();
-                    const urlParams = new URLSearchParams(window.location.search);
-                    const nextUrl = urlParams.get('next');
-                    const redirectUrl = nextUrl ? decodeURIComponent(nextUrl) : '/dashboard';
-                    window.location.replace(redirectUrl);
+                    /**
+                     * WHAT:
+                     * Show success state within login modal, user clicks OK to proceed.
+                     * 
+                     * WHY:
+                     * Users need confirmation that login succeeded before redirect.
+                     * Modal stays open until user acknowledges success.
+                     * 
+                     * HOW:
+                     * 1. Switch login modal to success state (uses centralized modalManager)
+                     * 2. User sees success message with OK button
+                     * 3. User clicks OK to close and redirect
+                     * 4. Redirect to dashboard or next URL
+                     */
+                    
+                    // Use centralized modal manager to switch to success state
+                    modalManager.switchToLoginSuccess(
+                        'Login Successful!',
+                        'Welcome back!',
+                        () => {
+                            // User clicked OK - now redirect
+                            closeModal();
+                            const urlParams = new URLSearchParams(window.location.search);
+                            const nextUrl = urlParams.get('next');
+                            const redirectUrl = nextUrl ? decodeURIComponent(nextUrl) : '/dashboard';
+                            window.location.replace(redirectUrl);
+                        }
+                    );
                 } catch (cookieError) {
                     logger.error('Cookie setup failed:', cookieError.message);
                     showLoginGeneralError('Login failed: session setup error');
@@ -996,9 +1017,11 @@ function updateUIForLoggedOutUser() {
 
 // Logout functionality is now handled by the modular logout.js system
 
+/**
+ * Show login modal (delegates to centralized modalManager)
+ */
 function handleLogin() {
-    const modal = document.getElementById('loginModal');
-    if (modal) modal.classList.add('show');
+    modalManager.showLogin();
 }
 
 /**
@@ -1051,12 +1074,11 @@ function initializeSignupModal() {
     }
 }
 
+/**
+ * Close signup modal (delegates to centralized modalManager)
+ */
 function closeSignupModal() {
-    const modal = document.getElementById('signupModal');
-    if (modal) {
-        modal.classList.remove('show');
-        resetSignupToFormState();
-    }
+    modalManager.closeSignup();
 }
 
 function clearSignupForm() {
@@ -1432,7 +1454,9 @@ function resetSignupToFormState() {
     }
 }
 
+/**
+ * Show signup modal (delegates to centralized modalManager)
+ */
 function handleSignup() {
-    const modal = document.getElementById('signupModal');
-    if (modal) modal.classList.add('show');
+    modalManager.showSignup();
 }

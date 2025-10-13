@@ -267,8 +267,15 @@ if (document.readyState === 'loading') {
   modalManager.init();
 }
 
-// Export for use in other scripts
-if (typeof module !== 'undefined' && module.exports) {
-  module.exports = modalManager;
-}
-
+/**
+ * WHAT:
+ * Expose modalManager as a global for use in other scripts.
+ * 
+ * WHY:
+ * Browser scripts don't support CommonJS modules.
+ * We need window.modalManager for main.js and other pages to use.
+ * 
+ * HOW:
+ * Attach to window object so it's available globally.
+ */
+window.modalManager = modalManager;

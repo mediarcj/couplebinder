@@ -406,6 +406,12 @@ async function saveIndividualField(fieldName) {
          * Show appropriate message based on server response.
          */
         
+        // Debug: log server response (only in debug mode)
+        logger.info('Server response received', { 
+            unchanged: result.unchanged,
+            hasProfile: !!result.profile 
+        });
+        
         // Update local profile data
         userProfile = result.profile;
         
@@ -434,9 +440,12 @@ async function saveIndividualField(fieldName) {
         displayField(fieldName, value || 'Not provided');
         
         // Show appropriate message based on server response
-        if (result.unchanged) {
+        logger.info('Checking unchanged flag', { unchanged: result.unchanged });
+        if (result.unchanged === true) {
+            logger.info('Showing info message (no change)');
             showInfo(`No changes made to ${getFieldDisplayName(fieldName)}`);
         } else {
+            logger.info('Showing success message (data changed)');
             showSuccess(`${getFieldDisplayName(fieldName)} updated successfully!`);
         }
         

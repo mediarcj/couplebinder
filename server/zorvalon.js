@@ -661,51 +661,82 @@ consoleLogger.formatMiddlewareRegistration('Routes');
 
 /**
  * WHAT:
- * We register global error handling middleware for graceful error management.
+ * Centralized error handling with secure, consistent responses.
  *
  * WHY:
- * Error handling ensures the application doesn't crash on unexpected errors
- * and provides meaningful error responses to clients.
+ * Prevents information leakage (no stack traces, no internal paths).
+ * Provides consistent UX across HTML/JSON/text responses.
+ * Single source of truth for error handling.
  *
  * HOW:
- * We register error middleware that catches all unhandled errors,
- * logs them with context, and returns appropriate HTTP responses.
+ * Use errorResponder module for all error responses.
+ * Log errors server-side with full context.
+ * Send minimal, safe info to clients.
+ * Support content negotiation (HTML/JSON/text).
  */
-app.use((err, req, res, next) => {
-  const errorId = req.requestId || req.id || req.headers['x-request-id'] || crypto.randomUUID();
-  
-  // Log to structured logger
-  logger.error('Server error occurred', {
-    requestId: errorId,
-    message: err.message,
-    stack: err.stack,
-    url: req.url,
-    method: req.method,
-    ip: req.ip
+const { respondError } = require('./utils/errorResponder');
+const isProd = process.env.NODE_ENV === 'production';
+
+// 404 handler (no route matched)
+app.use((req, res) => {
+  respondError(req, res, {
+    status: 404,
+    message: 'The requested resource was not found.',
+    code: 'not_found',
   });
-  
-  // Also log full stack to console for debugging (especially useful in production logs)
-  console.error('[ERROR]', errorId, err && err.stack ? err.stack : err);
-  
+});
+
+// Centralized error handler (must have 4 args)
+app.use((err, req, res, next) => {
   // Check if headers were already sent (prevents "headers already sent" errors)
   if (res.headersSent) {
     return next(err);
   }
   
-  res.status(err.status || 500).json({ 
-    error: 'Internal server error',
-    requestId: errorId,
-    timestamp: new Date().toISOString()
-  });
-});
+  // Do not leak internals to clients
+  const status = err.status || err.statusCode || 500;
 
-// 404 handler
-app.use((req, res) => {
-  res.status(404).json({ 
-    error: 'Not found',
-    message: `The requested resource ${req.url} was not found on this server.`,
-    requestId: req.requestId,
-    timestamp: new Date().toISOString()
+  /**
+   * WHAT:
+   * Log full error details server-side only.
+   * 
+   * WHY:
+   * Need complete error context for debugging.
+   * But never send stack traces or internals to clients.
+   * 
+   * HOW:
+   * Use structured logger with full context.
+   * Include stack trace in logs only.
+   * Client gets generic message only.
+   */
+  try {
+    logger.error('Uncaught error', {
+      requestId: req.requestId || 'unknown',
+      status,
+      name: err.name,
+      message: err.message,
+      code: err.code,
+      url: req.url,
+      method: req.method,
+      ip: req.ip,
+      // Stack trace in logs only (not sent to client)
+      stack: isProd ? undefined : err.stack,
+    });
+  } catch {
+    // Fail silently if logging fails
+  }
+
+  // 429 hint: if upstream rate limiter set retryAfter seconds, reflect it safely
+  if (status === 429 && err.retryAfter) {
+    res.set('Retry-After', String(err.retryAfter));
+  }
+
+  respondError(req, res, {
+    status,
+    message: status === 500 ? 'An unexpected error occurred.' : (err.publicMessage || err.message),
+    code: status === 500 ? 'internal_error' : undefined,
+    // Never send stack/details in prod responses
+    extra: isProd ? {} : { detail: err.type || err.code },
   });
 });
 

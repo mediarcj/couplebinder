@@ -16,6 +16,7 @@
  */
 
 const { getProfileByUserId } = require('../services/profileService');
+const { ASSET_VERSION } = require('../config');
 // Removed usersRepo import - now using Supabase user data directly
 
 // tiny helpers (no lodash)
@@ -167,7 +168,8 @@ function buildHomePageModel(req, res) {
     page: {
       title: process.env.APP_NAME || 'Application',
       description: process.env.APP_DESCRIPTION || 'A modern web application',
-      type: 'home'
+      type: 'home',
+      assetVersion: ASSET_VERSION  // Cache-busting for JS/CSS
     },
     user: {
       isAuthenticated: req.user?.id ? true : false || false,
@@ -260,7 +262,8 @@ async function buildDashboardPageModel(req, res) {
       title: `Dashboard - ${process.env.APP_NAME || 'Application'}`,
       description: 'User dashboard and controls',
       type: 'dashboard',
-      nonce: res.locals.nonce || ''   //  ensure CSP nonce for dashboard.ejs
+      nonce: res.locals.nonce || '',   //  ensure CSP nonce for dashboard.ejs
+      assetVersion: ASSET_VERSION  // Cache-busting for JS/CSS
     },
     user,
     ui_instructions: {
@@ -396,7 +399,8 @@ function buildErrorPageModel(req, res, statusCode, errorMessage) {
       title: `Error ${statusCode} - ${process.env.APP_NAME || 'Application'}`,
       description: 'An error occurred',
       type: 'error',
-      nonce: res.locals.nonce
+      nonce: res.locals.nonce,
+      assetVersion: ASSET_VERSION  // Cache-busting for JS/CSS
     },
     user: {
       isAuthenticated: req.user?.id ? true : false || false,

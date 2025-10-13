@@ -489,138 +489,59 @@ function displaySubmissions(submissions) {
     }
 }
 
+/**
+ * Idempotent login modal initialization
+ * 
+ * WHAT:
+ * Initialize login modal with form submission handler and link click handler.
+ * 
+ * WHY:
+ * Prevents double-attachment if this function runs multiple times.
+ * Works even if login link is missing (form can still be used).
+ * 
+ * HOW:
+ * Use guard flag to ensure handlers attach only once.
+ * Attach form handler first (always needed).
+ * Attach link handler if link exists (optional).
+ */
+let _loginModalInit = false;
+
 function initializeLoginModal() {
-    const loginLink = document.querySelector('.login-link');
+    // Guard: prevent double-attachment if this runs twice
+    if (_loginModalInit) return;
+    _loginModalInit = true;
+    
     const loginForm = document.getElementById('loginForm');
-    
-    if (!loginLink) {
-        return; // Modal elements not found
-    }
-    
-    // Show modal when login link is clicked
-    loginLink.addEventListener('click', function(e) {
-        e.preventDefault();
-        handleLogin();
-    });
-    
-    // Closing is handled centrally by data-modal-close + modalManager
-    
-    // Handle form submission
     if (loginForm) {
+        // Attach submit handler (don't use { once: true } - need for subsequent submits)
         loginForm.addEventListener('submit', handleLoginSubmit);
         logger.info('Login form event listener attached');
-    } else {
-        logger.error('Login form not found - event listener not attached');
     }
+    
+    const loginLink = document.querySelector('.login-link');
+    if (loginLink) {
+        loginLink.addEventListener('click', (e) => {
+            e.preventDefault();
+            handleLogin();
+        });
+    }
+    
+    // Closing is handled centrally by data-modal-close + modalManager
 }
 
 /**
- * Close login modal (delegates to centralized modalManager)
+ * WHAT:
+ * All login modal helper functions removed - delegated to modalManager.
+ * 
+ * WHY:
+ * Centralized modal management eliminates redundancy and ensures consistency.
+ * Single source of truth in modalManager.js for all modal operations.
+ * 
+ * HOW:
+ * All modal operations now use modalManager methods:
+ * - modalManager.showLogin(), modalManager.closeLogin()
+ * - modalManager.showLoginError(), modalManager.switchToLoginSuccess()
  */
-function closeModal() {
-    modalManager.closeLogin();
-}
-
-function clearLoginForm() {
-    const form = document.getElementById('loginForm');
-    const emailError = document.getElementById('emailError');
-    const passwordError = document.getElementById('passwordError');
-    const generalError = document.getElementById('loginGeneralError');
-    
-    if (form) form.reset();
-    if (emailError) emailError.textContent = '';
-    if (passwordError) passwordError.textContent = '';
-    if (generalError) {
-        generalError.textContent = '';
-        generalError.classList.add('hidden');
-    }
-}
-
-// Notification Modal Functions (CSP-compliant)
-function showNotificationModal(title, message, onClose = null) {
-    const modal = document.getElementById('notificationModal');
-    const titleEl = document.getElementById('notificationTitle');
-    const messageEl = document.getElementById('notificationMessage');
-    const closeBtn = document.getElementById('notificationClose');
-    const okBtn = document.getElementById('notificationOkBtn');
-    
-    if (titleEl) titleEl.textContent = title;
-    if (messageEl) messageEl.textContent = message;
-    if (modal) modal.classList.add('show');
-    
-    // Close modal handlers
-    const closeModalFn = () => {
-        modal.classList.remove('show');
-        if (onClose) onClose();
-    };
-    
-    if (closeBtn) closeBtn.onclick = closeModalFn;
-    if (okBtn) okBtn.onclick = closeModalFn;
-    
-    // Modal can only be closed by Close button or OK button (no click outside)
-}
-
-function showLoginGeneralError(message) {
-    const generalError = document.getElementById('loginGeneralError');
-    if (generalError) {
-        generalError.textContent = message;
-        generalError.classList.remove('hidden');
-    }
-}
-
-// Modal State Transition Functions (CSP-compliant, no inline styles)
-function switchToSuccessState(title, message, onComplete = null) {
-    const formState = document.getElementById('loginFormState');
-    const successState = document.getElementById('loginSuccessState');
-    const successTitle = document.getElementById('successTitle');
-    const successMessage = document.getElementById('successMessage');
-    const successOkBtn = document.getElementById('successOkBtn');
-    
-    if (successTitle) successTitle.textContent = title;
-    if (successMessage) successMessage.textContent = message;
-    
-    // Set up OK button handler
-    if (successOkBtn) {
-        successOkBtn.onclick = () => {
-            if (onComplete) onComplete();
-        };
-    }
-    
-    // Start transition (use CSS classes only, no inline styles)
-    if (formState && successState) {
-        // Hide form state with slide out animation
-        formState.classList.add('hidden');
-        
-        // After form is hidden, show success state with slide in animation
-        setTimeout(() => {
-            // Keep form hidden, show success state
-            successState.classList.remove('hidden');
-            successState.classList.add('showing');
-            
-            // Trigger the slide in animation
-            setTimeout(() => {
-                successState.classList.remove('showing');
-            }, 10);
-        }, 300); // Match CSS transition duration
-    }
-}
-
-function resetToFormState() {
-    const formState = document.getElementById('loginFormState');
-    const successState = document.getElementById('loginSuccessState');
-    
-    if (formState && successState) {
-        // Hide success state (use CSS class)
-        successState.classList.add('hidden');
-        successState.classList.remove('showing');
-        
-        // Show form state (use CSS class)
-        formState.classList.remove('hidden');
-        
-        // Clear form and errors
-        clearLoginForm();
-    }
-}
 
 function validateEmail(email) {
     if (!email) {
@@ -705,7 +626,7 @@ async function handleLoginSubmit(e) {
         try {
             const client = window.SB || window.supabase;
             if (!client) {
-                showLoginGeneralError('Authentication system not initialized. Please refresh the page.');
+                modalManager.showLoginError('Authentication system not initialized. Please refresh the page.');
                 return;
             }
             
@@ -731,7 +652,7 @@ async function handleLoginSubmit(e) {
             
             if (error) {
                 logger.error('Login failed:', error.message);
-                showLoginGeneralError(`Login failed: ${error.message}`);
+                modalManager.showLoginError(`Login failed: ${error.message}`);
             } else {
                 logger.info('Login successful');
                 
@@ -754,7 +675,7 @@ async function handleLoginSubmit(e) {
                 const access = data.session?.access_token;
                 if (!access || access.split('.').length !== 3) {
                     logger.error('No access token received from authentication');
-                    showLoginGeneralError('Login failed: no access token');
+                    modalManager.showLoginError('Login failed: no access token');
                     return;
                 }
                 
@@ -777,14 +698,14 @@ async function handleLoginSubmit(e) {
                     
                     if (!cookieResponse.ok) {
                         logger.error('Failed to set authentication cookie');
-                        showLoginGeneralError('Login failed: could not set session');
+                        modalManager.showLoginError('Login failed: could not set session');
                         return;
                     }
                     
                     const cookieResult = await cookieResponse.json();
                     if (!cookieResult.ok) {
                         logger.error('Server rejected authentication cookie');
-                        showLoginGeneralError('Login failed: invalid session');
+                        modalManager.showLoginError('Login failed: invalid session');
                         return;
                     }
                     
@@ -803,11 +724,18 @@ async function handleLoginSubmit(e) {
                      * Modal stays open until user acknowledges success.
                      * 
                      * HOW:
-                     * 1. Switch login modal to success state (uses centralized modalManager)
-                     * 2. User sees success message with OK button
-                     * 3. User clicks OK to close and redirect
-                     * 4. Redirect to dashboard or next URL
+                     * 1. Ensure modal is open (defensive check)
+                     * 2. Switch login modal to success state (uses centralized modalManager)
+                     * 3. User sees success message with OK button
+                     * 4. User clicks OK to close and redirect
+                     * 5. Redirect to dashboard or next URL
                      */
+                    
+                    // Defensive: ensure modal is open before switching to success state
+                    const loginModalEl = document.getElementById('loginModal');
+                    if (!loginModalEl || !loginModalEl.classList.contains('show')) {
+                        modalManager.showLogin();
+                    }
                     
                     // Use centralized modal manager to switch to success state
                     modalManager.switchToLoginSuccess(
@@ -815,7 +743,7 @@ async function handleLoginSubmit(e) {
                         'Welcome back!',
                         () => {
                             // User clicked OK - now redirect
-                            closeModal();
+                            modalManager.closeLogin();
                             const urlParams = new URLSearchParams(window.location.search);
                             const nextUrl = urlParams.get('next');
                             const redirectUrl = nextUrl ? decodeURIComponent(nextUrl) : '/dashboard';
@@ -824,7 +752,7 @@ async function handleLoginSubmit(e) {
                     );
                 } catch (cookieError) {
                     logger.error('Cookie setup failed:', cookieError.message);
-                    showLoginGeneralError('Login failed: session setup error');
+                    modalManager.showLoginError('Login failed: session setup error');
                 }
             }
         } catch (error) {
@@ -839,7 +767,7 @@ async function handleLoginSubmit(e) {
                 errorMessage = error.message;
             }
             
-            showLoginGeneralError(errorMessage);
+            modalManager.showLoginError(errorMessage);
         }
     }
 }
@@ -1075,38 +1003,19 @@ function initializeSignupModal() {
 }
 
 /**
- * Close signup modal (delegates to centralized modalManager)
+ * WHAT:
+ * All signup modal helper functions removed - delegated to modalManager.
+ * 
+ * WHY:
+ * Centralized modal management eliminates redundancy and ensures consistency.
+ * Single source of truth in modalManager.js for all modal operations.
+ * 
+ * HOW:
+ * All modal operations now use modalManager methods:
+ * - modalManager.showSignup(), modalManager.closeSignup()
+ * - modalManager.showSignupError(), modalManager.showSignupFieldError()
+ * - modalManager.clearSignupForm(), modalManager.switchToSignupSuccess()
  */
-function closeSignupModal() {
-    modalManager.closeSignup();
-}
-
-function clearSignupForm() {
-    const form = document.getElementById('signupForm');
-    if (form) form.reset();
-    
-    // Clear all error messages (use CSS class)
-    const errorElements = [
-        'signupDisplayNameError', 'signupEmailError', 'signupPhoneError', 'signupPasswordError',
-        'confirmPasswordError', 'signupGeneralError'
-    ];
-    
-    errorElements.forEach(id => {
-        const element = document.getElementById(id);
-        if (element) {
-            element.textContent = '';
-            element.classList.add('hidden');
-        }
-    });
-}
-
-function showSignupGeneralError(message) {
-    const generalError = document.getElementById('signupGeneralError');
-    if (generalError) {
-        generalError.textContent = message;
-        generalError.classList.remove('hidden');
-    }
-}
 
 // Sign up validation functions
 function validateSignupEmail(email) {
@@ -1263,38 +1172,38 @@ async function handleSignupSubmit(e) {
     const data = Object.fromEntries(formData.entries());
     
     // Clear previous errors
-    clearSignupForm();
+    modalManager.clearSignupForm();
     
     let hasErrors = false;
     
     // Validate required fields
     const displayNameError = validateDisplayName(data.display_name, 'Display name');
     if (displayNameError) {
-        showFieldError('signupDisplayNameError', displayNameError);
+        modalManager.showSignupFieldError('signupDisplayNameError', displayNameError);
         hasErrors = true;
     }
     
     const emailError = validateSignupEmail(data.email);
     if (emailError) {
-        showFieldError('signupEmailError', emailError);
+        modalManager.showSignupFieldError('signupEmailError', emailError);
         hasErrors = true;
     }
     
     const passwordError = validateSignupPassword(data.password);
     if (passwordError) {
-        showFieldError('signupPasswordError', passwordError);
+        modalManager.showSignupFieldError('signupPasswordError', passwordError);
         hasErrors = true;
     }
     
     const confirmPasswordError = validateConfirmPassword(data.password, data.confirm_password);
     if (confirmPasswordError) {
-        showFieldError('confirmPasswordError', confirmPasswordError);
+        modalManager.showSignupFieldError('confirmPasswordError', confirmPasswordError);
         hasErrors = true;
     }
     
     const phoneError = validatePhone(data.phone);
     if (phoneError) {
-        showFieldError('signupPhoneError', phoneError);
+        modalManager.showSignupFieldError('signupPhoneError', phoneError);
         hasErrors = true;
     }
     
@@ -1306,7 +1215,7 @@ async function handleSignupSubmit(e) {
     try {
         const client = window.SB || window.supabase;
         if (!client) {
-            showSignupGeneralError('Authentication system not initialized. Please refresh the page.');
+            modalManager.showSignupError('Authentication system not initialized. Please refresh the page.');
             return;
         }
         
@@ -1350,7 +1259,7 @@ async function handleSignupSubmit(e) {
         
         if (authError) {
             logger.error('Sign up failed:', authError.message);
-            showSignupGeneralError(`Sign up failed: ${authError.message}`);
+            modalManager.showSignupError(`Sign up failed: ${authError.message}`);
             return;
         }
         
@@ -1374,7 +1283,7 @@ async function handleSignupSubmit(e) {
                 }
             );
         } else {
-            showSignupGeneralError('Sign up failed: No user data returned');
+            modalManager.showSignupError('Sign up failed: No user data returned');
         }
         
     } catch (error) {
@@ -1389,70 +1298,22 @@ async function handleSignupSubmit(e) {
             errorMessage = error.message;
         }
         
-        showSignupGeneralError(errorMessage);
+        modalManager.showSignupError(errorMessage);
     }
 }
 
-function showFieldError(fieldId, message) {
-    const errorElement = document.getElementById(fieldId);
-    if (errorElement) {
-        errorElement.textContent = message;
-        errorElement.classList.remove('hidden');
-    }
-}
-
-function switchToSignupSuccessState(title, message, onComplete = null) {
-    const formState = document.getElementById('signupFormState');
-    const successState = document.getElementById('signupSuccessState');
-    const successTitle = document.getElementById('signupSuccessTitle');
-    const successMessage = document.getElementById('signupSuccessMessage');
-    const successOkBtn = document.getElementById('signupSuccessOkBtn');
-    
-    if (successTitle) successTitle.textContent = title;
-    if (successMessage) successMessage.textContent = message;
-    
-    // Set up OK button handler
-    if (successOkBtn) {
-        successOkBtn.onclick = () => {
-            if (onComplete) onComplete();
-        };
-    }
-    
-    // Start transition (CSP-compliant, no inline styles)
-    if (formState && successState) {
-        // Hide form state with slide out animation
-        formState.classList.add('hidden');
-        
-        // After form is hidden, show success state with slide in animation
-        setTimeout(() => {
-            // Keep form hidden, show success state
-            successState.classList.remove('hidden');
-            successState.classList.add('showing');
-            
-            // Trigger the slide in animation
-            setTimeout(() => {
-                successState.classList.remove('showing');
-            }, 10);
-        }, 300); // Match CSS transition duration
-    }
-}
-
-function resetSignupToFormState() {
-    const formState = document.getElementById('signupFormState');
-    const successState = document.getElementById('signupSuccessState');
-    
-    if (formState && successState) {
-        // Hide success state (use CSS class)
-        successState.classList.add('hidden');
-        successState.classList.remove('showing');
-        
-        // Show form state (use CSS class)
-        formState.classList.remove('hidden');
-        
-        // Clear form and errors
-        clearSignupForm();
-    }
-}
+/**
+ * WHAT:
+ * Additional signup modal helpers removed - now fully delegated to modalManager.
+ * 
+ * WHY:
+ * Completes centralization - no local DOM manipulation for signup modals.
+ * 
+ * HOW:
+ * Field errors: modalManager.showSignupFieldError()
+ * Success state: modalManager.switchToSignupSuccess()
+ * Form reset: modalManager.clearSignupForm()
+ */
 
 /**
  * Show signup modal (delegates to centralized modalManager)

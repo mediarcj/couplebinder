@@ -61,6 +61,28 @@ router.put('/me', validateProfileUpdate, async (req, res) => {
     // Use the validated patch data from middleware
     const updated = await updateOwnProfile(userId, req.profilePatch);
     
+    /**
+     * WHAT:
+     * Check if data was unchanged and return appropriate response.
+     * 
+     * WHY:
+     * Better UX - tell frontend "no change" so it can show proper message.
+     * Backend is source of truth for what changed (Building Law #9).
+     * 
+     * HOW:
+     * Service returns _unchanged flag if no fields changed.
+     * API passes this to frontend as unchanged: true.
+     * Frontend shows "No changes made" instead of "Updated successfully".
+     */
+    if (updated._unchanged) {
+      // Don't store idempotency key for unchanged requests
+      return res.json({ 
+        success: true, 
+        profile: updated, 
+        unchanged: true 
+      });
+    }
+    
     // Store idempotency key after successful update
     if (idemKey) {
       await supabaseAdmin

@@ -34,6 +34,35 @@ async function buildCanonicalUser(req) {
   };
   if (!basic.id) return basic;
 
+  /**
+   * WHAT:
+   * Fetch full user metadata from Supabase Auth Admin API.
+   * 
+   * WHY:
+   * JWT tokens don't include last_sign_in_at, created_at, or updated_at.
+   * We need these fields for dashboard display.
+   * 
+   * HOW:
+   * Call supabaseAdmin.auth.admin.getUserById() to get complete user object.
+   * Fail gracefully if API call fails (these are informational fields).
+   */
+  let authMetadata = {};
+  try {
+    const { supabaseAdmin } = require('../utils/supabaseClient');
+    const { data, error } = await supabaseAdmin.auth.admin.getUserById(basic.id);
+    if (data && !error && data.user) {
+      authMetadata = {
+        last_sign_in_at: data.user.last_sign_in_at || null,
+        created_at: data.user.created_at || null,
+        updated_at: data.user.updated_at || null,
+        email_confirmed_at: data.user.email_confirmed_at || null
+      };
+    }
+  } catch (e) {
+    // Fail gracefully - these are informational fields only
+    console.error('Failed to fetch auth user metadata:', e?.message);
+  }
+
   let profile = null;
   try {
     // Extract user access token for RLS-compliant profile fetching
@@ -75,10 +104,10 @@ async function buildCanonicalUser(req) {
       avatar_url: profile.avatar_url || '',
       locale: profile.locale || '',
       timezone: profile.timezone || '',
-      created_at: profile.created_at,
-      updated_at: profile.updated_at,
-      last_sign_in_at: (profile.last_sign_in_at ?? req.user?.last_sign_in_at ?? null),   // from view if exposed
-      email_confirmed_at: null,                            // keep null unless you fetch timestamp
+      created_at: authMetadata.created_at || profile.created_at || null,
+      updated_at: authMetadata.updated_at || profile.updated_at || null,
+      last_sign_in_at: authMetadata.last_sign_in_at || profile.last_sign_in_at || null,
+      email_confirmed_at: authMetadata.email_confirmed_at || null,
       email_confirmed: emailConfirmed,                     // boolean for the UI
       providers,                                           // array
       roles: rolesClean,                                   // array (no nulls, deduped)
@@ -115,10 +144,10 @@ async function buildCanonicalUser(req) {
     avatar_url: md.avatar_url || '',
     locale: md.locale || '',
     timezone: md.timezone || '',
-    created_at: req.user?.created_at || new Date().toISOString(),
-    updated_at: req.user?.updated_at || new Date().toISOString(),
-    last_sign_in_at: req.user?.last_sign_in_at || null,
-    email_confirmed_at: null,
+    created_at: authMetadata.created_at || new Date().toISOString(),
+    updated_at: authMetadata.updated_at || new Date().toISOString(),
+    last_sign_in_at: authMetadata.last_sign_in_at || null,
+    email_confirmed_at: authMetadata.email_confirmed_at || null,
     email_confirmed: emailConfirmed,
     providers,
     roles: [],

@@ -1,0 +1,281 @@
+// File: server/middleware/ipFirewall.js
+// Description: Redis-backed IP firewall with automatic ban escalation
+// Purpose: Block abusive IPs before they reach route logic (defense-in-depth)
+// Notes: Works with rate limiters to escalate repeated violations
+
+/**
+ * WHAT:
+ * IP firewall that blocks abusive IPs using Redis for multi-instance safety.
+ *
+ * WHY:
+ * When an IP repeatedly hits rate limits, we want to block them entirely
+ * to save server resources. This runs early in the middleware stack.
+ *
+ * HOW:
+ * Store blocked IPs in Redis with TTL (auto-expire).
+ * Check every request against the blocklist.
+ * Return 429 immediately for blocked IPs without running expensive logic.
+ */
+
+const logger = require('../utils/logger');
+
+// ============================================================
+// Redis Client Setup
+// ============================================================
+let redis = null;
+try {
+  const { client } = require('../utils/redisClient');
+  redis = client && typeof client.ping === 'function' ? client : null;
+} catch {
+  // No Redis available, firewall will be disabled
+}
+
+// ============================================================
+// Redis Key Helpers
+// ============================================================
+
+/**
+ * WHAT:
+ * Generate Redis key for a blocked IP.
+ * 
+ * WHY:
+ * Consistent key naming for easy management and debugging.
+ * 
+ * HOW:
+ * Use ip:block: prefix to group all blocked IPs.
+ * 
+ * @param {string} ip - IP address to block
+ * @returns {string} Redis key
+ */
+const KEY = (ip) => `ip:block:${ip}`;
+
+/**
+ * WHAT:
+ * Redis set key for maintaining a list of all blocked IPs.
+ * 
+ * WHY:
+ * Useful for health checks and debugging.
+ * Can query how many IPs are currently blocked.
+ * 
+ * HOW:
+ * Single set key that holds all blocked IP addresses.
+ */
+const LIST_KEY = 'ip:block:list';
+
+// ============================================================
+// Core Functions
+// ============================================================
+
+/**
+ * WHAT:
+ * Check if an IP is currently blocked.
+ * 
+ * WHY:
+ * Fast check before processing any request.
+ * Saves server resources by rejecting bad actors early.
+ * 
+ * HOW:
+ * Query Redis for the IP block key.
+ * Return true if key exists, false otherwise.
+ * Safe fallback if Redis is unavailable.
+ * 
+ * @param {string} ip - IP address to check
+ * @returns {Promise<boolean>} True if blocked, false otherwise
+ */
+async function isBlocked(ip) {
+  if (!redis || !ip) return false;
+  
+  try {
+    const exists = await redis.exists(KEY(ip));
+    return exists === 1;
+  } catch (error) {
+    logger.error({
+      event: 'ip_firewall.check_error',
+      ip,
+      error: error.message
+    }, 'IP firewall check failed');
+    return false; // Fail open (allow request) if Redis error
+  }
+}
+
+/**
+ * WHAT:
+ * Block an IP address for a specified duration.
+ * 
+ * WHY:
+ * Escalate from rate limiting to full block for repeat offenders.
+ * Prevents resource exhaustion from persistent attackers.
+ * 
+ * HOW:
+ * Set Redis key with TTL (auto-expire after duration).
+ * Add IP to the blocklist set for monitoring.
+ * Use atomic multi/exec to ensure consistency.
+ * 
+ * @param {string} ip - IP address to block
+ * @param {number} ttlSec - Block duration in seconds (default: 1 hour)
+ * @param {string} reason - Reason for blocking (for logging/debugging)
+ * @returns {Promise<void>}
+ */
+async function blockIp(ip, ttlSec = 3600, reason = 'abuse') {
+  if (!redis || !ip) return;
+  
+  try {
+    await redis.multi()
+      .set(KEY(ip), reason, { EX: ttlSec })
+      .sAdd(LIST_KEY, ip)
+      .expire(LIST_KEY, 24 * 3600) // Keep list for 24 hours
+      .exec();
+    
+    logger.warn({
+      event: 'ip_firewall.blocked',
+      ip,
+      reason,
+      ttlSec
+    }, `IP blocked for ${ttlSec}s`);
+  } catch (error) {
+    logger.error({
+      event: 'ip_firewall.block_error',
+      ip,
+      reason,
+      error: error.message
+    }, 'Failed to block IP');
+  }
+}
+
+/**
+ * WHAT:
+ * Manually unblock an IP address.
+ * 
+ * WHY:
+ * Allow manual intervention for false positives.
+ * Useful for debugging and customer support.
+ * 
+ * HOW:
+ * Delete the IP block key and remove from set.
+ * 
+ * @param {string} ip - IP address to unblock
+ * @returns {Promise<void>}
+ */
+async function unblockIp(ip) {
+  if (!redis || !ip) return;
+  
+  try {
+    await redis.multi()
+      .del(KEY(ip))
+      .sRem(LIST_KEY, ip)
+      .exec();
+    
+    logger.info({
+      event: 'ip_firewall.unblocked',
+      ip
+    }, 'IP unblocked');
+  } catch (error) {
+    logger.error({
+      event: 'ip_firewall.unblock_error',
+      ip,
+      error: error.message
+    }, 'Failed to unblock IP');
+  }
+}
+
+// ============================================================
+// Middleware
+// ============================================================
+
+/**
+ * WHAT:
+ * Express middleware that checks if IP is blocked.
+ * 
+ * WHY:
+ * Runs early in middleware stack to reject blocked IPs immediately.
+ * Saves resources by not running CSRF, auth, or route logic for bad actors.
+ * 
+ * HOW:
+ * Extract IP from request (prefer Cloudflare clientIp).
+ * Check if IP is blocked in Redis.
+ * If blocked: return 429 with Retry-After header.
+ * If not blocked: continue to next middleware.
+ * 
+ * @returns {Function} Express middleware
+ */
+function ipFirewall() {
+  return async (req, res, next) => {
+    // Skip if Redis is not available
+    if (!redis) {
+      return next();
+    }
+    
+    const ip = req.clientIp || req.ip || 'unknown';
+    
+    // Skip check for unknown IPs
+    if (ip === 'unknown') {
+      return next();
+    }
+    
+    try {
+      const blocked = await isBlocked(ip);
+      
+      if (blocked) {
+        /**
+         * WHAT:
+         * Return 429 Too Many Requests for blocked IPs.
+         * 
+         * WHY:
+         * Standard HTTP status for rate limiting and blocking.
+         * Retry-After header tells client when to try again.
+         * 
+         * HOW:
+         * Set Retry-After to 1 hour (default block duration).
+         * Return minimal JSON response.
+         * Log the blocked attempt for monitoring.
+         */
+        logger.warn({
+          event: 'ip_firewall.blocked_attempt',
+          ip,
+          path: req.originalUrl || req.path,
+          method: req.method,
+          requestId: req.requestId
+        }, 'Blocked IP attempted access');
+        
+        res.set('Retry-After', '3600');
+        return res.status(429).json({
+          ok: false,
+          error: 'Too many requests'
+        });
+      }
+      
+      // IP is not blocked, continue
+      next();
+    } catch (error) {
+      /**
+       * WHAT:
+       * Handle errors gracefully.
+       * 
+       * WHY:
+       * Don't block legitimate traffic if Redis fails.
+       * Fail open (allow request) rather than fail closed (block all).
+       * 
+       * HOW:
+       * Log error and continue to next middleware.
+       */
+      logger.error({
+        event: 'ip_firewall.middleware_error',
+        ip,
+        error: error.message
+      }, 'IP firewall middleware error');
+      next();
+    }
+  };
+}
+
+// ============================================================
+// Exports
+// ============================================================
+
+module.exports = {
+  ipFirewall,
+  blockIp,
+  unblockIp,
+  isBlocked
+};
+

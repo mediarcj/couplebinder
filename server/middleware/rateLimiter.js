@@ -1,7 +1,7 @@
 // File: server/middleware/rateLimiter.js
-// Description: Redis-backed rate limiters for multi-instance safety
-// Purpose: Shared rate limiting across all server instances using Redis
-// Notes: Defense-in-depth behind Cloudflare edge protection
+// Description: Origin Redis rate limiters (secondary, defense-in-depth)
+// Purpose: Shared rate limiting across instances + escalation to IP firewall
+// Notes: Cloudflare edge is primary; origin Redis is secondary + auto-ban escalation
 
 /**
  * WHAT:
@@ -19,6 +19,7 @@
 
 const { RateLimiterRedis, RateLimiterMemory } = require('rate-limiter-flexible');
 const logger = require('../utils/logger');
+const { blockIp } = require('./ipFirewall');
 
 // ============================================================
 // Environment Configuration
@@ -166,11 +167,13 @@ function limiterMiddleware(limiter, name, limit, windowSeconds) {
        * X-RateLimit-Limit: Total allowed
        * X-RateLimit-Remaining: Requests left
        * X-RateLimit-Reset: Unix timestamp when window resets
+       * X-RateLimit-Source: Only set on 429s to keep normal responses clean
        */
       const resetAt = Math.ceil((Date.now() + rlRes.msBeforeNext) / 1000);
       res.set('X-RateLimit-Limit', String(limit));
       res.set('X-RateLimit-Remaining', String(Math.max(0, limit - rlRes.consumedPoints)));
       res.set('X-RateLimit-Reset', String(resetAt));
+      // X-RateLimit-Source only set on 429s (keeps normal responses clean)
 
       return next();
     } catch (rejRes) {
@@ -185,22 +188,64 @@ function limiterMiddleware(limiter, name, limit, windowSeconds) {
        * Calculate retry time from rejection response.
        * Set Retry-After header.
        * Return 429 with error message.
+       * For login limiter: escalate to IP firewall after repeated violations.
        */
       const ms = typeof rejRes?.msBeforeNext === 'number' ? rejRes.msBeforeNext : windowSeconds * 1000;
       const retryAfter = Math.ceil(ms / 1000);
+      const ip = req.clientIp || req.ip || 'unknown';
+      const pathForLog = req.originalUrl || `${req.baseUrl || ''}${req.path || ''}` || '/';
 
       logger.info({
         event: `${name}.exceeded`,
-        ip: req.clientIp || req.ip,
-        path: req.path,
+        ip,
+        path: pathForLog,
         retryAfter,
         requestId: req.requestId
       }, 'Rate limit exceeded');
+
+      /**
+       * WHAT:
+       * Escalate login rate limit violations to IP firewall.
+       * 
+       * WHY:
+       * Repeated login attempts indicate brute force attack.
+       * Block the IP entirely to save server resources.
+       * 
+       * HOW:
+       * Track exceeds per IP in Redis (10 minute window).
+       * After 3 exceeds, block IP for 15 minutes.
+       * Only applies to login limiter.
+       */
+      if (name === 'login_rate_limit' && redisClient && ip !== 'unknown') {
+        try {
+          const hitsKey = `abuse:login:exceeds:${ip}`;
+          const hits = await redisClient.incr(hitsKey);
+          if (hits === 1) {
+            await redisClient.expire(hitsKey, 600); // 10 min window
+          }
+          if (hits >= 3) {
+            await blockIp(ip, 15 * 60, 'login-exceed');
+            logger.warn({
+              event: 'login_rate_limit.escalated_to_firewall',
+              ip,
+              hits,
+              requestId: req.requestId
+            }, 'IP escalated to firewall after repeated login violations');
+          }
+        } catch (escalateErr) {
+          logger.error({
+            event: 'login_rate_limit.escalation_error',
+            ip,
+            error: escalateErr.message
+          }, 'Failed to escalate to IP firewall');
+        }
+      }
 
       res.set('Retry-After', String(retryAfter));
       res.set('X-RateLimit-Limit', String(limit));
       res.set('X-RateLimit-Remaining', '0');
       res.set('X-RateLimit-Reset', String(Math.ceil((Date.now() + ms) / 1000)));
+      res.set('X-RateLimit-Source', 'origin-redis'); // Origin enforced this limit
 
       return res.status(429).json({
         ok: false,

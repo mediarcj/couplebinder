@@ -45,7 +45,11 @@ async function getProfileByUserId(userId, userAccessToken) {
       .single();
 
     if (error) {
-      console.error('profileService.getProfileByUserId (user context):', error.message);
+      logger.warn({
+        event: 'profile.fetch.user_context_failed',
+        userId,
+        error: error.message
+      }, 'Profile fetch with user context failed, falling back to admin');
       // Fall back to admin client if user context fails
       return await getProfileByUserIdAdmin(userId);
     }
@@ -71,7 +75,11 @@ async function getProfileByUserIdAdmin(userId) {
     .single();
 
   if (error) {
-    console.error('profileService.getProfileByUserId (admin):', error.message);
+    logger.error({
+      event: 'profile.fetch.admin_failed',
+      userId,
+      error: error.message
+    }, 'Profile fetch with admin client failed');
     return null;
   }
   return data || null;
@@ -178,11 +186,19 @@ async function updateOwnProfile(userId, patch) {
       });
       
       if (authError) {
-        console.error('[profile] auth.users update failed (non-critical):', authError.message);
+        logger.warn({
+          event: 'profile.auth_users_update.failed',
+          userId,
+          error: authError.message
+        }, 'Auth users update failed (non-critical, continuing with profiles update)');
         // Continue with profile update - profiles table is source of truth
       }
     } catch (authErr) {
-      console.error('[profile] auth.users update error (non-critical):', authErr.message);
+      logger.warn({
+        event: 'profile.auth_users_update.error',
+        userId,
+        error: authErr.message
+      }, 'Auth users update exception (non-critical, continuing with profiles update)');
       // Continue with profile update - profiles table is source of truth
     }
   }
@@ -263,7 +279,12 @@ async function updateOwnProfile(userId, patch) {
     .single();
 
   if (error) {
-    console.error('[profile] profiles table update failed (critical):', error.message);
+    logger.error({
+      event: 'profile.profiles_table_update.failed',
+      userId,
+      error: error.message,
+      fields: Object.keys(processedPatch || {})
+    }, 'Profiles table update failed (critical)');
     throw error;
   }
   

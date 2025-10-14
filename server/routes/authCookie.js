@@ -114,7 +114,11 @@ router.post('/set-cookie', async (req, res) => {
        * Lockout duration increases with each failure.
        */
       const code = verifyError?.code || 'verify_failed';
-      console.warn('[auth] set-cookie rejected:', code);
+      logger.warn({
+        event: 'auth.set_cookie.rejected',
+        code,
+        requestId: req.requestId
+      }, 'Set-cookie token verification failed');
       
       // Record failed attempt for lockout tracking
       await recordFailedAttempt(emailFromBody || 'ip-only', ip);
@@ -174,7 +178,11 @@ router.post('/set-cookie', async (req, res) => {
 
     return res.json({ ok: true, userId: payload.sub });
   } catch (error) {
-    console.error('[auth] set-cookie exception:', error.message);
+    logger.error({
+      event: 'auth.set_cookie.exception',
+      error: error.message,
+      requestId: req.requestId
+    }, 'Set-cookie route exception');
     return res.status(500).json({ 
       ok: false, 
       error: 'Failed to set cookie' 
@@ -216,7 +224,11 @@ router.post('/clear-cookie', (req, res) => {
 
     return res.json({ ok: true });
   } catch (error) {
-    console.error('[auth] clear-cookie exception:', error.message);
+    logger.error({
+      event: 'auth.clear_cookie.exception',
+      error: error.message,
+      requestId: req.requestId
+    }, 'Clear-cookie route exception');
     return res.status(500).json({ 
       ok: false, 
       error: 'Failed to clear cookie' 

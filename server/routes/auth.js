@@ -20,10 +20,38 @@ const router = express.Router();
 /**
  * POST /api/auth/login
  * Note: Login is handled by Supabase Auth on the frontend
- * This endpoint is kept for backward compatibility but returns a message
+ * This endpoint returns 404 in production to reduce attack surface
+ * 
+ * WHAT:
+ * Dead endpoint that returns 404 in production.
+ * 
+ * WHY:
+ * This is a popular attack target. Since we use Supabase Auth,
+ * this endpoint serves no purpose and should appear to not exist.
+ * 
+ * HOW:
+ * In production: return 404 (endpoint does not exist).
+ * In development: return 400 with message (for debugging).
+ * Optional: allow via ALLOW_LEGACY_LOGIN=true for testing.
  */
 router.post('/login', loginLimiter(), async (req, res) => {
     try {
+        const isProd = process.env.NODE_ENV === 'production';
+        const allowLegacy = process.env.ALLOW_LEGACY_LOGIN === 'true';
+        
+        // In production, return 404 unless explicitly allowed
+        if (isProd && !allowLegacy) {
+            logger.warn({
+                event: 'auth.login.dead_endpoint_hit',
+                requestId: req.requestId,
+                ip: req.clientIp || req.ip,
+                path: req.originalUrl || req.path
+            }, 'Dead login endpoint accessed in production');
+            
+            return res.sendStatus(404);
+        }
+        
+        // Development mode: return helpful message
         const clientIP = getClientIP(req);
         
         logger.auth('login_attempt', {

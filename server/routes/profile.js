@@ -3,6 +3,7 @@ const express = require('express');
 const router = express.Router();
 
 const { getProfileByUserId, updateOwnProfile } = require('../services/profileService');
+const { updateProfileTransactional, reconcileProfileData } = require('../services/profileSyncService');
 const validateProfileUpdate = require('../middleware/validateProfileUpdate');
 const { supabaseAdmin } = require('../utils/supabaseClient');
 const logger = require('../utils/logger');
@@ -22,7 +23,11 @@ router.get('/me', async (req, res) => {
 
     res.json({ success: true, profile });
   } catch (e) {
-    console.error('GET /api/profile/me error:', e);
+    logger.error({
+      event: 'profile.get.error',
+      error: e.message,
+      requestId: req.requestId
+    }, 'Failed to load profile');
     res.status(500).json({ success: false, message: 'Failed to load profile' });
   }
 });
@@ -59,7 +64,8 @@ router.put('/me', validateProfileUpdate, async (req, res) => {
     }
 
     // Use the validated patch data from middleware
-    const updated = await updateOwnProfile(userId, req.profilePatch);
+    // Use transactional service for consistency across auth.users and profiles
+    const updated = await updateProfileTransactional(userId, req.profilePatch);
     
     /**
      * WHAT:
@@ -116,6 +122,54 @@ router.put('/me', validateProfileUpdate, async (req, res) => {
     }, 'Profile update failed');
     
     res.status(400).json({ success: false, message: 'Update failed' });
+  }
+});
+
+/**
+ * POST /api/profile/reconcile -> check profile data consistency
+ * 
+ * WHAT:
+ * Administrative endpoint to check and report profile data consistency.
+ * 
+ * WHY:
+ * Allows manual verification of auth.users and profiles synchronization.
+ * Helps detect any inconsistencies that need manual intervention.
+ * 
+ * HOW:
+ * Compares auth.users and profiles data for current user.
+ * Returns detailed report of any discrepancies found.
+ */
+router.post('/reconcile', async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ success: false, message: 'Authentication required' });
+
+    logger.info({
+      event: 'profile.reconcile.requested',
+      userId,
+      requestId: req.requestId
+    }, 'Profile reconciliation requested by user');
+
+    const report = await reconcileProfileData(userId);
+    
+    res.json({
+      success: true,
+      report,
+      message: report.inconsistencies > 0 
+        ? 'Inconsistencies detected - check report details'
+        : 'Profile data is consistent'
+    });
+  } catch (error) {
+    logger.error({
+      event: 'profile.reconcile.error',
+      error: error.message,
+      requestId: req.requestId
+    }, 'Profile reconciliation failed');
+    
+    res.status(500).json({
+      success: false,
+      message: 'Reconciliation failed'
+    });
   }
 });
 

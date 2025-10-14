@@ -25,8 +25,8 @@ const router = express.Router();
  * Each endpoint returns detailed status information for debugging and monitoring.
  */
 
-// Redis decommissioned - stateless auth enabled
-// Database now uses Supabase - no local database connection needed
+// Redis connection status (imported from main server)
+let redisStatus = { connected: false, lastCheck: null };
 
 /**
  * GET /health
@@ -47,8 +47,8 @@ router.get('/', async (req, res) => {
           port: '5432'
         },
         redis: {
-          status: 'decommissioned',
-          mode: 'stateless auth enabled'
+          connected: redisStatus.connected,
+          lastCheck: redisStatus.lastCheck
         },
         server: {
           uptime: process.uptime(),
@@ -187,4 +187,26 @@ router.get('/detailed', async (req, res) => {
   }
 });
 
-module.exports = { router };
+/**
+ * WHAT:
+ * Function to update Redis status from the main server.
+ * 
+ * WHY:
+ * Health endpoints need current Redis connection status.
+ * This allows the main server to report Redis connectivity.
+ * 
+ * HOW:
+ * Called from zorvalon.js when Redis connection changes.
+ * Updates the redisStatus object used by health endpoints.
+ * 
+ * @param {boolean} connected - Whether Redis is connected
+ * @param {string} lastCheck - Timestamp of last check
+ */
+function updateRedisStatus(connected, lastCheck = null) {
+  redisStatus = {
+    connected,
+    lastCheck: lastCheck || new Date().toISOString()
+  };
+}
+
+module.exports = { router, updateRedisStatus };

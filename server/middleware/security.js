@@ -3,7 +3,7 @@
 // Purpose: Enforces all security restrictions server-side, treating browser as hostile
 // Notes: Never trusts client-side validation, implements atomic operations and rate limiting
 
-// Rate limiting removed - handled at Cloudflare edge
+// Rate limiting and lockouts now use Redis for multi-instance safety
 const crypto = require('crypto');
 const logger = require('../utils/logger');
 const sanitizeHtml = require('sanitize-html');
@@ -18,14 +18,18 @@ const sanitizeHtml = require('sanitize-html');
  * We need server-side enforcement of all restrictions plus additional security layers.
  *
  * HOW:
- * We implement rate limiting, input sanitization, atomic operations, and strict validation.
+ * We implement Redis-backed rate limiting, input sanitization, atomic operations, and strict validation.
  * All security decisions are made server-side with detailed logging for monitoring.
  */
 
-// Rate limiting stores for tracking attempts
-// CRITICAL SECTION: These Maps are shared data accessed by multiple requests
-const loginAttempts = new Map();
-const ipAttempts = new Map();
+// Import Redis-backed lockout helpers (replaces old Map-based implementation)
+const {
+  checkAccountLockout,
+  recordFailedAttempt,
+  clearFailedAttempts
+} = require('./lockout');
+
+// Code attempts still use in-memory Map (not part of multi-instance concern)
 const codeAttempts = new Map();
 
 /**
@@ -163,104 +167,22 @@ function createAuthRateLimit() {
 }
 
 /**
- * Account lockout mechanism
- * Tracks failed attempts per user and implements progressive delays
- * CRITICAL SECTION: Read-only check - no modifications to shared data
+ * WHAT:
+ * Account lockout functions now imported from Redis-backed lockout module.
+ * 
+ * WHY:
+ * Old Map-based implementation was per-process only (not multi-instance safe).
+ * Redis-backed lockouts work across multiple instances and survive restarts.
+ * 
+ * HOW:
+ * Import checkAccountLockout, recordFailedAttempt, clearFailedAttempts from lockout.js.
+ * These functions now use Redis MULTI/EXEC for atomic operations.
+ * Progressive backoff ladders preserved (1m, 5m, 15m, 30m, 60m for users).
+ * Email addresses are hashed before use in Redis keys (no PII in keys).
  */
-function checkAccountLockout(email, ip) {
-    const userKey = `user:${email}`;
-    const ipKey = `ip:${ip}`;
-    const now = Date.now();
-    
-    // Get current attempt counts (read-only, no race condition)
-    const userAttempts = loginAttempts.get(userKey) || { count: 0, lastAttempt: 0, lockedUntil: 0 };
-    const ipAttemptsData = ipAttempts.get(ipKey) || { count: 0, lastAttempt: 0, lockedUntil: 0 };
-    
-    // Check if account is currently locked
-    if (userAttempts.lockedUntil > now) {
-        const remainingTime = Math.ceil((userAttempts.lockedUntil - now) / 1000);
-        return {
-            locked: true,
-            message: `Account locked. Try again in ${remainingTime} seconds.`,
-            remainingTime
-        };
-    }
-    
-    // Check if IP is currently locked
-    if (ipAttemptsData.lockedUntil > now) {
-        const remainingTime = Math.ceil((ipAttemptsData.lockedUntil - now) / 1000);
-        return {
-            locked: true,
-            message: `IP address locked. Try again in ${remainingTime} seconds.`,
-            remainingTime
-        };
-    }
-    
-    return { locked: false };
-}
-
-/**
- * Record failed login attempt
- * Implements progressive lockout with exponential backoff
- * CRITICAL SECTION: Atomic update to prevent race conditions
- */
-function recordFailedAttempt(email, ip) {
-    const userKey = `user:${email}`;
-    const ipKey = `ip:${ip}`;
-    const now = Date.now();
-    
-    // CRITICAL SECTION: Atomic update of user attempts
-    // Use atomic read-modify-write pattern to prevent race conditions
-    const currentUserAttempts = loginAttempts.get(userKey) || { count: 0, lastAttempt: 0, lockedUntil: 0 };
-    const userAttempts = {
-        count: currentUserAttempts.count + 1,
-        lastAttempt: now,
-        lockedUntil: 0 // Will be calculated below
-    };
-    
-    // Progressive lockout: 1min, 5min, 15min, 30min, 1hr
-    const lockoutDurations = [60, 300, 900, 1800, 3600]; // seconds
-    const lockoutDuration = lockoutDurations[Math.min(userAttempts.count - 1, lockoutDurations.length - 1)];
-    userAttempts.lockedUntil = now + (lockoutDuration * 1000);
-    
-    // Atomic set operation - this is atomic in JavaScript single-threaded environment
-    loginAttempts.set(userKey, userAttempts);
-    
-    // CRITICAL SECTION: Atomic update of IP attempts
-    // Use atomic read-modify-write pattern to prevent race conditions
-    const currentIpAttempts = ipAttempts.get(ipKey) || { count: 0, lastAttempt: 0, lockedUntil: 0 };
-    const ipAttemptsData = {
-        count: currentIpAttempts.count + 1,
-        lastAttempt: now,
-        lockedUntil: 0 // Will be calculated below
-    };
-    
-    // IP lockout: 5min, 15min, 30min, 1hr, 2hr
-    const ipLockoutDurations = [300, 900, 1800, 3600, 7200]; // seconds
-    const ipLockoutDuration = ipLockoutDurations[Math.min(ipAttemptsData.count - 1, ipLockoutDurations.length - 1)];
-    ipAttemptsData.lockedUntil = now + (ipLockoutDuration * 1000);
-    
-    // Atomic set operation - this is atomic in JavaScript single-threaded environment
-    ipAttempts.set(ipKey, ipAttemptsData);
-    
-    console.log(`Security: Failed login attempt - User: ${email}, IP: ${ip}, Attempts: ${userAttempts.count}`);
-}
-
-/**
- * Clear failed attempts on successful login
- */
-function clearFailedAttempts(email, ip) {
-    const userKey = `user:${email}`;
-    const ipKey = `ip:${ip}`;
-    
-    loginAttempts.delete(userKey);
-    ipAttempts.delete(ipKey);
-    
-    logger.securityClearance('Cleared failed attempts', {
-        user: email,
-        ip: ip
-    });
-}
+// Note: checkAccountLockout, recordFailedAttempt, clearFailedAttempts
+// are now imported from ./lockout.js at the top of this file
+// Old Map-based implementations removed to avoid shadowing
 
 /**
  * Generate secure single-use code bound to user and action

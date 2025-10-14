@@ -9,7 +9,8 @@
 // - GET /status: PUBLIC - returns current auth status
 
 const express = require('express');
-const { createAuthRateLimit, getClientIP } = require('../middleware/security');
+const { getClientIP } = require('../middleware/security');
+const { loginLimiter, signupLimiter } = require('../middleware/rateLimiter');
 const { validateUserRegistration } = require('../middleware/validation');
 const { supabaseAdmin } = require('../utils/supabaseClient');
 const logger = require('../utils/logger');
@@ -21,7 +22,7 @@ const router = express.Router();
  * Note: Login is handled by Supabase Auth on the frontend
  * This endpoint is kept for backward compatibility but returns a message
  */
-router.post('/login', createAuthRateLimit(), async (req, res) => {
+router.post('/login', loginLimiter(), async (req, res) => {
     try {
         const clientIP = getClientIP(req);
         
@@ -112,7 +113,7 @@ router.get('/status', (req, res) => {
  * Creates a new user account using Supabase Auth
  * Note: This is a server-side validation endpoint - actual user creation is handled by Supabase
  */
-router.post('/signup', createAuthRateLimit(), validateUserRegistration, async (req, res) => {
+router.post('/signup', signupLimiter(), validateUserRegistration, async (req, res) => {
     try {
         const clientIP = getClientIP(req);
         const { email, password, display_name, ...profileData } = req.body;
@@ -123,19 +124,22 @@ router.post('/signup', createAuthRateLimit(), validateUserRegistration, async (r
             ip: clientIP
         });
         
-        // Note: User creation is handled by Supabase Auth on the frontend
-        // This endpoint only provides server-side validation
-        // The frontend will call Supabase directly for user creation
-        
+        /**
+         * WHAT:
+         * Return generic success message without echoing user data.
+         * 
+         * WHY:
+         * Don't echo raw email or undefined fields back to client.
+         * Prevents PII exposure and cleaner response.
+         * Client already has the data they submitted.
+         * 
+         * HOW:
+         * Return success flag and message only.
+         * No user data in response.
+         */
         res.json({
             success: true,
-            message: 'Validation passed. Please proceed with Supabase user creation.',
-            validatedData: {
-                email: email,
-                first_name: first_name,
-                last_name: last_name,
-                profileData: profileData
-            }
+            message: 'Validation passed. Proceed with Supabase user creation.'
         });
         
     } catch (error) {

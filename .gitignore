@@ -43,7 +43,7 @@ build/
 /secrets/
 /secrets/scripts/
 
-# GitHub workflows and actions
+# GitHub workflows (CI/CD)
 /.github/
 
 # local curl cookie jar

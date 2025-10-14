@@ -60,7 +60,10 @@ router.get('/', async (req, res) => {
 
     res.status(200).json(healthData);
   } catch (error) {
-    console.error('Health check error:', error.message);
+    logger.error({
+      event: 'health.check.error',
+      error: error.message
+    }, 'Health check failed');
     res.status(500).json({
       status: 'error',
       message: 'Health check failed',
@@ -87,7 +90,10 @@ router.get('/liveness', (req, res) => {
       requestId: req.requestId
     });
   } catch (error) {
-    console.error('Liveness check error:', error.message);
+    logger.error({
+      event: 'health.liveness.error',
+      error: error.message
+    }, 'Liveness check failed');
     res.status(500).json({
       status: 'error',
       message: 'Liveness check failed',
@@ -125,7 +131,10 @@ router.get('/readiness', async (req, res) => {
     
     res.status(200).json(readinessData);
   } catch (error) {
-    console.error('Readiness check error:', error.message);
+    logger.error({
+      event: 'health.readiness.error',
+      error: error.message
+    }, 'Readiness check failed');
     res.status(500).json({
       status: 'error',
       message: 'Readiness check failed',
@@ -176,7 +185,10 @@ router.get('/detailed', async (req, res) => {
 
     res.json(detailedHealth);
   } catch (error) {
-    console.error('Detailed health check error:', error.message);
+    logger.error({
+      event: 'health.detailed.error',
+      error: error.message
+    }, 'Detailed health check failed');
     res.status(500).json({
       status: 'error',
       message: 'Detailed health check failed',

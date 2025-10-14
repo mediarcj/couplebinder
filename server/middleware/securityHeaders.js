@@ -67,12 +67,11 @@ function securityHeaders() {
         baseUri: ["'self'"],
         
         // Scripts: self-hosted + nonce + strict-dynamic for modern browsers
-        // Note: cdn.jsdelivr.net needed for Supabase client lib until we self-host
+        // Self-hosted assets only - no external CDN dependencies
         scriptSrc: [
           "'self'",
           (req, res) => `'nonce-${res.locals.cspNonce}'`,
-          "'strict-dynamic'",
-          "https://cdn.jsdelivr.net"
+          "'strict-dynamic'"
         ],
         
         // Styles: self-hosted + nonce (no unsafe-inline)

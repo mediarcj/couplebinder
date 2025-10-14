@@ -18,6 +18,7 @@
  */
 
 const cors = require('cors');
+const logger = require('../utils/logger');
 
 // Parse explicit allowed origins from environment
 const allowedList = (process.env.CORS_ORIGINS || '')
@@ -50,7 +51,11 @@ const corsOptions = {
     }
     
     // Deny all other origins
-    console.warn('CORS: Blocked origin', { origin, allowedList: allowedList.slice(0, 3) });
+    logger.warn({
+      event: 'cors.blocked_origin',
+      origin,
+      allowedList: allowedList.slice(0, 3)
+    }, 'CORS blocked origin');
     return callback(new Error('Not allowed by CORS policy'));
   },
   

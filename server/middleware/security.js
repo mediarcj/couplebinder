@@ -149,19 +149,20 @@ function validateTextServerSide(text) {
 
 /**
  * WHAT:
- * Authentication rate limiting middleware (disabled - handled at Cloudflare edge)
+ * Legacy authentication rate limiting function (deprecated).
  *
  * WHY:
- * Rate limiting is now handled at the Cloudflare edge layer for better performance
- * and centralized protection across all endpoints
+ * Rate limiting hierarchy: Cloudflare edge (primary) → Origin Redis (secondary).
+ * Edge sheds volumetric load before hitting origin. Origin limiters provide
+ * defense-in-depth and escalate to IP firewall auto-ban.
  *
  * HOW:
- * Returns a simple middleware that passes through all requests
- * Cloudflare handles rate limiting at the edge
+ * Returns a no-op middleware for backward compatibility.
+ * Use rateLimiter middleware from ../middleware/rateLimiter.js instead.
  */
 function createAuthRateLimit() {
     return (req, res, next) => {
-        // Rate limiting handled at Cloudflare edge
+        // Use rateLimiter middleware instead - this is deprecated
         next();
     };
 }
@@ -212,7 +213,11 @@ function generateSecureCode(userId, action, ttlSeconds = 300) {
         codeAttempts.delete(code);
     }, ttlSeconds * 1000);
     
-    console.log(`Security: Generated secure code for user ${userId}, action: ${action}`);
+    logger.debug({
+      event: 'security.code.generated',
+      userId,
+      action
+    }, 'Secure code generated for user action');
     
     return {
         code,
@@ -313,7 +318,11 @@ function verifySecureCode(code, userId, action) {
     // Atomic set operation
     codeAttempts.set(code, usedCodeData);
     
-    console.log(`Security: Code verified and consumed - User: ${userId}, Action: ${action}`);
+    logger.debug({
+      event: 'security.code.verified',
+      userId,
+      action
+    }, 'Secure code verified and consumed');
     
     return {
         valid: true,

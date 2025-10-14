@@ -3,7 +3,7 @@
 // Purpose: Catches critical boot failures before deployment
 // Notes: Tests that CSRF and other mandatory middleware loaded successfully
 
-const { describe, it, expect } = require('vitest');
+// Globals enabled in vitest.config.js
 const request = require('supertest');
 
 // Import app (this will fail fast if critical middleware doesn't load)

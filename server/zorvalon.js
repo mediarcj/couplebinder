@@ -1,6 +1,6 @@
 // File: zorvalon.js
 // Description: Entry point for application server - Refactored for better organization
-// Boot order: Express  MethodGuard  SecurityHeaders  CORS  TrustProxy  Parsers  CacheControl  Auth  CSRF  Routes  Errors
+// Boot order: Express  Database  Redis  SecurityHeaders  CORS  TrustProxy  Parsers  CacheControl  Auth  Sessions  CSRF  Routes  Errors
 // Notes: Console logs mark important checkpoints for audit and debugging
 
 // CRITICAL: Global error handlers - exit immediately on unhandled errors
@@ -241,21 +241,86 @@ consoleLogger.formatConfigSummary(config);
  */
 
 // ============================================================
-// STEP 3: Redis decommissioned  stateless auth enabled
+// STEP 3: Redis Client Creation and Connection
 // ============================================================
 
 /**
  * WHAT:
- * Redis has been removed in favor of stateless authentication.
+ * We create and configure a Redis client for session storage and caching.
  *
  * WHY:
- * We now use Supabase Auth tokens and stateless CSRF protection,
- * eliminating the need for server-side session storage.
+ * Redis provides persistent session storage across server restarts and enables
+ * horizontal scaling with multiple server instances.
  *
  * HOW:
- * Authentication is handled by authBridge middleware using Supabase tokens.
- * CSRF protection uses double-submit cookie pattern without server storage.
+ * We use the improved Redis client with retry strategy and error handling.
+ * If Redis is unavailable, we fall back to in-memory session storage.
  */
+let redisClient = null;
+let RedisStore = null;
+
+/**
+ * WHAT:
+ * Load Redis client module and prepare for connection.
+ * 
+ * WHY:
+ * Session middleware needs the Redis client reference.
+ * Actual connection happens asynchronously after sessions are mounted.
+ * 
+ * HOW:
+ * Import Redis client with lazyConnect enabled.
+ * Store client reference for session middleware.
+ * Connection will be initiated after middleware is configured.
+ */
+try {
+    const { client, connectRedis } = require('./utils/redisClient');
+    redisClient = client;
+    console.log('Redis client module loaded successfully');
+    
+    // Initialize Redis connection asynchronously
+    const initRedis = async () => {
+        try {
+            await connectRedis();
+            updateRedisStatus(true, new Date().toISOString());
+            console.log('Redis connection established successfully');
+        } catch (error) {
+            console.error('Redis connection failed:', error.message);
+            console.log('Sessions will use memory store fallback');
+            updateRedisStatus(false, new Date().toISOString());
+        }
+    };
+    
+    // Start connection process (non-blocking)
+    initRedis();
+    
+} catch (error) {
+    console.error('Redis client module load failed:', error.message);
+    console.log('Continuing without Redis...');
+}
+
+/**
+ * WHAT:
+ * Function to update Redis status for health checks.
+ * 
+ * WHY:
+ * Health endpoints need to know if Redis is connected.
+ * This allows monitoring systems to track Redis availability.
+ * 
+ * HOW:
+ * Import and call updateRedisStatus from health routes.
+ * Pass connection status and timestamp for monitoring.
+ * 
+ * @param {boolean} connected - Whether Redis is connected
+ * @param {string} lastCheck - Timestamp of last check
+ */
+let updateRedisStatus;
+try {
+  const { updateRedisStatus: updateStatus } = require('./routes/health');
+  updateRedisStatus = updateStatus;
+} catch (error) {
+  // Health routes not available yet, create a stub
+  updateRedisStatus = () => {};
+}
 
 // ============================================================
 // STEP 4: Security and Core Middleware Registration
@@ -340,8 +405,60 @@ app.use(authBridge);
 // Centralized authentication middleware
 const { requireAuth } = require('./middleware/requireAuth');
 
-// Session middleware removed - using stateless authentication with Supabase tokens
-console.log('Stateless authentication enabled - no server-side sessions');
+/**
+ * WHAT:
+ * Configure session middleware with Redis store.
+ * 
+ * WHY:
+ * Sessions provide persistent state across requests.
+ * Redis-backed sessions work across multiple server instances.
+ * 
+ * HOW:
+ * Import connect-redis v7 (default export is the class constructor).
+ * Mount session middleware with Redis client.
+ * Redis connects asynchronously; session store will use it when ready.
+ */
+const session = require('express-session');
+
+// Import connect-redis v7 (default export is the class constructor)
+try {
+  RedisStore = require('connect-redis').default;
+  console.log('connect-redis v7 loaded successfully');
+} catch (e) {
+  console.error('Failed to load connect-redis:', e.message);
+  RedisStore = null;
+}
+
+// Mount session middleware
+const sessionOptions = {
+  name: 'detechify.sid',
+  secret: process.env.SESSION_SECRET || 'fallback-secret-change-in-production',
+  resave: false,
+  saveUninitialized: false,
+  rolling: true,
+  cookie: {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: config.server.nodeEnv === 'production',
+    maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+  }
+};
+
+if (redisClient && RedisStore) {
+  // Use Redis store (v7 API: new RedisStore({ client, ttl }))
+  sessionOptions.store = new RedisStore({
+    client: redisClient,
+    ttl: 7 * 24 * 60 * 60 // 7 days in seconds
+  });
+  app.use(session(sessionOptions));
+  console.log('Session middleware configured with Redis store');
+} else {
+  // Use memory store fallback
+  app.use(session(sessionOptions));
+  console.log('Session middleware configured with memory store (Redis unavailable)');
+}
+
+console.log('Hybrid authentication: Stateless (Supabase tokens) + Sessions (Redis/Memory)');
 
 // Request ID middleware - add unique ID to every request
 app.use(requestIdMiddleware);

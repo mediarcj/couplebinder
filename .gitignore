@@ -41,6 +41,7 @@ build/
 
 # Secrets directory
 /secrets/
+/secrets/scripts/
 
 # local curl cookie jar
 jar.txt

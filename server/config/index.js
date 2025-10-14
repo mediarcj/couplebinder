@@ -140,6 +140,14 @@ const config = {
     allowedOrigins: csv(process.env.ALLOWED_ORIGINS)
   },
 
+  // Redis configuration (for sessions and caching)
+  redis: {
+    host: process.env.REDIS_HOST || 'localhost',
+    port: int(process.env.REDIS_PORT, 6379),
+    password: process.env.REDIS_PASSWORD,
+    url: process.env.REDIS_URL
+  },
+
   // Input validation limits
   limits: {
     textMaxLength: int(process.env.TEXT_MAX_LENGTH, 5000),

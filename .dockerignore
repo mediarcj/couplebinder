@@ -42,3 +42,4 @@ dist
 .tmp
 coverage
 **/.DS_Store
+secrets

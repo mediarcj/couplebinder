@@ -21,6 +21,7 @@ const express = require('express');
 const router = express.Router();
 const { verifyToken } = require('../middleware/auth/supabaseJwt');
 const { audit } = require('../lib/audit');
+const { checkAccountLockout, recordFailedAttempt, clearFailedAttempts } = require('../middleware/lockout');
 
 // ============================================================
 // Configuration
@@ -57,6 +58,33 @@ const baseCookie = {
  */
 router.post('/set-cookie', async (req, res) => {
   try {
+    /**
+     * WHAT:
+     * Check for account/IP lockouts before processing token.
+     * 
+     * WHY:
+     * Prevent brute force attacks on token verification.
+     * Lockouts must be checked server-side before any auth attempt.
+     * 
+     * HOW:
+     * Extract IP from request.
+     * Extract email from token payload if available (or use 'ip-only' as placeholder).
+     * Check Redis for active lockouts.
+     * Return 429 if locked with remaining time.
+     */
+    const ip = req.clientIp || req.ip || 'unknown';
+    const emailFromBody = (req.body?.email || '').toLowerCase().trim();
+    
+    // Check lockout status before processing
+    const lock = await checkAccountLockout(emailFromBody || 'ip-only', ip);
+    if (lock.locked) {
+      res.set('Retry-After', String(lock.remainingTime || 60));
+      return res.status(429).json({
+        ok: false,
+        error: lock.message
+      });
+    }
+
     // Extract Bearer token from Authorization header
     const auth = req.get('authorization') || '';
     const token = auth.startsWith('Bearer ') ? auth.slice(7).trim() : null;
@@ -73,10 +101,23 @@ router.post('/set-cookie', async (req, res) => {
     try {
       payload = await verifyToken(token);
     } catch (verifyError) {
-      // Token is invalid (signature, expiration, issuer, or audience mismatch)
-      // Log the error code for debugging (already logged in verifyToken with details)
+      /**
+       * WHAT:
+       * Record failed token verification attempt.
+       * 
+       * WHY:
+       * Failed token verification indicates potential brute force attack.
+       * Progressive lockout deters attackers.
+       * 
+       * HOW:
+       * Record failure in Redis with user email (from payload if available) and IP.
+       * Lockout duration increases with each failure.
+       */
       const code = verifyError?.code || 'verify_failed';
       console.warn('[auth] set-cookie rejected:', code);
+      
+      // Record failed attempt for lockout tracking
+      await recordFailedAttempt(emailFromBody || 'ip-only', ip);
       
       // Audit log: failed cookie set
       audit('auth.set_cookie.fail', { reason: code }, req);
@@ -87,6 +128,21 @@ router.post('/set-cookie', async (req, res) => {
         error: 'Invalid token' 
       });
     }
+
+    /**
+     * WHAT:
+     * Clear failed attempts on successful token verification.
+     * 
+     * WHY:
+     * Successful authentication should reset lockout state.
+     * Prevents legitimate users from being locked out.
+     * 
+     * HOW:
+     * Extract email from verified token payload.
+     * Clear all lockout counters and locks in Redis.
+     */
+    const userEmail = payload.email || emailFromBody || 'ip-only';
+    await clearFailedAttempts(userEmail, ip);
 
     // ============================================================
     // Set the new cookie with __Host- support

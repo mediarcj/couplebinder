@@ -1,6 +1,6 @@
 // File: zorvalon.js
 // Description: Entry point for application server - Refactored for better organization
-// Boot order: Express  Database  Redis  SecurityHeaders  CORS  TrustProxy  Parsers  CacheControl  Auth  Sessions  CSRF  Routes  Errors
+// Boot order: Express  Database  Redis  SecurityHeaders  CORS  TrustProxy  RequestID  IPFirewall  Parsers  CacheControl  Auth  Sessions  CSRF  Routes  Errors
 // Notes: Console logs mark important checkpoints for audit and debugging
 
 // CRITICAL: Global error handlers - exit immediately on unhandled errors
@@ -219,6 +219,15 @@ console.log('Security: Cache control enabled');
 // 4. Trust proxy and expose real client IP
 app.use(trustProxyIp(app));
 console.log('Security: Trust proxy and clientIp extraction enabled');
+
+// 5. Request ID middleware - add unique ID to every request (must be early for logging)
+app.use(requestIdMiddleware);
+console.log('Security: Request ID tracking enabled');
+
+// 6. IP Firewall - block abusive IPs before they reach route logic
+const { ipFirewall } = require('./middleware/ipFirewall');
+app.use(ipFirewall());
+console.log('Security: IP firewall enabled (Redis-backed auto-ban)');
 
 console.log(`${process.env.APP_NAME || 'Application'} server starting...`);
 consoleLogger.formatConfigSummary(config);
@@ -460,9 +469,6 @@ if (redisClient && RedisStore) {
 
 console.log('Hybrid authentication: Stateless (Supabase tokens) + Sessions (Redis/Memory)');
 
-// Request ID middleware - add unique ID to every request
-app.use(requestIdMiddleware);
-
 // Request timing middleware for formatted logging
 app.use((req, res, next) => {
   const startTime = Date.now();
@@ -505,10 +511,8 @@ const publicPath = path.join(__dirname, 'public');
 console.log('Static files path:', publicPath);
 app.use(express.static(publicPath));
 
-// Rate limiting removed - handled at Cloudflare edge
-
 consoleLogger.formatMiddlewareRegistration('View engine and static assets');
-consoleLogger.formatMiddlewareRegistration('Rate limiting (Cloudflare edge)');
+consoleLogger.formatMiddlewareRegistration('Rate limiting: Edge (primary) → Origin/Redis (secondary)');
 
 // ============================================================
 // STEP 6: Security Middleware Configuration

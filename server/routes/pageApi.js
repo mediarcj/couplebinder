@@ -19,6 +19,7 @@ const {
   buildSettingsPageModel, 
   buildErrorPageModel 
 } = require('../ui_contract/presenters');
+const logger = require('../utils/logger');
 
 /**
  * GET /api/page/home
@@ -34,7 +35,11 @@ router.get('/home', (req, res) => {
       timestamp: new Date().toISOString()
     });
   } catch (error) {
-    console.error('Home page API error:', error);
+    logger.error({
+      event: 'page_api.home.error',
+      error: error.message,
+      requestId: req.requestId
+    }, 'Home page API error');
     const pageModel = buildErrorPageModel(req, res, 500, 'Unable to load home page');
     res.status(500).json({
       success: false,
@@ -62,7 +67,11 @@ router.get('/dashboard', async (req, res) => {
       timestamp: new Date().toISOString()
     });
   } catch (error) {
-    console.error('Dashboard page API error:', error);
+    logger.error({
+      event: 'page_api.dashboard.error',
+      error: error.message,
+      requestId: req.requestId
+    }, 'Dashboard page API error');
     const pageModel = buildErrorPageModel(req, res, 500, 'Unable to load dashboard');
     res.status(500).json({
       success: false,
@@ -97,7 +106,11 @@ router.get('/user/:id', async (req, res) => {
       timestamp: new Date().toISOString()
     });
   } catch (error) {
-    console.error('User profile page API error:', error);
+    logger.error({
+      event: 'page_api.user_profile.error',
+      error: error.message,
+      requestId: req.requestId
+    }, 'User profile page API error');
     const pageModel = buildErrorPageModel(req, res, 500, 'Unable to load user profile');
     res.status(500).json({
       success: false,
@@ -123,7 +136,11 @@ router.get('/settings', async (req, res) => {
       timestamp: new Date().toISOString()
     });
   } catch (error) {
-    console.error('Settings page API error:', error);
+    logger.error({
+      event: 'page_api.settings.error',
+      error: error.message,
+      requestId: req.requestId
+    }, 'Settings page API error');
     const pageModel = buildErrorPageModel(req, res, 500, 'Unable to load settings');
     res.status(500).json({
       success: false,

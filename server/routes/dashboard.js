@@ -7,6 +7,7 @@ const express = require('express');
 const router = express.Router();
 // requireAuth is applied globally to /dashboard routes in zorvalon.js
 const { buildDashboardPageModel, buildErrorPageModel } = require('../ui_contract/presenters');
+const logger = require('../utils/logger');
 
 /**
  * GET /dashboard
@@ -29,8 +30,12 @@ router.get('/', async (req, res) => {
         // Render EJS template with page model
         res.render('dashboard', pageModel);
     } catch (error) {
-        console.error('Dashboard route error:', error);
-        console.error('Error stack:', error.stack);
+        logger.error({
+            event: 'dashboard.route.error',
+            error: error.message,
+            stack: error.stack,
+            requestId: req.requestId
+        }, 'Dashboard route error');
         const pageModel = buildErrorPageModel(req, res, 500, 'Unable to load dashboard');
         res.status(500).render('error', pageModel);
     }
@@ -58,7 +63,11 @@ router.get('/profile-edit', async (req, res) => {
         // Render EJS template with page model
         res.render('profile-edit', pageModel);
     } catch (error) {
-        console.error('Profile edit route error:', error.message);
+        logger.error({
+            event: 'dashboard.profile_edit.error',
+            error: error.message,
+            requestId: req.requestId
+        }, 'Profile edit route error');
         const pageModel = buildErrorPageModel(req, res, 500, 'Unable to load profile edit page');
         res.status(500).render('error', pageModel);
     }

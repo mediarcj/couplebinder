@@ -19,6 +19,7 @@
  */
 
 const crypto = require('crypto');
+const logger = require('../utils/logger');
 
 // ============================================================
 // Configuration (override with env for flexibility)
@@ -146,30 +147,36 @@ module.exports = function csrfLite(req, res, next) {
 
     if (!cookieVal || !headerVal) {
       const body = { error: 'csrf_invalid', code: 'missing' };
-      console.warn('[csrf] missing token', {
-        method: req.method, path: req.path,
-        cookie: Boolean(cookieVal), header: Boolean(headerVal),
-        reqId: req.headers['x-request-id'] || null
-      });
+      logger.warn({
+        event: 'csrf.token_missing',
+        method: req.method,
+        path: req.path,
+        hasCookie: Boolean(cookieVal),
+        hasHeader: Boolean(headerVal),
+        requestId: req.requestId
+      }, 'CSRF token missing');
       return wantsJson(req) ? res.status(403).json(body) : res.status(403).send('CSRF check failed');
     }
 
     if (!timingSafeEqual(cookieVal, headerVal)) {
       const body = { error: 'csrf_invalid', code: 'mismatch' };
-      console.warn('[csrf] mismatch', {
-        method: req.method, path: req.path,
-        reqId: req.headers['x-request-id'] || null
-      });
+      logger.warn({
+        event: 'csrf.token_mismatch',
+        method: req.method,
+        path: req.path,
+        requestId: req.requestId
+      }, 'CSRF token mismatch');
       return wantsJson(req) ? res.status(403).json(body) : res.status(403).send('CSRF check failed');
     }
 
     return next();
   } catch (err) {
     const body = { error: 'csrf_invalid', code: 'exception' };
-    console.error('[csrf] exception', {
-      message: err.message,
-      reqId: req.headers['x-request-id'] || null
-    });
+    logger.error({
+      event: 'csrf.exception',
+      error: err.message,
+      requestId: req.requestId
+    }, 'CSRF validation exception');
     return wantsJson(req) ? res.status(403).json(body) : res.status(403).send('CSRF check failed');
   }
 };

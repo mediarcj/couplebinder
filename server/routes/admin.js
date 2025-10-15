@@ -9,6 +9,7 @@
 const express = require('express');
 const router = express.Router();
 const { supabaseAdmin } = require('../utils/supabaseClient');
+const logger = require('../utils/logger');
 
 /**
  * WHAT:
@@ -70,7 +71,12 @@ router.get('/users/:id', async (req, res) => {
     const { data: { user }, error } = await supabaseAdmin.auth.admin.getUserById(id);
     
     if (error) {
-      console.error('Admin user lookup error:', error);
+      logger.error({
+        event: 'admin.user_lookup.failed',
+        userId: id,
+        error: error.message,
+        requestId: req.requestId
+      }, 'Admin user lookup failed');
       return res.status(500).json({
         success: false,
         message: 'Failed to retrieve user data'
@@ -103,7 +109,11 @@ router.get('/users/:id', async (req, res) => {
     });
     
   } catch (error) {
-    console.error('Admin user lookup error:', error);
+    logger.error({
+      event: 'admin.user_lookup.exception',
+      error: error.message,
+      requestId: req.requestId
+    }, 'Admin user lookup exception');
     res.status(500).json({
       success: false,
       message: 'Internal server error'
@@ -128,7 +138,11 @@ router.get('/users', async (req, res) => {
     });
     
     if (error) {
-      console.error('Admin user list error:', error);
+      logger.error({
+        event: 'admin.user_list.failed',
+        error: error.message,
+        requestId: req.requestId
+      }, 'Admin user list query failed');
       return res.status(500).json({
         success: false,
         message: 'Failed to retrieve user list'
@@ -155,7 +169,11 @@ router.get('/users', async (req, res) => {
     });
     
   } catch (error) {
-    console.error('Admin user list error:', error);
+    logger.error({
+      event: 'admin.user_list.exception',
+      error: error.message,
+      requestId: req.requestId
+    }, 'Admin user list exception');
     res.status(500).json({
       success: false,
       message: 'Internal server error'
@@ -195,7 +213,11 @@ router.get('/system/status', async (req, res) => {
     });
     
   } catch (error) {
-    console.error('Admin system status error:', error);
+    logger.error({
+      event: 'admin.system_status.exception',
+      error: error.message,
+      requestId: req.requestId
+    }, 'Admin system status exception');
     res.status(500).json({
       success: false,
       message: 'Failed to retrieve system status'

@@ -17,6 +17,7 @@
 
 const helmet = require('helmet');
 const crypto = require('crypto');
+const logger = require('../utils/logger');
 
 /**
  * Generate CSP nonce middleware
@@ -46,7 +47,10 @@ function securityHeaders() {
       supabaseWss = `wss://${url.hostname}`;
     }
   } catch (err) {
-    console.warn('Could not parse SUPABASE_URL for CSP:', err.message);
+    logger.warn({
+      event: 'security_headers.supabase_url_parse.failed',
+      error: err.message
+    }, 'Could not parse SUPABASE_URL for CSP');
   }
 
   return helmet({

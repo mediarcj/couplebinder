@@ -20,6 +20,7 @@
 
 const { createRemoteJWKSet, jwtVerify } = require('jose');
 const { audit } = require('../../lib/audit');
+const logger = require('../../utils/logger');
 
 // ============================================================
 // STEP 1: Read env (fail fast on missing core vars)
@@ -34,7 +35,10 @@ if (!SUPABASE_URL) throw new Error('SUPABASE_URL env is required');
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || '';
 if (!SUPABASE_ANON_KEY) {
   // We can still boot, but some projects will reject JWKS without an apikey.
-  console.warn('[auth] Warning: SUPABASE_ANON_KEY missing; JWKS fetch may be unauthorized.');
+  logger.warn({
+    event: 'auth.config.anon_key_missing',
+    warning: 'JWKS fetch may be unauthorized'
+  }, 'SUPABASE_ANON_KEY missing');
 }
 
 // ============================================================
@@ -132,7 +136,11 @@ async function verifyToken(token) {
       iss: err?.payload?.iss,
       aud: err?.payload?.aud
     };
-    console.warn('[auth] JWT verification failed:', reason, JSON.stringify(meta));
+    logger.warn({
+      event: 'auth.jwt_verification.failed',
+      reason,
+      ...meta
+    }, 'JWT verification failed');
     
     // ============================================================
     // Audit log: JWT verification failure

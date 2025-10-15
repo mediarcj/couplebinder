@@ -11,6 +11,7 @@ const router = express.Router();
 // requireAuth is applied globally to /api/users routes in zorvalon.js
 const { requireOwner } = require('../middleware/requireOwner');
 const { supabaseAdmin } = require('../utils/supabaseClient');
+const logger = require('../utils/logger');
 // CSRF protection is handled globally by csrfLite middleware
 
 /**
@@ -54,7 +55,12 @@ router.get('/:id', requireOwner, async (req, res) => {
     const { data: { user }, error } = await supabaseAdmin.auth.admin.getUserById(id);
     
     if (error) {
-      console.error('Supabase user retrieval error:', error);
+      logger.error({
+        event: 'users.retrieval.failed',
+        userId: id,
+        error: error.message,
+        requestId: req.requestId
+      }, 'Supabase user retrieval failed');
       return res.status(500).json({
         success: false,
         message: 'Internal server error'
@@ -85,7 +91,11 @@ router.get('/:id', requireOwner, async (req, res) => {
     });
     
   } catch (error) {
-    console.error('User retrieval error:', error);
+    logger.error({
+      event: 'users.retrieval.exception',
+      error: error.message,
+      requestId: req.requestId
+    }, 'User retrieval exception');
     
     res.status(500).json({
       success: false,

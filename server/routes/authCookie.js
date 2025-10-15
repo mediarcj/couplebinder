@@ -22,6 +22,7 @@ const router = express.Router();
 const { verifyToken } = require('../middleware/auth/supabaseJwt');
 const { audit } = require('../lib/audit');
 const { checkAccountLockout, recordFailedAttempt, clearFailedAttempts } = require('../middleware/lockout');
+const logger = require('../utils/logger');
 
 // ============================================================
 // Configuration

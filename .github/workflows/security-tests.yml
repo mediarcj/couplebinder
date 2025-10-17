@@ -1,0 +1,65 @@
+name: Security Tests
+
+on:
+  pull_request:
+    branches: [ main ]
+  push:
+    branches: [ main ]
+
+jobs:
+  security-tests:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        
+    - name: Install dependencies
+      run: npm ci
+      
+    - name: Run security audit
+      run: npm audit --omit=dev
+      
+    - name: Generate SBOM
+      run: npx @cyclonedx/cyclonedx-npm -o sbom.json
+      
+    - name: Start application
+      run: |
+        npm run start &
+        sleep 10
+        curl -f http://localhost:3000/health || exit 1
+        
+    - name: Run auth/CSRF tests
+      run: |
+        chmod +x scripts/test_auth_csrf.sh
+        ./scripts/test_auth_csrf.sh
+        
+    - name: Run canonical data tests
+      run: |
+        chmod +x scripts/verify_canonical_data.sh
+        ./scripts/verify_canonical_data.sh
+        
+    - name: Run database sanity checks
+      run: |
+        chmod +x scripts/db_sanity_check.sh
+        ./scripts/db_sanity_check.sh
+        
+    - name: Run edge hardening checks
+      run: |
+        chmod +x scripts/edge_hardening_check.sh
+        ./scripts/edge_hardening_check.sh
+        
+    - name: Upload SBOM artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: sbom
+        path: sbom.json
+        
+    - name: Stop application
+      run: pkill -f "node zorvalon.js" || true

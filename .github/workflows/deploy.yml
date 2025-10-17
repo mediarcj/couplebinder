@@ -1,0 +1,79 @@
+name: Build and Deploy to Prod
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  id-token: write   # for OIDC
+  contents: read
+
+env:
+  AWS_REGION: us-west-2
+  AWS_ACCOUNT_ID: "963206745755"
+  ECR_REPO: detechify-app
+  SSM_IMAGE_TAG_PARAM: /detechify/prod-20251016-0353/env/IMAGE_TAG
+  INSTANCE_ID: i-05bdc8abce575003b
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::963206745755:role/detec-deploy-gha
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to ECR
+        id: ecr
+        run: |
+          aws ecr get-login-password --region "$AWS_REGION" \
+          | docker login --username AWS --password-stdin \
+            "$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com"
+
+      - name: Compute image tag
+        id: tag
+        run: |
+          SHORT_SHA="${GITHUB_SHA::7}"
+          TAG="$(date -u +%Y%m%d-%H%M%S)-${SHORT_SHA}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Build & Push image
+        run: |
+          IMAGE="$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPO:${{ steps.tag.outputs.tag }}"
+          docker buildx build --platform linux/amd64 -t "$IMAGE" .
+          docker push "$IMAGE"
+
+      - name: Update SSM IMAGE_TAG
+        run: |
+          aws ssm put-parameter \
+            --name "$SSM_IMAGE_TAG_PARAM" \
+            --type SecureString \
+            --value "${{ steps.tag.outputs.tag }}" \
+            --overwrite
+
+      - name: Restart service via SSM
+        run: |
+          aws ssm send-command \
+            --instance-ids "$INSTANCE_ID" \
+            --document-name "AWS-RunShellScript" \
+            --parameters commands='["sudo systemctl restart detechify"]' \
+            --comment "Deploy ${{ steps.tag.outputs.tag }}"
+
+      - name: Smoke test
+        run: |
+          # give the service a few seconds to pull & start
+          for i in {1..15}; do
+            code=$(curl -sk -o /dev/null -w "%{http_code}" https://detechify.com/health/liveness) || true
+            if [ "$code" = "200" ]; then
+              echo "OK"
+              exit 0
+            fi
+            sleep 4
+          done
+          echo "Health check failed"
+          exit 1

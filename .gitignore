@@ -48,3 +48,8 @@ build/
 
 # local curl cookie jar
 jar.txt
+
+# Allow GitHub Actions
+!.github/
+!.github/workflows/
+!.github/workflows/*.yml

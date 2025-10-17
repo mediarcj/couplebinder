@@ -46,8 +46,8 @@ jobs:
         run: |
           CMD_ID=$(aws ssm send-command \
             --document-name "AWS-RunShellScript" \
-            --targets "Key=instanceids,Values=${INSTANCE_ID}" \
-            --parameters commands='["sudo systemctl restart detechify"]' \
+            --targets "Key=InstanceIds,Values=${INSTANCE_ID}" \
+            --parameters 'commands=["sudo systemctl restart detechify"]' \
             --comment "Deploy $IMAGE_TAG" \
             --query 'Command.CommandId' --output text)
           echo "SSM command id: $CMD_ID"

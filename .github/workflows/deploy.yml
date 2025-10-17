@@ -17,37 +17,89 @@ jobs:
       ECR_REPO: ${{ secrets.ECR_REPO }}
       SSM_IMAGE_TAG_PARAM: ${{ secrets.SSM_IMAGE_TAG_PARAM }}
       INSTANCE_ID: ${{ secrets.INSTANCE_ID }}
+      ROLE_TO_ASSUME: ${{ secrets.ROLE_TO_ASSUME }}
       IMAGE_TAG: ${{ github.run_id }}-${{ github.sha }}
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
       - name: Configure AWS (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.ROLE_TO_ASSUME }}
-          aws-region: ${{ secrets.AWS_REGION }}
+          role-to-assume: ${{ env.ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Debug AWS identity & region
+        run: |
+          set -euxo pipefail
+          aws --version
+          aws sts get-caller-identity
+          echo "Region=${AWS_REGION}"
+          echo "Account=${AWS_ACCOUNT_ID}"
+          echo "Repo=${ECR_REPO}"
+          echo "Param=${SSM_IMAGE_TAG_PARAM}"
+          echo "Instance=${INSTANCE_ID}"
+
+      - name: Ensure ECR repo exists (idempotent)
+        run: |
+          set -euo pipefail
+          if ! aws ecr describe-repositories --repository-names "${ECR_REPO}" >/dev/null 2>&1; then
+            aws ecr create-repository --repository-name "${ECR_REPO}" >/dev/null
+            echo "Created ECR repo ${ECR_REPO}"
+          else
+            echo "ECR repo ${ECR_REPO} exists"
+          fi
 
       - name: Login to ECR
         uses: aws-actions/amazon-ecr-login@v2
 
+      - name: Set up Docker Buildx (for --platform)
+        uses: docker/setup-buildx-action@v3
+
       - name: Build & push image
         run: |
-          docker build --platform linux/amd64 -t $ECR_REPO:$IMAGE_TAG .
-          docker tag $ECR_REPO:$IMAGE_TAG $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPO:$IMAGE_TAG
-          docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPO:$IMAGE_TAG
+          set -euxo pipefail
+          IMAGE_URI="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPO}:${IMAGE_TAG}"
+          docker build --platform linux/amd64 -t "${IMAGE_URI}" .
+          docker push "${IMAGE_URI}"
+          echo "IMAGE_URI=${IMAGE_URI}" >> $GITHUB_ENV
 
-      - name: Update SSM param with the new image tag
+      - name: Write new tag to SSM
         run: |
-          aws ssm put-parameter --name "$SSM_IMAGE_TAG_PARAM" \
-            --type SecureString --value "$IMAGE_TAG" --overwrite
+          set -euxo pipefail
+          aws ssm put-parameter \
+            --name "${SSM_IMAGE_TAG_PARAM}" \
+            --type SecureString \
+            --value "${IMAGE_TAG}" \
+            --overwrite
+          echo "Wrote IMAGE_TAG=${IMAGE_TAG} to ${SSM_IMAGE_TAG_PARAM}"
 
-      - name: Restart service on the instance (SSM)
+      - name: Restart service via SSM and wait
         run: |
+          set -euxo pipefail
           CMD_ID=$(aws ssm send-command \
             --document-name "AWS-RunShellScript" \
             --targets "Key=InstanceIds,Values=${INSTANCE_ID}" \
-            --parameters 'commands=["sudo systemctl restart detechify"]' \
-            --comment "Deploy $IMAGE_TAG" \
+            --parameters commands='["sudo systemctl restart detechify"]' \
+            --comment "Deploy ${IMAGE_TAG}" \
             --query 'Command.CommandId' --output text)
           echo "SSM command id: $CMD_ID"
+
+          # Wait for completion (up to ~3 minutes)
+          for i in $(seq 1 36); do
+            STATUS=$(aws ssm list-command-invocations --command-id "$CMD_ID" \
+              --details --query 'CommandInvocations[0].Status' --output text || echo "Unknown")
+            echo "Status: $STATUS"
+            if [ "$STATUS" = "Success" ]; then break; fi
+            if [ "$STATUS" = "Failed" ] || [ "$STATUS" = "Cancelled" ] || [ "$STATUS" = "TimedOut" ]; then
+              echo "Command failed with status: $STATUS"
+              exit 1
+            fi
+            sleep 5
+          done
+
+      - name: Show tag that prod will pull next time (debug)
+        run: |
+          set -euxo pipefail
+          aws ssm get-parameter --with-decryption --name "${SSM_IMAGE_TAG_PARAM}" --query 'Parameter.Value' --output text

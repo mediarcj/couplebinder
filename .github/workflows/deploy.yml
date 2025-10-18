@@ -61,7 +61,10 @@ jobs:
         run: |
           set -euxo pipefail
           IMAGE_URI="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPO}:${IMAGE_TAG}"
-          docker build --platform linux/amd64 -t "${IMAGE_URI}" .
+          # Point to the real Dockerfile and the server/ context
+          docker build --platform linux/amd64 \
+            -f server/Dockerfile \
+            -t "${IMAGE_URI}" ./server
           docker push "${IMAGE_URI}"
           echo "IMAGE_URI=${IMAGE_URI}" >> $GITHUB_ENV
 

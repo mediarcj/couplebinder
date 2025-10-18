@@ -983,12 +983,12 @@ function initializeSignupModal() {
     
     // Close modal when close button is clicked
     if (closeBtn) {
-        closeBtn.addEventListener('click', closeSignupModal);
+        closeBtn.addEventListener('click', () => modalManager.closeSignup());
     }
     
     // Close modal when cancel button is clicked
     if (cancelBtn) {
-        cancelBtn.addEventListener('click', closeSignupModal);
+        cancelBtn.addEventListener('click', () => modalManager.closeSignup());
     }
     
     // Modal can only be closed by Cancel button or OK button (no click outside)
@@ -1271,11 +1271,11 @@ async function handleSignupSubmit(e) {
             logger.info('User signed out after sign-up to prevent auto-login');
             
             // Show success state with login prompt
-            switchToSignupSuccessState(
+            modalManager.switchToSignupSuccess(
                 'Account Created Successfully!',
                 `Welcome ${data.display_name}! Your account has been created. Please login to continue.`,
                 () => {
-                    closeSignupModal();
+                    modalManager.closeSignup();
                     // Open login modal after closing signup modal
                     setTimeout(() => {
                         handleLogin();

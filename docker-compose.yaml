@@ -13,7 +13,10 @@ services:
       timeout: 5s
       retries: 5
 
-  detechify-server:
+  app:
+    init: true
+    stop_signal: SIGTERM
+    stop_grace_period: 30s
     build:
       context: ./server
       dockerfile: Dockerfile
@@ -31,8 +34,8 @@ services:
       - REDIS_PORT=${REDIS_PORT}
       - REDIS_PASSWORD=${REDIS_PASSWORD}
     depends_on:
-      redis:
-        condition: service_healthy
+        redis:
+          condition: service_healthy
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/health/liveness', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })"]

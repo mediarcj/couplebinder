@@ -3,6 +3,8 @@
 // Purpose: Prevents one module failure from crashing the entire application
 // Notes: Each module is loaded in isolation with proper error handling
 
+const logger = require('../utils/logger');
+
 /**
  * WHAT:
  * We provide safe module loading that isolates failures and prevents
@@ -27,16 +29,22 @@
 function safeLoadModule(modulePath, moduleName, fallback = null) {
   try {
     const module = require(modulePath);
-    console.log(`Module loaded: ${moduleName}`);
+    logger.info({
+      event: 'module.loaded',
+      moduleName
+    }, `Module loaded: ${moduleName}`);
     return {
       success: true,
       module: module,
       error: null
     };
   } catch (error) {
-    console.error(`Module failed to load: ${moduleName}`);
-    console.error(`  Error: ${error.message}`);
-    console.error(`  Path: ${modulePath}`);
+    logger.error({
+      event: 'module.load_failed',
+      moduleName,
+      modulePath,
+      error: error.message
+    }, `Module failed to load: ${moduleName}`);
     
     return {
       success: false,

@@ -4,6 +4,7 @@
 const { supabaseAdmin } = require('../utils/supabaseClient');
 const { createClient } = require('@supabase/supabase-js');
 const logger = require('../utils/logger');
+const { updateProfileTransactional } = require('./profileSyncService');
 
 function ensureAdmin() {
   if (!supabaseAdmin) {
@@ -128,174 +129,14 @@ function pickAllowed(patch) {
  * FUTURE IMPROVEMENT:
  * Add a background job to reconcile auth.users with profiles periodically.
  */
-async function updateOwnProfile(userId, patch) {
-  ensureAdmin();
-  if (!userId) throw new Error('Missing userId');
-
-  // Log field names only, never values (PII protection)
-  logger.debug({ userId, fields: Object.keys(patch || {}) }, 'profile.update.received');
-  const safePatch = pickAllowed(patch);
-  logger.debug({ userId, fields: Object.keys(safePatch || {}) }, 'profile.update.sanitized');
+async function updateOwnProfile(userId, patch, opts = {}) {
+  logger.warn({
+    event: 'profile.legacy_update_called',
+    userId,
+    fields: Object.keys(patch || {})
+  }, 'Legacy updateOwnProfile called - use updateProfileTransactional instead');
   
-  if (Object.keys(safePatch).length === 0) {
-    return await getProfileByUserIdAdmin(userId);
-  }
-
-  // Handle dual updates for display_name_override and phone
-  // These need to be updated in both auth.users and profiles tables
-  const needsAuthUpdate = (safePatch.display_name_override !== undefined && safePatch.display_name_override !== null) || 
-                         (safePatch.phone !== undefined && safePatch.phone !== null);
-  
-  // If display_name_override is being updated, also parse it into given_name and family_name
-  if (safePatch.display_name_override !== undefined && safePatch.display_name_override !== null) {
-    const fullName = safePatch.display_name_override.trim();
-    const nameParts = fullName.split(' ').filter(part => part.length > 0);
-    
-    if (nameParts.length === 1) {
-      // Single name: "John" -> given_name: "John", family_name: null
-      safePatch.given_name = nameParts[0];
-      safePatch.family_name = null;
-    } else if (nameParts.length === 2) {
-      // Two names: "John Doe" -> given_name: "John", family_name: "Doe"
-      safePatch.given_name = nameParts[0];
-      safePatch.family_name = nameParts[1];
-    } else if (nameParts.length >= 3) {
-      // Three or more names: "John Michael Doe" -> given_name: "John", family_name: "Michael Doe"
-      safePatch.given_name = nameParts[0];
-      safePatch.family_name = nameParts.slice(1).join(' ');
-    }
-    
-    // Log name parsing result (field names only, no values)
-    logger.debug({ userId, parsedFields: ['display_name', 'given_name', 'family_name'] }, 'profile.names.parsed');
-  }
-  
-  let authUpdateData = {};
-  if (safePatch.display_name_override !== undefined && safePatch.display_name_override !== null) {
-    authUpdateData.display_name = safePatch.display_name_override;
-  }
-  if (safePatch.phone !== undefined && safePatch.phone !== null) {
-    authUpdateData.phone = safePatch.phone;
-  }
-
-  // STEP 1: Update auth.users if needed (for display_name and phone)
-  // Note: This update is non-critical. If it fails, profiles table is still updated (source of truth)
-  if (needsAuthUpdate && Object.keys(authUpdateData).length > 0) {
-    try {
-      const { error: authError } = await supabaseAdmin.auth.admin.updateUserById(userId, {
-        user_metadata: authUpdateData
-      });
-      
-      if (authError) {
-        logger.warn({
-          event: 'profile.auth_users_update.failed',
-          userId,
-          error: authError.message
-        }, 'Auth users update failed (non-critical, continuing with profiles update)');
-        // Continue with profile update - profiles table is source of truth
-      }
-    } catch (authErr) {
-      logger.warn({
-        event: 'profile.auth_users_update.error',
-        userId,
-        error: authErr.message
-      }, 'Auth users update exception (non-critical, continuing with profiles update)');
-      // Continue with profile update - profiles table is source of truth
-    }
-  }
-
-  // Handle array fields - convert string to array format for hobbies, music, fav_food
-  const processedPatch = { ...safePatch };
-  
-  // Convert string values to arrays for these specific fields
-  if (processedPatch.hobbies !== undefined && processedPatch.hobbies !== null) {
-    // If it's a string, convert to array; if it's already an array, keep it
-    if (typeof processedPatch.hobbies === 'string') {
-      // Split by comma and clean up
-      processedPatch.hobbies = processedPatch.hobbies.split(',').map(item => item.trim()).filter(item => item.length > 0);
-    }
-  }
-  
-  if (processedPatch.music !== undefined && processedPatch.music !== null) {
-    if (typeof processedPatch.music === 'string') {
-      processedPatch.music = processedPatch.music.split(',').map(item => item.trim()).filter(item => item.length > 0);
-    }
-  }
-  
-  if (processedPatch.fav_food !== undefined && processedPatch.fav_food !== null) {
-    if (typeof processedPatch.fav_food === 'string') {
-      processedPatch.fav_food = processedPatch.fav_food.split(',').map(item => item.trim()).filter(item => item.length > 0);
-    }
-  }
-  
-  // Log database payload (field names only, no values)
-  logger.debug({ userId, fields: Object.keys(processedPatch || {}) }, 'profile.update.dbPayload');
-
-  /**
-   * WHAT:
-   * Fetch current profile to detect if data actually changed.
-   * 
-   * WHY:
-   * Better UX - tell user "no change" instead of fake success.
-   * Prevents unnecessary database writes and log noise.
-   * 
-   * HOW:
-   * Compare processedPatch values with current profile values.
-   * Use JSON.stringify for deep comparison of arrays.
-   * Return early with unchanged flag if nothing changed.
-   */
-  const currentProfile = await getProfileByUserIdAdmin(userId);
-  
-  // Check if any field actually changed
-  let hasChanges = false;
-  for (const [key, newValue] of Object.entries(processedPatch)) {
-    const currentValue = currentProfile[key];
-    
-    // Deep comparison for arrays and objects
-    const newStr = JSON.stringify(newValue);
-    const currentStr = JSON.stringify(currentValue);
-    
-    if (newStr !== currentStr) {
-      hasChanges = true;
-      break;
-    }
-  }
-  
-  // If nothing changed, return early with unchanged flag
-  if (!hasChanges) {
-    logger.debug({ userId, fields: Object.keys(processedPatch || {}) }, 'profile.update.unchanged');
-    return { 
-      ...currentProfile, 
-      _unchanged: true 
-    };
-  }
-
-  // STEP 2: Update profiles table (source of truth)
-  // This is the critical update - must succeed
-  const { data, error } = await supabaseAdmin
-    .from('profiles')
-    .update(processedPatch)
-    .eq('user_id', userId)
-    .select('*')
-    .single();
-
-  if (error) {
-    logger.error({
-      event: 'profile.profiles_table_update.failed',
-      userId,
-      error: error.message,
-      fields: Object.keys(processedPatch || {})
-    }, 'Profiles table update failed (critical)');
-    throw error;
-  }
-  
-  // Log consolidated profile update (all info in one block)
-  logger.profile('profile.update.success', { 
-    userId, 
-    fields: Object.keys(processedPatch || {}),
-    status: 'completed'
-  });
-  
-  return data;
+  return updateProfileTransactional(userId, patch, opts);
 }
 
 module.exports = { getProfileByUserId, updateOwnProfile };

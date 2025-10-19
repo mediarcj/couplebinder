@@ -17,6 +17,7 @@
 
 const { getProfileByUserId } = require('../services/profileService');
 const { ASSET_VERSION } = require('../config');
+const logger = require('../utils/logger');
 // Removed usersRepo import - now using Supabase user data directly
 
 // tiny helpers (no lodash)
@@ -61,7 +62,11 @@ async function buildCanonicalUser(req) {
     }
   } catch (e) {
     // Fail gracefully - these are informational fields only
-    console.error('Failed to fetch auth user metadata:', e?.message);
+    logger.warn({
+      event: 'presenter.auth_metadata_fetch_failed',
+      userId: basic.id,
+      error: e?.message
+    }, 'Failed to fetch auth user metadata');
   }
 
   let profile = null;
@@ -72,7 +77,11 @@ async function buildCanonicalUser(req) {
                             req.headers.authorization.slice(7) : null);
     profile = await getProfileByUserId(basic.id, userAccessToken);
   } catch (e) {
-    console.error('buildCanonicalUser profile fetch failed:', e?.message || e);
+    logger.warn({
+      event: 'presenter.profile_fetch_failed',
+      userId: basic.id,
+      error: e?.message || e
+    }, 'buildCanonicalUser profile fetch failed');
   }
 
   if (profile) {
@@ -334,7 +343,13 @@ async function buildUserProfilePageModel(req, res, userId) {
                            (req.headers.authorization?.startsWith('Bearer ') ? 
                             req.headers.authorization.slice(7) : null);
     viewed = await getProfileByUserId(userId, userAccessToken);
-  } catch (e) { console.error('view profile fetch failed:', e?.message || e); }
+  } catch (e) { 
+    logger.warn({
+      event: 'presenter.view_profile_fetch_failed',
+      userId,
+      error: e?.message || e
+    }, 'view profile fetch failed');
+  }
 
   return {
     page: {

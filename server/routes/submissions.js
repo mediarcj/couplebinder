@@ -12,11 +12,18 @@ const router = express.Router();
 const { config } = require('../config');
 const { supabaseAdmin } = require('../utils/supabaseClient');
 const { validateTextServerSide, getClientIP } = require('../middleware/security');
+const { createIdempotencyMiddleware } = require('../middleware/idempotency');
 const logger = require('../utils/logger');
+
+// Create idempotency middleware for text submissions
+const submissionIdempotency = createIdempotencyMiddleware({
+  ttl: 7200, // 2 hours (longer for content creation)
+  headerName: 'Idempotency-Key'
+});
 
 /**
  * POST /api/submit
- * Text submission endpoint with database persistence
+ * Text submission endpoint with database persistence and idempotency protection
  * 
  * WHAT:
  * Validates and stores user text submissions in PostgreSQL via Supabase.
@@ -30,7 +37,7 @@ const logger = require('../utils/logger');
  * 3. Insert into submissions table via Supabase
  * 4. Return success response
  */
-router.post('/', async (req, res) => {
+router.post('/', submissionIdempotency, async (req, res) => {
   try {
     const { text } = req.body;
     const clientIP = getClientIP(req);

@@ -512,7 +512,14 @@ console.log('Static files path:', publicPath);
 app.use(express.static(publicPath));
 
 consoleLogger.formatMiddlewareRegistration('View engine and static assets');
-consoleLogger.formatMiddlewareRegistration('Rate limiting: Edge (primary) → Origin/Redis (secondary)');
+// Rate limiting configuration logged via structured logger
+logger.info({
+  event: 'boot.rate_limit_stack',
+  rateLimit: {
+    primary: 'cloudflare',
+    secondary: 'redis'
+  }
+}, 'Rate limiting: Edge (primary) → Origin/Redis (secondary)');
 
 // ============================================================
 // STEP 6: Security Middleware Configuration
@@ -557,20 +564,20 @@ consoleLogger.formatMiddlewareRegistration('Security middleware');
  */
 // Apply general rate limiting to API endpoints
 app.use(['/api'], generalLimiter());
-console.log('Rate limiting: General limiter enabled (300 req/min)');
+// General limiter enabled (300 req/min) - logged via structured logger above
 
 // Apply per-route rate limiting to auth endpoints
 app.use('/auth/set-cookie', cookieSetLimiter());
-console.log('Rate limiting: Cookie set limiter enabled (300 req/min)');
+// Cookie set limiter enabled (300 req/min) - logged via structured logger above
 
 app.use('/auth/clear-cookie', logoutLimiter());
-console.log('Rate limiting: Logout limiter enabled (120 req/10min)');
+// Logout limiter enabled (120 req/10min) - logged via structured logger above
 
 app.use(['/auth/login', '/api/auth/login'], loginLimiter());
-console.log('Rate limiting: Login limiter enabled (10 attempts per 15 min)');
+// Login limiter enabled (10 attempts per 15 min) - logged via structured logger above
 
 app.use(['/auth/signup', '/api/auth/signup'], signupLimiter());
-console.log('Rate limiting: Signup limiter enabled (5 attempts per hour)');
+// Signup limiter enabled (5 attempts per hour) - logged via structured logger above
 
 // ============================================================
 // STEP 7: Routes Registration
@@ -892,6 +899,15 @@ const server = app.listen(PORT, HOST, () => {
     textLimits: `${config.limits.textMinLength}-${config.limits.textMaxLength} chars`,
     maxSubmissions: config.limits.maxSubmissions
   });
+  
+  // Start outbox processor for reliable event delivery
+  try {
+    const { startOutboxProcessor } = require('./jobs/outboxProcessor');
+    startOutboxProcessor(30000); // Process every 30 seconds
+    console.log('Outbox processor started successfully');
+  } catch (error) {
+    console.error('Failed to start outbox processor:', error.message);
+  }
 });
 
 // ============================================================

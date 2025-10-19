@@ -3,6 +3,8 @@
 // Purpose: Isolates errors and provides graceful degradation
 // Notes: Each error is contained and logged without crashing the app
 
+const logger = require('../utils/logger');
+
 /**
  * WHAT:
  * We provide sandboxed error handling that prevents individual
@@ -28,7 +30,11 @@ function sandbox(fn, context, fallback = null) {
   try {
     return fn();
   } catch (error) {
-    console.error(`Sandbox error in ${context}:`, error.message);
+    logger.error({
+      event: 'sandbox.sync_error',
+      context,
+      error: error.message
+    }, `Sandbox error in ${context}`);
     return fallback;
   }
 }
@@ -44,7 +50,11 @@ async function sandboxAsync(fn, context, fallback = null) {
   try {
     return await fn();
   } catch (error) {
-    console.error(`Sandbox async error in ${context}:`, error.message);
+    logger.error({
+      event: 'sandbox.async_error',
+      context,
+      error: error.message
+    }, `Sandbox async error in ${context}`);
     return fallback;
   }
 }
@@ -60,7 +70,11 @@ function safeRouteHandler(handler, routeName) {
     try {
       await handler(req, res, next);
     } catch (error) {
-      console.error(`Route error in ${routeName}:`, error.message);
+      logger.error({
+        event: 'sandbox.route_error',
+        routeName,
+        error: error.message
+      }, `Route error in ${routeName}`);
       
       // Send error response without crashing
       if (!res.headersSent) {
@@ -86,7 +100,11 @@ function safeMiddleware(middleware, middlewareName) {
     try {
       middleware(req, res, next);
     } catch (error) {
-      console.error(`Middleware error in ${middlewareName}:`, error.message);
+      logger.error({
+        event: 'sandbox.middleware_error',
+        middlewareName,
+        error: error.message
+      }, `Middleware error in ${middlewareName}`);
       // Continue to next middleware even if this one fails
       next();
     }
@@ -104,7 +122,11 @@ async function safeDatabaseOperation(operation, operationName, fallback = null) 
   try {
     return await operation();
   } catch (error) {
-    console.error(`Database error in ${operationName}:`, error.message);
+    logger.error({
+      event: 'sandbox.database_error',
+      operationName,
+      error: error.message
+    }, `Database error in ${operationName}`);
     return fallback;
   }
 }
@@ -120,7 +142,11 @@ async function safeServiceCall(serviceCall, serviceName, fallback = null) {
   try {
     return await serviceCall();
   } catch (error) {
-    console.error(`Service error in ${serviceName}:`, error.message);
+    logger.error({
+      event: 'sandbox.service_error',
+      serviceName,
+      error: error.message
+    }, `Service error in ${serviceName}`);
     return fallback;
   }
 }
@@ -131,20 +157,26 @@ async function safeServiceCall(serviceCall, serviceName, fallback = null) {
 function setupGlobalErrorHandlers() {
   // Handle uncaught exceptions
   process.on('uncaughtException', (error) => {
-    console.error('Uncaught Exception:', error.message);
-    console.error('Stack:', error.stack);
+    logger.error({
+      event: 'sandbox.uncaught_exception',
+      error: error.message,
+      stack: error.stack
+    }, 'Uncaught Exception');
     
     // Don't exit immediately - let the server try to handle it
-    console.log('Application will continue running...');
+    logger.info({ event: 'sandbox.continue_running' }, 'Application will continue running');
   });
   
   // Handle unhandled promise rejections
   process.on('unhandledRejection', (reason, promise) => {
-    console.error('Unhandled Rejection at:', promise);
-    console.error('Reason:', reason);
+    logger.error({
+      event: 'sandbox.unhandled_rejection',
+      promise: String(promise),
+      reason: String(reason)
+    }, 'Unhandled Rejection');
     
     // Don't exit immediately
-    console.log('Application will continue running...');
+    logger.info({ event: 'sandbox.continue_running' }, 'Application will continue running');
   });
 }
 
@@ -156,8 +188,11 @@ function setupGlobalErrorHandlers() {
 function createSafeApp(app) {
   // Global error handler
   app.use((error, req, res, next) => {
-    console.error('Express error:', error.message);
-    console.error('Stack:', error.stack);
+    logger.error({
+      event: 'sandbox.express_error',
+      error: error.message,
+      stack: error.stack
+    }, 'Express error');
     
     if (!res.headersSent) {
       res.status(500).json({

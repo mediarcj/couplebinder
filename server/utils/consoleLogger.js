@@ -285,12 +285,23 @@ function formatDatabaseOperation(operation, table, meta = {}) {
 
 function formatError(message, meta = {}) {
   const requestId = meta.requestId || 'system';
-  const error = meta.error || 'No details available';
+  const err = meta.err || meta.error;
+
+  const toSafeString = (x) => {
+    if (x instanceof Error) return `${x.message}\n${x.stack}`;
+    if (x && typeof x === 'object') {
+      try { return JSON.stringify(x, null, 2); } catch { return String(x); }
+    }
+    return String(x);
+  };
+
+  const msg = toSafeString(message);
+  const details = err ? toSafeString(err) : 'No details available';
 
   console.log(`\n${LINE}`);
   console.log(`ERROR OCCURRED`);
-  console.log(`   Message: ${message}`);
-  console.log(`   Details: ${error}`);
+  console.log(`   Message: ${msg}`);
+  console.log(`   Details: ${details}`);
   console.log(`   Request ID: ${requestId}`);
   console.log(`   Time: ${formatTimestamp()}`);
   console.log(`${LINE}`);

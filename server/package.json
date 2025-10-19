@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node zorvalon.js",
     "dev": "node zorvalon.js",
-    "test": "vitest run",
+    "test": "vitest run --reporter=verbose",
     "test:watch": "vitest",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix"

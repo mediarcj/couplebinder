@@ -5,6 +5,7 @@ const router = express.Router();
 const { getProfileByUserId, updateOwnProfile } = require('../services/profileService');
 const { updateProfileTransactional, reconcileProfileData } = require('../services/profileSyncService');
 const validateProfileUpdate = require('../middleware/validateProfileUpdate');
+const { createIdempotencyMiddleware } = require('../middleware/idempotency');
 const { supabaseAdmin } = require('../utils/supabaseClient');
 const logger = require('../utils/logger');
 
@@ -32,36 +33,17 @@ router.get('/me', async (req, res) => {
   }
 });
 
+// Create idempotency middleware for profile updates
+const profileIdempotency = createIdempotencyMiddleware({
+  ttl: 3600, // 1 hour
+  headerName: 'Idempotency-Key'
+});
+
 // PUT /api/profile/me -> update your own profile with idempotency protection
-router.put('/me', validateProfileUpdate, async (req, res) => {
+router.put('/me', profileIdempotency, validateProfileUpdate, async (req, res) => {
   try {
     const userId = req.user?.id;
     if (!userId) return res.status(401).json({ success: false, message: 'Authentication required' });
-
-    // Check for idempotency key (optional but recommended)
-    const idemKey = req.get('x-idempotency-key') || req.get('idempotency-key');
-    
-    if (idemKey) {
-      // Check if this request was already processed
-      const { data: existing } = await supabaseAdmin
-        .from('idempotency_keys')
-        .select('key')
-        .eq('key', idemKey)
-        .eq('user_id', userId)
-        .maybeSingle();
-      
-      if (existing) {
-        logger.info({
-          event: 'profile.update.duplicate',
-          userId,
-          idemKey,
-          requestId: req.requestId
-        }, 'Duplicate request detected (idempotency)');
-        
-        // Return 204 No Content for duplicate requests
-        return res.status(204).end();
-      }
-    }
 
     // Use the validated patch data from middleware
     // Use transactional service for consistency across auth.users and profiles
@@ -81,7 +63,6 @@ router.put('/me', validateProfileUpdate, async (req, res) => {
      * Frontend shows "No changes made" instead of "Updated successfully".
      */
     if (updated._unchanged) {
-      // Don't store idempotency key for unchanged requests
       // Remove internal flag before sending to client
       const { _unchanged, ...cleanProfile } = updated;
       return res.json({ 
@@ -89,28 +70,6 @@ router.put('/me', validateProfileUpdate, async (req, res) => {
         profile: cleanProfile, 
         unchanged: true 
       });
-    }
-    
-    // Store idempotency key after successful update
-    if (idemKey) {
-      await supabaseAdmin
-        .from('idempotency_keys')
-        .insert({
-          key: idemKey,
-          user_id: userId,
-          operation: 'profile_update'
-        })
-        .select()
-        .maybeSingle()
-        .catch(err => {
-          // Log but don't fail the request if idempotency key insert fails
-          logger.warn({
-            event: 'idempotency.store_failed',
-            error: err.message,
-            userId,
-            requestId: req.requestId
-          }, 'Failed to store idempotency key');
-        });
     }
     
     res.json({ success: true, profile: updated });

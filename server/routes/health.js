@@ -12,6 +12,9 @@
 const express = require('express');
 const router = express.Router();
 const logger = require('../utils/logger');
+const { getOutboxStats } = require('../services/outboxService');
+const { getProcessorStatus } = require('../jobs/outboxProcessor');
+const { supabaseAdmin } = require('../utils/supabaseClient');
 
 /**
  * WHAT:
@@ -141,6 +144,130 @@ router.get('/readiness', async (req, res) => {
       message: 'Readiness check failed',
       timestamp: new Date().toISOString(),
       requestId: req.requestId
+    });
+  }
+});
+
+/**
+ * GET /health/ops
+ * Comprehensive SRE metrics and operational status
+ */
+router.get('/ops', async (req, res) => {
+  try {
+    const startTime = Date.now();
+    
+    // Test database connectivity
+    let dbHealthy = false;
+    let dbLatency = 0;
+    try {
+      const dbStart = Date.now();
+      const { error } = await supabaseAdmin.from('profiles').select('count').limit(1);
+      dbLatency = Date.now() - dbStart;
+      dbHealthy = !error;
+    } catch (dbError) {
+      logger.warn({
+        event: 'health.ops.db_test_failed',
+        error: dbError.message
+      }, 'Database connectivity test failed');
+    }
+
+    // Get outbox statistics
+    let outboxStats = null;
+    try {
+      outboxStats = await getOutboxStats();
+    } catch (outboxError) {
+      logger.warn({
+        event: 'health.ops.outbox_stats_failed',
+        error: outboxError.message
+      }, 'Failed to get outbox statistics');
+    }
+
+    // Get processor status
+    const processorStatus = getProcessorStatus();
+
+    const opsHealth = {
+      timestamp: new Date().toISOString(),
+      requestId: req.requestId,
+      environment: process.env.NODE_ENV || 'development',
+      version: process.env.APP_VERSION || '1.0.0',
+      
+      // System metrics
+      system: {
+        uptime: process.uptime(),
+        memory: {
+          rss: process.memoryUsage().rss,
+          heapTotal: process.memoryUsage().heapTotal,
+          heapUsed: process.memoryUsage().heapUsed,
+          external: process.memoryUsage().external
+        },
+        cpu: process.cpuUsage(),
+        nodeVersion: process.version,
+        platform: process.platform,
+        arch: process.arch
+      },
+
+      // Service health
+      services: {
+        database: {
+          healthy: dbHealthy,
+          latency: dbLatency,
+          provider: 'Supabase',
+          lastCheck: new Date().toISOString()
+        },
+        outbox: {
+          healthy: processorStatus.running,
+          processor: {
+            running: processorStatus.running,
+            processing: processorStatus.processing
+          },
+          stats: outboxStats
+        },
+        redis: {
+          status: 'decommissioned',
+          mode: 'stateless auth enabled'
+        }
+      },
+
+      // Request metrics
+      request: {
+        method: req.method,
+        url: req.url,
+        ip: req.ip || req.connection.remoteAddress,
+        userAgent: req.get('User-Agent'),
+        headers: {
+          'x-forwarded-for': req.get('x-forwarded-for'),
+          'x-real-ip': req.get('x-real-ip'),
+          'cf-ray': req.get('cf-ray'),
+          'cf-connecting-ip': req.get('cf-connecting-ip')
+        }
+      },
+
+      // Performance metrics
+      performance: {
+        responseTime: Date.now() - startTime,
+        timestamp: new Date().toISOString()
+      }
+    };
+
+    // Determine overall health status
+    const overallHealthy = dbHealthy && processorStatus.running;
+    const statusCode = overallHealthy ? 200 : 503;
+
+    res.status(statusCode).json(opsHealth);
+
+  } catch (error) {
+    logger.error({
+      event: 'health.ops.error',
+      error: error.message,
+      requestId: req.requestId
+    }, 'Ops health check failed');
+    
+    res.status(500).json({
+      status: 'error',
+      message: 'Ops health check failed',
+      timestamp: new Date().toISOString(),
+      requestId: req.requestId,
+      error: error.message
     });
   }
 });

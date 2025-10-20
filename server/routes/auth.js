@@ -10,6 +10,9 @@
 
 const express = require('express');
 const { getClientIP } = require('../middleware/security');
+// Import rate limiters (SECONDARY layer - Cloudflare edge is PRIMARY layer)
+// NOTE: These are imported but rate limiting is applied at the route level in zorvalon.js
+// See zorvalon.js lines 594-600 for actual rate limiter application
 const { loginLimiter, signupLimiter } = require('../middleware/rateLimiter');
 const { validateUserRegistration } = require('../middleware/validation');
 const { supabaseAdmin } = require('../utils/supabaseClient');

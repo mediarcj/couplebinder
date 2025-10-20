@@ -26,7 +26,7 @@ const logger = require('../utils/logger');
 
 describe('Concurrency Tests', () => {
   let testUserId;
-  let testProfile;
+  let _testProfile;
 
   beforeEach(async () => {
     // Create test user and profile
@@ -52,7 +52,7 @@ describe('Concurrency Tests', () => {
       throw new Error(`Failed to create test profile: ${error.message}`);
     }
 
-    testProfile = data;
+    _testProfile = data;
   });
 
   afterEach(async () => {

@@ -183,7 +183,12 @@ class SecureLogger {
     const safeMeta = redactSensitiveData(data);
     
     if (this.isDevelopment) {
-      consoleLogger.formatInfo(msg || JSON.stringify(safeMeta), { ...safeMeta, requestId: data.requestId || 'system' });
+      // If the data has an 'event' property, use EVENT formatting instead of INFO formatting
+      if (data.event) {
+        consoleLogger.formatJsonEvent({ level: 'info', ts: new Date().toISOString(), msg, ...safeMeta });
+      } else {
+        consoleLogger.formatInfo(msg || JSON.stringify(safeMeta), { ...safeMeta, requestId: data.requestId || 'system' });
+      }
     } else {
       // Production: JSON line for log aggregation
       console.log(JSON.stringify({ level: 'info', ts: new Date().toISOString(), msg, ...safeMeta }));

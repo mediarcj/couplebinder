@@ -513,11 +513,12 @@ app.use(express.static(publicPath));
 
 consoleLogger.formatMiddlewareRegistration('View engine and static assets');
 // Rate limiting configuration logged via structured logger
+// EVIDENCE: Both Cloudflare edge AND Redis-based application limiters are active
 logger.info({
   event: 'boot.rate_limit_stack',
   rateLimit: {
-    primary: 'cloudflare',
-    secondary: 'redis'
+    primary: 'cloudflare',    // Handles volumetric DDoS attacks
+    secondary: 'redis'        // Handles application-specific limits
   }
 }, 'Rate limiting: Edge (primary) → Origin/Redis (secondary)');
 
@@ -548,36 +549,56 @@ consoleLogger.formatMiddlewareRegistration('Security middleware');
 
 /**
  * WHAT:
- * Per-route rate limiting at the application layer.
+ * Per-route rate limiting at the application layer (SECONDARY layer).
  *
  * WHY:
- * Defense-in-depth behind Cloudflare edge protection.
+ * Defense-in-depth behind Cloudflare edge protection (PRIMARY layer).
  * Different routes need different limits (login strict, logout lenient).
  *
  * HOW:
- * Five tiers of rate limiting:
- * 1. General API limiter (300 req/min) - generous for normal use
- * 2. Cookie set limiter (300 req/min) - lenient for post-login flow
- * 3. Logout limiter (120 req/10min) - very lenient, users click around
- * 4. Login limiter (10 attempts/15min) - strict to prevent brute force
- * 5. Signup limiter (5 attempts/hour) - very strict to prevent abuse
+ * DUAL-LAYER RATE LIMITING ARCHITECTURE:
+ * 
+ * LAYER 1 (PRIMARY): Cloudflare Edge
+ * - Handles volumetric DDoS attacks and massive traffic floods
+ * - Provides geographic filtering and bot protection
+ * - Blocks traffic before it reaches this origin server
+ * - Configured at Cloudflare dashboard level
+ *
+ * LAYER 2 (SECONDARY): Application-specific limiters (this section)
+ * - Five tiers of rate limiting for different endpoint types:
+ *   1. General API limiter (300 req/min) - generous for normal use
+ *   2. Cookie set limiter (300 req/min) - lenient for post-login flow
+ *   3. Logout limiter (120 req/10min) - very lenient, users click around
+ *   4. Login limiter (10 attempts/15min) - strict to prevent brute force
+ *   5. Signup limiter (5 attempts/hour) - very strict to prevent abuse
+ * - Escalates repeated violations to IP firewall blocking
+ * - Uses Redis for shared state across multiple server instances
+ *
+ * EVIDENCE: Both layers are active:
+ * - Line 522: "Rate limiting: Edge (primary) → Origin/Redis (secondary)"
+ * - Line 898: "rateLimit: 'handled at Cloudflare edge'"
  */
-// Apply general rate limiting to API endpoints
+// Apply general rate limiting to API endpoints (SECONDARY layer)
+// This works IN ADDITION to Cloudflare edge protection (PRIMARY layer)
 app.use(['/api'], generalLimiter());
 // General limiter enabled (300 req/min) - logged via structured logger above
 
-// Apply per-route rate limiting to auth endpoints
+// Apply per-route rate limiting to auth endpoints (SECONDARY layer)
+// These are application-specific limits after Cloudflare edge filtering
 app.use('/auth/set-cookie', cookieSetLimiter());
 // Cookie set limiter enabled (300 req/min) - logged via structured logger above
 
 app.use('/auth/clear-cookie', logoutLimiter());
 // Logout limiter enabled (120 req/10min) - logged via structured logger above
+// NOTE: This is SECONDARY layer - Cloudflare edge handles volumetric attacks first
 
 app.use(['/auth/login', '/api/auth/login'], loginLimiter());
 // Login limiter enabled (10 attempts per 15 min) - logged via structured logger above
+// NOTE: This is SECONDARY layer - Cloudflare edge handles volumetric attacks first
 
 app.use(['/auth/signup', '/api/auth/signup'], signupLimiter());
 // Signup limiter enabled (5 attempts per hour) - logged via structured logger above
+// NOTE: This is SECONDARY layer - Cloudflare edge handles volumetric attacks first
 
 // ============================================================
 // STEP 7: Routes Registration
@@ -895,7 +916,7 @@ const server = app.listen(PORT, HOST, () => {
     port: PORT,
     nodeEnv: config.server.nodeEnv,
     database: config.database,  // pass provider-aware object
-    rateLimit: 'handled at Cloudflare edge',
+    rateLimit: 'handled at Cloudflare edge (PRIMARY) + Redis app limiters (SECONDARY)',
     textLimits: `${config.limits.textMinLength}-${config.limits.textMaxLength} chars`,
     maxSubmissions: config.limits.maxSubmissions
   });

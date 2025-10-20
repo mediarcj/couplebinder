@@ -2,11 +2,10 @@
 const express = require('express');
 const router = express.Router();
 
-const { getProfileByUserId, updateOwnProfile } = require('../services/profileService');
+const { getProfileByUserId } = require('../services/profileService');
 const { updateProfileTransactional, reconcileProfileData } = require('../services/profileSyncService');
 const validateProfileUpdate = require('../middleware/validateProfileUpdate');
 const { createIdempotencyMiddleware } = require('../middleware/idempotency');
-const { supabaseAdmin } = require('../utils/supabaseClient');
 const logger = require('../utils/logger');
 
 // GET /api/profile/me  -> return your own profile

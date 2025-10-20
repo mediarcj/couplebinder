@@ -169,9 +169,20 @@ router.get('/ops', async (req, res) => {
       }, 'Database connectivity test failed');
     }
 
-    // Outbox system disabled - no database tables available
-    const _outboxStats = null;
-    const _processorStatus = { running: false, processing: false };
+    // Get outbox statistics
+    let outboxStats = null;
+    let processorStatus = { running: false, processing: false };
+    
+    try {
+      const { getOutboxStats } = require('../services/outboxService');
+      outboxStats = await getOutboxStats();
+    } catch (error) {
+      // Log error but don't fail health check
+      logger.warn({
+        event: 'health.outbox_stats_failed',
+        error: error.message
+      }, 'Failed to get outbox statistics');
+    }
 
     const opsHealth = {
       timestamp: new Date().toISOString(),
@@ -203,13 +214,9 @@ router.get('/ops', async (req, res) => {
           lastCheck: new Date().toISOString()
         },
         outbox: {
-          healthy: false,
-          processor: {
-            running: false,
-            processing: false
-          },
-          stats: null,
-          status: 'disabled - no database tables'
+          healthy: outboxStats !== null,
+          processor: processorStatus,
+          stats: outboxStats
         },
         redis: {
           status: 'decommissioned',

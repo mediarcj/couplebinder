@@ -3,6 +3,9 @@
 // Purpose: Ensures auth.users and profiles table stay consistent with rollback capability
 // Notes: Implements saga pattern for distributed transaction safety
 
+const logger = require('../utils/logger');
+const { storeEvent } = require('./outboxService');
+
 /**
  * WHAT:
  * Transactional profile update service with compensating actions.
@@ -21,7 +24,6 @@
  */
 
 const { supabaseAdmin } = require('../utils/supabaseClient');
-const logger = require('../utils/logger');
 
 /**
  * WHAT:
@@ -233,12 +235,29 @@ async function updateProfileTransactional(userId, patch) {
       fields: Object.keys(processedPatch)
     }, 'Transactional profile update completed successfully');
 
-    // Outbox event storage disabled - database tables not available
-    logger.debug({
-      event: 'profile.outbox_disabled',
-      userId,
-      transactionId
-    }, 'Outbox event storage disabled - no database tables');
+    // Store outbox event for reliable delivery
+    try {
+      await storeEvent('profile.updated', {
+        userId,
+        profileId: updatedProfile.id,
+        changes: patch,
+        transactionId
+      });
+      
+      logger.debug({
+        event: 'profile.outbox_stored',
+        userId,
+        transactionId
+      }, 'Profile update event stored in outbox');
+    } catch (outboxError) {
+      // Log outbox error but don't fail the transaction
+      logger.warn({
+        event: 'profile.outbox_failed',
+        userId,
+        transactionId,
+        error: outboxError.message
+      }, 'Failed to store profile update event in outbox');
+    }
 
     return updatedProfile;
   } catch (error) {

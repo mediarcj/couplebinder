@@ -921,8 +921,14 @@ const server = app.listen(PORT, HOST, () => {
     maxSubmissions: config.limits.maxSubmissions
   });
   
-  // Outbox processor disabled - database tables not available
-  console.log('Outbox processor disabled - no database tables');
+  // Start outbox processor for reliable event delivery
+  try {
+    const { startOutboxProcessor } = require('./jobs/outboxProcessor');
+    startOutboxProcessor(30000); // Process every 30 seconds
+    console.log('Outbox processor started successfully');
+  } catch (error) {
+    console.error('Failed to start outbox processor:', error.message);
+  }
 });
 
 // ============================================================

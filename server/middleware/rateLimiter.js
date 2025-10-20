@@ -2,6 +2,28 @@
 // Description: Origin Redis rate limiters (secondary, defense-in-depth)
 // Purpose: Shared rate limiting across instances + escalation to IP firewall
 // Notes: Cloudflare edge is primary; origin Redis is secondary + auto-ban escalation
+//
+// RATE LIMITING ARCHITECTURE:
+// ===========================
+// This application uses DUAL-LAYER rate limiting for comprehensive protection:
+//
+// LAYER 1 (PRIMARY): Cloudflare Edge
+// - Handles volumetric DDoS attacks and massive traffic floods
+// - Provides geographic filtering and bot protection
+// - Blocks traffic before it reaches the origin server
+// - Configured at Cloudflare dashboard level (not in this code)
+//
+// LAYER 2 (SECONDARY): This Redis-based middleware
+// - Handles application-specific rate limiting logic
+// - Provides granular per-endpoint limits (login strict, logout lenient)
+// - Escalates repeated violations to IP firewall blocking
+// - Works across multiple server instances via Redis
+// - Falls back to memory if Redis unavailable
+//
+// EVIDENCE: Both layers are active and working together:
+// - See zorvalon.js line 522: "Rate limiting: Edge (primary) → Origin/Redis (secondary)"
+// - See zorvalon.js line 898: "rateLimit: 'handled at Cloudflare edge'"
+// - This middleware is applied to specific routes in zorvalon.js lines 566-577
 
 /**
  * WHAT:
@@ -24,13 +46,17 @@ const { blockIp } = require('./ipFirewall');
 // ============================================================
 // Environment Configuration
 // ============================================================
+// NOTE: These rate limiters work IN ADDITION to Cloudflare edge protection
+// Cloudflare handles volumetric attacks; these handle application-specific logic
 const isProd = process.env.NODE_ENV === 'production';
 const enabled = process.env.RATE_LIMIT_ENABLED !== 'false';         // default ON
 const skipInDev = process.env.SKIP_RATE_LIMIT_IN_DEV === 'true';    // optional skip
 
 // ============================================================
-// Per-Route Configurations (same as before)
+// Per-Route Configurations (Application-Specific Limits)
 // ============================================================
+// These limits are applied AFTER Cloudflare edge filtering
+// They provide granular control for different endpoint types
 const GENERAL_WINDOW_S   = Number(process.env.RATE_LIMIT_WINDOW_MS  || 60_000) / 1000;         // 60s
 const GENERAL_MAX        = Number(process.env.RATE_LIMIT_MAX        || 300);
 
@@ -61,6 +87,7 @@ try {
 /**
  * WHAT:
  * Factory to build a rate limiter with Redis or memory fallback.
+ * This is the SECONDARY layer of rate limiting (after Cloudflare edge).
  * 
  * WHY:
  * Redis provides shared counters across instances.
@@ -69,6 +96,9 @@ try {
  * HOW:
  * Try Redis first; if unavailable, use in-memory limiter.
  * Both implement the same consume() API.
+ * 
+ * IMPORTANT: This works IN ADDITION to Cloudflare edge protection.
+ * Cloudflare handles volumetric attacks; this handles app-specific logic.
  * 
  * @param {Object} options - Limiter configuration
  * @returns {RateLimiterRedis|RateLimiterMemory} Configured limiter
@@ -257,8 +287,10 @@ function limiterMiddleware(limiter, name, limit, windowSeconds) {
 }
 
 // ============================================================
-// Public API (same names as before for backward compatibility)
+// Public API (Application-Specific Rate Limiters)
 // ============================================================
+// These limiters are applied to specific routes in zorvalon.js
+// They work IN ADDITION to Cloudflare edge protection
 
 /**
  * General rate limiter for API endpoints

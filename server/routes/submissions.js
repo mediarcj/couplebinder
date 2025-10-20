@@ -9,7 +9,6 @@
 
 const express = require('express');
 const router = express.Router();
-const { config } = require('../config');
 const { supabaseAdmin } = require('../utils/supabaseClient');
 const { validateTextServerSide, getClientIP } = require('../middleware/security');
 const { createIdempotencyMiddleware } = require('../middleware/idempotency');

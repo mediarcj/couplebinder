@@ -12,8 +12,6 @@
 const express = require('express');
 const router = express.Router();
 const logger = require('../utils/logger');
-const { getOutboxStats } = require('../services/outboxService');
-const { getProcessorStatus } = require('../jobs/outboxProcessor');
 const { supabaseAdmin } = require('../utils/supabaseClient');
 
 /**
@@ -171,19 +169,9 @@ router.get('/ops', async (req, res) => {
       }, 'Database connectivity test failed');
     }
 
-    // Get outbox statistics
-    let outboxStats = null;
-    try {
-      outboxStats = await getOutboxStats();
-    } catch (outboxError) {
-      logger.warn({
-        event: 'health.ops.outbox_stats_failed',
-        error: outboxError.message
-      }, 'Failed to get outbox statistics');
-    }
-
-    // Get processor status
-    const processorStatus = getProcessorStatus();
+    // Outbox system disabled - no database tables available
+    const outboxStats = null;
+    const processorStatus = { running: false, processing: false };
 
     const opsHealth = {
       timestamp: new Date().toISOString(),
@@ -215,12 +203,13 @@ router.get('/ops', async (req, res) => {
           lastCheck: new Date().toISOString()
         },
         outbox: {
-          healthy: processorStatus.running,
+          healthy: false,
           processor: {
-            running: processorStatus.running,
-            processing: processorStatus.processing
+            running: false,
+            processing: false
           },
-          stats: outboxStats
+          stats: null,
+          status: 'disabled - no database tables'
         },
         redis: {
           status: 'decommissioned',
@@ -249,8 +238,8 @@ router.get('/ops', async (req, res) => {
       }
     };
 
-    // Determine overall health status
-    const overallHealthy = dbHealthy && processorStatus.running;
+    // Determine overall health status (outbox disabled, so only check database)
+    const overallHealthy = dbHealthy;
     const statusCode = overallHealthy ? 200 : 503;
 
     res.status(statusCode).json(opsHealth);

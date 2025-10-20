@@ -201,7 +201,7 @@ async function processEvent(event) {
  * @param {Object} metadata - Event metadata
  * @returns {Promise<void>}
  */
-async function handleProfileUpdatedEvent(payload, metadata) {
+async function handleProfileUpdatedEvent(payload, _metadata) {
   // Example: Send notification, update search index, etc.
   logger.info({
     event: 'outbox.profile_updated_handled',
@@ -219,7 +219,7 @@ async function handleProfileUpdatedEvent(payload, metadata) {
  * @param {Object} metadata - Event metadata
  * @returns {Promise<void>}
  */
-async function handleUserCreatedEvent(payload, metadata) {
+async function handleUserCreatedEvent(payload, _metadata) {
   logger.info({
     event: 'outbox.user_created_handled',
     userId: payload.userId
@@ -235,7 +235,7 @@ async function handleUserCreatedEvent(payload, metadata) {
  * @param {Object} metadata - Event metadata
  * @returns {Promise<void>}
  */
-async function handleUserDeletedEvent(payload, metadata) {
+async function handleUserDeletedEvent(payload, _metadata) {
   logger.info({
     event: 'outbox.user_deleted_handled',
     userId: payload.userId

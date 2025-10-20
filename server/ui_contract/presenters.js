@@ -171,7 +171,7 @@ async function buildCanonicalUser(req) {
  * @returns {Object} Page model for home page
  */
 function buildHomePageModel(req, res) {
-  const clientIP = req.ip || req.connection.remoteAddress;
+  const _clientIP = req.ip || req.connection.remoteAddress;
   
   return {
     page: {
@@ -332,7 +332,7 @@ async function buildDashboardPageModel(req, res) {
  */
 async function buildUserProfilePageModel(req, res, userId) {
   const self = await buildCanonicalUser(req);
-  const isAuthenticated = !!self?.id;
+  const _isAuthenticated = !!self?.id;
   const isOwn = self?.id && userId && self.id === userId;
 
   // If viewing another user's profile, fetch that profile for display
@@ -377,7 +377,7 @@ async function buildUserProfilePageModel(req, res, userId) {
  */
 async function buildSettingsPageModel(req, res) {
   const user = await buildCanonicalUser(req);
-  const isAuthenticated = !!user?.id;
+  const _isAuthenticated = !!user?.id;
 
   return {
     page: {

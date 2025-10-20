@@ -49,6 +49,22 @@ function sanitizeSensitiveValue(key, value) {
   return value;
 }
 
+/**
+ * Safely stringify values for console output
+ * @param {any} val - The value to stringify
+ * @returns {string} - String representation of the value
+ */
+function safeStringify(val) {
+  if (val === null || val === undefined) return String(val);
+  if (typeof val === 'string' || typeof val === 'number' || typeof val === 'boolean') return String(val);
+  if (val instanceof Error) return `${val.name}: ${val.message}`;
+  try {
+    return JSON.stringify(val);
+  } catch {
+    return '[Unserializable]';
+  }
+}
+
 // We do not import app config here; this module formats output.
 // If you pass us a config/serverInfo object, we’ll use it; otherwise we derive
 // safe fallbacks from process.env so we never print undefined.
@@ -603,7 +619,7 @@ function formatJsonEvent(payload = {}) {
   console.log(`   Type: ${payload.event || payload.msg || 'unknown'}`);
   Object.entries(payload).forEach(([k, v]) => {
     if (k === 'event' || k === 'msg') return;
-    console.log(`   ${k}: ${v}`);
+    console.log(`   ${k}: ${safeStringify(v)}`);
   });
   console.log(`   Time: ${formatIsoTimestamp(payload.ts)}`);
   console.log(`${LINE}`);
@@ -691,6 +707,7 @@ module.exports = {
 
   // Cookie/CSRF/session/security extras
   sanitizeSensitiveValue,
+  safeStringify,
   formatCookieParsing,
   formatCSRFToken,
   formatSecurityClearance,

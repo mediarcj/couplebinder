@@ -883,7 +883,7 @@ async function checkSessionStatus() {
  * 2. Replace login link with Dashboard button + Logout button
  * 3. Attach logout handler to the Logout button
  */
-function updateUIForLoggedInUser(userEmail) {
+function updateUIForLoggedInUser(_userEmail) {
     const authSection = document.querySelector('.auth-section');
     if (authSection) {
         // Replace content with Dashboard button + Logout button (matches dashboard style)
@@ -1077,7 +1077,7 @@ function validateConfirmPassword(password, confirmPassword) {
     return '';
 }
 
-function validateName(name, fieldName) {
+function _validateName(name, fieldName) {
     if (!name) {
         return `${fieldName} is required`;
     }
@@ -1123,7 +1123,7 @@ function validatePhone(phone) {
     return '';
 }
 
-function validateBirthday(birthday) {
+function _validateBirthday(birthday) {
     if (!birthday) return ''; // Optional field
     const birthdayRegex = /^\d{2}\/\d{2}\/\d{4}$/;
     if (!birthdayRegex.test(birthday)) {
@@ -1132,7 +1132,7 @@ function validateBirthday(birthday) {
     return '';
 }
 
-function validateGender(gender) {
+function _validateGender(gender) {
     if (!gender) return ''; // Optional field
     if (!['male', 'female'].includes(gender)) {
         return 'Gender must be either "male" or "female"';
@@ -1140,7 +1140,7 @@ function validateGender(gender) {
     return '';
 }
 
-function validateRelationshipStatus(status) {
+function _validateRelationshipStatus(status) {
     if (!status) return ''; // Optional field
     if (!['single', 'married'].includes(status)) {
         return 'Relationship status must be either "single" or "married"';
@@ -1148,7 +1148,7 @@ function validateRelationshipStatus(status) {
     return '';
 }
 
-function validateJobStatus(job) {
+function _validateJobStatus(job) {
     if (!job) return ''; // Optional field
     if (!['unemployed', 'employed'].includes(job)) {
         return 'Job status must be either "unemployed" or "employed"';
@@ -1156,7 +1156,7 @@ function validateJobStatus(job) {
     return '';
 }
 
-function validateAccountPrivacy(privacy) {
+function _validateAccountPrivacy(privacy) {
     if (!privacy) return 'Account privacy is required';
     if (!['public', 'private'].includes(privacy)) {
         return 'Account privacy must be either "public" or "private"';

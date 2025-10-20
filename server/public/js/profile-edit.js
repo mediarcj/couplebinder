@@ -64,7 +64,7 @@ const logger = {
 };
 
 // Global variables
-let supabase = null;
+let _supabase = null;
 let userProfile = null;
 let editingFields = new Set();
 
@@ -116,7 +116,7 @@ function initializeSupabase() {
             }
             window.SB = window.supabase.createClient(supabaseUrl, supabaseAnonKey);
         }
-        supabase = window.SB; // shared singleton
+        _supabase = window.SB; // shared singleton
         logger.info('Supabase client initialized (shared)');
     } catch (error) {
         logger.error('Failed to initialize Supabase:', error);
@@ -592,7 +592,7 @@ function validateField(fieldName) {
 /**
  * Validation functions
  */
-function validateName(value, fieldName) {
+function _validateName(value, fieldName) {
     if (!value || value.trim().length === 0) {
         return `${fieldName} is required`;
     }

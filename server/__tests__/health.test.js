@@ -58,7 +58,7 @@ describe('Health and Boot Smoke Tests', () => {
     }
     
     const responses = await Promise.all(requests);
-    const rateLimited = responses.filter(status => status === 429);
+    const _rateLimited = responses.filter(status => status === 429);
     
     // At least some requests should hit rate limit
     // Note: health endpoints might not be rate limited, adjust test if needed

@@ -389,15 +389,17 @@ function formatConfigSummary(config = {}) {
   const maxSubs = config?.limits?.maxSubmissions ?? 'unknown';
 
   const rl = config?.rateLimit || {};
+  // Map known keys to human labels; fall back to the raw key if unknown
   const label = (k) => ({
     'cloudflare-edge': 'Cloudflare edge',
     cloudflare: 'Cloudflare edge',
     redis: 'Redis origin limiters',
     'redis-origin': 'Redis origin limiters'
-  }[k] || k || 'Cloudflare edge');
+  }[k] ?? k);
 
-  const primary = label(rl.primary);
-  const secondary = label(rl.secondary) || 'Redis origin limiters';
+  // Defaults ensure we ALWAYS show the defense-in-depth stack
+  const primary = label(rl.primary) || 'Cloudflare edge';
+  const secondary = rl.secondary ? label(rl.secondary) : 'Redis origin limiters';
 
   console.log(`\nCONFIGURATION LOADED`);
   console.log(`   Server: ${config?.server?.host}:${config?.server?.port} (${config?.server?.nodeEnv})`);

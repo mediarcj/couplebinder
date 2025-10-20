@@ -25,7 +25,7 @@ function createIdempotencyMiddleware(options = {}) {
     ttl = 3600, // 1 hour default TTL
     headerName = 'Idempotency-Key',
     redisClient = null,
-    keyGenerator = null
+    _keyGenerator = null
   } = options;
 
   return async (req, res, next) => {

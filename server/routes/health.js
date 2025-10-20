@@ -112,7 +112,7 @@ router.get('/liveness', (req, res) => {
 router.get('/readiness', async (req, res) => {
   try {
     // Check if all critical services are ready
-    const isReady = true; // Supabase is always available via HTTP API
+    const _isReady = true; // Supabase is always available via HTTP API
     
     const readinessData = {
       status: 'ready',
@@ -170,8 +170,8 @@ router.get('/ops', async (req, res) => {
     }
 
     // Outbox system disabled - no database tables available
-    const outboxStats = null;
-    const processorStatus = { running: false, processing: false };
+    const _outboxStats = null;
+    const _processorStatus = { running: false, processing: false };
 
     const opsHealth = {
       timestamp: new Date().toISOString(),

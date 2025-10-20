@@ -71,7 +71,7 @@ function escapeHtml(unsafe) {
 /**
  * Get CSRF token from meta tag or cookie
  */
-function getCSRFToken() {
+function _getCSRFToken() {
     // Try to get from meta tag first
     const metaToken = document.querySelector('meta[name="csrf-token"]');
     if (metaToken) {

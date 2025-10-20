@@ -56,6 +56,80 @@ async function updateProfileTransactional(userId, patch) {
     fields: Object.keys(patch || {})
   }, 'Starting transactional profile update');
 
+  // Step 0: Fetch current profile data to check for changes
+  const { data: currentProfile, error: fetchError } = await supabaseAdmin
+    .from('profiles')
+    .select('*')
+    .eq('user_id', userId)
+    .single();
+
+  if (fetchError) {
+    logger.error({
+      event: 'profile.transaction.fetch_current_failed',
+      transactionId,
+      userId,
+      error: fetchError.message
+    }, 'Failed to fetch current profile for change detection');
+    throw new Error(`Failed to fetch current profile: ${fetchError.message}`);
+  }
+
+  // Check if any changes were actually made
+  let hasChanges = false;
+
+  // Normalize and compare each field
+  for (const [key, newValue] of Object.entries(patch)) {
+    if (newValue === undefined || newValue === null) continue;
+    
+    let normalizedNewValue = newValue;
+    let currentValue = currentProfile[key];
+
+    // Handle array fields normalization for comparison
+    if (['hobbies', 'music', 'fav_food'].includes(key)) {
+      if (typeof normalizedNewValue === 'string') {
+        normalizedNewValue = normalizedNewValue.split(',').map(item => item.trim()).filter(item => item.length > 0);
+      }
+      if (Array.isArray(currentValue)) {
+        // currentValue is already an array, no change needed
+      } else if (typeof currentValue === 'string') {
+        currentValue = currentValue.split(',').map(item => item.trim()).filter(item => item.length > 0);
+      } else {
+        currentValue = [];
+      }
+    }
+
+    // Handle display_name_override special case
+    if (key === 'display_name_override') {
+      const currentDisplayName = currentProfile.display_name_override || currentProfile.given_name + ' ' + currentProfile.family_name;
+      if (normalizedNewValue !== currentDisplayName) {
+        hasChanges = true;
+        break;
+      }
+    } else {
+      // Deep comparison for arrays, simple comparison for primitives
+      if (Array.isArray(normalizedNewValue) && Array.isArray(currentValue)) {
+        if (JSON.stringify(normalizedNewValue.sort()) !== JSON.stringify(currentValue.sort())) {
+          hasChanges = true;
+          break;
+        }
+      } else if (normalizedNewValue !== currentValue) {
+        hasChanges = true;
+        break;
+      }
+    }
+  }
+
+  // If no changes detected, return current profile with unchanged flag
+  if (!hasChanges) {
+    logger.info({
+      event: 'profile.transaction.no_changes',
+      transactionId,
+      userId,
+      fields: Object.keys(patch || {})
+    }, 'No changes detected - returning current profile');
+    
+    return { ...currentProfile, _unchanged: true };
+  }
+
   // Step 1: Capture current state for rollback
   let originalAuthState = null;
   const needsAuthUpdate = (patch.display_name_override !== undefined && patch.display_name_override !== null) || 

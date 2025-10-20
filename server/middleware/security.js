@@ -4,6 +4,7 @@
 // Notes: Never trusts client-side validation, implements atomic operations and rate limiting
 
 // Rate limiting and lockouts now use Redis for multi-instance safety
+// NOTE: This is the SECONDARY layer - Cloudflare edge (PRIMARY) handles volumetric attacks first
 const crypto = require('crypto');
 const logger = require('../utils/logger');
 const sanitizeHtml = require('sanitize-html');
@@ -159,6 +160,11 @@ function validateTextServerSide(text) {
  * HOW:
  * Returns a no-op middleware for backward compatibility.
  * Use rateLimiter middleware from ../middleware/rateLimiter.js instead.
+ *
+ * IMPORTANT: This application uses DUAL-LAYER rate limiting:
+ * - LAYER 1 (PRIMARY): Cloudflare Edge handles volumetric DDoS attacks
+ * - LAYER 2 (SECONDARY): Redis-based application limiters handle app-specific logic
+ * Both layers are active and working together for comprehensive protection.
  */
 function createAuthRateLimit() {
     return (req, res, next) => {

@@ -161,8 +161,19 @@ async function processPendingEvents(batchSize = 10, maxRetries = 3) {
  * @returns {Promise<void>}
  */
 async function processEvent(event) {
-  const payload = JSON.parse(event.payload);
-  const metadata = JSON.parse(event.metadata || '{}');
+  // Normalize payload - handle both string and object payloads (tolerant of past rows)
+  const normalizePayload = (p) => (typeof p === 'string' ? JSON.parse(p) : p);
+  const payload = normalizePayload(event.payload);
+  
+  // Add diagnostic logging for payload shape
+  logger.debug({
+    event: 'outbox.payload.shape',
+    eventId: event.id,
+    payloadType: typeof event.payload,
+    payloadPreview: typeof event.payload === 'string' 
+      ? event.payload.slice(0, 200) 
+      : JSON.stringify(event.payload).slice(0, 200)
+  }, 'Payload shape diagnostic');
 
   logger.debug({
     event: 'outbox.processing_event',
@@ -173,13 +184,13 @@ async function processEvent(event) {
   // Route to appropriate handler based on event type
   switch (event.event_type) {
     case 'profile.updated':
-      await handleProfileUpdatedEvent(payload, metadata);
+      await handleProfileUpdatedEvent(payload);
       break;
     case 'user.created':
-      await handleUserCreatedEvent(payload, metadata);
+      await handleUserCreatedEvent(payload);
       break;
     case 'user.deleted':
-      await handleUserDeletedEvent(payload, metadata);
+      await handleUserDeletedEvent(payload);
       break;
     default:
       logger.warn({
@@ -197,10 +208,9 @@ async function processEvent(event) {
 /**
  * Handle profile updated events
  * @param {Object} payload - Event payload
- * @param {Object} metadata - Event metadata
  * @returns {Promise<void>}
  */
-async function handleProfileUpdatedEvent(payload, _metadata) {
+async function handleProfileUpdatedEvent(payload) {
   // Example: Send notification, update search index, etc.
   logger.info({
     event: 'outbox.profile_updated_handled',
@@ -215,10 +225,9 @@ async function handleProfileUpdatedEvent(payload, _metadata) {
 /**
  * Handle user created events
  * @param {Object} payload - Event payload
- * @param {Object} metadata - Event metadata
  * @returns {Promise<void>}
  */
-async function handleUserCreatedEvent(payload, _metadata) {
+async function handleUserCreatedEvent(payload) {
   logger.info({
     event: 'outbox.user_created_handled',
     userId: payload.userId
@@ -231,10 +240,9 @@ async function handleUserCreatedEvent(payload, _metadata) {
 /**
  * Handle user deleted events
  * @param {Object} payload - Event payload
- * @param {Object} metadata - Event metadata
  * @returns {Promise<void>}
  */
-async function handleUserDeletedEvent(payload, _metadata) {
+async function handleUserDeletedEvent(payload) {
   logger.info({
     event: 'outbox.user_deleted_handled',
     userId: payload.userId

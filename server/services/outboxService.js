@@ -29,16 +29,15 @@ const { supabaseAdmin } = require('../utils/supabaseClient');
  * @param {Object} options - Options (priority, delay, etc.)
  * @returns {Promise<string>} Event ID
  */
-async function storeEvent(eventType, payload, metadata = {}, options = {}) {
+async function storeEvent(eventType, payload, _metadata = {}, options = {}) {
   try {
     const eventData = {
       event_type: eventType,
-      payload: JSON.stringify(payload),
-      metadata: JSON.stringify(metadata),
-      priority: options.priority || 'normal',
+      payload: payload, // JSONB column, no need to stringify
       scheduled_at: options.delay ? new Date(Date.now() + options.delay) : new Date(),
-      created_at: new Date(),
-      status: 'pending'
+      status: 'pending',
+      attempts: 0,
+      retry_count: 0
     };
 
     const { data, error } = await supabaseAdmin
@@ -92,7 +91,7 @@ async function processPendingEvents(batchSize = 10, maxRetries = 3) {
       .select('*')
       .eq('status', 'pending')
       .lte('scheduled_at', new Date().toISOString())
-      .lt('retry_count', maxRetries)
+      .lt('attempts', maxRetries)
       .order('created_at', { ascending: true })
       .limit(batchSize);
 
@@ -280,9 +279,10 @@ async function updateEventRetry(eventId, retryCount, lastError) {
   const { error } = await supabaseAdmin
     .from('outbox_events')
     .update({
+      attempts: retryCount,
       retry_count: retryCount,
       last_error: lastError,
-      next_retry_at: new Date(Date.now() + Math.pow(2, retryCount) * 60000) // Exponential backoff
+      scheduled_at: new Date(Date.now() + Math.pow(2, retryCount) * 60000) // Exponential backoff
     })
     .eq('id', eventId);
 
@@ -305,7 +305,7 @@ async function getOutboxStats() {
     const { data, error } = await supabaseAdmin
       .from('outbox_events')
       .select('status')
-      .eq('created_at', 'gte', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()); // Last 24 hours
+      .gte('created_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()); // Last 24 hours
 
     if (error) {
       throw error;

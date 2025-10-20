@@ -187,7 +187,7 @@ function setupGlobalErrorHandlers() {
  */
 function createSafeApp(app) {
   // Global error handler
-  app.use((error, req, res, next) => {
+  app.use((error, req, res, _next) => {
     logger.error({
       event: 'sandbox.express_error',
       error: error.message,

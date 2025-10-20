@@ -12,6 +12,7 @@ module.exports = {
     {
       files: ['**/__tests__/**', '**/*.test.js', 'tests/**/*.js'],
       env: { node: true, es2022: true },
+      parserOptions: { sourceType: 'module' },
       globals: {
         describe: 'readonly',
         it: 'readonly',

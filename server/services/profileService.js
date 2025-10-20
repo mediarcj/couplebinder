@@ -96,7 +96,7 @@ const ALLOWED_FIELDS = new Set([
   // 'account_privacy' - temporarily excluded due to database constraint
 ]);
 
-function pickAllowed(patch) {
+function _pickAllowed(patch) {
   const out = {};
   for (const [k, v] of Object.entries(patch || {})) {
     if (ALLOWED_FIELDS.has(k)) out[k] = v;

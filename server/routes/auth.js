@@ -15,9 +15,7 @@ const { getClientIP } = require('../middleware/security');
 // See zorvalon.js lines 594-600 for actual rate limiter application
 const { loginLimiter, signupLimiter } = require('../middleware/rateLimiter');
 const { validateUserRegistration } = require('../middleware/validation');
-const { supabaseAdmin } = require('../utils/supabaseClient');
 const logger = require('../utils/logger');
-const consoleLogger = require('../utils/consoleLogger');
 const router = express.Router();
 
 /**
@@ -147,7 +145,7 @@ router.get('/status', (req, res) => {
 router.post('/signup', signupLimiter(), validateUserRegistration, async (req, res) => {
     try {
         const clientIP = getClientIP(req);
-        const { email, password, display_name, ...profileData } = req.body;
+        const { email, _password, _display_name, ..._profileData } = req.body;
         
         logger.auth('signup_attempt', {
             requestId: req.requestId,

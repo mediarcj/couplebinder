@@ -22,7 +22,6 @@
 
 const { supabaseAdmin } = require('../utils/supabaseClient');
 const logger = require('../utils/logger');
-const { storeEvent } = require('./outboxService');
 
 /**
  * WHAT:
@@ -234,26 +233,12 @@ async function updateProfileTransactional(userId, patch) {
       fields: Object.keys(processedPatch)
     }, 'Transactional profile update completed successfully');
 
-    // Store outbox event for reliable delivery
-    try {
-      await storeEvent('profile.updated', {
-        userId,
-        changes: processedPatch,
-        transactionId
-      }, {
-        userId,
-        transactionId,
-        timestamp: new Date().toISOString()
-      });
-    } catch (outboxError) {
-      // Log but don't fail the transaction if outbox storage fails
-      logger.warn({
-        event: 'profile.outbox_store_failed',
-        userId,
-        transactionId,
-        error: outboxError.message
-      }, 'Failed to store profile update event in outbox');
-    }
+    // Outbox event storage disabled - database tables not available
+    logger.debug({
+      event: 'profile.outbox_disabled',
+      userId,
+      transactionId
+    }, 'Outbox event storage disabled - no database tables');
 
     return updatedProfile;
   } catch (error) {

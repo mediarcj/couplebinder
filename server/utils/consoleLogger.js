@@ -388,11 +388,22 @@ function formatConfigSummary(config = {}) {
   const maxLen = config?.limits?.textMaxLength ?? 'unknown';
   const maxSubs = config?.limits?.maxSubmissions ?? 'unknown';
 
+  const rl = config?.rateLimit || {};
+  const label = (k) => ({
+    'cloudflare-edge': 'Cloudflare edge',
+    cloudflare: 'Cloudflare edge',
+    redis: 'Redis origin limiters',
+    'redis-origin': 'Redis origin limiters'
+  }[k] || k || 'Cloudflare edge');
+
+  const primary = label(rl.primary);
+  const secondary = label(rl.secondary) || 'Redis origin limiters';
+
   console.log(`\nCONFIGURATION LOADED`);
   console.log(`   Server: ${config?.server?.host}:${config?.server?.port} (${config?.server?.nodeEnv})`);
   console.log(`   Database: ${dbSummary}`);
   console.log(`   Auth: Stateless (Supabase RS256 + JWKS)`);
-  console.log(`   Rate Limiting: handled at Cloudflare edge`);
+  console.log(`   Rate Limiting: ${primary} (PRIMARY) + ${secondary} (SECONDARY)`);
   console.log(`   Text Limits: ${minLen}-${maxLen} chars`);
   console.log(`   Max Submissions: ${maxSubs}`);
 }

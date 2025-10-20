@@ -244,7 +244,7 @@ const modalManager = {
    */
   initCloseHandlers() {
     document.querySelectorAll('[data-modal-close]').forEach(btn => {
-      btn.addEventListener('click', (e) => {
+      btn.addEventListener('click', (_e) => {
         const modalId = btn.getAttribute('data-modal-close');
         this.close(modalId);
       });

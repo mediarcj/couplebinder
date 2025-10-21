@@ -28,7 +28,25 @@ require('dotenv').config({ path: path.join(__dirname, '../../.env') });
 
 // Configuration
 const MAINTENANCE_KEY = process.env.MAINTENANCE_KEY || 'maintenance:mode';
-const REDIS_URL = process.env.REDIS_URL;
+
+/** Helper: Build a Redis URL from parts if REDIS_URL isn't set */
+function buildRedisUrlFromParts(env) {
+  const host = (env.REDIS_HOST || 'redis').toString();
+  const port = (env.REDIS_PORT || '6379').toString();
+  const pw = env.REDIS_PASSWORD ? encodeURIComponent(env.REDIS_PASSWORD) : '';
+  const auth = pw ? `:${pw}@` : '';
+  return `redis://${auth}${host}:${port}`;
+}
+
+/** Helper: Choose explicit REDIS_URL if provided, otherwise synthesize from parts */
+function resolveRedisUrl(env) {
+  return (env.REDIS_URL && env.REDIS_URL.trim()) || buildRedisUrlFromParts(env);
+}
+
+/** Helper: Redact password from URL for safe logging */
+function redactRedisUrl(u) {
+  return (u || '').replace(/:(?:[^@]+)@/, ':****@');
+}
 
 /**
  * WHAT:
@@ -62,15 +80,33 @@ function parseArgs() {
   
   // Parse TTL from --ttl flag
   let ttl = null;
-  const ttlArg = args.find(arg => arg.startsWith('--ttl='));
-  if (ttlArg) {
-    const ttlValue = parseInt(ttlArg.split('=')[1], 10);
-    if (!isNaN(ttlValue) && ttlValue > 0) {
-      ttl = ttlValue;
-    } else {
-      console.error('Error: TTL must be a positive number');
-      process.exit(1);
+
+  // Support both "--ttl=3600" and "--ttl 3600"
+  for (let i = 1; i < args.length; i++) {
+    const a = args[i];
+    if (a === '--ttl') {
+      const next = args[i + 1];
+      const num = next ? parseInt(next, 10) : NaN;
+      if (!isNaN(num) && num > 0) {
+        ttl = num;
+        i++;
+      } else {
+        console.error('Error: TTL must be a positive number');
+        process.exit(1);
+      }
+    } else if (a.startsWith('--ttl=')) {
+      const num = parseInt(a.split('=')[1], 10);
+      if (!isNaN(num) && num > 0) {
+        ttl = num;
+      } else {
+        console.error('Error: TTL must be a positive number');
+        process.exit(1);
+      }
     }
+  }
+
+  if (action === 'off' && ttl !== null) {
+    console.warn('Note: TTL is ignored when turning maintenance OFF.');
   }
   
   return { action, ttl };
@@ -87,21 +123,11 @@ function parseArgs() {
  * Create client with connection timeout and test connectivity.
  */
 async function createRedisClient() {
-  if (!REDIS_URL) {
-    console.error('Error: REDIS_URL environment variable is not set');
-    console.error('');
-    console.error('To use Redis-based maintenance toggle:');
-    console.error('1. Set REDIS_URL in your .env file or environment');
-    console.error('2. Example: REDIS_URL=redis://localhost:6379');
-    console.error('');
-    console.error('Alternative: Use environment fallback:');
-    console.error('1. Set MAINTENANCE_DEFAULT=on in .env');
-    console.error('2. Restart the application server');
-    process.exit(0); // Exit 0 because this is guidance, not an error
-  }
-  
+  // Resolve URL from REDIS_URL or fallback to REDIS_HOST/PORT/PASSWORD
+  const url = resolveRedisUrl(process.env);
+
   const client = redis.createClient({
-    url: REDIS_URL,
+    url,
     socket: {
       connectTimeout: 5000,
       reconnectStrategy: false // Don't auto-reconnect for CLI
@@ -113,12 +139,12 @@ async function createRedisClient() {
     return client;
   } catch (error) {
     console.error('Error: Cannot connect to Redis');
-    console.error(`  URL: ${REDIS_URL}`);
+    console.error(`  URL: ${redactRedisUrl(url)}`);
     console.error(`  Error: ${error.message}`);
     console.error('');
     console.error('Please check:');
     console.error('1. Redis server is running');
-    console.error('2. REDIS_URL is correct');
+    console.error('2. Connection env vars are correct (REDIS_HOST/PORT/PASSWORD or REDIS_URL)');
     console.error('3. Network connectivity to Redis');
     console.error('');
     console.error('Alternative: Use environment fallback:');

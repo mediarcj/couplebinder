@@ -54,6 +54,11 @@ module.exports = {
       ],
       rules: { 'no-console': 'off' }
     },
+    // CLI scripts need console output
+    {
+      files: ['scripts/**/*.js'],
+      rules: { 'no-console': 'off' }
+    },
     // TEMP: presenters has a deliberate constant condition guard
     {
       files: ['ui_contract/presenters.js'],

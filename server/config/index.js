@@ -153,6 +153,16 @@ const config = {
     textMaxLength: int(process.env.TEXT_MAX_LENGTH, 5000),
     textMinLength: int(process.env.TEXT_MIN_LENGTH, 20),
     maxSubmissions: int(process.env.MAX_SUBMISSIONS, 10)
+  },
+
+  // Maintenance mode configuration
+  maintenance: {
+    key: process.env.MAINTENANCE_KEY || 'maintenance:mode',
+    default: process.env.MAINTENANCE_DEFAULT || 'off',
+    allowlist: csv(process.env.MAINTENANCE_ALLOWLIST) || ['127.0.0.1', '::1'],
+    retryAfter: int(process.env.MAINTENANCE_RETRY_AFTER, 120),
+    pagePath: process.env.MAINTENANCE_PAGE || '/app/public/maintenance.html',
+    message: process.env.MAINTENANCE_MESSAGE || 'We\'ll be back soon.'
   }
 };
 

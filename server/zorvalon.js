@@ -307,6 +307,11 @@ try {
     console.log('Continuing without Redis...');
 }
 
+// 7. Maintenance Guard - instant maintenance mode toggle (after Redis client is available)
+const createMaintenanceGuard = require('./middleware/maintenanceGuard');
+app.use(createMaintenanceGuard(redisClient));
+console.log('Security: Maintenance guard enabled (Redis/env toggle)');
+
 /**
  * WHAT:
  * Function to update Redis status for health checks.

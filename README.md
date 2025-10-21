@@ -72,3 +72,40 @@ Notes
 		Canonical reads come from v_profiles_full; writes go to public.profiles.
 		Security posture includes CSP nonces, CSRF (cookie+header for cookie flows), and strict request logging.
 		No Docker required.
+
+## Maintenance Mode (simple & secure)
+
+What it does: Puts the site in maintenance. Everyone (except your allowlisted ops IPs and health checks) sees a friendly page with 503 Service Unavailable and Retry-After, so clients know to try again later.
+
+Quick start
+	1.	Customize the page
+Edit public/maintenance.html (keep it simple; no external assets).
+	2.	Pick your toggle style
+	•	Instant (recommended): set REDIS_URL and use the CLI (no restart).
+	•	Env fallback: set MAINTENANCE_DEFAULT=on in .env and restart.
+	3.	Toggle with CLI (from repo root):
+npm run maint:on --workspace=server
+npm run maint:off --workspace=server
+npm run maint:on --workspace=server -- --ttl=3600
+
+If Redis isn't configured, the CLI will tell you to use the env fallback.
+
+	4.	Allowlist ops
+MAINTENANCE_ALLOWLIST=203.0.113.10,127.0.0.1 to let trusted IPs through.
+	5.	Health checks still pass
+/health/liveness and /health/readiness always return 200.
+
+Defaults
+MAINTENANCE_DEFAULT=off
+MAINTENANCE_ALLOWLIST=127.0.0.1,::1
+MAINTENANCE_RETRY_AFTER=120
+MAINTENANCE_PAGE=/app/public/maintenance.html
+MAINTENANCE_MESSAGE=We'll be back soon.
+MAINTENANCE_KEY=maintenance:mode
+REDIS_URL=redis://redis:6379
+
+Why this approach?
+	•	Secure: No new admin endpoints to protect.
+	•	Fast: Redis toggle is instant; env fallback is simple.
+	•	Standard: Proper 503 + Retry-After.
+	•	Customizable: Brand the page; optional Cloudflare edge layer later.

@@ -65,13 +65,30 @@ module.exports = {
       rules: { 'no-constant-condition': 'off' }
     },
     // Keep consoleLogger as-is (utility that writes to console)
-    { files: ['utils/consoleLogger.js'], rules: { 'no-console': 'off' } }
+    { files: ['utils/consoleLogger.js'], rules: { 'no-console': 'off' } },
+    // Auth utilities and middleware that legitimately access req.user
+    {
+      files: [
+        'utils/authz.js',
+        'middleware/authBridge.js',
+        'middleware/requireAuth.js',
+        'middleware/requireOwner.js'
+      ],
+      rules: { 'no-restricted-syntax': 'off' }
+    }
   ],
   rules: {
     'no-console': 'error',
     'no-control-regex': 'off',
     'no-empty': ['warn', { allowEmptyCatch: true }],
     'no-useless-escape': 'warn',
-    'no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }]
+    'no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
+    'no-restricted-syntax': [
+      'error',
+      {
+        'selector': 'MemberExpression[object.name="req"][property.name="user"]',
+        'message': 'Do not use req.user directly. Use assertUser(req), hasUser(req), getUserId(req), or getUserEmail(req) from utils/authz.js'
+      }
+    ]
   }
 };

@@ -49,48 +49,11 @@ let redisStatus = { connected: false, lastCheck: null };
 
 /**
  * GET /health
- * Comprehensive health check endpoint
+ * Minimal health check endpoint - no internal details exposed
  */
-router.get('/', async (req, res) => {
-  try {
-    const healthData = {
-      status: 'ok',
-      message: `${process.env.APP_NAME || 'Application'} server is running`,
-      timestamp: new Date().toISOString(),
-      requestId: req.requestId,
-      services: {
-        database: {
-          healthy: true,
-          lastTest: new Date().toISOString(),
-          host: 'Supabase',
-          port: '5432'
-        },
-        redis: {
-          connected: redisStatus.connected,
-          lastCheck: redisStatus.lastCheck
-        },
-        server: {
-          uptime: process.uptime(),
-          memory: process.memoryUsage(),
-          nodeVersion: process.version
-        }
-      }
-    };
-
-    res.status(200).json(healthData);
-  } catch (error) {
-    logger.error({
-      event: 'health.check.error',
-      error: error.message
-    }, 'Health check failed');
-    res.status(500).json({
-      status: 'error',
-      message: 'Health check failed',
-      timestamp: new Date().toISOString(),
-      requestId: req.requestId,
-      error: error.message
-    });
-  }
+router.get('/', (req, res) => {
+  // Minimal response - no uptime, memory, or version details
+  res.status(200).json({ ok: true });
 });
 
 /**

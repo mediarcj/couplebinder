@@ -324,7 +324,7 @@ async function saveIndividualField(fieldName) {
             throw new Error('Field not found');
         }
         
-        const value = inputElement.value || null;
+        let value = inputElement.value || null;
         
         // Validate the field
         const error = validateField(fieldName);
@@ -356,6 +356,11 @@ async function saveIndividualField(fieldName) {
                 break;
             case 'relationshipStatus':
                 backendFieldName = 'relationship_status';
+                break;
+            case 'accountPrivacy':
+                // Send boolean to server instead of string
+                backendFieldName = 'is_private';
+                value = (inputElement.value === 'private'); // 'private' => true, 'public' => false
                 break;
         }
         

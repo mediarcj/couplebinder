@@ -13,6 +13,7 @@ const { supabaseAdmin } = require('../utils/supabaseClient');
 const { validateTextServerSide, getClientIP } = require('../middleware/security');
 const { createIdempotencyMiddleware } = require('../middleware/idempotency');
 const logger = require('../utils/logger');
+const { assertUser } = require('../utils/authz');
 
 // Create idempotency middleware for text submissions
 const submissionIdempotency = createIdempotencyMiddleware({
@@ -40,16 +41,8 @@ router.post('/', submissionIdempotency, async (req, res) => {
   try {
     const { text } = req.body;
     const clientIP = getClientIP(req);
-    const userId = req.user?.id;
-    
-    // Enforce authentication
-    if (!userId) {
-      return res.status(401).json({
-        ok: false,
-        error: 'Authentication required',
-        requestId: req.requestId
-      });
-    }
+    const user = assertUser(req);
+    const userId = user.id;
     
     // Server-side text validation (never trust client)
     const textValidation = validateTextServerSide(text);
@@ -151,15 +144,8 @@ router.post('/', submissionIdempotency, async (req, res) => {
  */
 router.get('/', async (req, res) => {
   try {
-    const userId = req.user?.id;
-    
-    if (!userId) {
-      return res.status(401).json({
-        ok: false,
-        error: 'Authentication required',
-        requestId: req.requestId
-      });
-    }
+    const user = assertUser(req);
+    const userId = user.id;
     
     // Get user's access token from cookie for RLS
     const accessToken = req.cookies?.['sb-access-token'] || req.cookies?.['__Host-sb_session'];

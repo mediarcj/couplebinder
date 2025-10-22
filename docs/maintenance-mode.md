@@ -127,6 +127,76 @@ Trusted IPs can access the application during maintenance:
 export MAINTENANCE_ALLOWLIST="203.0.113.10,198.51.100.5,127.0.0.1,::1"
 ```
 
+## Optional: Cloudflare Edge Rule
+
+For additional performance and reliability, you can create a Cloudflare Page Rule or Worker to serve a static maintenance page at the edge:
+
+### Cloudflare Page Rule (Simple)
+
+1. Go to **Rules** → **Page Rules** in your Cloudflare dashboard
+2. Create a new rule with:
+   - **URL Pattern**: `your-domain.com/*`
+   - **Settings**: 
+     - **Cache Level**: Bypass
+     - **Custom Error Page**: Upload a static maintenance page
+3. Enable/disable the rule as needed
+
+### Cloudflare Worker (Advanced)
+
+Create a Worker that checks your origin's maintenance status:
+
+```javascript
+addEventListener('fetch', event => {
+  event.respondWith(handleRequest(event.request))
+})
+
+async function handleRequest(request) {
+  const url = new URL(request.url)
+  
+  // Always allow health checks
+  if (url.pathname.startsWith('/health/')) {
+    return fetch(request)
+  }
+  
+  // Check origin maintenance status
+  try {
+    const response = await fetch(`https://your-origin.com/health/liveness`, {
+      method: 'GET',
+      headers: { 'User-Agent': 'Cloudflare-Maintenance-Check' }
+    })
+    
+    if (response.status === 503) {
+      // Origin is in maintenance mode
+      return new Response(`
+        <!DOCTYPE html>
+        <html>
+        <head><title>Maintenance</title></head>
+        <body>
+          <h1>We'll be back soon!</h1>
+          <p>We're performing scheduled maintenance.</p>
+        </body>
+        </html>
+      `, {
+        status: 503,
+        headers: { 'Content-Type': 'text/html' }
+      })
+    }
+  } catch (error) {
+    // If origin is unreachable, assume maintenance
+    return new Response('Service temporarily unavailable', { status: 503 })
+  }
+  
+  // Origin is healthy, pass through
+  return fetch(request)
+}
+```
+
+**Benefits of Edge Rules:**
+- Faster response times for maintenance pages
+- Reduces load on origin server
+- Works even if origin is completely down
+- Can be toggled instantly from Cloudflare dashboard
+
 ### Always-Allowed Paths
 
 These paths always work, even during maintenance:

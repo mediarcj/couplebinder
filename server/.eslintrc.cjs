@@ -72,7 +72,8 @@ module.exports = {
         'utils/authz.js',
         'middleware/authBridge.js',
         'middleware/requireAuth.js',
-        'middleware/requireOwner.js'
+        'middleware/requireOwner.js',
+        'middleware/requireAuthByDefault.js'
       ],
       rules: { 'no-restricted-syntax': 'off' }
     }

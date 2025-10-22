@@ -7,12 +7,13 @@ const { updateProfileTransactional, reconcileProfileData } = require('../service
 const validateProfileUpdate = require('../middleware/validateProfileUpdate');
 const { createIdempotencyMiddleware } = require('../middleware/idempotency');
 const logger = require('../utils/logger');
+const { assertUser } = require('../utils/authz');
 
 // GET /api/profile/me  -> return your own profile
 router.get('/me', async (req, res) => {
   try {
-    const userId = req.user?.id;
-    if (!userId) return res.status(401).json({ success: false, message: 'Authentication required' });
+    const user = assertUser(req);
+    const userId = user.id;
 
     // Extract user access token for RLS-compliant profile fetching
     const userAccessToken = req.cookies?.['sb-access-token'] || 
@@ -41,8 +42,8 @@ const profileIdempotency = createIdempotencyMiddleware({
 // PUT /api/profile/me -> update your own profile with idempotency protection
 router.put('/me', profileIdempotency, validateProfileUpdate, async (req, res) => {
   try {
-    const userId = req.user?.id;
-    if (!userId) return res.status(401).json({ success: false, message: 'Authentication required' });
+    const user = assertUser(req);
+    const userId = user.id;
 
     // Use the validated patch data from middleware
     // Use transactional service for consistency across auth.users and profiles
@@ -99,8 +100,8 @@ router.put('/me', profileIdempotency, validateProfileUpdate, async (req, res) =>
  */
 router.post('/reconcile', async (req, res) => {
   try {
-    const userId = req.user?.id;
-    if (!userId) return res.status(401).json({ success: false, message: 'Authentication required' });
+    const user = assertUser(req);
+    const userId = user.id;
 
     logger.info({
       event: 'profile.reconcile.requested',

@@ -163,6 +163,12 @@ const config = {
     retryAfter: int(process.env.MAINTENANCE_RETRY_AFTER, 120),
     pagePath: process.env.MAINTENANCE_PAGE || '/app/public/maintenance.html',
     message: process.env.MAINTENANCE_MESSAGE || 'We\'ll be back soon.'
+  },
+
+  // Ops health access control
+  ops: {
+    token: process.env.OPS_HEALTH_TOKEN,
+    ips: csv(process.env.OPS_HEALTH_IPS) || ['127.0.0.1', '::1']
   }
 };
 

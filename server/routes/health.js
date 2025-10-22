@@ -14,6 +14,23 @@ const router = express.Router();
 const logger = require('../utils/logger');
 const { supabaseAdmin } = require('../utils/supabaseClient');
 
+// Ops health access control
+const OPS_TOKEN = process.env.OPS_HEALTH_TOKEN;
+const OPS_IPS = (process.env.OPS_HEALTH_IPS || '127.0.0.1,::1')
+  .split(',')
+  .map(s => s.trim())
+  .filter(Boolean);
+
+/**
+ * Check if request is from authorized ops source
+ * @param {Object} req - Express request object
+ * @returns {boolean} - True if authorized ops request
+ */
+function isOps(req) {
+  const ip = req.headers['cf-connecting-ip'] || req.ip;
+  return (OPS_TOKEN && req.get('X-Ops-Token') === OPS_TOKEN) || OPS_IPS.includes(ip);
+}
+
 /**
  * WHAT:
  * We provide comprehensive health check endpoints that verify actual service status.
@@ -78,46 +95,32 @@ router.get('/', async (req, res) => {
 
 /**
  * GET /health/liveness
- * Liveness probe for Kubernetes/Docker
+ * Liveness probe for Kubernetes/Docker - PUBLIC endpoint
  */
 router.get('/liveness', (req, res) => {
-  try {
-    // Liveness only checks if the process is running
-    const isAlive = process.uptime() > 0;
-    
-    res.status(isAlive ? 200 : 503).json({ 
-      status: isAlive ? 'alive' : 'dead',
-      uptime: process.uptime(),
-      timestamp: new Date().toISOString(),
-      requestId: req.requestId
-    });
-  } catch (error) {
-    logger.error({
-      event: 'health.liveness.error',
-      error: error.message
-    }, 'Liveness check failed');
-    res.status(500).json({
-      status: 'error',
-      message: 'Liveness check failed',
-      timestamp: new Date().toISOString(),
-      requestId: req.requestId
-    });
-  }
+  // Liveness only checks if the process is running - minimal response
+  res.status(200).send('OK');
 });
 
 /**
  * GET /health/readiness
- * Readiness probe for Kubernetes/Docker
+ * Readiness probe for Kubernetes/Docker - GATED endpoint
  */
 router.get('/readiness', async (req, res) => {
   try {
-    // Check if all critical services are ready
-    const _isReady = true; // Supabase is always available via HTTP API
+    // Minimal response for non-ops requests
+    if (!isOps(req)) {
+      return res.json({ status: 'ok' });
+    }
     
+    // Detailed response for ops requests
     const readinessData = {
       status: 'ready',
       timestamp: new Date().toISOString(),
       requestId: req.requestId,
+      redisReady: !!req.app.locals.redisReady,
+      rateLimitReady: !!req.app.locals.rateLimitStoreReady,
+      uptimeSec: Math.floor(process.uptime()),
       checks: {
         database: {
           status: 'ready',
@@ -125,7 +128,7 @@ router.get('/readiness', async (req, res) => {
           host: 'Supabase'
         },
         redis: {
-          status: 'decommissioned',
+          status: req.app.locals.redisReady ? 'ready' : 'unavailable',
           mode: 'stateless auth enabled'
         }
       }
@@ -148,9 +151,16 @@ router.get('/readiness', async (req, res) => {
 
 /**
  * GET /health/ops
- * Comprehensive SRE metrics and operational status
+ * Comprehensive SRE metrics and operational status - GATED endpoint
  */
 router.get('/ops', async (req, res) => {
+  // Require ops authorization
+  if (!isOps(req)) {
+    return res.status(401).json({ 
+      status: 'error', 
+      message: 'Unauthorized - ops token or IP required' 
+    });
+  }
   try {
     const startTime = Date.now();
     
@@ -270,9 +280,16 @@ router.get('/ops', async (req, res) => {
 
 /**
  * GET /health/detailed
- * Detailed health information for debugging
+ * Detailed health information for debugging - GATED endpoint
  */
 router.get('/detailed', async (req, res) => {
+  // Require ops authorization
+  if (!isOps(req)) {
+    return res.status(401).json({ 
+      status: 'error', 
+      message: 'Unauthorized - ops token or IP required' 
+    });
+  }
   try {
     const detailedHealth = {
       timestamp: new Date().toISOString(),

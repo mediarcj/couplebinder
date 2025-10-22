@@ -109,3 +109,9 @@ Why this approach?
 	•	Fast: Redis toggle is instant; env fallback is simple.
 	•	Standard: Proper 503 + Retry-After.
 	•	Customizable: Brand the page; optional Cloudflare edge layer later.
+
+## Security Notes
+
+**Default-Deny Authentication**: All `/api` and `/dashboard` routes require authentication by default. If you add a new public API endpoint under `/api`, remember to add it to the public allowlist in `server/zorvalon.js`.
+
+**Health Endpoints**: Public `/health` and `/health/liveness` return minimal responses. Detailed health information requires ops token or IP allowlist. See `docs/security.md` for details.

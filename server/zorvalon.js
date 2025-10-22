@@ -337,24 +337,7 @@ const degradeGuard = require('./middleware/degradeGuard');
 app.use(degradeGuard);
 console.log('Security: Redis degrade guard enabled (503 for sensitive paths when Redis down)');
 
-// 9. Default-Deny Auth Guard - enforce authentication for protected prefixes
-const requireAuthByDefault = require('./middleware/requireAuthByDefault');
-
-// Public paths that should remain accessible without authentication
-const publicGlobs = [
-  '/', '/login',
-  '/css/**', '/js/**', '/images/**', '/favicon.ico',
-  '/health/**',
-  '/api/auth/set-cookie', '/api/auth/clear-cookie'
-  // Add any intentional public API endpoints here
-];
-
-// Mount default-deny guard for API and dashboard prefixes
-app.use(['/api', '/dashboard'], requireAuthByDefault({
-  publicGlobs,
-  logger
-}));
-console.log('Security: Default-deny auth guard enabled for /api and /dashboard prefixes');
+// 9. Default-Deny Auth Guard will be mounted after authBridge (see below)
 
 /**
  * WHAT:
@@ -459,6 +442,25 @@ app.use(appConfig);
 // Stateless authentication bridge - reads Supabase tokens
 const authBridge = require('./middleware/authBridge');
 app.use(authBridge);
+
+// 10. Default-Deny Auth Guard - enforce authentication for protected prefixes (AFTER authBridge)
+const requireAuthByDefault = require('./middleware/requireAuthByDefault');
+
+// Public paths that should remain accessible without authentication
+const publicGlobs = [
+  '/', '/login',
+  '/css/**', '/js/**', '/images/**', '/favicon.ico',
+  '/health/**',
+  '/api/auth/set-cookie', '/api/auth/clear-cookie'
+  // Add any intentional public API endpoints here
+];
+
+// Mount default-deny guard for API and dashboard prefixes
+app.use(['/api', '/dashboard'], requireAuthByDefault({
+  publicGlobs,
+  logger
+}));
+console.log('Security: Default-deny auth guard enabled for /api and /dashboard prefixes');
 
 // Centralized authentication middleware
 const { requireAuth } = require('./middleware/requireAuth');

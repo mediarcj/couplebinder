@@ -25,7 +25,18 @@ describe('Health Endpoint Gating', () => {
     vi.clearAllMocks();
   });
 
-  describe('Public Liveness Endpoint', () => {
+  describe('Public Health Endpoints', () => {
+    it('should return minimal response for base /health endpoint', async () => {
+      const res = await request(app).get('/health');
+      expect(res.statusCode).toBe(200);
+      expect(res.body).toEqual({ ok: true });
+      // Ensure no internal details are exposed
+      expect(res.body).not.toHaveProperty('uptime');
+      expect(res.body).not.toHaveProperty('memory');
+      expect(res.body).not.toHaveProperty('nodeVersion');
+      expect(res.body).not.toHaveProperty('services');
+    });
+
     it('should return 200 OK for liveness check', async () => {
       const res = await request(app).get('/health/liveness');
       expect(res.statusCode).toBe(200);

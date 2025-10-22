@@ -86,14 +86,13 @@ async function getProfileByUserIdAdmin(userId) {
   return data || null;
 }
 
-// Allowlist - temporarily excluding account_privacy due to database constraint issue
+// Allowlist - all allowed profile fields
 const ALLOWED_FIELDS = new Set([
   'email','given_name','family_name','display_name_override','avatar_url',
   'locale','timezone','is_private','birthday','gender','language',
   'city_province','country','social_media1','social_media2','social_media3',
   'relationship_status','job','hobbies','music','fav_food',
   'profile_title','profile_description','phone'
-  // 'account_privacy' - temporarily excluded due to database constraint
 ]);
 
 function _pickAllowed(patch) {

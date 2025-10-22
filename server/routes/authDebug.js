@@ -3,15 +3,16 @@
 // Notes: Do NOT leak tokens; safe fields only.
 
 const r = require('express').Router();
+const { hasUser, getUserId, getUserEmail } = require('../utils/authz');
 
 r.get('/whoami', (req, res) => {
-  const user = req.user
-    ? { id: req.user.id, email: req.user.email, role: req.user.role }
+  const user = hasUser(req)
+    ? { id: getUserId(req), email: getUserEmail(req), role: req.user?.role }
     : null;
 
   return res.status(200).json({
     ok: true,
-    hasUser: Boolean(req.user),
+    hasUser: hasUser(req),
     user
   });
 });

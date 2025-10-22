@@ -69,7 +69,26 @@ module.exports = function validateProfileUpdate(req, res, next) {
         if (body.profile_description !== undefined) patch.profile_description = norm(body.profile_description);
         if (body.locale !== undefined) patch.locale = norm(body.locale);
         if (body.timezone !== undefined) patch.timezone = norm(body.timezone);
-        if (body.account_privacy !== undefined) patch.account_privacy = body.account_privacy ? String(body.account_privacy) : null;
+        // Handle is_private field directly (boolean)
+        if (body.is_private !== undefined) {
+            patch.is_private = Boolean(body.is_private);
+        }
+        
+        // Map account_privacy ('public' | 'private') to is_private (boolean)
+        if (body.account_privacy !== undefined) {
+            const ap = String(body.account_privacy).toLowerCase().trim();
+            if (ap === 'public') {
+                patch.is_private = false;
+            } else if (ap === 'private') {
+                patch.is_private = true;
+            } else {
+                return res.status(400).json({
+                    ok: false,
+                    error: 'validation_failed',
+                    details: ['account_privacy must be one of: public, private'],
+                });
+            }
+        }
         if (body.given_name !== undefined) patch.given_name = norm(body.given_name);
         if (body.family_name !== undefined) patch.family_name = norm(body.family_name);
         if (body.avatar_url !== undefined) patch.avatar_url = norm(body.avatar_url);
@@ -133,9 +152,6 @@ module.exports = function validateProfileUpdate(req, res, next) {
     }
 
     // Enum validations - only validate fields that are present
-    if (patch.account_privacy !== undefined && patch.account_privacy && !ALLOWED_PRIVACY.has(patch.account_privacy)) {
-      errors.push(`account_privacy must be one of: ${Array.from(ALLOWED_PRIVACY).join(', ')}`);
-    }
     if (patch.gender !== undefined && patch.gender && !ALLOWED_GENDERS.has(patch.gender)) {
       errors.push(`gender must be one of: ${Array.from(ALLOWED_GENDERS).join(', ')}`);
     }

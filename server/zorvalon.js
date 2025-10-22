@@ -255,18 +255,16 @@ consoleLogger.formatConfigSummary(config);
 
 /**
  * WHAT:
- * We create and configure a Redis client for session storage and caching.
+ * We create and configure a Redis client for rate limiting and caching.
  *
  * WHY:
- * Redis provides persistent session storage across server restarts and enables
- * horizontal scaling with multiple server instances.
+ * Redis provides rate limiting and caching capabilities for the application.
  *
  * HOW:
  * We use the improved Redis client with retry strategy and error handling.
- * If Redis is unavailable, we fall back to in-memory session storage.
+ * Redis is used for rate limiting and caching only.
  */
 let redisClient = null;
-let RedisStore = null;
 
 /**
  * WHAT:
@@ -290,11 +288,15 @@ try {
     const initRedis = async () => {
         try {
             await connectRedis();
+            app.locals.redisReady = true;
+            app.locals.rateLimitStoreReady = true;
             updateRedisStatus(true, new Date().toISOString());
             console.log('Redis connection established successfully');
         } catch (error) {
             console.error('Redis connection failed:', error.message);
             console.log('Sessions will use memory store fallback');
+            app.locals.redisReady = false;
+            app.locals.rateLimitStoreReady = false;
             updateRedisStatus(false, new Date().toISOString());
         }
     };
@@ -302,15 +304,38 @@ try {
     // Start connection process (non-blocking)
     initRedis();
     
+    // Set up Redis event handlers to update app locals
+    redisClient.on('connect', () => {
+        app.locals.redisReady = true;
+        app.locals.rateLimitStoreReady = true;
+    });
+    
+    redisClient.on('error', () => {
+        app.locals.redisReady = false;
+        app.locals.rateLimitStoreReady = false;
+    });
+    
+    redisClient.on('end', () => {
+        app.locals.redisReady = false;
+        app.locals.rateLimitStoreReady = false;
+    });
+    
 } catch (error) {
     console.error('Redis client module load failed:', error.message);
     console.log('Continuing without Redis...');
+    app.locals.redisReady = false;
+    app.locals.rateLimitStoreReady = false;
 }
 
 // 7. Maintenance Guard - instant maintenance mode toggle (after Redis client is available)
 const createMaintenanceGuard = require('./middleware/maintenanceGuard');
 app.use(createMaintenanceGuard(redisClient));
 console.log('Security: Maintenance guard enabled (Redis/env toggle)');
+
+// 8. Redis Degrade Guard - block sensitive paths when Redis is down
+const degradeGuard = require('./middleware/degradeGuard');
+app.use(degradeGuard);
+console.log('Security: Redis degrade guard enabled (503 for sensitive paths when Redis down)');
 
 /**
  * WHAT:
@@ -421,58 +446,18 @@ const { requireAuth } = require('./middleware/requireAuth');
 
 /**
  * WHAT:
- * Configure session middleware with Redis store.
+ * Session middleware is disabled - using stateless authentication only.
  * 
  * WHY:
- * Sessions provide persistent state across requests.
- * Redis-backed sessions work across multiple server instances.
+ * No routes use req.session, so sessions are not needed.
+ * Stateless Supabase JWT authentication is sufficient.
  * 
  * HOW:
- * Import connect-redis v7 (default export is the class constructor).
- * Mount session middleware with Redis client.
- * Redis connects asynchronously; session store will use it when ready.
+ * Sessions are completely disabled to reduce attack surface.
+ * All authentication is handled via Supabase JWT tokens.
  */
-const session = require('express-session');
 
-// Import connect-redis v7 (default export is the class constructor)
-try {
-  RedisStore = require('connect-redis').default;
-  console.log('connect-redis v7 loaded successfully');
-} catch (e) {
-  console.error('Failed to load connect-redis:', e.message);
-  RedisStore = null;
-}
-
-// Mount session middleware
-const sessionOptions = {
-  name: 'detechify.sid',
-  secret: process.env.SESSION_SECRET || 'fallback-secret-change-in-production',
-  resave: false,
-  saveUninitialized: false,
-  rolling: true,
-  cookie: {
-    httpOnly: true,
-    sameSite: 'lax',
-    secure: config.server.nodeEnv === 'production',
-    maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
-  }
-};
-
-if (redisClient && RedisStore) {
-  // Use Redis store (v7 API: new RedisStore({ client, ttl }))
-  sessionOptions.store = new RedisStore({
-    client: redisClient,
-    ttl: 7 * 24 * 60 * 60 // 7 days in seconds
-  });
-  app.use(session(sessionOptions));
-  console.log('Session middleware configured with Redis store');
-} else {
-  // Use memory store fallback
-  app.use(session(sessionOptions));
-  console.log('Session middleware configured with memory store (Redis unavailable)');
-}
-
-console.log('Hybrid authentication: Stateless (Supabase tokens) + Sessions (Redis/Memory)');
+console.log('Authentication: Stateless only (Supabase JWT tokens)');
 
 // Request timing middleware for formatted logging
 app.use((req, res, next) => {

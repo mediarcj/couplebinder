@@ -10,6 +10,7 @@
 
 const express = require('express');
 const { getClientIP } = require('../middleware/security');
+const { hasUser, getUserId, getUserEmail } = require('../utils/authz');
 // Import rate limiters (SECONDARY layer - Cloudflare edge is PRIMARY layer)
 // NOTE: These are imported but rate limiting is applied at the route level in zorvalon.js
 // See zorvalon.js lines 594-600 for actual rate limiter application
@@ -112,12 +113,12 @@ router.post('/logout', (req, res) => {
  */
 router.get('/status', (req, res) => {
     try {
-        if (req.user?.id) {
+        if (hasUser(req)) {
             res.json({
                 success: true,
                 authenticated: true,
-                userId: req.user.id,
-                userEmail: req.user.email
+                userId: getUserId(req),
+                userEmail: getUserEmail(req)
             });
         } else {
             res.json({

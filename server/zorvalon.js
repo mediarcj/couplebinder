@@ -337,6 +337,25 @@ const degradeGuard = require('./middleware/degradeGuard');
 app.use(degradeGuard);
 console.log('Security: Redis degrade guard enabled (503 for sensitive paths when Redis down)');
 
+// 9. Default-Deny Auth Guard - enforce authentication for protected prefixes
+const requireAuthByDefault = require('./middleware/requireAuthByDefault');
+
+// Public paths that should remain accessible without authentication
+const publicGlobs = [
+  '/', '/login',
+  '/css/**', '/js/**', '/images/**', '/favicon.ico',
+  '/health/**',
+  '/api/auth/set-cookie', '/api/auth/clear-cookie'
+  // Add any intentional public API endpoints here
+];
+
+// Mount default-deny guard for API and dashboard prefixes
+app.use(['/api', '/dashboard'], requireAuthByDefault({
+  publicGlobs,
+  logger
+}));
+console.log('Security: Default-deny auth guard enabled for /api and /dashboard prefixes');
+
 /**
  * WHAT:
  * Function to update Redis status for health checks.

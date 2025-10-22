@@ -10,6 +10,7 @@ const express = require('express');
 const router = express.Router();
 const { supabaseAdmin } = require('../utils/supabaseClient');
 const logger = require('../utils/logger');
+const { assertUser } = require('../utils/authz');
 
 /**
  * WHAT:
@@ -28,23 +29,26 @@ const logger = require('../utils/logger');
  * Ensures only users with admin role can access these endpoints
  */
 function requireAdmin(req, res, next) {
-  // Check if user is authenticated
-  if (!req.user?.id) {
+  try {
+    // Check if user is authenticated
+    const user = assertUser(req);
+    
+    // Check if user has admin role
+    if (!user.roles || !user.roles.includes('admin')) {
+      return res.status(403).json({
+        success: false,
+        message: 'Admin privileges required'
+      });
+    }
+    
+    next();
+  } catch (error) {
+    // assertUser throws 401 if not authenticated
     return res.status(401).json({
       success: false,
       message: 'Authentication required'
     });
   }
-  
-  // Check if user has admin role
-  if (!req.user.roles || !req.user.roles.includes('admin')) {
-    return res.status(403).json({
-      success: false,
-      message: 'Admin privileges required'
-    });
-  }
-  
-  next();
 }
 
 // Apply admin middleware to all routes

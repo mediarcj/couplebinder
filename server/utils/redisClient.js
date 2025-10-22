@@ -66,23 +66,34 @@ const client = redis.createClient({
 
 // Fired when Redis has successfully connected
 client.on('connect', () => {
-  logger.info('Redis connected', {
+  logger.info({
+    event: 'redis.ready',
     host: REDIS_CONFIG.host,
     port: REDIS_CONFIG.port
-  });
+  }, 'Redis connected');
 });
 
 // Fired if Redis disconnects or cannot connect
 client.on('error', (err) => {
-  logger.error('Redis connection error', {
-    message: err.message,
+  logger.error({
+    event: 'redis.error',
+    error: err.message,
     code: err.code
-  });
+  }, 'Redis connection error');
 });
 
 // Fired during a reconnect attempt
 client.on('reconnecting', () => {
-  logger.warn('Redis attempting to reconnect');
+  logger.warn({
+    event: 'redis.reconnecting'
+  }, 'Redis attempting to reconnect');
+});
+
+// Fired when Redis disconnects
+client.on('end', () => {
+  logger.error({
+    event: 'redis.disconnected'
+  }, 'Redis disconnected');
 });
 
 /**

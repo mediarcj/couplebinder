@@ -4,6 +4,8 @@
 
 const logger = require('../utils/logger');
 
+const hasOwn = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
+
 const MAX = {
   display_name_override: 100,
   phone: 32,
@@ -69,13 +71,35 @@ module.exports = function validateProfileUpdate(req, res, next) {
         if (body.profile_description !== undefined) patch.profile_description = norm(body.profile_description);
         if (body.locale !== undefined) patch.locale = norm(body.locale);
         if (body.timezone !== undefined) patch.timezone = norm(body.timezone);
-        // Handle is_private field directly (boolean)
-        if (body.is_private !== undefined) {
-            patch.is_private = Boolean(body.is_private);
+        // --- Strict parse for is_private ---
+        if (hasOwn(body, 'is_private')) {
+            const v = body.is_private;
+            if (typeof v === 'boolean') {
+                patch.is_private = v;
+            } else if (typeof v === 'string') {
+                const s = v.toLowerCase().trim();
+                if (['true','1','yes','y'].includes(s)) patch.is_private = true;
+                else if (['false','0','no','n'].includes(s)) patch.is_private = false;
+                else {
+                    return res.status(400).json({
+                        ok: false,
+                        error: 'validation_failed',
+                        details: ['is_private must be a boolean (true/false)'],
+                    });
+                }
+            } else if (typeof v === 'number') {
+                patch.is_private = (v === 1);
+            } else {
+                return res.status(400).json({
+                    ok: false,
+                    error: 'validation_failed',
+                    details: ['is_private has invalid type'],
+                });
+            }
         }
-        
-        // Map account_privacy ('public' | 'private') to is_private (boolean)
-        if (body.account_privacy !== undefined) {
+
+        // --- Backward-compat mapping: account_privacy string -> is_private boolean ---
+        if (hasOwn(body, 'account_privacy')) {
             const ap = String(body.account_privacy).toLowerCase().trim();
             if (ap === 'public') {
                 patch.is_private = false;

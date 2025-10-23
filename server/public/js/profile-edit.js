@@ -201,6 +201,20 @@ function displayField(fieldName, value) {
     
     logger.info(`Displaying field: ${fieldName}`);
     
+    // Normalize account privacy first
+    if (fieldName === 'accountPrivacy') {
+        // If API provided a boolean, convert to string
+        if (typeof value === 'boolean') {
+            value = value ? 'private' : 'public';
+        }
+        // If something unexpected, derive canonically from the profile and fallback
+        if (value !== 'public' && value !== 'private') {
+            const derived = (userProfile?.account_privacy)
+                ?? (typeof userProfile?.is_private === 'boolean' ? (userProfile.is_private ? 'private' : 'public') : 'public');
+            value = derived;
+        }
+    }
+    
     if (displayElement) {
         // Handle arrays (convert to string or show "Not provided")
         let displayValue = value;
@@ -441,8 +455,15 @@ async function saveIndividualField(fieldName) {
             saveCancelButton.remove();
         }
         
-        // Update the display value
-        displayField(fieldName, value || 'Not provided');
+        // Update the display value with canonical server data
+        if (fieldName === 'accountPrivacy') {
+            // Prefer account_privacy string from server; fallback to is_private boolean
+            const canonical = userProfile?.account_privacy
+                ?? (typeof userProfile?.is_private === 'boolean' ? (userProfile.is_private ? 'private' : 'public') : 'public');
+            displayField('accountPrivacy', canonical);
+        } else {
+            displayField(fieldName, (document.getElementById(fieldName)?.value ?? '') || 'Not provided');
+        }
         
         // Show appropriate message based on server response
         logger.info('Checking unchanged flag', { unchanged: result.unchanged });
@@ -500,7 +521,11 @@ function cancelFieldEdit(fieldName) {
     if (!displayElement || !inputElement || !editButton) return;
     
     // Revert input value to original
-    const originalValue = userProfile[fieldName] || '';
+    const originalValue =
+        fieldName === 'accountPrivacy'
+            ? (userProfile?.account_privacy
+                ?? (typeof userProfile?.is_private === 'boolean' ? (userProfile.is_private ? 'private' : 'public') : 'public'))
+            : (userProfile?.[fieldName] || '');
     inputElement.value = originalValue;
     
     // Switch back to read mode

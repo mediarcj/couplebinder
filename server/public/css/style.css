@@ -515,6 +515,26 @@ footer p {
     font-style: italic;
 }
 
+.help-tooltip {
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background-color: #6c757d;
+    color: white;
+    text-align: center;
+    font-size: 12px;
+    font-weight: bold;
+    cursor: help;
+    margin-left: 8px;
+    vertical-align: middle;
+    line-height: 16px;
+}
+
+.help-tooltip:hover {
+    background-color: #495057;
+}
+
 .cancel-btn {
     font-size: 12px !important;
     padding: 4px 8px !important;

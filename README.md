@@ -115,3 +115,7 @@ Why this approach?
 **Default-Deny Authentication**: All `/api` and `/dashboard` routes require authentication by default. If you add a new public API endpoint under `/api`, remember to add it to the public allowlist in `server/zorvalon.js`.
 
 **Health Endpoints**: Public `/health` and `/health/liveness` return minimal responses. Detailed health information requires ops token or IP allowlist. See `docs/security.md` for details.
+
+## API Documentation
+
+**Profile API**: Complete documentation for profile management endpoints, including privacy field handling, validation rules, and precedence behavior. See `docs/profile-api.md` for detailed API contracts and usage examples.

@@ -81,9 +81,18 @@
         body: JSON.stringify({ sku })
       });
       
-      const data = await res.json().catch(() => ({}));
+      const raw = await res.text();
+      let data = {};
+      try {
+        data = JSON.parse(raw);
+      } catch (e) {
+        // JSON parse failed, data stays empty object
+      }
       
-      if (!res.ok || !data?.ok || !data?.url) {
+      // Debug logging
+      console.log('checkout status', res.status, 'body', raw);
+      
+      if (!res.ok || !data?.url) {
         throw new Error(data?.error || 'Unable to start checkout');
       }
       

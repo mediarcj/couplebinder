@@ -190,7 +190,8 @@ async function createCheckoutSession({ user, priceId, quantity = 1, idempotencyK
     client_reference_id: user.id,
     metadata: { 
       user_id: user.id, 
-      product_key: productKey, 
+      product_key: productKey,
+      price_id: trimmedPriceId,
       request_id: requestId || '' 
     }
   };

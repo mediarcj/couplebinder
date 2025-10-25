@@ -75,7 +75,7 @@ function createIdempotencyMiddleware(options = {}) {
           if (!res.headersSent) {
             res.status(cachedResponse.status).json(cachedResponse.body);
           }
-          return; // critical: STOP here
+          return; // CRITICAL: Stop here to prevent calling next()
         }
       }
 

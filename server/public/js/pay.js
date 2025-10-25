@@ -56,18 +56,18 @@
   
   /**
    * WHAT:
-   * Start checkout session for specified price ID.
+   * Start checkout session for specified product SKU.
    * 
    * WHY:
    * Users need secure way to initiate payments.
    * 
    * HOW:
    * 1. Generate idempotency key
-   * 2. Send authenticated request to payment API
+   * 2. Send authenticated request to payment API with SKU
    * 3. Redirect to Stripe Checkout on success
    * 4. Show error notification on failure
    */
-  async function startCheckout(priceId) {
+  async function startCheckout(sku) {
     try {
       const idem = cryptoRandom();
       const res = await fetch('/api/pay/checkout', {
@@ -78,7 +78,7 @@
           'X-CSRF-Token': csrf(),
           'Idempotency-Key': idem
         },
-        body: JSON.stringify({ priceId })
+        body: JSON.stringify({ sku })
       });
       
       const data = await res.json();
@@ -111,11 +111,11 @@
     const expert = document.getElementById('buyResumeExpert');
     
     if (basic) {
-      basic.addEventListener('click', () => startCheckout('price_1SLfVF6w7es7IsqN8nVoYAJs'));
+      basic.addEventListener('click', () => startCheckout('resume_pro'));
     }
     
     if (expert) {
-      expert.addEventListener('click', () => startCheckout('price_1SLvKl6w7es7IsqN7QuPGaYe'));
+      expert.addEventListener('click', () => startCheckout('resume_expert'));
     }
   });
 })();

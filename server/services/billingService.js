@@ -26,16 +26,22 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
   apiVersion: '2025-09-30.clover'
 });
 
-// Only sell these price IDs (non-secret; safe to expose in code)
-// Filter out undefined values and trim whitespace to support both test and live modes
-const ALLOWED_PRICE_IDS = new Set(
-  [
-    process.env.STRIPE_PRICE_RESUME_ONE_TIME,
-    process.env.STRIPE_PRICE_RESUME_EXPERT
-  ]
-    .filter(Boolean)
-    .map((s) => s.trim())
-);
+// Price configuration: maps price IDs to their expected mode and product key
+const ALLOWED_PRICES = Object.freeze({
+  [process.env.STRIPE_PRICE_RESUME_ONE_TIME]: { 
+    type: 'one_time', 
+    mode: 'payment', 
+    productKey: 'resume_one_time' 
+  },
+  [process.env.STRIPE_PRICE_RESUME_EXPERT]: { 
+    type: 'recurring', 
+    mode: 'subscription', 
+    productKey: 'resume_expert' 
+  }
+});
+
+// Legacy Set for backward compatibility (use ALLOWED_PRICES going forward)
+const ALLOWED_PRICE_IDS = new Set(Object.keys(ALLOWED_PRICES).filter(Boolean));
 
 /**
  * WHAT:
@@ -45,12 +51,10 @@ const ALLOWED_PRICE_IDS = new Set(
  * Need consistent product identification across systems.
  * 
  * HOW:
- * Use environment variables for price IDs, return standardized keys.
+ * Use ALLOWED_PRICES configuration to get product key.
  */
 function productKeyForPrice(priceId) {
-  if (priceId === process.env.STRIPE_PRICE_RESUME_ONE_TIME) return 'resume_one_time';
-  if (priceId === process.env.STRIPE_PRICE_RESUME_EXPERT) return 'resume_expert';
-  return 'unknown';
+  return ALLOWED_PRICES[priceId]?.productKey || 'unknown';
 }
 
 /**
@@ -128,27 +132,57 @@ async function getOrCreateStripeCustomer(userId, email) {
 async function createCheckoutSession({ user, priceId, quantity = 1, idempotencyKey, requestId }) {
   const trimmedPriceId = (priceId || '').trim();
   
-  if (!ALLOWED_PRICE_IDS.has(trimmedPriceId)) {
+  // Validate price against allowlist
+  const priceConfig = ALLOWED_PRICES[trimmedPriceId];
+  if (!priceConfig) {
+    logger.error({ 
+      event: 'checkout.session.error', 
+      requestId, 
+      priceId: trimmedPriceId 
+    }, 'Price not allowed');
     const err = new Error('Price not allowed');
     err.status = 400;
     throw err;
   }
   
-  const isLive = process.env.STRIPE_SECRET_KEY?.startsWith('sk_live_');
+  // Get or create customer for both test and live modes
+  const customerId = await getOrCreateStripeCustomer(user.id, user.email);
   
-  // Only create/fetch customer in LIVE mode to avoid DB constraint issues in test
-  const customerId = isLive 
-    ? await getOrCreateStripeCustomer(user.id, user.email)
-    : undefined;
+  const productKey = priceConfig.productKey;
   
-  const productKey = productKeyForPrice(trimmedPriceId);
+  // Determine mode based on price configuration
+  let effectiveMode = priceConfig.mode;
+  
+  // Optional: Cross-check with Stripe for additional validation
+  try {
+    const price = await stripe.prices.retrieve(trimmedPriceId);
+    const stripeSaysRecurring = !!price?.recurring;
+    const stripeMode = stripeSaysRecurring ? 'subscription' : 'payment';
+    
+    if (stripeMode !== effectiveMode) {
+      logger.warn({ 
+        event: 'price.mode.mismatch', 
+        requestId, 
+        priceId: trimmedPriceId, 
+        expected: effectiveMode, 
+        stripeMode 
+      }, 'Mode mismatch; using Stripe mode');
+      effectiveMode = stripeMode; // Use Stripe's mode for resilience
+    }
+  } catch (err) {
+    logger.warn({ 
+      event: 'price.lookup.failed', 
+      requestId, 
+      priceId: trimmedPriceId, 
+      error: err.message 
+    }, 'Could not verify price; proceeding with allowlisted mode');
+  }
 
-  // Build session config - only include customer if we have one
+  // Build session config - conditional fields based on mode
   const sessionConfig = {
-    mode: 'payment',
-    ...(customerId ? { customer: customerId } : {}), // Only set customer in live mode
+    mode: effectiveMode,
+    customer: customerId,
     line_items: [{ price: trimmedPriceId, quantity }],
-    payment_intent_data: { setup_future_usage: 'off_session' },
     allow_promotion_codes: true,
     billing_address_collection: 'auto',
     success_url: `${process.env.PUBLIC_ORIGIN}/dashboard/billing?paid=1&session_id={CHECKOUT_SESSION_ID}`,
@@ -160,11 +194,25 @@ async function createCheckoutSession({ user, priceId, quantity = 1, idempotencyK
       request_id: requestId || '' 
     }
   };
+  
+  // Only add payment_intent_data for payment mode (not for subscriptions)
+  if (effectiveMode === 'payment') {
+    sessionConfig.payment_intent_data = { setup_future_usage: 'off_session' };
+  }
 
   const session = await stripe.checkout.sessions.create(
     sessionConfig,
     idempotencyKey ? { idempotencyKey } : undefined
   );
+
+  logger.info({
+    event: 'checkout.session.created',
+    requestId,
+    sessionId: session.id,
+    mode: effectiveMode,
+    productKey,
+    userId: user.id
+  }, `Checkout session created (mode: ${effectiveMode})`);
 
   return session;
 }
@@ -211,8 +259,57 @@ async function upsertPaymentFromSession(session, statusOverride) {
   return true;
 }
 
+/**
+ * WHAT:
+ * Update payment status when refund is processed.
+ * 
+ * WHY:
+ * Need to track refunds for customer support and accounting.
+ * Full refunds revoke product access, partial refunds don't.
+ * 
+ * HOW:
+ * 1. Find payment by payment_intent_id
+ * 2. Update status to 'refunded' or 'partially_refunded'
+ * 3. Mark full refunds for access revocation
+ */
+async function upsertRefundStatus(charge, isFullRefund) {
+  const paymentIntentId = typeof charge.payment_intent === 'string' 
+    ? charge.payment_intent 
+    : charge.payment_intent?.id;
+
+  if (!paymentIntentId) {
+    logger.warn({ 
+      event: 'refund.no_payment_intent',
+      chargeId: charge.id 
+    }, 'Refund charge missing payment_intent_id');
+    return;
+  }
+
+  const status = isFullRefund ? 'refunded' : 'partially_refunded';
+  
+  const { error } = await supabaseAdmin
+    .from('payments')
+    .update({ 
+      status,
+      updated_at: new Date().toISOString() 
+    })
+    .eq('stripe_payment_intent_id', paymentIntentId);
+  
+  if (error) {
+    logger.error({ 
+      event: 'refund.update_failed',
+      paymentIntentId,
+      error: error.message 
+    });
+    throw error;
+  }
+
+  return true;
+}
+
 module.exports = {
   createCheckoutSession,
   upsertPaymentFromSession,
+  upsertRefundStatus,
   productKeyForPrice
 };

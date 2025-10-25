@@ -68,7 +68,8 @@ router.post('/checkout', idem, async (req, res) => {
       sessionId: session.id 
     });
     
-    res.status(201).json({ 
+    res.set('Cache-Control', 'no-store');
+    return res.status(201).json({ 
       ok: true, 
       url: session.url 
     });
@@ -79,7 +80,7 @@ router.post('/checkout', idem, async (req, res) => {
       requestId: req.requestId 
     });
     
-    res.status(e.status || 500).json({ 
+    return res.status(e.status || 500).json({ 
       ok: false, 
       error: 'Unable to start checkout' 
     });

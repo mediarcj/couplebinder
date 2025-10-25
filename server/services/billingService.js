@@ -90,7 +90,18 @@ async function getOrCreateStripeCustomer(userId, email) {
   });
 
   // Upsert with environment-specific column
-  const upsert = { user_id: userId, email: email || null, [col]: customer.id };
+  // Also set stripe_customer_id for backward compatibility if not already set
+  const upsert = { 
+    user_id: userId, 
+    email: email || null, 
+    [col]: customer.id 
+  };
+  
+  // If no stripe_customer_id exists, set it from the newly created customer
+  if (!row?.stripe_customer_id) {
+    upsert.stripe_customer_id = customer.id;
+  }
+  
   const { error: insErr } = await supabaseAdmin
     .from('billing_customers')
     .upsert(upsert, { onConflict: 'user_id' });

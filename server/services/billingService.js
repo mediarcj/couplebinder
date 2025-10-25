@@ -81,8 +81,7 @@ async function getOrCreateStripeCustomer(userId, email) {
     .from('billing_customers')
     .insert({ 
       user_id: userId, 
-      stripe_customer_id: customer.id, 
-      email: email || null 
+      stripe_customer_id: customer.id
     });
   
   if (insErr) throw insErr;

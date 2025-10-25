@@ -27,12 +27,14 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
 });
 
 // Only sell these price IDs (non-secret; safe to expose in code)
-// Filter out undefined values to support both test and live modes
+// Filter out undefined values and trim whitespace to support both test and live modes
 const ALLOWED_PRICE_IDS = new Set(
   [
     process.env.STRIPE_PRICE_RESUME_ONE_TIME,
     process.env.STRIPE_PRICE_RESUME_EXPERT
-  ].filter(Boolean)
+  ]
+    .filter(Boolean)
+    .map((s) => s.trim())
 );
 
 /**
@@ -108,27 +110,28 @@ async function getOrCreateStripeCustomer(userId, email) {
  */
 async function createCheckoutSession({ user, priceId, quantity = 1, idempotencyKey, requestId }) {
   // Debug logging to identify price validation issues
+  const trimmedPriceId = (priceId || '').trim();
   logger.info({
     event: 'price.guard.check',
-    got: priceId,
+    got: trimmedPriceId,
     allowed: [...ALLOWED_PRICE_IDS],
-    hasPrice: ALLOWED_PRICE_IDS.has(priceId),
+    hasPrice: ALLOWED_PRICE_IDS.has(trimmedPriceId),
     userId: user.id
   }, 'Price guard validation check');
   
-  if (!ALLOWED_PRICE_IDS.has(priceId)) {
+  if (!ALLOWED_PRICE_IDS.has(trimmedPriceId)) {
     const err = new Error('Price not allowed');
     err.status = 400;
     throw err;
   }
   
   const customerId = await getOrCreateStripeCustomer(user.id, user.email);
-  const productKey = productKeyForPrice(priceId);
+  const productKey = productKeyForPrice(trimmedPriceId);
 
   const session = await stripe.checkout.sessions.create({
     mode: 'payment',
     customer: customerId,
-    line_items: [{ price: priceId, quantity }],
+    line_items: [{ price: trimmedPriceId, quantity }],
     payment_intent_data: { setup_future_usage: 'off_session' }, // lets Stripe safely store PM
     allow_promotion_codes: true,
     billing_address_collection: 'auto',

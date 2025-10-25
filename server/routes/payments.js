@@ -27,6 +27,12 @@ const logger = require('../utils/logger');
 
 const idem = createIdempotencyMiddleware({ ttl: 3600, headerName: 'Idempotency-Key' });
 
+// Server-side SKU to price ID mapping (backend is source of truth)
+const PRICES = {
+  resume_pro: process.env.STRIPE_PRICE_RESUME_ONE_TIME?.trim(),
+  resume_expert: process.env.STRIPE_PRICE_RESUME_EXPERT?.trim()
+};
+
 /**
  * WHAT:
  * Create checkout session for payment processing.
@@ -45,12 +51,14 @@ const idem = createIdempotencyMiddleware({ ttl: 3600, headerName: 'Idempotency-K
 router.post('/checkout', idem, async (req, res) => {
   try {
     const user = assertUser(req);
-    const { priceId, quantity } = req.body || {};
+    const { sku = 'resume_pro', quantity } = req.body || {};
     
+    // Map SKU to price ID (backend is source of truth)
+    const priceId = PRICES[sku];
     if (!priceId) {
       return res.status(400).json({ 
         ok: false, 
-        error: 'Missing priceId' 
+        error: 'Unknown SKU' 
       });
     }
 

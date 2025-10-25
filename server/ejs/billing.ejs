@@ -100,11 +100,35 @@
   <script src="/js/modalManager.js" nonce="<%= page.nonce %>"></script>
   <script src="/js/pay.js?v=<%= page.assetVersion || Date.now() %>" nonce="<%= page.nonce %>"></script>
   <script nonce="<%= page.nonce %>">
-    // Tiny toast for return from Checkout
-    (function(){
+    // Tiny toast for return from Checkout with receipt link
+    (async function(){
       const qs = new URLSearchParams(location.search);
+      const sessionId = qs.get('session_id');
+      
       if (qs.get('paid') === '1') {
-        window.modalManager?.showNotification('Payment received','Thanks! Your purchase has been recorded.');
+        // Try to fetch receipt URL
+        let message = 'Thanks! Your purchase has been recorded.';
+        let receiptUrl = null;
+        
+        if (sessionId) {
+          try {
+            const res = await fetch(`/api/pay/receipt?session_id=${encodeURIComponent(sessionId)}`, { 
+              credentials: 'include' 
+            });
+            
+            if (res.ok) {
+              const data = await res.json().catch(() => ({}));
+              if (data?.ok && data.receipt_url) {
+                receiptUrl = data.receipt_url;
+                message = 'Thanks! <a href="' + receiptUrl + '" target="_blank" rel="noopener">View receipt</a>';
+              }
+            }
+          } catch (e) {
+            // Silent fail - still show success message
+          }
+        }
+        
+        window.modalManager?.showNotification('Payment received', message);
         history.replaceState(null,'',location.pathname); // clean URL
       } else if (qs.get('canceled') === '1') {
         window.modalManager?.showNotification('Payment canceled','No charge was made.');

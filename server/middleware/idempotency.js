@@ -72,7 +72,10 @@ function createIdempotencyMiddleware(options = {}) {
           res.set('X-Idempotency-Key', idempotencyKey);
           res.set('X-Idempotency-Status', 'cached');
           
-          return res.status(cachedResponse.status).json(cachedResponse.body);
+          if (!res.headersSent) {
+            res.status(cachedResponse.status).json(cachedResponse.body);
+          }
+          return; // critical: STOP here
         }
       }
 

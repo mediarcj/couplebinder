@@ -20,8 +20,9 @@
 
 const express = require('express');
 const Stripe = require('stripe');
+const crypto = require('crypto');
 const logger = require('../utils/logger');
-const { upsertPaymentFromSession } = require('../services/billingService');
+const { upsertPaymentFromSession, upsertRefundStatus } = require('../services/billingService');
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, { 
   apiVersion: '2025-09-30.clover' 
@@ -46,6 +47,7 @@ function mountStripeWebhook(app) {
   app.post('/webhooks/stripe', express.raw({ type: 'application/json' }), async (req, res) => {
     const sig = req.headers['stripe-signature'];
     const secret = process.env.STRIPE_WEBHOOK_SECRET;
+    const requestId = req.id || crypto.randomUUID();
     let event;
 
     try {
@@ -53,6 +55,7 @@ function mountStripeWebhook(app) {
     } catch (err) {
       logger.warn({ 
         event: 'stripe.webhook.bad_signature', 
+        requestId,
         err: err.message 
       });
       return res.sendStatus(400);
@@ -65,9 +68,11 @@ function mountStripeWebhook(app) {
           await upsertPaymentFromSession(session, 'paid');
           logger.info({
             event: 'stripe.checkout.session.completed',
+            requestId,
             mode: session.mode,
             sessionId: session.id,
             userId: session.metadata?.user_id,
+            productKey: session.metadata?.product_key,
             customer: session.customer,
             email: session.customer_details?.email,
             amount_total: session.amount_total,
@@ -75,21 +80,40 @@ function mountStripeWebhook(app) {
           }, 'Checkout session completed - payment received');
           break;
         }
-        case 'refund.succeeded':
-        case 'charge.refunded':
-        case 'refund.updated':
-        case 'charge.refund.updated': {
-          // TODO: optional – update payment row to refunded/partially_refunded
+        case 'charge.refunded': {
+          const charge = event.data.object;
+          const refundAmount = charge.amount_refunded;
+          const isFullRefund = refundAmount === charge.amount;
+          
+          // Update payment status in database
+          await upsertRefundStatus(charge, isFullRefund);
+          
           logger.info({
-            event: 'stripe.webhook.refund_processed',
-            type: event.type
-          }, 'Refund processed via webhook');
+            event: 'stripe.charge.refunded',
+            requestId,
+            chargeId: charge.id,
+            paymentIntentId: charge.payment_intent,
+            refundAmount,
+            isFullRefund
+          }, `Charge refunded - ${isFullRefund ? 'full' : 'partial'} refund`);
+          break;
+        }
+        case 'refund.updated': {
+          const refund = event.data.object;
+          logger.info({
+            event: 'stripe.refund.updated',
+            requestId,
+            refundId: refund.id,
+            status: refund.status,
+            amount: refund.amount
+          }, 'Refund status updated');
           break;
         }
         default:
           // ignore unknown events
           logger.debug({
             event: 'stripe.webhook.unknown_event',
+            requestId,
             type: event.type
           }, 'Unknown webhook event type');
       }
@@ -97,6 +121,7 @@ function mountStripeWebhook(app) {
     } catch (err) {
       logger.error({ 
         event: 'stripe.webhook.handler_error', 
+        requestId,
         type: event.type, 
         error: err.message 
       });

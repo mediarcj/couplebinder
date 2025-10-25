@@ -22,7 +22,7 @@ const express = require('express');
 const Stripe = require('stripe');
 const crypto = require('crypto');
 const logger = require('../utils/logger');
-const { upsertPaymentFromSession, upsertRefundStatus } = require('../services/billingService');
+const { supabaseAdmin } = require('../utils/supabaseClient');
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, { 
   apiVersion: '2025-09-30.clover' 
@@ -64,20 +64,80 @@ function mountStripeWebhook(app) {
     try {
       switch (event.type) {
         case 'checkout.session.completed': {
-          const session = event.data.object;
-          await upsertPaymentFromSession(session, 'paid');
+          const sessionObj = event.data.object; // minimal session from webhook
+          
+          // Retrieve full session with line items (webhooks don't include line_items by default)
+          const fullSession = await stripe.checkout.sessions.retrieve(sessionObj.id, {
+            expand: [
+              'line_items.data.price.product',
+              'payment_intent.latest_charge'
+            ]
+          });
+
+          const userId = fullSession?.metadata?.user_id || fullSession?.client_reference_id || null;
+          const amount = fullSession?.amount_total ?? null;
+          const currency = fullSession?.currency ?? null;
+
+          // Extract price_id from first line item
+          const li = fullSession?.line_items?.data?.[0] || null;
+          const priceId = li?.price?.id || null;
+
+          // Map price_id to product_key from env allowlist
+          const PRICE_TO_KEY = {
+            [process.env.STRIPE_PRICE_RESUME_ONE_TIME]: 'resume_one_time',
+            [process.env.STRIPE_PRICE_RESUME_EXPERT]: 'resume_expert'
+          };
+          const productKey = priceId ? (PRICE_TO_KEY[priceId] || null) : null;
+
+          // Defensive: skip if required fields missing
+          if (!userId || !priceId || !amount || !currency) {
+            logger.error({ 
+              event: 'webhook.persist.missing_fields', 
+              requestId,
+              userId, 
+              priceId, 
+              amount, 
+              currency, 
+              sessionId: fullSession?.id 
+            }, 'Missing required fields for payment persistence');
+            return res.status(200).send('[ok] skipped incomplete session');
+          }
+
+          // Persist payment with non-null price_id
+          const { error } = await supabaseAdmin
+            .from('payments')
+            .insert({
+              user_id: userId,
+              price_id: priceId,
+              product_key: productKey,
+              amount: amount,
+              currency: currency,
+              status: 'succeeded',
+              stripe_checkout_session_id: fullSession.id,
+              stripe_payment_intent_id: typeof fullSession.payment_intent === 'string' 
+                ? fullSession.payment_intent 
+                : fullSession.payment_intent?.id || null,
+              metadata: fullSession.metadata || {}
+            });
+
+          if (error) {
+            logger.error({
+              event: 'webhook.persist.failed',
+              requestId,
+              error: error.message,
+              sessionId: fullSession.id
+            }, 'Failed to persist payment record');
+            throw error;
+          }
+
           logger.info({
-            event: 'stripe.checkout.session.completed',
+            event: 'webhook.payment.recorded',
             requestId,
-            mode: session.mode,
-            sessionId: session.id,
-            userId: session.metadata?.user_id,
-            productKey: session.metadata?.product_key,
-            customer: session.customer,
-            email: session.customer_details?.email,
-            amount_total: session.amount_total,
-            currency: session.currency
-          }, 'Checkout session completed - payment received');
+            userId,
+            priceId,
+            productKey,
+            sessionId: fullSession.id
+          }, 'Payment recorded successfully');
           break;
         }
         case 'charge.refunded': {
@@ -85,14 +145,44 @@ function mountStripeWebhook(app) {
           const refundAmount = charge.amount_refunded;
           const isFullRefund = refundAmount === charge.amount;
           
-          // Update payment status in database
-          await upsertRefundStatus(charge, isFullRefund);
+          const paymentIntentId = typeof charge.payment_intent === 'string' 
+            ? charge.payment_intent 
+            : charge.payment_intent?.id;
+
+          if (!paymentIntentId) {
+            logger.warn({ 
+              event: 'refund.no_payment_intent',
+              requestId,
+              chargeId: charge.id 
+            }, 'Refund charge missing payment_intent_id');
+            break;
+          }
+
+          const status = isFullRefund ? 'refunded' : 'partially_refunded';
+          
+          const { error } = await supabaseAdmin
+            .from('payments')
+            .update({ 
+              status,
+              updated_at: new Date().toISOString() 
+            })
+            .eq('stripe_payment_intent_id', paymentIntentId);
+          
+          if (error) {
+            logger.error({ 
+              event: 'refund.update_failed',
+              requestId,
+              paymentIntentId,
+              error: error.message 
+            });
+            throw error;
+          }
           
           logger.info({
             event: 'stripe.charge.refunded',
             requestId,
             chargeId: charge.id,
-            paymentIntentId: charge.payment_intent,
+            paymentIntentId,
             refundAmount,
             isFullRefund
           }, `Charge refunded - ${isFullRefund ? 'full' : 'partial'} refund`);

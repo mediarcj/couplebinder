@@ -79,22 +79,23 @@ function createIdempotencyMiddleware(options = {}) {
         }
       }
 
-      // Store original res.json to intercept response
+      // Capture the outgoing response for caching
       const originalJson = res.json.bind(res);
-      const originalStatus = res.status.bind(res);
-      
-      let responseBody = null;
-      let responseStatus = null;
+      const originalSend = res.send.bind(res);
       
       res.json = function(body) {
-        responseBody = body;
+        res.locals.__toCache = { type: 'json', body };
         return originalJson(body);
       };
       
-      res.status = function(code) {
-        responseStatus = code;
-        return originalStatus(code);
+      res.send = function(body) {
+        if (typeof body !== 'undefined') res.locals.__toCache = { type: 'send', body };
+        return originalSend(body);
       };
+
+      // Set idempotency headers BEFORE processing
+      res.set('X-Idempotency-Key', idempotencyKey);
+      res.set('X-Idempotency-Status', 'processed');
 
       // Process request
       await new Promise((resolve, reject) => {
@@ -103,30 +104,38 @@ function createIdempotencyMiddleware(options = {}) {
         next();
       });
 
-      // Cache successful responses (2xx status codes)
-      if (responseStatus && responseStatus >= 200 && responseStatus < 300 && responseBody) {
-        const responseToCache = {
-          status: responseStatus,
-          body: responseBody,
-          timestamp: new Date().toISOString()
-        };
+      // After response is finished, write to cache (no headers are set here)
+      res.once('finish', async () => {
+        try {
+          const payload = res.locals.__toCache;
+          if (!payload) return;
+          
+          const record = {
+            status: res.statusCode,
+            headers: res.getHeaders(),
+            body: payload.body,
+            timestamp: new Date().toISOString()
+          };
 
-        if (redisClient) {
-          await redisClient.setex(cacheKey, ttl, JSON.stringify(responseToCache));
+          if (redisClient) {
+            await redisClient.setex(cacheKey, ttl, JSON.stringify(record));
+          }
+
+          logger.info({
+            event: 'idempotency.cache_stored',
+            key: idempotencyKey,
+            method: req.method,
+            path: req.path,
+            status: res.statusCode
+          }, 'Idempotency response cached');
+        } catch (e) {
+          logger.error({
+            event: 'idempotency.error',
+            key: idempotencyKey,
+            error: String(e)
+          }, 'Idempotency cache error');
         }
-
-        logger.info({
-          event: 'idempotency.cache_stored',
-          key: idempotencyKey,
-          method: req.method,
-          path: req.path,
-          status: responseStatus
-        }, 'Idempotency response cached');
-      }
-
-      // Set idempotency headers
-      res.set('X-Idempotency-Key', idempotencyKey);
-      res.set('X-Idempotency-Status', 'processed');
+      });
 
     } catch (error) {
       logger.error({

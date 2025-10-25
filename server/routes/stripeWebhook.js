@@ -65,7 +65,8 @@ function mountStripeWebhook(app) {
           logger.info({
             event: 'stripe.webhook.payment_completed',
             sessionId: session.id,
-            userId: session.metadata?.user_id
+            userId: session.metadata?.user_id,
+            customerId: session.customer // Log customer ID for tracking (test/live)
           }, 'Payment completed via webhook');
           break;
         }

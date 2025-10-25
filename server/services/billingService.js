@@ -126,12 +126,21 @@ async function createCheckoutSession({ user, priceId, quantity = 1, idempotencyK
     throw err;
   }
   
-  const customerId = await getOrCreateStripeCustomer(user.id, user.email);
+  // Detect if we're in live or test mode
+  const isLive = process.env.STRIPE_SECRET_KEY?.startsWith('sk_live_');
+  
+  // In test mode, let Checkout create the customer automatically to avoid test/live mismatch
+  // In live mode, use our managed customer for better tracking and future payments
+  let customerId = null;
+  if (isLive) {
+    customerId = await getOrCreateStripeCustomer(user.id, user.email);
+  }
+  
   const productKey = productKeyForPrice(trimmedPriceId);
 
   const session = await stripe.checkout.sessions.create({
     mode: 'payment',
-    customer: customerId,
+    ...(customerId ? { customer: customerId } : {}), // only pass customer in live mode
     line_items: [{ price: trimmedPriceId, quantity }],
     payment_intent_data: { setup_future_usage: 'off_session' }, // lets Stripe safely store PM
     allow_promotion_codes: true,

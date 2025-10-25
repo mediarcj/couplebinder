@@ -20,10 +20,15 @@
 
 const express = require('express');
 const router = express.Router();
+const Stripe = require('stripe');
 const { createCheckoutSession } = require('../services/billingService');
 const { createIdempotencyMiddleware } = require('../middleware/idempotency');
 const { assertUser } = require('../utils/authz');
 const logger = require('../utils/logger');
+
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
+  apiVersion: '2025-09-30.clover'
+});
 
 const idem = createIdempotencyMiddleware({ ttl: 3600, headerName: 'Idempotency-Key' });
 
@@ -100,6 +105,76 @@ router.post('/checkout', idem, async (req, res) => {
       ok: false, 
       error: 'Unable to start checkout' 
     });
+  }
+});
+
+/**
+ * WHAT:
+ * Fetch receipt URL from Stripe for a checkout session.
+ * 
+ * WHY:
+ * Users need access to payment receipts after successful checkout.
+ * Provides Stripe's hosted receipt with full payment details.
+ * 
+ * HOW:
+ * 1. Validate session_id parameter
+ * 2. Retrieve session from Stripe with payment details
+ * 3. Verify session ownership matches current user
+ * 4. Extract receipt URL from charge data
+ * 5. Return receipt URL for user access
+ */
+router.get('/receipt', async (req, res) => {
+  try {
+    const sessionId = String(req.query.session_id || '').trim();
+    
+    if (!sessionId) {
+      return res.status(400).json({ ok: false, error: 'missing_session_id' });
+    }
+
+    const user = assertUser(req);
+
+    const session = await stripe.checkout.sessions.retrieve(sessionId, {
+      expand: ['payment_intent.charges']
+    });
+
+    // Verify ownership using metadata or client_reference_id
+    const ownerId = session?.metadata?.user_id || session?.client_reference_id || null;
+    
+    if (!ownerId || ownerId !== user.id) {
+      logger.warn({ 
+        event: 'receipt.ownership_mismatch', 
+        sessionId, 
+        userId: user.id, 
+        ownerId 
+      }, 'Receipt fetch denied');
+      
+      // Return 404 to avoid information leak
+      return res.status(404).json({ ok: false, error: 'not_found' });
+    }
+
+    const charge = session?.payment_intent?.charges?.data?.[0] || null;
+    const receiptUrl = charge?.receipt_url || null;
+
+    if (!receiptUrl) {
+      // No receipt URL yet (rare timing issue)
+      return res.status(204).end();
+    }
+
+    logger.info({ 
+      event: 'receipt.fetched', 
+      sessionId, 
+      userId: user.id 
+    }, 'Receipt URL returned');
+    
+    return res.json({ ok: true, receipt_url: receiptUrl });
+  } catch (err) {
+    logger.error({ 
+      event: 'receipt.error', 
+      error: err.message,
+      requestId: req.requestId 
+    }, 'Failed to fetch receipt');
+    
+    return res.status(500).json({ ok: false, error: 'internal_error' });
   }
 });
 

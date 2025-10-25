@@ -76,10 +76,12 @@ router.post('/checkout', idem, async (req, res) => {
       requestId: req.requestId
     });
 
+    const isLive = process.env.STRIPE_SECRET_KEY?.startsWith('sk_live_');
     logger.info({ 
-      event: 'checkout.session.created', 
-      userId: user.id, 
-      sessionId: session.id 
+      event: 'checkout.created',
+      sessionId: session.id,
+      mode: isLive ? 'live' : 'test',
+      userId: user.id
     });
     
     res.set('Cache-Control', 'no-store');

@@ -81,12 +81,14 @@
         body: JSON.stringify({ sku })
       });
       
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
+      
       if (!res.ok || !data?.ok || !data?.url) {
-        throw new Error(data?.error || 'Checkout failed');
+        throw new Error(data?.error || 'Unable to start checkout');
       }
       
-      window.location.assign(data.url);
+      // Navigate to Stripe Checkout
+      window.location = data.url;
     } catch (e) {
       console.error('Checkout error', e);
       window.modalManager?.showNotification(

@@ -107,6 +107,15 @@ async function getOrCreateStripeCustomer(userId, email) {
  * 4. Return session URL for redirect
  */
 async function createCheckoutSession({ user, priceId, quantity = 1, idempotencyKey, requestId }) {
+  // Debug logging to identify price validation issues
+  logger.info({
+    event: 'price.guard.check',
+    got: priceId,
+    allowed: [...ALLOWED_PRICE_IDS],
+    hasPrice: ALLOWED_PRICE_IDS.has(priceId),
+    userId: user.id
+  }, 'Price guard validation check');
+  
   if (!ALLOWED_PRICE_IDS.has(priceId)) {
     const err = new Error('Price not allowed');
     err.status = 400;

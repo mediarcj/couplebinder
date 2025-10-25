@@ -109,8 +109,9 @@ async function getOrCreateStripeCustomer(userId, email) {
  * 4. Return session URL for redirect
  */
 async function createCheckoutSession({ user, priceId, quantity = 1, idempotencyKey, requestId }) {
-  // Debug logging to identify price validation issues
   const trimmedPriceId = (priceId || '').trim();
+  
+  // Debug logging to identify price validation issues
   logger.info({
     event: 'price.guard.check',
     got: trimmedPriceId,

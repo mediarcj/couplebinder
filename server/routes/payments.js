@@ -27,7 +27,7 @@ const logger = require('../utils/logger');
 
 const idem = createIdempotencyMiddleware({ ttl: 3600, headerName: 'Idempotency-Key' });
 
-// Server-side SKU to price ID mapping (backend is source of truth)
+// Server-side SKU to price ID mapping (never trust client-supplied price IDs)
 const PRICES = {
   resume_pro: process.env.STRIPE_PRICE_RESUME_ONE_TIME?.trim(),
   resume_expert: process.env.STRIPE_PRICE_RESUME_EXPERT?.trim()
@@ -51,14 +51,20 @@ const PRICES = {
 router.post('/checkout', idem, async (req, res) => {
   try {
     const user = assertUser(req);
+    // Accept SKU from client, map to server-side price ID (never trust client price IDs)
     const { sku = 'resume_pro', quantity } = req.body || {};
     
-    // Map SKU to price ID (backend is source of truth)
     const priceId = PRICES[sku];
     if (!priceId) {
+      logger.warn({
+        event: 'checkout.sku.invalid',
+        sku,
+        allowed: Object.keys(PRICES),
+        userId: user.id
+      }, 'Invalid SKU provided');
       return res.status(400).json({ 
         ok: false, 
-        error: 'Unknown SKU' 
+        error: 'Unknown product SKU' 
       });
     }
 

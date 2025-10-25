@@ -27,10 +27,13 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
 });
 
 // Only sell these price IDs (non-secret; safe to expose in code)
-const ALLOWED_PRICE_IDS = new Set([
-  process.env.STRIPE_PRICE_RESUME_ONE_TIME,
-  process.env.STRIPE_PRICE_RESUME_EXPERT
-]);
+// Filter out undefined values to support both test and live modes
+const ALLOWED_PRICE_IDS = new Set(
+  [
+    process.env.STRIPE_PRICE_RESUME_ONE_TIME,
+    process.env.STRIPE_PRICE_RESUME_EXPERT
+  ].filter(Boolean)
+);
 
 /**
  * WHAT:

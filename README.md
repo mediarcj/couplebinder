@@ -73,6 +73,46 @@ Notes
 		Security posture includes CSP nonces, CSRF (cookie+header for cookie flows), and strict request logging.
 		No Docker required.
 
+## Stripe Billing (Dev vs Prod)
+
+### Webhook Configuration
+
+**Webhook Path:** `/webhooks/stripe` (bypasses auth, signature-verified)
+
+**Local Development:**
+- Use Stripe CLI forwarding: `stripe listen --forward-to localhost:3000/webhooks/stripe`
+- Test events are logged to console with request IDs
+
+**Production:**
+- Configure in Stripe Dashboard → Webhooks → Add endpoint
+- URL: `https://yourdomain.com/webhooks/stripe`
+- Required events: `checkout.session.completed`, `charge.refunded`
+
+### Go-Live Checklist
+
+1. **Swap to live keys:**
+   - Update `STRIPE_SECRET_KEY` to `sk_live_...`
+   - Update `STRIPE_WEBHOOK_SECRET` to live webhook secret
+   - Update `STRIPE_PRICE_RESUME_ONE_TIME` to live price ID
+   - Update `STRIPE_PRICE_RESUME_EXPERT` to live price ID
+
+2. **Verify webhook endpoint:**
+   - Test webhook receipt in Stripe Dashboard → Webhooks
+   - Check logs for successful `checkout.session.completed` events
+
+3. **Run database migrations:**
+   ```bash
+   # Apply Stripe tables and indexes
+   psql -d your_database -f db/migrations/20251022_stripe_billing_tables.sql
+   psql -d your_database -f db/migrations/20251025_stripe_customer_env_split.sql
+   psql -d your_database -f db/manual/stripe_indexes_and_policies.sql
+   ```
+
+4. **Test full payment flow:**
+   - Complete test purchase with live card
+   - Verify payment record created in database
+   - Confirm webhook received and processed
+
 ## Maintenance Mode (simple & secure)
 
 What it does: Puts the site in maintenance. Everyone (except your allowlisted ops IPs and health checks) sees a friendly page with 503 Service Unavailable and Retry-After, so clients know to try again later.

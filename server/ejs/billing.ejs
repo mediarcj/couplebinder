@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta name="csrf-token" content="<%= ui.csrfToken || '' %>">
+  <meta id="app-config" data-supabase-url="<%= APP_CONFIG.SUPABASE_URL %>" data-supabase-anon-key="<%= APP_CONFIG.SUPABASE_ANON_KEY %>">
+  <title>Billing – <%= app_info?.name || 'Detechify' %></title>
+  <link rel="stylesheet" href="/css/style.css?v=<%= page.assetVersion || Date.now() %>">
+</head>
+<body>
+  <header>
+    <nav>
+      <div class="container">
+        <h1><%= app_info?.name || 'Detechify' %></h1>
+        <div class="nav-content">
+          <ul>
+            <li><a href="/dashboard">Dashboard</a></li>
+            <li><a href="/dashboard/billing" class="active">Billing</a></li>
+          </ul>
+          <div class="auth-section">
+            <span class="user-info">Hi, <%= user.display_name %></span>
+            <a href="/dashboard/profile-edit" class="btn btn-secondary">Edit Profile</a>
+          </div>
+        </div>
+      </div>
+    </nav>
+  </header>
+
+  <main>
+    <div class="container">
+      <div class="hero">
+        <h1>Billing</h1>
+        <p class="subtitle">Secure payments are powered by Stripe. We never store card numbers.</p>
+      </div>
+
+      <div class="action-grid">
+        <div class="action-card">
+          <h3>Resume Pro</h3>
+          <p>Instant one-time unlock for your generated resume. Ideal for quick polish.</p>
+          <p class="price">$9 one-time</p>
+          <button class="btn btn-primary" id="buyResumeBasic">Buy Resume Pro</button>
+          <small>Card may be saved by Stripe for faster future checkouts (optional).</small>
+        </div>
+
+        <div class="action-card">
+          <h3>Resume Expert Revamp</h3>
+          <p>Deep revision by Detechify's expert pass with premium formatting.</p>
+          <p class="price">$49 one-time</p>
+          <button class="btn btn-secondary" id="buyResumeExpert">Buy Expert Revamp</button>
+          <small>Handled by Stripe Checkout. Receipts are emailed to you.</small>
+        </div>
+      </div>
+
+      <div class="user-profile">
+        <h2>Purchase History</h2>
+        <% if ((billing?.purchases || []).length === 0) { %>
+          <p>No purchases yet.</p>
+        <% } else { %>
+          <table class="table">
+            <thead><tr><th>Date</th><th>Product</th><th>Amount</th><th>Status</th></tr></thead>
+            <tbody>
+            <% billing.purchases.forEach(p => { %>
+              <tr>
+                <td><%= new Date(p.created_at).toLocaleString() %></td>
+                <td><%= p.product_key %></td>
+                <td><%= (p.amount/100).toFixed(2) %> <%= p.currency.toUpperCase() %></td>
+                <td><%= p.status %></td>
+              </tr>
+            <% }) %>
+            </tbody>
+          </table>
+        <% } %>
+      </div>
+    </div>
+  </main>
+
+  <%- include('partials/modals') %>
+  <script src="/js/supabase-client.js" nonce="<%= page.nonce %>"></script>
+  <script src="/js/sbClient.js" nonce="<%= page.nonce %>"></script>
+  <script src="/js/logout.js" nonce="<%= page.nonce %>"></script>
+  <script src="/js/modalManager.js" nonce="<%= page.nonce %>"></script>
+  <script src="/js/pay.js?v=<%= page.assetVersion || Date.now() %>" nonce="<%= page.nonce %>"></script>
+  <script nonce="<%= page.nonce %>">
+    // Tiny toast for return from Checkout
+    (function(){
+      const qs = new URLSearchParams(location.search);
+      if (qs.get('paid') === '1') {
+        window.modalManager?.showNotification('Payment received','Thanks! Your purchase has been recorded.');
+        history.replaceState(null,'',location.pathname); // clean URL
+      } else if (qs.get('canceled') === '1') {
+        window.modalManager?.showNotification('Payment canceled','No charge was made.');
+        history.replaceState(null,'',location.pathname);
+      }
+    })();
+  </script>
+</body>
+</html>

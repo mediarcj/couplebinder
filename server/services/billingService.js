@@ -68,27 +68,33 @@ function productKeyForPrice(priceId) {
  * 4. Return customer ID for checkout session
  */
 async function getOrCreateStripeCustomer(userId, email) {
-  const { data: existing, error } = await supabaseAdmin
+  const isLive = process.env.STRIPE_SECRET_KEY?.startsWith('sk_live_');
+  const col = isLive ? 'stripe_customer_id_live' : 'stripe_customer_id_test';
+
+  // Fetch current row with environment-specific column
+  const { data: row, error } = await supabaseAdmin
     .from('billing_customers')
-    .select('stripe_customer_id')
+    .select('*')
     .eq('user_id', userId)
     .maybeSingle();
-  
-  if (error) throw error;
-  if (existing?.stripe_customer_id) return existing.stripe_customer_id;
 
+  if (error) throw error;
+  
+  // Return existing customer ID for current environment
+  if (row?.[col]) return row[col];
+
+  // Create a customer in the current mode
   const customer = await stripe.customers.create({
     email: email || undefined,
-    metadata: { user_id: userId }
+    metadata: { user_id: userId, env: isLive ? 'live' : 'test' }
   });
 
+  // Upsert with environment-specific column
+  const upsert = { user_id: userId, email: email || null, [col]: customer.id };
   const { error: insErr } = await supabaseAdmin
     .from('billing_customers')
-    .insert({ 
-      user_id: userId, 
-      stripe_customer_id: customer.id
-    });
-  
+    .upsert(upsert, { onConflict: 'user_id' });
+
   if (insErr) throw insErr;
 
   return customer.id;
@@ -111,36 +117,20 @@ async function getOrCreateStripeCustomer(userId, email) {
 async function createCheckoutSession({ user, priceId, quantity = 1, idempotencyKey, requestId }) {
   const trimmedPriceId = (priceId || '').trim();
   
-  // Debug logging to identify price validation issues
-  logger.info({
-    event: 'price.guard.check',
-    got: trimmedPriceId,
-    allowed: [...ALLOWED_PRICE_IDS],
-    hasPrice: ALLOWED_PRICE_IDS.has(trimmedPriceId),
-    userId: user.id
-  }, 'Price guard validation check');
-  
   if (!ALLOWED_PRICE_IDS.has(trimmedPriceId)) {
     const err = new Error('Price not allowed');
     err.status = 400;
     throw err;
   }
   
-  // Detect if we're in live or test mode
-  const isLive = process.env.STRIPE_SECRET_KEY?.startsWith('sk_live_');
-  
-  // In test mode, let Checkout create the customer automatically to avoid test/live mismatch
-  // In live mode, use our managed customer for better tracking and future payments
-  let customerId = null;
-  if (isLive) {
-    customerId = await getOrCreateStripeCustomer(user.id, user.email);
-  }
+  // Get/create customer using environment-specific columns (works for both test and live)
+  const customerId = await getOrCreateStripeCustomer(user.id, user.email);
   
   const productKey = productKeyForPrice(trimmedPriceId);
 
   const session = await stripe.checkout.sessions.create({
     mode: 'payment',
-    ...(customerId ? { customer: customerId } : {}), // only pass customer in live mode
+    customer: customerId,
     line_items: [{ price: trimmedPriceId, quantity }],
     payment_intent_data: { setup_future_usage: 'off_session' }, // lets Stripe safely store PM
     allow_promotion_codes: true,

@@ -134,16 +134,21 @@ async function createCheckoutSession({ user, priceId, quantity = 1, idempotencyK
     throw err;
   }
   
-  // Get/create customer using environment-specific columns (works for both test and live)
-  const customerId = await getOrCreateStripeCustomer(user.id, user.email);
+  const isLive = process.env.STRIPE_SECRET_KEY?.startsWith('sk_live_');
+  
+  // Only create/fetch customer in LIVE mode to avoid DB constraint issues in test
+  const customerId = isLive 
+    ? await getOrCreateStripeCustomer(user.id, user.email)
+    : undefined;
   
   const productKey = productKeyForPrice(trimmedPriceId);
 
-  const session = await stripe.checkout.sessions.create({
+  // Build session config - only include customer if we have one
+  const sessionConfig = {
     mode: 'payment',
-    customer: customerId,
+    ...(customerId ? { customer: customerId } : {}), // Only set customer in live mode
     line_items: [{ price: trimmedPriceId, quantity }],
-    payment_intent_data: { setup_future_usage: 'off_session' }, // lets Stripe safely store PM
+    payment_intent_data: { setup_future_usage: 'off_session' },
     allow_promotion_codes: true,
     billing_address_collection: 'auto',
     success_url: `${process.env.PUBLIC_ORIGIN}/dashboard/billing?paid=1&session_id={CHECKOUT_SESSION_ID}`,
@@ -154,7 +159,12 @@ async function createCheckoutSession({ user, priceId, quantity = 1, idempotencyK
       product_key: productKey, 
       request_id: requestId || '' 
     }
-  }, idempotencyKey ? { idempotencyKey } : undefined);
+  };
+
+  const session = await stripe.checkout.sessions.create(
+    sessionConfig,
+    idempotencyKey ? { idempotencyKey } : undefined
+  );
 
   return session;
 }

@@ -427,6 +427,15 @@ app.use(corsAllowlist);
 
 
 // Body parsers with size limits
+// Stripe webhook (raw body, CSRF bypass) - must be before body parsers
+try {
+  const { mountStripeWebhook } = require('./routes/stripeWebhook');
+  mountStripeWebhook(app);
+  console.log('Stripe webhook mounted (raw body, CSRF bypass).');
+} catch (e) {
+  console.error('Failed to mount Stripe webhook:', e.message);
+}
+
 // Body size limits (32KB to match text input limits and prevent abuse)
 app.use(express.json({ limit: '32kb' }));
 app.use(express.urlencoded({ extended: false, limit: '32kb' }));
@@ -685,6 +694,13 @@ try {
 }
 
 try {
+  app.use('/api/pay', requireAuth, require('./routes/payments'));
+  console.log('Payments API routes loaded successfully');
+} catch (error) {
+  console.error('Failed to load payments API routes:', error.message);
+}
+
+try {
   app.use('/api', require('./routes/api'));
   console.log('General API routes loaded successfully');
 } catch (error) {
@@ -727,6 +743,13 @@ try {
   console.log('Dashboard routes loaded successfully');
 } catch (error) {
   console.error('Failed to load dashboard routes:', error.message);
+}
+
+try {
+  app.use('/dashboard/billing', require('./routes/dashboard-billing'));
+  console.log('Billing dashboard route loaded');
+} catch (e) {
+  console.error('Failed to load /dashboard/billing:', e.message);
 }
 
 // Login page route (public)

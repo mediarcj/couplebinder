@@ -39,35 +39,43 @@
           const pOne = (billing?.pricing || []).find(p => p.priceId === env?.STRIPE_PRICE_RESUME_ONE_TIME);
           const pTwo = (billing?.pricing || []).find(p => p.priceId === env?.STRIPE_PRICE_RESUME_EXPERT);
         %>
+        <% if (pOne) { %>
         <div class="action-card">
-          <h3><%= pOne?.name || 'Resume Pro' %></h3>
-          <p><%= pOne?.blurb || 'Instant one-time unlock for your generated resume. Ideal for quick polish.' %></p>
+          <% if (pOne.name) { %><h3><%= pOne.name %></h3><% } %>
+          <% if (pOne.blurb) { %><p><%= pOne.blurb %></p><% } %>
+          <% if (Number.isFinite(pOne.unit_amount)) { %>
           <p class="price">
-            $<%= ((pOne?.unit_amount ?? 900) / 100).toFixed(0) %> <%= (pOne?.currency || 'usd').toUpperCase() %>
-            <%= pOne?.isRecurring ? `/${pOne.interval}` : ' one-time' %>
+            $<%= (pOne.unit_amount / 100).toFixed(0) %> <%= (pOne.currency || '').toUpperCase() %>
+            <%= pOne.isRecurring ? `/${pOne.interval}` : ' one-time' %>
           </p>
+          <% } %>
           <button class="btn btn-primary" 
                   id="buyResumeBasic"
-                  data-price-id="<%= pOne?.priceId %>"
-                  data-price-type="<%= pOne?.isRecurring ? 'recurring' : 'one_time' %>">
-            Buy <%= pOne?.name || 'Resume Pro' %>
+                  data-price-id="<%= pOne.priceId %>"
+                  data-price-type="<%= pOne.isRecurring ? 'recurring' : 'one_time' %>">
+            Buy<%= pOne.name ? ` ${pOne.name}` : '' %>
           </button>
         </div>
+        <% } %>
 
+        <% if (pTwo) { %>
         <div class="action-card">
-          <h3><%= pTwo?.name || 'Resume Expert Revamp' %></h3>
-          <p><%= pTwo?.blurb || "Deep revision by Detechify's expert pass with premium formatting." %></p>
+          <% if (pTwo.name) { %><h3><%= pTwo.name %></h3><% } %>
+          <% if (pTwo.blurb) { %><p><%= pTwo.blurb %></p><% } %>
+          <% if (Number.isFinite(pTwo.unit_amount)) { %>
           <p class="price">
-            $<%= ((pTwo?.unit_amount ?? 4900) / 100).toFixed(0) %> <%= (pTwo?.currency || 'usd').toUpperCase() %>
-            <%= pTwo?.isRecurring ? `/${pTwo.interval}` : ' one-time' %>
+            $<%= (pTwo.unit_amount / 100).toFixed(0) %> <%= (pTwo.currency || '').toUpperCase() %>
+            <%= pTwo.isRecurring ? `/${pTwo.interval}` : ' one-time' %>
           </p>
+          <% } %>
           <button class="btn btn-secondary" 
                   id="buyResumeExpert"
-                  data-price-id="<%= pTwo?.priceId %>"
-                  data-price-type="<%= pTwo?.isRecurring ? 'recurring' : 'one_time' %>">
-            Buy <%= pTwo?.name || 'Expert Revamp' %>
+                  data-price-id="<%= pTwo.priceId %>"
+                  data-price-type="<%= pTwo.isRecurring ? 'recurring' : 'one_time' %>">
+            Buy<%= pTwo.name ? ` ${pTwo.name}` : '' %>
           </button>
         </div>
+        <% } %>
       </div>
 
       <div class="user-profile">
@@ -100,31 +108,44 @@
   <script src="/js/modalManager.js" nonce="<%= page.nonce %>"></script>
   <script src="/js/pay.js?v=<%= page.assetVersion || Date.now() %>" nonce="<%= page.nonce %>"></script>
   <script nonce="<%= page.nonce %>">
-    // Tiny toast for return from Checkout with receipt link
+    // Tiny toast for return from Checkout with receipt link and retry logic
     (async function(){
       const qs = new URLSearchParams(location.search);
       const sessionId = qs.get('session_id');
       
       if (qs.get('paid') === '1') {
-        // Try to fetch receipt URL
+        // Retry function to handle receipt URL timing issues
+        async function fetchReceiptWithRetry(id) {
+          const delays = [300, 600, 1200, 2000, 3000]; // total ~7s max
+          for (let i = 0; i < delays.length; i++) {
+            try {
+              const res = await fetch(`/api/pay/receipt?session_id=${encodeURIComponent(id)}`, { 
+                credentials: 'include' 
+              });
+              
+              if (res.status === 200) {
+                const data = await res.json().catch(() => ({}));
+                if (data?.ok && data.receipt_url) {
+                  return data.receipt_url;
+                }
+              }
+            } catch (e) {
+              // Silent fail, continue to next retry
+            }
+            
+            if (i < delays.length - 1) {
+              await new Promise(r => setTimeout(r, delays[i]));
+            }
+          }
+          return null;
+        }
+
         let message = 'Thanks! Your purchase has been recorded.';
-        let receiptUrl = null;
         
         if (sessionId) {
-          try {
-            const res = await fetch(`/api/pay/receipt?session_id=${encodeURIComponent(sessionId)}`, { 
-              credentials: 'include' 
-            });
-            
-            if (res.ok) {
-              const data = await res.json().catch(() => ({}));
-              if (data?.ok && data.receipt_url) {
-                receiptUrl = data.receipt_url;
-                message = 'Thanks! <a href="' + receiptUrl + '" target="_blank" rel="noopener">View receipt</a>';
-              }
-            }
-          } catch (e) {
-            // Silent fail - still show success message
+          const url = await fetchReceiptWithRetry(sessionId);
+          if (url) {
+            message = 'Thanks! <a href="' + url + '" target="_blank" rel="noopener">View receipt</a>';
           }
         }
         

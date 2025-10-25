@@ -72,6 +72,11 @@ function chooseView(status) {
  *   {Object} extra - Additional safe fields for JSON responses
  */
 function respondError(req, res, { status = 500, message, code, extra = {} }) {
+  // Check if headers already sent to prevent double-send errors
+  if (res.headersSent) {
+    return;
+  }
+  
   const wantsHTML = req.accepts(['html', 'json', 'text']) === 'html';
   const errorCode = code || STATUS_TITLES[status] || 'error';
   const requestId = req.requestId || 'unknown';

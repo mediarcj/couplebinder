@@ -42,7 +42,8 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
  * 4. Update payment records accordingly
  */
 function mountStripeWebhook(app) {
-  app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
+  // Mount at /webhooks/stripe (not under /api) to bypass auth guards
+  app.post('/webhooks/stripe', express.raw({ type: 'application/json' }), async (req, res) => {
     const sig = req.headers['stripe-signature'];
     const secret = process.env.STRIPE_WEBHOOK_SECRET;
     let event;
@@ -63,11 +64,15 @@ function mountStripeWebhook(app) {
           const session = event.data.object;
           await upsertPaymentFromSession(session, 'paid');
           logger.info({
-            event: 'stripe.webhook.payment_completed',
+            event: 'stripe.checkout.session.completed',
+            mode: session.mode,
             sessionId: session.id,
             userId: session.metadata?.user_id,
-            customerId: session.customer // Log customer ID for tracking (test/live)
-          }, 'Payment completed via webhook');
+            customer: session.customer,
+            email: session.customer_details?.email,
+            amount_total: session.amount_total,
+            currency: session.currency
+          }, 'Checkout session completed - payment received');
           break;
         }
         case 'refund.succeeded':

@@ -22,6 +22,7 @@ const express = require('express');
 const router = express.Router();
 const { buildDashboardPageModel } = require('../ui_contract/presenters');
 const { supabaseAdmin } = require('../utils/supabaseClient');
+const { getPricingCatalog } = require('../services/pricingCatalog');
 
 /**
  * WHAT:
@@ -40,6 +41,14 @@ router.get('/', async (req, res) => {
   const pageModel = await buildDashboardPageModel(req, res);
   pageModel.page.nonce = res.locals.nonce;
 
+  // Fetch pricing catalog from Stripe
+  let pricing = [];
+  try {
+    pricing = await getPricingCatalog();
+  } catch (err) {
+    // Silently fail - pricing is optional, fallback to defaults in template
+  }
+
   // Optional: basic purchase history for the user
   let purchases = [];
   try {
@@ -55,7 +64,13 @@ router.get('/', async (req, res) => {
     // Silently fail - purchases are optional
   }
   
-  pageModel.billing = { purchases };
+  pageModel.billing = { purchases, pricing };
+  
+  // Pass environment variables for price ID lookups in template
+  pageModel.env = {
+    STRIPE_PRICE_RESUME_ONE_TIME: process.env.STRIPE_PRICE_RESUME_ONE_TIME,
+    STRIPE_PRICE_RESUME_EXPERT: process.env.STRIPE_PRICE_RESUME_EXPERT
+  };
 
   res.render('billing', pageModel);
 });

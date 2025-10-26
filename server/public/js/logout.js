@@ -280,16 +280,19 @@ async function performLogout() {
       }
     } catch { /* ignore */ }
 
-    // 4) Show modal; only OK can proceed
-    showLogoutModal('Logged out', 'You have been logged out successfully!', () => {
-      // Release guard and navigate (KEEP HOLD active - main.js will clear it)
-      NavGuard.release();
-      (NavGuard._orig.replace || window.location.replace).call(window.location, '/');
-    });
+    // 4) Set flash flag and redirect (modal shown on next page)
+    try { sessionStorage.setItem('logout.flash', '1'); } catch (_) {}
+    
+    // Release guard and navigate (KEEP HOLD active - main.js will clear it)
+    NavGuard.release();
+    (NavGuard._orig.replace || window.location.replace).call(window.location, '/');
 
   } catch (err) {
     logoutLogger.error('Logout error', { msg: err?.message || String(err) });
-    showLogoutModal('Logout Error', 'Network error during logout. Please try again.');
+    // Still redirect even on error - let user retry
+    try { sessionStorage.setItem('logout.flash', '1'); } catch (_) {}
+    NavGuard.release();
+    (NavGuard._orig.replace || window.location.replace).call(window.location, '/');
   } finally {
     LOGOUT_IN_FLIGHT = false;
   }

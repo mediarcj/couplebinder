@@ -304,6 +304,40 @@ window.modalManager = modalManager;
 
 /**
  * WHAT:
+ * Canonical logout-success modal (single source of truth).
+ * 
+ * WHY:
+ * Ensures the exact same modal appears everywhere after logout.
+ * 
+ * HOW:
+ * Try multiple APIs in priority order, fallback to alert.
+ */
+window.showCanonicalLogoutSuccess = function () {
+  const mm = window.modalManager || {};
+  const title = 'Logged out';
+  const message = 'You have been logged out successfully!';
+  
+  // Try showNotification (most common)
+  if (typeof mm.showNotification === 'function') {
+    return mm.showNotification(title, message);
+  }
+  
+  // Try open (some implementations)
+  if (typeof mm.open === 'function') {
+    return mm.open('logout-success', { title, message });
+  }
+  
+  // Try show (fallback)
+  if (typeof mm.show === 'function') {
+    return mm.show('logout-success', { title, message });
+  }
+  
+  // Last-resort fallback
+  alert(message);
+};
+
+/**
+ * WHAT:
  * Cross-page logout success flash support with init race protection.
  * Shows logout success modal on next page load after logout.
  * 
@@ -360,11 +394,11 @@ window.modalManager = modalManager;
     if (!shouldShow()) return;
 
     // Wait for manager to be ready, then show modal
-    whenManagerReady(function (mm) {
-      mm.showNotification(
-        'Logged out',
-        'You have been logged out successfully!'
-      );
+    whenManagerReady(function () {
+      // Use canonical wrapper for consistency
+      if (typeof window.showCanonicalLogoutSuccess === 'function') {
+        window.showCanonicalLogoutSuccess();
+      }
     });
   }
 

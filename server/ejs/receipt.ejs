@@ -13,6 +13,18 @@
   <main class="container">
     <section class="card">
       <h1>Receipt</h1>
+      
+      <div class="receipt-toolbar print-hide">
+        <div class="qr-wrap" title="Scan to open receipt on another device" aria-label="QR code for this receipt">
+          <div class="qr"><%- qrSvg %></div>
+          <div class="qr-caption muted">Scan to view</div>
+        </div>
+        <div class="toolbar-actions">
+          <button class="btn" data-action="print" type="button" aria-label="Print or save as PDF">Print / Save PDF</button>
+          <a class="btn btn-secondary" href="/dashboard/receipt.pdf?session_id=<%= encodeURIComponent(receipt.session_id || '') %>" target="_blank" rel="noopener">Download PDF</a>
+        </div>
+      </div>
+      
       <div class="receipt-info">
         <div class="info-column">
           <p><strong>Status:</strong> <span class="status-<%= receipt.payment_status %>"><%= receipt.payment_status %></span></p>
@@ -64,11 +76,19 @@
         <a class="btn" rel="noopener" target="_blank" href="<%= receipt.stripe_receipt_url %>">View official Stripe receipt</a>
       <% } %>
       <a class="btn btn-secondary" href="/dashboard/billing">Back to Billing</a>
+      <a class="btn btn-secondary" href="/dashboard">Home</a>
     </div>
   </main>
 
   <footer class="container">
     <p>&copy; 2024 <%= app_info?.name || 'Application' %>. <%= app_info?.description || 'A modern web application' %>.</p>
   </footer>
+
+  <script nonce="<%= page.nonce %>">
+    (function () {
+      const btn = document.querySelector('[data-action="print"]');
+      if (btn) btn.addEventListener('click', function () { window.print(); });
+    })();
+  </script>
 </body>
 </html>

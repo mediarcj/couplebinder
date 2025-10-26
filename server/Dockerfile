@@ -9,6 +9,21 @@ ARG NODE_VERSION=20
 
 FROM node:${NODE_VERSION}-alpine
 
+# PDF deps (Chromium + fonts)
+RUN apk add --no-cache \
+  chromium \
+  nss \
+  freetype \
+  harfbuzz \
+  ca-certificates \
+  ttf-freefont \
+  wqy-zenhei \
+  font-noto \
+  font-noto-cjk
+
+# Let puppeteer-core know where Chromium lives
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
+
 WORKDIR /app
 ENV NODE_ENV=production
 

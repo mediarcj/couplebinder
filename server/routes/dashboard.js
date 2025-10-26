@@ -5,11 +5,21 @@
 
 const express = require('express');
 const router = express.Router();
+const fs = require('fs');
+const QRCode = require('qrcode');
+const puppeteer = require('puppeteer-core');
 // requireAuth is applied globally to /dashboard routes in zorvalon.js
 const { buildDashboardPageModel, buildErrorPageModel } = require('../ui_contract/presenters');
 const { getReceiptVM } = require('../services/receiptService');
 const { assertUser } = require('../utils/authz');
 const logger = require('../utils/logger');
+
+// Helper: pick chromium path in Alpine
+function chromiumPath() {
+  const c1 = '/usr/bin/chromium';
+  const c2 = '/usr/bin/chromium-browser';
+  return fs.existsSync(c1) ? c1 : (fs.existsSync(c2) ? c2 : process.env.PUPPETEER_EXECUTABLE_PATH);
+}
 
 /**
  * GET /dashboard
@@ -91,12 +101,18 @@ router.get('/receipt', async (req, res, next) => {
 
         const vm = await getReceiptVM({ sessionId, userId });
         
+        // Generate QR code for receipt
+        const absoluteSelfUrl = `${req.protocol}://${req.get('host')}${req.originalUrl}`;
+        const qrText = vm.stripe_receipt_url || absoluteSelfUrl;
+        const qrSvg = await QRCode.toString(qrText, { type: 'svg', margin: 1, width: 192 });
+        
         res.render('receipt', {
             page: {
                 title: 'Receipt - ' + (process.env.APP_NAME || 'Application'),
                 nonce: res.locals.nonce
             },
             receipt: vm,
+            qrSvg,
             app_info: {
                 name: process.env.APP_NAME || 'Application',
                 description: process.env.APP_DESCRIPTION || 'A modern web application'
@@ -119,6 +135,71 @@ router.get('/receipt', async (req, res, next) => {
             });
         }
         next(err);
+    }
+});
+
+/**
+ * GET /dashboard/receipt.pdf
+ * Server-side PDF render (headless Chromium)
+ */
+router.get('/receipt.pdf', async (req, res, next) => {
+    try {
+        const sessionId = req.query.session_id;
+        if (!sessionId) {
+            return res.status(400).send('Missing session_id');
+        }
+
+        const user = assertUser(req);
+        const userId = user.id;
+
+        const vm = await getReceiptVM({ sessionId, userId });
+        
+        // Generate QR code
+        const absoluteSelfUrl = `${req.protocol}://${req.get('host')}/dashboard/receipt?session_id=${encodeURIComponent(sessionId)}`;
+        const qrText = vm.stripe_receipt_url || absoluteSelfUrl;
+        const qrSvg = await QRCode.toString(qrText, { type: 'svg', margin: 1, width: 192 });
+
+        // Render the same EJS to static HTML string
+        req.app.render('receipt', {
+            page: {
+                title: 'Receipt - ' + (process.env.APP_NAME || 'Application'),
+                nonce: res.locals.nonce
+            },
+            receipt: vm,
+            qrSvg,
+            app_info: {
+                name: process.env.APP_NAME || 'Application',
+                description: process.env.APP_DESCRIPTION || 'A modern web application'
+            },
+            pdfMode: true
+        }, async (err, html) => {
+            if (err) return next(err);
+            
+            const browser = await puppeteer.launch({
+                executablePath: chromiumPath(),
+                args: ['--no-sandbox', '--disable-gpu', '--font-render-hinting=medium']
+            });
+            
+            try {
+                const page = await browser.newPage();
+                await page.setContent(html, { waitUntil: ['domcontentloaded'] });
+                await page.emulateMediaType('print');
+                const pdf = await page.pdf({
+                    printBackground: true,
+                    format: 'A4',
+                    margin: { top: '16mm', right: '16mm', bottom: '16mm', left: '16mm' }
+                });
+                
+                const fileBase = vm.invoice_number ? `Receipt-${vm.invoice_number}` : `Receipt-${sessionId}`;
+                res.setHeader('Content-Type', 'application/pdf');
+                res.setHeader('Content-Disposition', `inline; filename="${fileBase}.pdf"`);
+                return res.send(pdf);
+            } finally {
+                await browser.close();
+            }
+        });
+    } catch (err) {
+        return next(err);
     }
 });
 

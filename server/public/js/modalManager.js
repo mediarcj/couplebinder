@@ -308,33 +308,26 @@ window.modalManager = modalManager;
  * 
  * WHY:
  * Ensures the exact same modal appears everywhere after logout.
+ * Uses the exact same API the dashboard uses.
  * 
  * HOW:
- * Try multiple APIs in priority order, fallback to alert.
+ * Call modalManager.showNotification() which is the dashboard's standard method.
  */
-window.showCanonicalLogoutSuccess = function () {
+function showLogoutSuccessCanonical() {
   const mm = window.modalManager || {};
   const title = 'Logged out';
   const message = 'You have been logged out successfully!';
   
-  // Try showNotification (most common)
+  // Use exact same method as dashboard
   if (typeof mm.showNotification === 'function') {
     return mm.showNotification(title, message);
   }
   
-  // Try open (some implementations)
-  if (typeof mm.open === 'function') {
-    return mm.open('logout-success', { title, message });
-  }
-  
-  // Try show (fallback)
-  if (typeof mm.show === 'function') {
-    return mm.show('logout-success', { title, message });
-  }
-  
-  // Last-resort fallback
+  // Fallback for safety
   alert(message);
-};
+}
+
+window.showLogoutSuccessCanonical = showLogoutSuccessCanonical;
 
 /**
  * WHAT:
@@ -396,9 +389,7 @@ window.showCanonicalLogoutSuccess = function () {
     // Wait for manager to be ready, then show modal
     whenManagerReady(function () {
       // Use canonical wrapper for consistency
-      if (typeof window.showCanonicalLogoutSuccess === 'function') {
-        window.showCanonicalLogoutSuccess();
-      }
+      showLogoutSuccessCanonical();
     });
   }
 

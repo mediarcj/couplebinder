@@ -17,7 +17,12 @@ const appName = typeof app_info !== 'undefined' ? app_info?.name : 'Detechify';
           <% nav.items.forEach((it) => { %>
             <% if (it.type === 'link') { %>
               <li>
-                <a href="<%= it.href %>"><%= it.label %></a>
+                <a href="<%= it.href %>"
+                  <% if (it.modal) { %>
+                    data-modal-open="<%= it.modal %>"
+                    role="button"
+                  <% } %>
+                ><%= it.label %></a>
               </li>
             <% } else { %>
               <li>

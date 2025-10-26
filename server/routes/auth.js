@@ -80,21 +80,28 @@ router.post('/login', loginLimiter(), async (req, res) => {
 
 /**
  * POST /api/auth/logout
- * Note: Logout is handled by Supabase Auth on the frontend
- * This endpoint is kept for backward compatibility but returns a message
+ * Legacy endpoint: redirect to canonical /auth/clear-cookie
+ * 
+ * WHAT:
+ * Redirect legacy logout requests to the canonical endpoint.
+ * 
+ * WHY:
+ * Prevents raw JSON responses in browser and unifies logout behavior.
+ * Legacy links/bookmarks still work without breaking UX.
+ * 
+ * HOW:
+ * Use 307 redirect to preserve POST method and body (CSRF token).
+ * Client can then intercept and handle with JS logout flow.
  */
 router.post('/logout', (req, res) => {
     try {
-        logger.auth('logout_attempt', {
+        logger.auth('logout_legacy_redirect', {
             requestId: req.requestId,
-            outcome: 'redirected_to_supabase',
             ip: req.ip
         });
         
-        res.json({
-            success: true,
-            message: 'Please use Supabase Auth for logout. This endpoint is deprecated.'
-        });
+        // 307 preserves POST method and body for CSRF compatibility
+        return res.redirect(307, '/auth/clear-cookie');
     } catch (error) {
         logger.error('Logout route error', {
             requestId: req.requestId,

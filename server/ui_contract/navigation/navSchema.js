@@ -21,18 +21,18 @@ module.exports = {
   // Visible to everyone (not signed in)
   public: [
     { id: 'home',     label: 'Home',     href: '/',                    when: 'unauth', activeMatch: '^/$' },
-    { id: 'pricing',  label: 'Pricing',  href: '/pricing',             when: 'unauth', activeMatch: '^/pricing/?$' },
-    { id: 'login',    label: 'Log in',   href: '/login',               when: 'unauth', activeMatch: '^/login/?$' },
-    { id: 'signup',   label: 'Sign up',  href: '/signup',              when: 'unauth', feature: 'signup', activeMatch: '^/signup/?$' }
+    { id: 'pricing',  label: 'Pricing',  href: '/pricing',             when: 'unauth', feature: 'pricing', activeMatch: '^/pricing/?$' },
+    { id: 'login',    label: 'Log in',   href: '/?login=true',         when: 'unauth', activeMatch: '\\blogin=true\\b' },
+    { id: 'signup',   label: 'Sign up',  href: '/?signup=true',        when: 'unauth', feature: 'signup', activeMatch: '\\bsignup=true\\b' }
   ],
 
   // Visible to authenticated users
   auth: [
     { id: 'dashboard', label: 'Dashboard', href: '/dashboard',               when: 'auth',    activeMatch: '^/dashboard(?:$|/)' },
     { id: 'billing',   label: 'Billing',   href: '/dashboard/billing',       when: 'auth',    feature: 'billing', activeMatch: '^/dashboard/billing/?$' },
-    { id: 'profile',   label: 'Profile',   href: '/dashboard/profile-edit', when: 'auth',    activeMatch: '^/dashboard/profile-edit/?$' },
+    { id: 'profile',   label: 'Profile',   href: '/dashboard/profile-edit',  when: 'auth',    activeMatch: '^/dashboard/profile-edit/?$' },
     // POST action with CSRF; rendered as a form, not a link
-    { id: 'logout',    label: 'Log out',   action: '/auth/clear-cookie', method: 'POST', csrf: true, when: 'auth' }
+    { id: 'logout',    label: 'Log out',   action: '/api/auth/logout',       method: 'POST', csrf: true, when: 'auth' }
   ],
 
   // Optional admin items

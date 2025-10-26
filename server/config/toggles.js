@@ -73,6 +73,11 @@ const toggles = {
 
   // Off-by-default internal endpoints. Only enable when you *really* need it.
   exposeDebugRoutes: bool('EXPOSE_DEBUG_ROUTES', false),
+
+  // Feature flags for user-facing features
+  billing: bool('BILLING_ENABLED', true),   // Stripe billing (default on)
+  signup: bool('SIGNUP_ENABLED', true),     // User signup (default on)
+  pricing: bool('PRICING_ENABLED', false),  // Pricing page (default off, hidden until ready)
 };
 
 module.exports = toggles;

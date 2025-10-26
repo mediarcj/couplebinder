@@ -61,15 +61,30 @@ nav ul {
     margin: 0;
 }
 
-nav a {
+nav a,
+nav button {
     text-decoration: none;
     color: #666;
     font-weight: 500;
     transition: color 0.3s ease;
+    background: none;
+    border: none;
+    font-family: inherit;
+    font-size: inherit;
+    cursor: pointer;
+    padding: 0;
 }
 
-nav a:hover {
+nav a:hover,
+nav button:hover {
     color: #2c3e50;
+}
+
+/* Ensure nav forms don't break layout */
+.nav-form {
+    display: inline;
+    margin: 0;
+    padding: 0;
 }
 
 /* Auth Section */

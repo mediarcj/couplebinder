@@ -388,6 +388,9 @@ function attachLogoutHandler(selector = '#logoutBtn') {
       console.warn(CSL, 'clear-cookie fetch error', e);
     }
 
+    // Set flash flag for modal on next page load
+    try { sessionStorage.setItem('logout.flash', '1'); } catch (_) {}
+
     // Land on public home (server will 303 here too if we hit it by form)
     window.location.replace('/');
   }

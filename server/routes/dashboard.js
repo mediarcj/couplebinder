@@ -12,6 +12,7 @@ const puppeteer = require('puppeteer-core');
 const { buildDashboardPageModel, buildErrorPageModel } = require('../ui_contract/presenters');
 const { getReceiptVM } = require('../services/receiptService');
 const { getPricingCatalog, getPriceSummary } = require('../services/pricingCatalog');
+const { archiveReceiptSnapshot } = require('../services/receiptArchive');
 const { assertUser } = require('../utils/authz');
 const logger = require('../utils/logger');
 
@@ -124,6 +125,18 @@ router.get('/receipt', async (req, res, next) => {
             emailReceipt: !!process.env.FEATURE_EMAIL_RECEIPT
         };
         
+        // Archive receipt snapshot (fire-and-forget, non-blocking)
+        if (process.env.FEATURE_ARCHIVE_RECEIPTS === '1') {
+            archiveReceiptSnapshot({ userId, receipt: vm })
+                .catch(err => {
+                    logger.warn({
+                        event: 'receipt.archive.failed',
+                        sessionId,
+                        error: err.message
+                    }, 'Receipt archival failed (non-blocking)');
+                });
+        }
+        
         res.render('receipt', pageModel);
     } catch (err) {
         if ((err.status || 500) === 404) {
@@ -208,6 +221,17 @@ router.get('/receipt.pdf', async (req, res, next) => {
     } catch (err) {
         return next(err);
     }
+});
+
+/**
+ * GET /dashboard/billing/buy?product=<productKey>&qty=1
+ * Legacy redirect route - sends to review page
+ */
+router.get('/billing/buy', async (req, res) => {
+    const { product, qty } = req.query;
+    if (!product) return res.redirect('/dashboard/billing');
+    const q = typeof qty === 'string' ? qty : '1';
+    return res.redirect(302, `/dashboard/checkout/review?product=${encodeURIComponent(product)}&qty=${encodeURIComponent(q)}`);
 });
 
 /**

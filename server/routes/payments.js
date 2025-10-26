@@ -57,17 +57,18 @@ const PRICES = {
 router.post('/checkout', idem, async (req, res) => {
   try {
     const user = assertUser(req);
-    // Accept SKU from client, map to server-side price ID (never trust client price IDs)
-    const { sku = 'resume_pro', quantity } = req.body || {};
+    // Accept SKU or productKey from client for compatibility
+    const { sku, productKey, quantity } = req.body || {};
+    const skuOrKey = sku || productKey || 'resume_pro';
     
-    const priceId = PRICES[sku];
+    const priceId = PRICES[skuOrKey];
     if (!priceId) {
       logger.warn({
         event: 'checkout.sku.invalid',
-        sku,
+        skuOrKey,
         allowed: Object.keys(PRICES),
         userId: user.id
-      }, 'Invalid SKU provided');
+      }, 'Invalid SKU/productKey provided');
       return res.status(400).json({ 
         ok: false, 
         error: 'Unknown product SKU' 

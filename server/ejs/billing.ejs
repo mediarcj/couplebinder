@@ -41,12 +41,11 @@
             <%= pOne.isRecurring ? `/${pOne.interval}` : ' one-time' %>
           </p>
           <% } %>
-          <button class="btn btn-primary" 
-                  id="buyResumeBasic"
-                  data-price-id="<%= pOne.priceId %>"
-                  data-price-type="<%= pOne.isRecurring ? 'recurring' : 'one_time' %>">
+          <a class="btn btn-primary" 
+             id="buyResumeBasic"
+             href="/dashboard/checkout/review?product=resume_one_time&qty=1">
             Buy<%= pOne.name ? ` ${pOne.name}` : '' %>
-          </button>
+          </a>
         </div>
         <% } %>
 
@@ -68,12 +67,11 @@
             <%= pTwo.isRecurring ? `/${pTwo.interval}` : ' one-time' %>
           </p>
           <% } %>
-          <button class="btn btn-secondary" 
-                  id="buyResumeExpert"
-                  data-price-id="<%= pTwo.priceId %>"
-                  data-price-type="<%= pTwo.isRecurring ? 'recurring' : 'one_time' %>">
+          <a class="btn btn-secondary" 
+             id="buyResumeExpert"
+             href="/dashboard/checkout/review?product=resume_expert&qty=1">
             Buy<%= pTwo.name ? ` ${pTwo.name}` : '' %>
-          </button>
+          </a>
         </div>
         <% } %>
       </div>

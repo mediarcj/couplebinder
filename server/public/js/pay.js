@@ -109,24 +109,43 @@
   
   /**
    * WHAT:
-   * Initialize payment button event handlers.
+   * Guard: Force any legacy JS-driven checkout actions to go to Review page.
    * 
    * WHY:
-   * Need to wire up payment buttons to checkout functionality.
+   * Billing page buttons now link directly to review, but legacy JS handlers
+   * might still exist. This ensures all Buy actions go through Review.
    * 
    * HOW:
-   * Add click listeners to payment buttons with appropriate price IDs.
+   * Intercept clicks on legacy checkout elements and redirect to review page.
    */
-  document.addEventListener('DOMContentLoaded', () => {
-    const basic = document.getElementById('buyResumeBasic');
-    const expert = document.getElementById('buyResumeExpert');
-    
-    if (basic) {
-      basic.addEventListener('click', () => startCheckout('resume_pro'));
-    }
-    
-    if (expert) {
-      expert.addEventListener('click', () => startCheckout('resume_expert'));
-    }
-  });
+  if (window.location.pathname.startsWith('/dashboard/billing')) {
+    document.addEventListener('click', function (ev) {
+      const el = ev.target.closest('[data-action="checkout"], .js-checkout, #buyResumeBasic, #buyResumeExpert');
+      if (!el) return;
+      
+      // If it's already a link to review page, let it work normally
+      if (el.tagName === 'A' && el.href && el.href.includes('/dashboard/checkout/review')) {
+        return;
+      }
+      
+      // Prevent any legacy checkout handlers
+      ev.preventDefault();
+      ev.stopPropagation();
+      
+      // Determine product key from element
+      let productKey = null;
+      if (el.id === 'buyResumeBasic') {
+        productKey = 'resume_one_time';
+      } else if (el.id === 'buyResumeExpert') {
+        productKey = 'resume_expert';
+      } else {
+        productKey = el.dataset.product || el.dataset.sku || el.dataset.priceKey;
+      }
+      
+      if (productKey) {
+        const qty = parseInt(el.dataset.quantity || '1', 10);
+        window.location.assign(`/dashboard/checkout/review?product=${encodeURIComponent(productKey)}&qty=${qty}`);
+      }
+    }, { capture: true });
+  }
 })();

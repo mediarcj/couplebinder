@@ -304,6 +304,68 @@ window.modalManager = modalManager;
 
 /**
  * WHAT:
+ * Cross-page logout success flash support.
+ * Shows logout success modal on next page load after logout.
+ * 
+ * WHY:
+ * When logout redirects to home page, we need to show "You have been logged out successfully!" modal.
+ * Uses sessionStorage flash flag to persist across page navigation.
+ * Also supports /?logged_out=1 query param for no-JS fallback.
+ * 
+ * HOW:
+ * Check for logout.flash in sessionStorage on page load.
+ * If present, show success modal and clear the flag.
+ * Also check for /?logged_out=1 query param and clean up URL.
+ */
+(function showLogoutFlash() {
+  function shouldShow() {
+    // Check sessionStorage flash flag
+    try {
+      if (sessionStorage.getItem('logout.flash') === '1') {
+        sessionStorage.removeItem('logout.flash');
+        return true;
+      }
+    } catch (_) {}
+
+    // Check query param for no-JS fallback
+    try {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('logged_out') === '1') {
+        // Clean up URL
+        params.delete('logged_out');
+        const query = params.toString();
+        if (history && history.replaceState) {
+          history.replaceState({}, '', query ? ('/?' + query) : '/');
+        }
+        return true;
+      }
+    } catch (_) {}
+
+    return false;
+  }
+
+  function show() {
+    if (!shouldShow()) return;
+
+    // Show logout success modal using existing modalManager
+    if (window.modalManager && typeof window.modalManager.showNotification === 'function') {
+      window.modalManager.showNotification(
+        'Logged out',
+        'You have been logged out successfully!'
+      );
+    }
+  }
+
+  // Run on DOM ready
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', show);
+  } else {
+    show();
+  }
+})();
+
+/**
+ * WHAT:
  * Expose a global open function for modal management.
  * Provides compatibility for code that calls window.openModal().
  * 

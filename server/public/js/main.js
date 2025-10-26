@@ -686,26 +686,20 @@ async function handleLoginSubmit(e) {
                         return;
                     }
                     
-                    // Call server endpoint to set secure cookie
-                    const cookieResponse = await fetch('/auth/set-cookie', {
-                        method: 'POST',
-                        headers: {
-                            'Authorization': `Bearer ${access}`,
-                            'Content-Type': 'application/json'
-                        },
-                        credentials: 'include'  // Required for cookies
+                    // Call server endpoint to set secure cookie with backoff
+                    const cookieResult = await postAuthCookieWithBackoff({
+                        headers: { 'Authorization': `Bearer ${access}` },
+                        body: {}
                     });
                     
-                    if (!cookieResponse.ok) {
-                        logger.error('Failed to set authentication cookie');
-                        modalManager.showLoginError('Login failed: could not set session');
-                        return;
-                    }
-                    
-                    const cookieResult = await cookieResponse.json();
                     if (!cookieResult.ok) {
-                        logger.error('Server rejected authentication cookie');
-                        modalManager.showLoginError('Login failed: invalid session');
+                        if (cookieResult.delayed) {
+                            // Recently logged out; ask user to retry
+                            modalManager.showLoginError('Please wait a moment and try logging in again.');
+                            return;
+                        }
+                        logger.error('Failed to set authentication cookie', cookieResult.error);
+                        modalManager.showLoginError('Login failed: ' + (cookieResult.error || 'could not set session'));
                         return;
                     }
                     
@@ -773,6 +767,71 @@ async function handleLoginSubmit(e) {
 }
 
 /**
+ * Helper: POST /auth/set-cookie with backoff if logout sentinel is active (204)
+ * 
+ * WHAT:
+ * Attempts to set auth cookie with retry logic for sentinel denials.
+ * 
+ * WHY:
+ * When user logs out, sentinel cookie blocks re-auth for 10s.
+ * Client should retry automatically instead of showing error.
+ * 
+ * HOW:
+ * Retry up to 6 times with 1200ms delay between attempts.
+ * Return { ok: false, delayed: true } if all retries exhausted.
+ * Return { ok: true } on success, { ok: false, error: msg } on other errors.
+ */
+async function postAuthCookieWithBackoff(payload, opts) {
+  const retries = (opts && opts.retries) || 6;
+  const delayMs = (opts && opts.delayMs) || 1200;
+  
+  for (let i = 0; i <= retries; i++) {
+    let res;
+    try {
+      res = await fetch('/auth/set-cookie', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          ...payload.headers
+        },
+        credentials: 'include',
+        body: JSON.stringify(payload.body)
+      });
+    } catch (e) {
+      return { ok: false, error: 'Network error' };
+    }
+    
+    if (res.status === 204) {
+      // Denied by logout sentinel; wait and retry unless out of attempts
+      if (i === retries) return { ok: false, delayed: true };
+      await new Promise(r => setTimeout(r, delayMs));
+      continue;
+    }
+    
+    if (!res.ok) {
+      let msg = 'Session setup error';
+      try {
+        const ct = res.headers.get('content-type') || '';
+        if (ct.includes('application/json')) {
+          const j = await res.json().catch(() => ({}));
+          if (j && j.error) msg = j.error;
+        }
+      } catch (_) {}
+      return { ok: false, error: msg };
+    }
+    
+    // Parse JSON response on 200
+    try {
+      const json = await res.json();
+      return { ok: json.ok === true, data: json };
+    } catch (_) {
+      return { ok: true };
+    }
+  }
+}
+
+/**
  * Check session status on page load
  * 
  * WHAT:
@@ -835,29 +894,22 @@ async function checkSessionStatus() {
         // We have a session in localStorage - but is it still valid?
         // Try to set the secure cookie. If server accepts it, we're logged in.
         try {
-            const response = await fetch('/auth/set-cookie', {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${session.access_token}`,
-                    'Content-Type': 'application/json'
-                },
-                credentials: 'include'
+            const result = await postAuthCookieWithBackoff({
+                headers: { 'Authorization': `Bearer ${session.access_token}` },
+                body: {}
             });
             
-            if (response.ok) {
+            if (result.ok) {
                 // Server accepted the token - session is valid
-                const result = await response.json();
-                if (result.ok) {
-                    logger.info('Session restored');
-                    // Get fresh user data to update UI
-                    const { data: { user } } = await client.auth.getUser();
-                    if (user) {
-                        updateUIForLoggedInUser(user.email);
-                    } else {
-                        updateUIForLoggedOutUser();
-                    }
-                    return;
+                logger.info('Session restored');
+                // Get fresh user data to update UI
+                const { data: { user } } = await client.auth.getUser();
+                if (user) {
+                    updateUIForLoggedInUser(user.email);
+                } else {
+                    updateUIForLoggedOutUser();
                 }
+                return;
             }
             
             // Server rejected the token - session is invalid

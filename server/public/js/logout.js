@@ -312,6 +312,50 @@ function attachLogoutHandler(selector = '#logoutBtn') {
   return false;
 }
 
+/**
+ * WHAT:
+ * Intercept clicks on [data-logout] buttons/forms for unified logout handling.
+ * 
+ * WHY:
+ * Nav now uses data-logout attribute instead of fixed IDs for flexibility.
+ * Ensures logout works consistently across all pages with navigation.
+ * 
+ * HOW:
+ * Listen for clicks on elements with data-logout attribute.
+ * Also listen for form submits on forms containing [data-logout] buttons.
+ * Prevent default behavior and call performLogout().
+ */
+(function setupDataLogoutInterceptor() {
+  // Intercept clicks on [data-logout] buttons
+  document.addEventListener('click', function (e) {
+    const btn = e.target && e.target.closest('[data-logout]');
+    if (!btn) return;
+    
+    // Prevent form submit
+    e.preventDefault();
+    e.stopPropagation();
+    
+    logoutLogger.info('Data-logout click intercepted');
+    handleLogout();
+  }, { capture: true });
+
+  // Intercept form submits for forms containing [data-logout] buttons
+  document.addEventListener('submit', function (e) {
+    const form = e.target;
+    if (!form) return;
+    
+    const btn = form.querySelector('[data-logout]');
+    if (!btn) return;
+    
+    // Prevent form submit
+    e.preventDefault();
+    e.stopPropagation();
+    
+    logoutLogger.info('Data-logout form submit intercepted');
+    handleLogout();
+  }, { capture: true });
+})();
+
 function initializeLogout() {
   logoutLogger.info('Initializing logout');
   attachLogoutHandler('#logoutBtn');

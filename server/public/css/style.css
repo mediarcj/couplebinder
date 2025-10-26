@@ -705,6 +705,14 @@ nav ul li a.active {
     font-size: 0.9rem;
 }
 
+.product-img {
+    display: block;
+    max-width: 100%;
+    height: auto;
+    border-radius: 6px;
+    margin-bottom: 0.5rem;
+}
+
 .status-success {
     color: #27ae60 !important;
     font-weight: 600;

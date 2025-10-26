@@ -84,8 +84,8 @@ function securityHeaders() {
           (req, res) => `'nonce-${res.locals.cspNonce}'`
         ],
         
-        // Images: self-hosted + data URIs (for inline images)
-        imgSrc: ["'self'", 'data:'],
+        // Images: self-hosted + data URIs + Stripe product images
+        imgSrc: ["'self'", 'data:', 'https://files.stripe.com', 'https://*.stripe.com'],
         
         // Fonts: self-hosted only
         fontSrc: ["'self'"],

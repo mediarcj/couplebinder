@@ -42,7 +42,12 @@
         <% if (pOne) { %>
         <div class="action-card">
           <% if (pOne.image) { %>
-            <img src="<%= pOne.image %>" alt="<%= pOne.name || '' %>" loading="lazy">
+            <img
+              class="product-img"
+              src="<%= pOne.image %>"
+              alt="<%= pOne.name || '' %>"
+              loading="lazy"
+              decoding="async">
           <% } %>
           <% if (pOne.name) { %><h3><%= pOne.name %></h3><% } %>
           <% if (pOne.description) { %><p><%= pOne.description %></p><% } %>
@@ -64,7 +69,12 @@
         <% if (pTwo) { %>
         <div class="action-card">
           <% if (pTwo.image) { %>
-            <img src="<%= pTwo.image %>" alt="<%= pTwo.name || '' %>" loading="lazy">
+            <img
+              class="product-img"
+              src="<%= pTwo.image %>"
+              alt="<%= pTwo.name || '' %>"
+              loading="lazy"
+              decoding="async">
           <% } %>
           <% if (pTwo.name) { %><h3><%= pTwo.name %></h3><% } %>
           <% if (pTwo.description) { %><p><%= pTwo.description %></p><% } %>

@@ -240,9 +240,9 @@ router.get('/billing/buy', async (req, res) => {
  */
 router.get('/checkout/review', async (req, res, next) => {
     try {
-        const { product: productKey, qty } = req.query;
+        const { product: productKeyRaw, qty } = req.query;
         
-        if (!productKey) {
+        if (!productKeyRaw) {
             return res.status(400).render('error', {
                 page: {
                     title: '400 - Bad Request',
@@ -259,16 +259,35 @@ router.get('/checkout/review', async (req, res, next) => {
         }
 
         const quantity = Math.max(1, parseInt(qty || '1', 10));
+        const productKey = String(productKeyRaw).trim();
 
         // Get pricing catalog to find product details
         const catalog = await getPricingCatalog();
-        const product = catalog.find(p => {
-            const isOneTime = productKey === 'resume_one_time' && p.product_metadata?.product_key === 'resume_one_time';
-            const isExpert = productKey === 'resume_expert' && p.product_metadata?.product_key === 'resume_expert';
-            return isOneTime || isExpert;
-        });
+
+        // Helper function to select product by key with multiple fallback strategies
+        function selectByKey(key) {
+            const isOneTime = process.env.STRIPE_PRICE_RESUME_ONE_TIME && key === 'resume_one_time';
+            const isExpert = process.env.STRIPE_PRICE_RESUME_EXPERT && key === 'resume_expert';
+            
+            return catalog.find(p =>
+                // Prefer explicit metadata keys if present
+                p.product_metadata?.product_key === key ||
+                p.product_key === key ||
+                // Fallback: match the known env price IDs for the two products
+                (isOneTime && p.priceId === process.env.STRIPE_PRICE_RESUME_ONE_TIME) ||
+                (isExpert && p.priceId === process.env.STRIPE_PRICE_RESUME_EXPERT)
+            );
+        }
+
+        const product = selectByKey(productKey);
 
         if (!product) {
+            logger.warn({
+                event: 'checkout.review.product_not_found',
+                productKey,
+                requestId: req.requestId
+            }, 'Review product not found');
+            
             return res.status(404).render('error', {
                 page: {
                     title: '404 - Not Found',
@@ -292,22 +311,33 @@ router.get('/checkout/review', async (req, res, next) => {
         pageModel.ui.supabaseUrl = process.env.SUPABASE_URL;
         pageModel.ui.supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
 
-        // Compute totals
-        const subtotal = (product.unit_amount || 0) * quantity;
-        const total = subtotal; // Taxes calculated at Stripe checkout
+        // Normalize product data for template
+        const normalizedProduct = {
+            key: product.product_metadata?.product_key || productKey,
+            name: product.name,
+            currency: product.currency || 'usd',
+            unit_amount: product.unit_amount,
+            interval: product.interval,
+            priceId: product.priceId
+        };
+
+        // Compute totals (Stripe will finalize taxes)
+        const subtotal = (normalizedProduct.unit_amount || 0) * quantity;
+        const total = subtotal;
 
         // Add product and pricing data
-        pageModel.product = product;
+        pageModel.product = normalizedProduct;
         pageModel.quantity = quantity;
         pageModel.subtotal = subtotal;
         pageModel.total = total;
-        pageModel.productKey = productKey;
+        pageModel.productKey = normalizedProduct.key;
 
         res.render('checkout-review', pageModel);
     } catch (err) {
         logger.error({
             event: 'dashboard.checkout_review.error',
             error: err.message,
+            stack: err.stack,
             requestId: req.requestId
         }, 'Checkout review route error');
         next(err);

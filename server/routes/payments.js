@@ -35,7 +35,7 @@ const idem = createIdempotencyMiddleware({ ttl: 3600, headerName: 'Idempotency-K
 
 // Server-side SKU to price ID mapping (never trust client-supplied price IDs)
 const PRICES = {
-  resume_pro: process.env.STRIPE_PRICE_RESUME_ONE_TIME?.trim(),
+  resume_one_time: process.env.STRIPE_PRICE_RESUME_ONE_TIME?.trim(),
   resume_expert: process.env.STRIPE_PRICE_RESUME_EXPERT?.trim()
 };
 
@@ -59,7 +59,7 @@ router.post('/checkout', idem, async (req, res) => {
     const user = assertUser(req);
     // Accept SKU or productKey from client for compatibility
     const { sku, productKey, quantity } = req.body || {};
-    const skuOrKey = sku || productKey || 'resume_pro';
+    const skuOrKey = (sku || productKey || 'resume_one_time').trim();
     
     const priceId = PRICES[skuOrKey];
     if (!priceId) {

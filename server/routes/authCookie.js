@@ -79,6 +79,7 @@ router.post('/set-cookie', async (req, res) => {
         event: 'auth.set_cookie.denied_by_sentinel',
         requestId: req.requestId
       }, 'Re-authentication blocked - user just logged out');
+      res.set('X-Auth-Sentinel', 'active');
       return res.status(204).end();
     }
 

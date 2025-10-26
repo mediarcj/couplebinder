@@ -223,13 +223,36 @@ router.post('/clear-cookie', (req, res) => {
     // ============================================================
     audit('auth.clear_cookie.ok', {}, req);
 
-    return res.json({ ok: true });
+    // ============================================================
+    // Content negotiation: HTML navigation -> redirect, XHR -> JSON
+    // ============================================================
+    const accept = String(req.headers.accept || '');
+    const isXHR = (req.xhr === true) || (String(req.headers['x-requested-with'] || '').toLowerCase() === 'xmlhttprequest');
+    const isJSONy = accept.includes('application/json') || accept.includes('text/json');
+
+    // Help caches pick the right variant
+    res.set('Vary', 'Accept, X-Requested-With');
+
+    // Browser form submit: redirect to home (no raw JSON in browser)
+    if (!isXHR && !isJSONy && accept.includes('text/html')) {
+      return res.redirect(303, '/');
+    }
+
+    // Programmatic callers (XHR/fetch) get JSON response
+    return res.status(200).json({ ok: true });
   } catch (error) {
     logger.error({
       event: 'auth.clear_cookie.exception',
       error: error.message,
       requestId: req.requestId
     }, 'Clear-cookie route exception');
+    
+    // Error handling with content negotiation
+    const accept = String(req.headers.accept || '');
+    const wantsHTML = accept.includes('text/html') && !accept.includes('application/json');
+    if (wantsHTML) {
+      return res.redirect(303, '/?logout_error=1');
+    }
     return res.status(500).json({ 
       ok: false, 
       error: 'Failed to clear cookie' 

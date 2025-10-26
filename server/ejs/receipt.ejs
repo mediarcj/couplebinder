@@ -22,6 +22,9 @@
         <div class="toolbar-actions">
           <button class="btn" data-action="print" type="button" aria-label="Print or save as PDF">Print / Save PDF</button>
           <a class="btn btn-secondary" href="/dashboard/receipt.pdf?session_id=<%= encodeURIComponent(receipt.session_id || '') %>" target="_blank" rel="noopener">Download PDF</a>
+          <% if (features && features.emailReceipt) { %>
+            <button class="btn btn-secondary" data-action="email" type="button" aria-label="Email me this receipt">Email me this receipt</button>
+          <% } %>
         </div>
       </div>
       

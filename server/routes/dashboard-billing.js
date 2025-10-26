@@ -38,6 +38,11 @@ const { getPricingCatalog } = require('../services/pricingCatalog');
  * 4. Include nonce for CSP-safe client scripts
  */
 router.get('/', async (req, res) => {
+  // Safety net: If Stripe redirected back with ?paid=1&session_id=, redirect to receipt page
+  if (req.query.paid === '1' && req.query.session_id) {
+    return res.redirect(302, `/dashboard/receipt?session_id=${encodeURIComponent(req.query.session_id)}`);
+  }
+
   const pageModel = await buildDashboardPageModel(req, res);
   pageModel.page.nonce = res.locals.nonce;
 

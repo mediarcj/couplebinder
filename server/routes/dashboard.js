@@ -116,6 +116,9 @@ router.get('/receipt', async (req, res, next) => {
             app_info: {
                 name: process.env.APP_NAME || 'Application',
                 description: process.env.APP_DESCRIPTION || 'A modern web application'
+            },
+            features: {
+                emailReceipt: !!process.env.FEATURE_EMAIL_RECEIPT
             }
         });
     } catch (err) {
@@ -170,6 +173,9 @@ router.get('/receipt.pdf', async (req, res, next) => {
             app_info: {
                 name: process.env.APP_NAME || 'Application',
                 description: process.env.APP_DESCRIPTION || 'A modern web application'
+            },
+            features: {
+                emailReceipt: !!process.env.FEATURE_EMAIL_RECEIPT
             },
             pdfMode: true
         }, async (err, html) => {

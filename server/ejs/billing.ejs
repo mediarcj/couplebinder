@@ -109,36 +109,20 @@
   <script src="/js/modalManager.js" nonce="<%= page.nonce %>"></script>
   <script src="/js/pay.js?v=<%= page.assetVersion || Date.now() %>" nonce="<%= page.nonce %>"></script>
   <script nonce="<%= page.nonce %>">
-    // Tiny toast for return from Checkout with receipt link and retry logic
-    (async function(){
+    // Handle canceled payments and clean URL
+    (function(){
       const url = new URL(window.location.href);
-      const isPaid = url.searchParams.get('paid') === '1';
-      const sessionId = url.searchParams.get('session_id');
+      const isCanceled = url.searchParams.get('canceled') === '1';
       
-      if (!isPaid && url.searchParams.get('canceled') !== '1') return;
-      
-      try {
-        if (isPaid) {
-          // Show success notification with link to branded receipt page
-          const receiptHref = `/dashboard/receipt?session_id=${encodeURIComponent(sessionId)}`;
-          const message = { 
-            text: 'Thanks!', 
-            linkHref: receiptHref, 
-            linkText: 'View receipt' 
-          };
-          
-          window.modalManager?.showNotification('Payment received', message);
-        } else if (url.searchParams.get('canceled') === '1') {
-          window.modalManager?.showNotification('Payment canceled', 'No charge was made.');
-        }
-      } catch (err) {
-        console.warn('Payment notification failed:', err);
-      } finally {
+      if (isCanceled) {
+        // Show cancellation notification
+        window.modalManager?.showNotification('Payment canceled', 'No charge was made.');
+        
         // Clean URL to prevent nav from seeing query params
         const cleanUrl = url.pathname + (url.hash || '');
         history.replaceState({}, document.title, cleanUrl);
         
-        // Signal any client-side nav to refresh (safe no-op if not loaded yet)
+        // Signal any client-side nav to refresh
         window.dispatchEvent(new Event('ui:navigation:refresh'));
       }
     })();

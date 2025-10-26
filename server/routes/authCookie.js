@@ -59,6 +59,29 @@ const baseCookie = {
  */
 router.post('/set-cookie', async (req, res) => {
   try {
+    // Set Vary header for cache control
+    res.set('Vary', 'Cookie, Authorization, Accept');
+
+    /**
+     * WHAT:
+     * Safety net: refuse to re-set auth cookies if user just logged out.
+     * 
+     * WHY:
+     * Prevents race condition where Supabase session still exists in localStorage
+     * after logout, causing immediate re-login via checkSessionStatus().
+     * 
+     * HOW:
+     * Check for auth_logout sentinel cookie (set during logout, expires in 10s).
+     * Return 204 No Content to silently refuse re-authentication.
+     */
+    if (req.cookies && req.cookies['auth_logout'] === '1') {
+      logger.info({
+        event: 'auth.set_cookie.denied_by_sentinel',
+        requestId: req.requestId
+      }, 'Re-authentication blocked - user just logged out');
+      return res.status(204).end();
+    }
+
     /**
      * WHAT:
      * Check for account/IP lockouts before processing token.
@@ -222,6 +245,17 @@ router.post('/clear-cookie', (req, res) => {
         : { path: '/', domain: process.env.AUTH_COOKIE_DOMAIN || undefined };
 
       res.clearCookie(n, clearOpts);
+    });
+
+    // ============================================================
+    // Set a short-lived sentinel cookie to prevent immediate re-login
+    // ============================================================
+    const isProd = process.env.NODE_ENV === 'production';
+    res.cookie('auth_logout', '1', {
+      httpOnly: false, // Must be readable by client JavaScript
+      sameSite: 'Lax',
+      secure: isProd,
+      maxAge: 10_000 // 10s window to avoid race with boot code
     });
 
     // ============================================================

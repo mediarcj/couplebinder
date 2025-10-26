@@ -11,6 +11,7 @@ const puppeteer = require('puppeteer-core');
 // requireAuth is applied globally to /dashboard routes in zorvalon.js
 const { buildDashboardPageModel, buildErrorPageModel } = require('../ui_contract/presenters');
 const { getReceiptVM } = require('../services/receiptService');
+const { getPricingCatalog, getPriceSummary } = require('../services/pricingCatalog');
 const { assertUser } = require('../utils/authz');
 const logger = require('../utils/logger');
 
@@ -206,6 +207,86 @@ router.get('/receipt.pdf', async (req, res, next) => {
         });
     } catch (err) {
         return next(err);
+    }
+});
+
+/**
+ * GET /dashboard/checkout/review?product=<productKey>&qty=1
+ * Review page before checkout - shows product details and summary
+ */
+router.get('/checkout/review', async (req, res, next) => {
+    try {
+        const { product: productKey, qty } = req.query;
+        
+        if (!productKey) {
+            return res.status(400).render('error', {
+                page: {
+                    title: '400 - Bad Request',
+                    nonce: res.locals.nonce
+                },
+                error: {
+                    status: 400,
+                    message: 'Missing product parameter'
+                },
+                app_info: {
+                    name: process.env.APP_NAME || 'Application'
+                }
+            });
+        }
+
+        const quantity = Math.max(1, parseInt(qty || '1', 10));
+
+        // Get pricing catalog to find product details
+        const catalog = await getPricingCatalog();
+        const product = catalog.find(p => {
+            const isOneTime = productKey === 'resume_one_time' && p.product_metadata?.product_key === 'resume_one_time';
+            const isExpert = productKey === 'resume_expert' && p.product_metadata?.product_key === 'resume_expert';
+            return isOneTime || isExpert;
+        });
+
+        if (!product) {
+            return res.status(404).render('error', {
+                page: {
+                    title: '404 - Not Found',
+                    nonce: res.locals.nonce
+                },
+                error: {
+                    status: 404,
+                    message: 'Product not found'
+                },
+                app_info: {
+                    name: process.env.APP_NAME || 'Application'
+                }
+            });
+        }
+
+        // Build page model for consistent dashboard layout
+        const pageModel = await buildDashboardPageModel(req, res);
+        pageModel.page.title = 'Review Purchase - ' + (process.env.APP_NAME || 'Application');
+        pageModel.page.nonce = res.locals.nonce;
+        pageModel.page.assetVersion = Date.now();
+        pageModel.ui.supabaseUrl = process.env.SUPABASE_URL;
+        pageModel.ui.supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+
+        // Compute totals
+        const subtotal = (product.unit_amount || 0) * quantity;
+        const total = subtotal; // Taxes calculated at Stripe checkout
+
+        // Add product and pricing data
+        pageModel.product = product;
+        pageModel.quantity = quantity;
+        pageModel.subtotal = subtotal;
+        pageModel.total = total;
+        pageModel.productKey = productKey;
+
+        res.render('checkout-review', pageModel);
+    } catch (err) {
+        logger.error({
+            event: 'dashboard.checkout_review.error',
+            error: err.message,
+            requestId: req.requestId
+        }, 'Checkout review route error');
+        next(err);
     }
 });
 

@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta name="csrf-token" content="<%= page.csrfToken || '' %>">
+  <title><%= page.title %></title>
+  <link rel="stylesheet" href="/css/style.css?v=<%= page.assetVersion || Date.now() %>">
+</head>
+<body>
+  <%- include('partials/nav', { nav: page.nav, app_info: app_info }) %>
+
+  <main>
+    <div class="container">
+      <div class="hero">
+        <h1>Review your purchase</h1>
+        <p class="subtitle">You'll be redirected to <strong>Stripe</strong> to enter your payment details securely.</p>
+      </div>
+
+      <div class="user-profile">
+        <h2>Order Summary</h2>
+        <div class="profile-card">
+          <div class="profile-info">
+            <div class="info-item">
+              <span class="info-label">Product</span>
+              <span class="info-value"><%= product.name || productKey %></span>
+            </div>
+            <div class="info-item">
+              <span class="info-label">Quantity</span>
+              <span class="info-value"><%= quantity %></span>
+            </div>
+            <div class="info-item">
+              <span class="info-label">Price</span>
+              <span class="info-value">
+                $<%= (product.unit_amount/100).toFixed(2) %> <%= (product.currency||'usd').toUpperCase() %>
+                <% if (product.interval) { %>/ <%= product.interval %><% } %>
+              </span>
+            </div>
+            <div class="info-item">
+              <span class="info-label">Taxes</span>
+              <span class="info-value">Calculated at Stripe checkout</span>
+            </div>
+            <div class="info-item">
+              <span class="info-label">Total (estimate)</span>
+              <span class="info-value">
+                <strong>$<%= (total/100).toFixed(2) %> <%= (product.currency||'usd').toUpperCase() %></strong>
+                <% if (product.interval) { %>/ <%= product.interval %><% } %>
+              </span>
+            </div>
+          </div>
+
+          <div class="checkout-review-foot">
+            <div class="payment-note">
+              <span class="lock" aria-hidden="true">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" focusable="false" aria-hidden="true">
+                  <path d="M17 8V7a5 5 0 00-10 0v1H5v14h14V8h-2zm-8 0V7a3 3 0 016 0v1H9zm3 5a2 2 0 11.001 3.999A2 2 0 0112 13z"/>
+                </svg>
+              </span>
+              <span>Secure payment handled by <strong>Stripe</strong>. Supports major cards and wallets (Apple Pay / Google Pay where available).</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="dashboard-actions">
+        <div class="action-grid">
+          <button id="cta-continue" class="btn btn-primary" 
+                  data-product="<%= productKey %>"
+                  data-quantity="<%= quantity %>"
+                  type="button">
+            Continue to secure payment
+          </button>
+          <a class="btn btn-secondary" href="/dashboard/billing">Back</a>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <footer>
+    <div class="container">
+      <p>&copy; 2024 <%= app_info?.name || 'Application' %>. <%= app_info?.description || 'A modern web application' %>.</p>
+    </div>
+  </footer>
+
+  <script nonce="<%= page.nonce %>">
+    (function () {
+      const btn = document.getElementById('cta-continue');
+      if (!btn) return;
+      
+      btn.addEventListener('click', async function () {
+        if (btn.disabled) return;
+        btn.disabled = true;
+        
+        const productKey = btn.getAttribute('data-product');
+        const qty = parseInt(btn.getAttribute('data-quantity') || '1', 10);
+        
+        try {
+          const res = await fetch('/api/pay/checkout', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({
+              sku: productKey,
+              quantity: qty
+            })
+          });
+          
+          const data = await res.json().catch(() => ({}));
+          
+          if (!res.ok || !data.url) {
+            throw new Error(data.error || 'Checkout failed');
+          }
+          
+          // Redirect to Stripe Checkout
+          window.location.assign(data.url);
+        } catch (err) {
+          console.error('Checkout error:', err);
+          if (window.modalManager?.showNotification) {
+            window.modalManager.showNotification('Error', 'Could not start checkout. Please try again.');
+          } else {
+            alert('Could not start checkout. Please try again.');
+          }
+        } finally {
+          btn.disabled = false;
+        }
+      });
+    })();
+  </script>
+</body>
+</html>

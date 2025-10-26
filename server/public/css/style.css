@@ -292,6 +292,31 @@ main {
     display: initial;
 }
 
+/* Checkout Review page styles */
+.checkout-review-foot {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.75rem;
+    margin-top: 0.75rem;
+    flex-wrap: wrap;
+    padding-top: 1rem;
+    border-top: 1px solid #e1e8ed;
+}
+
+.checkout-review-foot .payment-note {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: #666;
+    font-size: 0.875rem;
+}
+
+.checkout-review-foot .payment-note .lock {
+    opacity: 0.75;
+    flex-shrink: 0;
+}
+
 /* Footer */
 footer {
     background-color: #2c3e50;

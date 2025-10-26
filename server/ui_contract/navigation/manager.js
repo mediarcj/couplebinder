@@ -115,7 +115,7 @@ function compose(req, res) {
 
   // Map, determine active
   let mapped = filtered.map(item => {
-      // Sanitize href and action (remove whitespace, no query strings)
+      // Sanitize href and action (remove whitespace)
       const safeHref = item.href && String(item.href).replace(/\s/g, '');
       const safeAction = item.action && String(item.action).replace(/\s/g, '');
       const method = (item.method || 'GET').toUpperCase();
@@ -133,12 +133,30 @@ function compose(req, res) {
         active = path === safeHref || path.startsWith(safeHref + '/');
       }
 
-      // Fill dynamic welcome label
-      let label = item.label;
+      // Choose label / template source robustly
+      const labelSrc = (typeof item.label !== 'undefined' && item.label !== null)
+        ? String(item.label)
+        : (typeof item.template !== 'undefined' && item.template !== null ? String(item.template) : '');
+
+      // Robust display name resolver (prefer canonical display_name)
+      function pickDisplayName(req, res) {
+        return (
+          res?.locals?.ui?.user?.display_name ||
+          res?.locals?.user?.display_name ||
+          req.user?.user_metadata?.display_name ||
+          req.user?.user_metadata?.display_name_override ||
+          req.user?.display_name ||
+          req.user?.full_name ||
+          req.user?.name ||
+          req.user?.email ||
+          'User'
+        );
+      }
+
+      let label = labelSrc;
       if (item.id === 'welcome' && isAuthed) {
-        const user = req.user || {};
-        const name = user.full_name || user.name || user.email || 'User';
-        label = String(label).replace('{{name}}', name);
+        label = labelSrc.replace('{{name}}', pickDisplayName(req, res));
+        if (!label) label = `Welcome, ${pickDisplayName(req, res)}!`;
       }
 
       return {
@@ -150,7 +168,7 @@ function compose(req, res) {
         method,
         csrf: !!item.csrf,
         active,
-        modal: item.modal || null,     // pass through for login/signup
+        modal: item.modal || null      // pass through for login/signup
       };
     });
 

@@ -32,7 +32,7 @@ module.exports = {
     { id: 'billing',   label: 'Billing',   href: '/dashboard/billing',       when: 'auth',    feature: 'billing', activeMatch: '^/dashboard/billing/?$' },
     { id: 'profile',   label: 'Profile',   href: '/dashboard/profile-edit',  when: 'auth',    activeMatch: '^/dashboard/profile-edit/?$' },
     // POST action with CSRF; rendered as a form, not a link
-    { id: 'logout',    label: 'Log out',   action: '/api/auth/logout',       method: 'POST', csrf: true, when: 'auth' }
+    { id: 'logout',    label: 'Log out',   action: '/auth/clear-cookie',     method: 'POST', csrf: true, data: { logout: 'true' }, when: 'auth' }
   ],
 
   // Optional admin items

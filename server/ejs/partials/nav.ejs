@@ -1,0 +1,37 @@
+<!-- File: server/ejs/partials/nav.ejs -->
+<!-- Description: Shared navigation component for all pages -->
+<!-- Purpose: Single navigation implementation for consistency -->
+<!-- Notes: CSP-compliant; no inline JS; server provides all data -->
+
+<%
+// Expected: nav = { items: [...], csrfToken }
+// Each item has: id, label, type ('link' or 'action'), href, action, method, csrf, active
+%>
+<nav class="site-nav" role="navigation" aria-label="Primary">
+  <div class="site-nav__inner">
+    <a class="site-nav__brand" href="/">Detechify</a>
+
+    <button class="site-nav__toggle" aria-expanded="false" aria-controls="site-nav-menu" data-js="nav-toggle">
+      Menu
+    </button>
+
+    <ul id="site-nav-menu" class="site-nav__menu">
+      <% nav.items.forEach((it) => { %>
+        <% if (it.type === 'link') { %>
+          <li class="site-nav__item <%= it.active ? 'is-active' : '' %>">
+            <a class="site-nav__link" href="<%= it.href %>"><%= it.label %></a>
+          </li>
+        <% } else { %>
+          <li class="site-nav__item">
+            <form class="site-nav__form" action="<%= it.action %>" method="POST">
+              <% if (it.csrf && nav.csrfToken) { %>
+                <input type="hidden" name="_csrf" value="<%= nav.csrfToken %>">
+              <% } %>
+              <button class="site-nav__button" type="submit"><%= it.label %></button>
+            </form>
+          </li>
+        <% } %>
+      <% }) %>
+    </ul>
+  </div>
+</nav>

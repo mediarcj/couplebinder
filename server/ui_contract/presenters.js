@@ -180,6 +180,7 @@ function buildHomePageModel(req, res) {
       description: process.env.APP_DESCRIPTION || 'A modern web application',
       type: 'home',
       assetVersion: ASSET_VERSION,  // Cache-busting for JS/CSS
+      nonce: res.locals.nonce || '',  // CSP nonce for inline scripts
       nav: navManager.compose(req, res)  // Centralized navigation
     },
     user: {

@@ -119,6 +119,7 @@ function compose(req, res) {
       const safeHref = item.href && String(item.href).replace(/\s/g, '');
       const safeAction = item.action && String(item.action).replace(/\s/g, '');
       const method = (item.method || 'GET').toUpperCase();
+      const kind = item.type === 'text' ? 'text' : (method === 'POST' ? 'action' : 'link');
 
       // Determine active state using regex match
       let active = false;
@@ -132,54 +133,53 @@ function compose(req, res) {
         active = path === safeHref || path.startsWith(safeHref + '/');
       }
 
+      // Fill dynamic welcome label
+      let label = item.label;
+      if (item.id === 'welcome' && isAuthed) {
+        const user = req.user || {};
+        const name = user.full_name || user.name || user.email || 'User';
+        label = String(label).replace('{{name}}', name);
+      }
+
       return {
         id: item.id,
-        label: item.label,
-        template: item.template,      // for 'welcome' text
-        modal: item.modal,            // for auth modals (login/signup)
-        type: method === 'POST' ? 'action' : (item.type || 'link'),
+        label,
+        type: kind,                    // 'link' | 'action' | 'text'
         href: method === 'POST' ? null : safeHref,
         action: method === 'POST' ? safeAction : null,
         method,
         csrf: !!item.csrf,
-        active
+        active,
+        modal: item.modal || null,     // pass through for login/signup
       };
     });
 
-  // Build per-page ordering for authed state
-  if (isAuthed) {
-    const primaryOrder = ['home', 'dashboard', 'billing', 'profile'];
-    const byId = new Map(mapped.map(x => [x.id, x]));
-    // Figure out which primary is active
-    const activePrimary = primaryOrder.map(id => byId.get(id)).filter(Boolean).find(x => x.active);
-    const activeId = activePrimary ? activePrimary.id : null;
-    // Visible primaries (exclude the active one)
-    const primaries = primaryOrder
-      .map(id => byId.get(id))
-      .filter(Boolean)
-      .filter(x => x.id !== activeId);
-    // Welcome text -> resolve label
-    let welcome = byId.get('welcome');
-    if (welcome) {
-      const user = res?.locals?.user || req?.user || {};
-      const name = user.full_name || user.name || user.display_name || user.email || 'Friend';
-      welcome = { ...welcome, type: 'text', label: (welcome.template || 'Welcome, {{name}}!').replace('{{name}}', String(name)) };
-    }
-    // Logout action
-    const logout = byId.get('logout');
-    // Optional admin item(s) before logout
-    const admin = mapped.filter(x => x.id === 'admin');
-    // Compose final
-    mapped = []
-      .concat(primaries)
-      .concat(welcome ? [welcome] : [])
-      .concat(admin)
-      .concat(logout ? [logout] : []);
-  }
-
-  // Deduplicate by id (in case templates still include legacy nav)
+  // Dedupe by id (keeps first occurrence)
   const seen = new Set();
-  const items = mapped.filter(x => (x && !seen.has(x.id) && seen.add(x.id)));
+  let items = mapped.filter(it => (it && it.id && !seen.has(it.id)) ? (seen.add(it.id), true) : false);
+
+  // Reorder for authenticated pages per spec
+  if (isAuthed) {
+    const isHome = path === '/' || /^\/\?$/.test(path);
+    const isDash = /^\/dashboard(?:$|\/)/.test(path) && !/\/billing|\/profile-edit/.test(path);
+    const isBilling = /^\/dashboard\/billing\/?$/.test(path);
+    const isProfile = /^\/dashboard\/profile-edit\/?$/.test(path);
+
+    const orderHome = ['dashboard', 'billing', 'profile', 'welcome', 'logout'];
+    const orderDashboard = ['home', 'billing', 'profile', 'welcome', 'logout'];
+    const orderProfile = ['home', 'billing', 'dashboard', 'welcome', 'logout'];
+    const orderBilling = ['home', 'dashboard', 'profile', 'welcome', 'logout'];
+
+    const desired = isHome ? orderHome
+                  : isDash ? orderDashboard
+                  : isProfile ? orderProfile
+                  : isBilling ? orderBilling
+                  : orderHome;
+
+    const byId = {};
+    items.forEach(it => { byId[it.id] = it; });
+    items = desired.map(id => byId[id]).filter(Boolean);
+  }
 
   // Provide CSRF token for POST forms (from middleware)
   const csrfToken = res?.locals?.csrfToken || '';

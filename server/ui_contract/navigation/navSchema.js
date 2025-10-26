@@ -21,9 +21,8 @@ module.exports = {
   // Visible to everyone (not signed in)
   public: [
     { id: 'home',     label: 'Home',     href: '/',                    when: 'unauth', activeMatch: '^/$' },
-    { id: 'pricing',  label: 'Pricing',  href: '/pricing',             when: 'unauth', feature: 'pricing', activeMatch: '^/pricing/?$' },
     { id: 'login',    label: 'Log in',   href: '/?login=true',         when: 'unauth', modal: 'login', activeMatch: '\\blogin=true\\b' },
-    { id: 'signup',   label: 'Sign up',  href: '/?signup=true',        when: 'unauth', modal: 'signup', feature: 'signup', activeMatch: '\\bsignup=true\\b' }
+    { id: 'signup',   label: 'Sign up',  href: '/?signup=true',        when: 'unauth', modal: 'signup', activeMatch: '\\bsignup=true\\b' }
   ],
 
   // Visible to authenticated users

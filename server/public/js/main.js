@@ -792,6 +792,16 @@ async function handleLoginSubmit(e) {
  */
 async function checkSessionStatus() {
     try {
+        // Check for logout sentinel before attempting re-hydration
+        try {
+            if (sessionStorage.getItem('justLoggedOut') === '1' || document.cookie.indexOf('auth_logout=1') !== -1) {
+                logger.info('Logout sentinel detected - skipping session re-hydration');
+                sessionStorage.removeItem('justLoggedOut');
+                updateUIForLoggedOutUser();
+                return; // Skip this cycle
+            }
+        } catch (_) {}
+
         // Check if Supabase has an existing session (use shared client)
         const client = window.SB || window.supabase;
         if (!client) {

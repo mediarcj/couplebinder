@@ -1,37 +1,37 @@
 <!-- File: server/ejs/partials/nav.ejs -->
 <!-- Description: Shared navigation component for all pages -->
 <!-- Purpose: Single navigation implementation for consistency -->
-<!-- Notes: CSP-compliant; no inline JS; server provides all data -->
+<!-- Notes: CSP-compliant; uses original header structure for CSS compatibility -->
 
 <%
-// Expected: nav = { items: [...], csrfToken }
+// Expected: nav = { items: [...], csrfToken }, app_info = { name, description, ... }
 // Each item has: id, label, type ('link' or 'action'), href, action, method, csrf, active
+const appName = typeof app_info !== 'undefined' ? app_info?.name : 'Detechify';
 %>
-<nav class="site-nav" role="navigation" aria-label="Primary">
-  <div class="site-nav__inner">
-    <a class="site-nav__brand" href="/">Detechify</a>
-
-    <button class="site-nav__toggle" aria-expanded="false" aria-controls="site-nav-menu" data-js="nav-toggle">
-      Menu
-    </button>
-
-    <ul id="site-nav-menu" class="site-nav__menu">
-      <% nav.items.forEach((it) => { %>
-        <% if (it.type === 'link') { %>
-          <li class="site-nav__item <%= it.active ? 'is-active' : '' %>">
-            <a class="site-nav__link" href="<%= it.href %>"><%= it.label %></a>
-          </li>
-        <% } else { %>
-          <li class="site-nav__item">
-            <form class="site-nav__form" action="<%= it.action %>" method="POST">
-              <% if (it.csrf && nav.csrfToken) { %>
-                <input type="hidden" name="_csrf" value="<%= nav.csrfToken %>">
-              <% } %>
-              <button class="site-nav__button" type="submit"><%= it.label %></button>
-            </form>
-          </li>
-        <% } %>
-      <% }) %>
-    </ul>
-  </div>
-</nav>
+<header>
+  <nav role="navigation" aria-label="Primary">
+    <div class="container">
+      <h1><%= appName %></h1>
+      <div class="nav-content">
+        <ul>
+          <% nav.items.forEach((it) => { %>
+            <% if (it.type === 'link') { %>
+              <li>
+                <a href="<%= it.href %>"><%= it.label %></a>
+              </li>
+            <% } else { %>
+              <li>
+                <form action="<%= it.action %>" method="POST">
+                  <% if (it.csrf && nav.csrfToken) { %>
+                    <input type="hidden" name="_csrf" value="<%= nav.csrfToken %>">
+                  <% } %>
+                  <button type="submit"><%= it.label %></button>
+                </form>
+              </li>
+            <% } %>
+          <% }) %>
+        </ul>
+      </div>
+    </div>
+  </nav>
+</header>

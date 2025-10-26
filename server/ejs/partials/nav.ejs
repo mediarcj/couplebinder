@@ -26,11 +26,14 @@ const appName = typeof app_info !== 'undefined' ? app_info?.name : 'Detechify';
               </li>
             <% } else { %>
               <li>
-                <form action="<%= it.action %>" method="POST">
+                <form action="<%= it.action %>" method="POST" class="nav-form">
                   <% if (it.csrf && nav.csrfToken) { %>
                     <input type="hidden" name="_csrf" value="<%= nav.csrfToken %>">
                   <% } %>
-                  <button type="submit"><%= it.label %></button>
+                  <button 
+                    type="submit"
+                    <% if (it.data && it.data.logout) { %> data-logout="true" <% } %>
+                  ><%= it.label %></button>
                 </form>
               </li>
             <% } %>

@@ -18,6 +18,7 @@
 const { getProfileByUserId } = require('../services/profileService');
 const { ASSET_VERSION } = require('../config');
 const logger = require('../utils/logger');
+const navManager = require('./navigation/manager');
 // Removed usersRepo import - now using Supabase user data directly
 
 // tiny helpers (no lodash)
@@ -178,7 +179,8 @@ function buildHomePageModel(req, res) {
       title: process.env.APP_NAME || 'Application',
       description: process.env.APP_DESCRIPTION || 'A modern web application',
       type: 'home',
-      assetVersion: ASSET_VERSION  // Cache-busting for JS/CSS
+      assetVersion: ASSET_VERSION,  // Cache-busting for JS/CSS
+      nav: navManager.compose(req, res)  // Centralized navigation
     },
     user: {
       isAuthenticated: req.user?.id ? true : false || false,
@@ -272,7 +274,8 @@ async function buildDashboardPageModel(req, res) {
       description: 'User dashboard and controls',
       type: 'dashboard',
       nonce: res.locals.nonce || '',   //  ensure CSP nonce for dashboard.ejs
-      assetVersion: ASSET_VERSION  // Cache-busting for JS/CSS
+      assetVersion: ASSET_VERSION,  // Cache-busting for JS/CSS
+      nav: navManager.compose(req, res)  // Centralized navigation
     },
     user,
     ui_instructions: {

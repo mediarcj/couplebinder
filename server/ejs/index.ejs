@@ -58,9 +58,7 @@
     </script>
 </head>
 <body>
-    <header>
-        <%- include('partials/nav', { nav: page.nav }) %>
-    </header>
+    <%- include('partials/nav', { nav: page.nav, app_info: app_info }) %>
 
     <main>
         <div class="container">

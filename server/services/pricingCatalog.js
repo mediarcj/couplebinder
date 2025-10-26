@@ -12,9 +12,10 @@
  * Ensures consistency between Stripe and displayed prices.
  * 
  * HOW:
- * 1. Fetch price and product data from Stripe for allowed price IDs
- * 2. Cache results in memory after first fetch
- * 3. Return formatted pricing data with names, amounts, and recurrence info
+ * 1. Fetch price and product data from Stripe for allowed price IDs with expanded products
+ * 2. Include product name, description, and images from Stripe Product object
+ * 3. Cache results in memory after first fetch
+ * 4. Return formatted pricing data with names, amounts, descriptions, images, and recurrence info
  */
 
 const Stripe = require('stripe');
@@ -32,15 +33,17 @@ let catalogCache = null;
  * Fetch pricing catalog from Stripe for allowlisted price IDs.
  * 
  * WHY:
- * Need product names, prices, and recurrence info from Stripe.
+ * Need product names, descriptions, images, prices, and recurrence info from Stripe.
  * Cache after first fetch to avoid repeated API calls.
  * 
  * HOW:
  * 1. Retrieve price IDs from environment variables
  * 2. Fetch each price with expanded product data
- * 3. Format and return array of price information
+ * 3. Extract product.description and product.images from expanded product
+ * 4. Format and return array of price information
  * 
- * Returns array of price objects with: priceId, unit_amount, currency, isRecurring, interval, name, blurb
+ * Returns array of price objects with: priceId, unit_amount, currency, isRecurring, interval, 
+ * product_id, name, description, images, image, and product_metadata
  */
 async function getPricingCatalog() {
   // Return cached data if available
@@ -67,18 +70,17 @@ async function getPricingCatalog() {
             expand: ['product']
           });
 
-          const product = typeof price.product === 'string' ? null : price.product;
+          const product = (price.product && typeof price.product !== 'string') ? price.product : null;
           
-          // Extract name from metadata or product name
-          const name = product?.metadata?.display_name || 
-                      price.metadata?.display_name || 
-                      product?.name || 
-                      'Product';
-
-          // Extract blurb from metadata
-          const blurb = product?.metadata?.blurb || 
-                       price.metadata?.blurb || 
-                       '';
+          // Extract name from product name (source of truth)
+          const name = product?.name || null;
+          
+          // Extract description from product description (source of truth)
+          const description = product?.description || null;
+          
+          // Extract images from product images (source of truth)
+          const images = Array.isArray(product?.images) ? product.images : [];
+          const image = images.length > 0 ? images[0] : null;
 
           return {
             priceId,
@@ -86,8 +88,12 @@ async function getPricingCatalog() {
             currency: price.currency,
             isRecurring: !!price.recurring,
             interval: price.recurring?.interval || null,
+            product_id: product?.id || null,
             name,
-            blurb
+            description,
+            images,
+            image,
+            product_metadata: product?.metadata || {}
           };
         } catch (err) {
           logger.error({

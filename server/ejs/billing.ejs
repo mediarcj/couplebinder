@@ -41,8 +41,11 @@
         %>
         <% if (pOne) { %>
         <div class="action-card">
+          <% if (pOne.image) { %>
+            <img src="<%= pOne.image %>" alt="<%= pOne.name || '' %>" loading="lazy">
+          <% } %>
           <% if (pOne.name) { %><h3><%= pOne.name %></h3><% } %>
-          <% if (pOne.blurb) { %><p><%= pOne.blurb %></p><% } %>
+          <% if (pOne.description) { %><p><%= pOne.description %></p><% } %>
           <% if (Number.isFinite(pOne.unit_amount)) { %>
           <p class="price">
             $<%= (pOne.unit_amount / 100).toFixed(0) %> <%= (pOne.currency || '').toUpperCase() %>
@@ -60,8 +63,11 @@
 
         <% if (pTwo) { %>
         <div class="action-card">
+          <% if (pTwo.image) { %>
+            <img src="<%= pTwo.image %>" alt="<%= pTwo.name || '' %>" loading="lazy">
+          <% } %>
           <% if (pTwo.name) { %><h3><%= pTwo.name %></h3><% } %>
-          <% if (pTwo.blurb) { %><p><%= pTwo.blurb %></p><% } %>
+          <% if (pTwo.description) { %><p><%= pTwo.description %></p><% } %>
           <% if (Number.isFinite(pTwo.unit_amount)) { %>
           <p class="price">
             $<%= (pTwo.unit_amount / 100).toFixed(0) %> <%= (pTwo.currency || '').toUpperCase() %>

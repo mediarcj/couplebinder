@@ -314,46 +314,116 @@ function attachLogoutHandler(selector = '#logoutBtn') {
 
 /**
  * WHAT:
- * Intercept clicks on [data-logout] buttons/forms for unified logout handling.
+ * Bulletproof interceptor for logout - catches ALL logout attempts.
  * 
  * WHY:
- * Nav now uses data-logout attribute instead of fixed IDs for flexibility.
- * Ensures logout works consistently across all pages with navigation.
+ * Even if a page forgets data-logout="true", we still intercept forms posting to /auth/clear-cookie.
+ * Ensures Supabase auth.signOut() is called before clearing cookies to prevent re-login race.
  * 
  * HOW:
- * Listen for clicks on elements with data-logout attribute.
- * Also listen for form submits on forms containing [data-logout] buttons.
- * Prevent default behavior and call performLogout().
+ * Listen for clicks on [data-logout] buttons AND form submits to /auth/clear-cookie.
+ * Intercept and call Supabase signOut() FIRST, then clear cookies, then redirect.
  */
 (function setupDataLogoutInterceptor() {
-  // Intercept clicks on [data-logout] buttons
+  const LOGOUT_PATH = '/auth/clear-cookie';
+  const CSL = '[logout]'; // console log tag
+
+  function getSB() {
+    return (window.sb && window.sb.auth && window.sb) ||
+           (window.supabase && window.supabase.auth && window.supabase) ||
+           (window.SB && window.SB.auth && window.SB) ||
+           null;
+  }
+
+  function getCsrf(el) {
+    try {
+      const form = el && el.closest && el.closest('form');
+      if (form) {
+        const hid = form.querySelector('input[name="_csrf"]');
+        if (hid && hid.value) return hid.value;
+      }
+      const meta = document.querySelector('meta[name="csrf-token"]');
+      if (meta) return meta.getAttribute('content');
+    } catch (_) {}
+    return undefined;
+  }
+
+  async function doLogout(triggerEl) {
+    // Mark intent so boot-time code won't re-set cookie
+    try { 
+      sessionStorage.setItem('justLoggedOut', '1'); 
+      localStorage.setItem('logout.ui.hold', '1');
+    } catch (_) {}
+    try { 
+      document.cookie = 'auth_logout=1; Path=/; Max-Age=10; SameSite=Lax'; 
+    } catch (_) {}
+
+    // Best-effort Supabase sign out FIRST (so there's no client session to re-hydrate)
+    try {
+      const sb = getSB();
+      if (sb && sb.auth && typeof sb.auth.signOut === 'function') {
+        console.debug(CSL, 'signOut()…');
+        await sb.auth.signOut(); // Removes local session + revokes refresh
+        console.debug(CSL, 'signOut completed');
+      } else {
+        console.debug(CSL, 'no sb client available');
+      }
+    } catch (e) {
+      console.warn(CSL, 'signOut error', e);
+    }
+
+    // Clear server cookies
+    const csrf = getCsrf(triggerEl);
+    try {
+      await fetch(LOGOUT_PATH, {
+        method: 'POST',
+        headers: Object.assign(
+          { 'Accept': 'application/json' },
+          csrf ? { 'CSRF-Token': csrf } : {}
+        ),
+        credentials: 'include'
+      });
+      console.debug(CSL, 'server cookie cleared');
+    } catch (e) {
+      console.warn(CSL, 'clear-cookie fetch error', e);
+    }
+
+    // Land on public home (server will 303 here too if we hit it by form)
+    window.location.replace('/');
+  }
+
+  function isLogoutButton(target) {
+    if (!target) return false;
+    const btn = target.closest && target.closest('button,[role="button"],a');
+    const form = target.closest && target.closest('form');
+    if (btn && btn.hasAttribute('data-logout')) return true;
+    if (form && form.getAttribute && typeof form.getAttribute === 'function') {
+      const action = form.getAttribute('action') || '';
+      if (action.endsWith(LOGOUT_PATH)) return true;
+    }
+    return false;
+  }
+
+  // Capture both click and submit so we win races with native navigation
   document.addEventListener('click', function (e) {
-    const btn = e.target && e.target.closest('[data-logout]');
-    if (!btn) return;
-    
-    // Prevent form submit
+    if (!isLogoutButton(e.target)) return;
     e.preventDefault();
     e.stopPropagation();
-    
-    logoutLogger.info('Data-logout click intercepted');
-    handleLogout();
-  }, { capture: true });
+    console.debug(CSL, 'logout click intercepted');
+    doLogout(e.target);
+  }, true);
 
-  // Intercept form submits for forms containing [data-logout] buttons
   document.addEventListener('submit', function (e) {
     const form = e.target;
     if (!form) return;
-    
-    const btn = form.querySelector('[data-logout]');
-    if (!btn) return;
-    
-    // Prevent form submit
+    const action = (form.getAttribute && form.getAttribute('action')) || '';
+    const containsLogoutBtn = !!(form.querySelector && form.querySelector('[data-logout]'));
+    if (!action.endsWith(LOGOUT_PATH) && !containsLogoutBtn) return;
     e.preventDefault();
     e.stopPropagation();
-    
-    logoutLogger.info('Data-logout form submit intercepted');
-    handleLogout();
-  }, { capture: true });
+    console.debug(CSL, 'logout form submit intercepted');
+    doLogout(form);
+  }, true);
 })();
 
 function initializeLogout() {

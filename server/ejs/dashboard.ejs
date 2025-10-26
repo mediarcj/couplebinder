@@ -53,35 +53,13 @@
     </script>
 </head>
 <body>
-    <header>
-        <nav>
-            <div class="container">
-                <h1><%= app_info?.name || 'Application' %></h1>
-                <div class="nav-content">
-                    <ul>
-                        <li><a href="/">Home</a></li>
-                        <li><a href="/health">Health</a></li>
-                        <li><a href="/api/hello">API</a></li>
-                        <li><a href="/dashboard" class="active">Dashboard</a></li>
-                    </ul>
-                    <div class="auth-section">
-                        <span class="user-info">Welcome, <%= user.display_name %>!</span>
-                        <button id="logoutBtn" type="button" class="btn btn-secondary">Logout</button>
-                    </div>
-                </div>
-            </div>
-        </nav>
-    </header>
+    <%- include('partials/nav', { nav: page.nav, app_info: app_info }) %>
 
     <main>
         <div class="container">
             <div class="hero">
                 <h1>Welcome to Your Dashboard</h1>
                 <p class="subtitle">Hello <%= user.display_name %>, you're successfully logged in!</p>
-                <div class="cta-buttons">
-                    <a href="/health" class="btn btn-primary">Check Health</a>
-                    <a href="/api/hello" class="btn btn-primary">API Test</a>
-                </div>
             </div>
 
             <div class="user-profile">

@@ -196,14 +196,20 @@ router.post('/set-cookie', async (req, res) => {
  * 
  * WHAT:
  * Clears the auth cookie and legacy cookie names for complete logout.
+ * Content-negotiation: HTML navigation gets a redirect; XHR/fetch gets JSON.
  * 
  * WHY:
  * On logout, we need to remove all authentication cookies from the browser,
  * including legacy names from previous deployments.
+ * Browser form submits should redirect to home page, not show JSON.
+ * Programmatic calls need JSON for compatibility.
  * 
  * HOW:
  * Clear the current cookie name and all legacy names with proper options.
  * __Host- cookies must NOT have domain set when clearing.
+ * Detect request type via Accept header and X-Requested-With header.
+ * Redirect HTML requests to home page (303 See Other after POST).
+ * Return JSON for programmatic callers.
  */
 router.post('/clear-cookie', (req, res) => {
   try {
@@ -224,7 +230,7 @@ router.post('/clear-cookie', (req, res) => {
     audit('auth.clear_cookie.ok', {}, req);
 
     // ============================================================
-    // Content negotiation: HTML navigation -> redirect, XHR -> JSON
+    // Content-negotiation: HTML navigation -> redirect, programmatic -> JSON
     // ============================================================
     const accept = String(req.headers.accept || '');
     const isXHR = (req.xhr === true) || (String(req.headers['x-requested-with'] || '').toLowerCase() === 'xmlhttprequest');
@@ -233,12 +239,13 @@ router.post('/clear-cookie', (req, res) => {
     // Help caches pick the right variant
     res.set('Vary', 'Accept, X-Requested-With');
 
-    // Browser form submit: redirect to home (no raw JSON in browser)
     if (!isXHR && !isJSONy && accept.includes('text/html')) {
+      // Browser form submit: redirect to home page
+      // 303 = "See Other", correct after POST
       return res.redirect(303, '/');
     }
 
-    // Programmatic callers (XHR/fetch) get JSON response
+    // Programmatic callers (fetch/XHR) get JSON
     return res.status(200).json({ ok: true });
   } catch (error) {
     logger.error({
@@ -247,12 +254,13 @@ router.post('/clear-cookie', (req, res) => {
       requestId: req.requestId
     }, 'Clear-cookie route exception');
     
-    // Error handling with content negotiation
+    // Content-negotiation for error responses too
     const accept = String(req.headers.accept || '');
     const wantsHTML = accept.includes('text/html') && !accept.includes('application/json');
     if (wantsHTML) {
-      return res.redirect(303, '/?logout_error=1');
+      return res.redirect(303, '/?logged_out=0');
     }
+    
     return res.status(500).json({ 
       ok: false, 
       error: 'Failed to clear cookie' 

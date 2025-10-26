@@ -473,10 +473,15 @@ function formatSessionEvent(action, meta = {}) {
 
 function formatWarning(message, meta = {}) {
   const requestId = meta.requestId || 'system';
+  
+  // Safely stringify message if it's not a string
+  const safeMessage = typeof message === 'string' 
+    ? message 
+    : safeStringify(message);
 
   console.log(`\n${LINE}`);
   console.log(`WARNING`);
-  console.log(`   Message: ${message}`);
+  console.log(`   Message: ${safeMessage}`);
   console.log(`   Request ID: ${requestId}`);
   console.log(`   Time: ${formatTimestamp()}`);
   console.log(`${LINE}`);

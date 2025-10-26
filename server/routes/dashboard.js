@@ -7,6 +7,8 @@ const express = require('express');
 const router = express.Router();
 // requireAuth is applied globally to /dashboard routes in zorvalon.js
 const { buildDashboardPageModel, buildErrorPageModel } = require('../ui_contract/presenters');
+const { getReceiptVM } = require('../services/receiptService');
+const { assertUser } = require('../utils/authz');
 const logger = require('../utils/logger');
 
 /**
@@ -70,6 +72,53 @@ router.get('/profile-edit', async (req, res) => {
         }, 'Profile edit route error');
         const pageModel = buildErrorPageModel(req, res, 500, 'Unable to load profile edit page');
         res.status(500).render('error', pageModel);
+    }
+});
+
+/**
+ * GET /dashboard/receipt
+ * Branded receipt page for successful payments
+ */
+router.get('/receipt', async (req, res, next) => {
+    try {
+        const sessionId = req.query.session_id;
+        if (!sessionId) {
+            return res.redirect('/dashboard/billing');
+        }
+
+        const user = assertUser(req);
+        const userId = user.id;
+
+        const vm = await getReceiptVM({ sessionId, userId });
+        
+        res.render('receipt', {
+            page: {
+                title: 'Receipt - ' + (process.env.APP_NAME || 'Application'),
+                nonce: res.locals.nonce
+            },
+            receipt: vm,
+            app_info: {
+                name: process.env.APP_NAME || 'Application',
+                description: process.env.APP_DESCRIPTION || 'A modern web application'
+            }
+        });
+    } catch (err) {
+        if ((err.status || 500) === 404) {
+            return res.status(404).render('error', {
+                page: {
+                    title: '404 - Not Found',
+                    nonce: res.locals.nonce
+                },
+                error: {
+                    status: 404,
+                    message: 'Receipt not found'
+                },
+                app_info: {
+                    name: process.env.APP_NAME || 'Application'
+                }
+            });
+        }
+        next(err);
     }
 });
 

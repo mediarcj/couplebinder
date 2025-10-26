@@ -119,47 +119,20 @@
       
       try {
         if (isPaid) {
-          // Retry function to handle receipt URL timing issues
-          async function fetchReceiptWithRetry(id) {
-            const delays = [300, 600, 1200, 2000, 3000]; // total ~7s max
-            for (let i = 0; i < delays.length; i++) {
-              try {
-                const res = await fetch(`/api/pay/receipt?session_id=${encodeURIComponent(id)}`, { 
-                  credentials: 'include' 
-                });
-                
-                if (res.status === 200) {
-                  const data = await res.json().catch(() => ({}));
-                  if (data?.ok && data.receipt_url) {
-                    return data.receipt_url;
-                  }
-                }
-              } catch (e) {
-                // Silent fail, continue to next retry
-              }
-              
-              if (i < delays.length - 1) {
-                await new Promise(r => setTimeout(r, delays[i]));
-              }
-            }
-            return null;
-          }
-
-          let message = { text: 'Thanks! Your purchase has been recorded.' };
-          
-          if (sessionId) {
-            const receiptUrl = await fetchReceiptWithRetry(sessionId);
-            if (receiptUrl) {
-              message = { text: 'Thanks!', linkHref: receiptUrl, linkText: 'View receipt' };
-            }
-          }
+          // Show success notification with link to branded receipt page
+          const receiptHref = `/dashboard/receipt?session_id=${encodeURIComponent(sessionId)}`;
+          const message = { 
+            text: 'Thanks!', 
+            linkHref: receiptHref, 
+            linkText: 'View receipt' 
+          };
           
           window.modalManager?.showNotification('Payment received', message);
         } else if (url.searchParams.get('canceled') === '1') {
           window.modalManager?.showNotification('Payment canceled', 'No charge was made.');
         }
       } catch (err) {
-        console.warn('Receipt fetch failed:', err);
+        console.warn('Payment notification failed:', err);
       } finally {
         // Clean URL to prevent nav from seeing query params
         const cleanUrl = url.pathname + (url.hash || '');

@@ -22,6 +22,7 @@ const express = require('express');
 const router = express.Router();
 const Stripe = require('stripe');
 const { createCheckoutSession } = require('../services/billingService');
+const { getReceiptVM } = require('../services/receiptService');
 const { createIdempotencyMiddleware } = require('../middleware/idempotency');
 const { assertUser } = require('../utils/authz');
 const logger = require('../utils/logger');
@@ -134,7 +135,7 @@ router.get('/receipt', async (req, res) => {
     const user = assertUser(req);
 
     const session = await stripe.checkout.sessions.retrieve(sessionId, {
-      expand: ['payment_intent.charges']
+      expand: ['payment_intent.latest_charge', 'payment_intent.charges']
     });
 
     // Verify ownership using metadata or client_reference_id
@@ -152,8 +153,11 @@ router.get('/receipt', async (req, res) => {
       return res.status(404).json({ ok: false, error: 'not_found' });
     }
 
-    const charge = session?.payment_intent?.charges?.data?.[0] || null;
-    const receiptUrl = charge?.receipt_url || null;
+    // Prefer latest_charge.receipt_url, fallback to charges.data[0].receipt_url
+    const pi = session?.payment_intent;
+    const latestCharge = (pi && typeof pi.latest_charge !== 'string') ? pi.latest_charge : null;
+    const firstCharge = pi?.charges?.data?.[0] || null;
+    const receiptUrl = latestCharge?.receipt_url || firstCharge?.receipt_url || null;
 
     if (!receiptUrl) {
       // No receipt URL yet (rare timing issue)
@@ -175,6 +179,40 @@ router.get('/receipt', async (req, res) => {
     }, 'Failed to fetch receipt');
     
     return res.status(500).json({ ok: false, error: 'internal_error' });
+  }
+});
+
+/**
+ * WHAT:
+ * API endpoint that returns normalized receipt view-model.
+ * 
+ * WHY:
+ * Allows client-side access to receipt data for display or further processing.
+ * 
+ * HOW:
+ * 1. Extract session_id from query
+ * 2. Get current user ID from auth
+ * 3. Fetch and normalize receipt data
+ * 4. Return receipt view-model
+ */
+router.get('/receipt/view', async (req, res, next) => {
+  try {
+    const sessionId = req.query.session_id;
+    if (!sessionId) {
+      return res.status(400).json({ error: 'session_id required' });
+    }
+    
+    const user = assertUser(req);
+    const userId = user.id;
+
+    const vm = await getReceiptVM({ sessionId, userId });
+    return res.json({ ok: true, receipt: vm });
+  } catch (err) {
+    const status = err.status || 500;
+    if (status === 404) {
+      return res.status(404).json({ error: 'Not found' });
+    }
+    next(err);
   }
 });
 

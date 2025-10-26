@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title><%= page.title %></title>
+  <link rel="stylesheet" href="/css/style.css?v=<%= Date.now() %>">
+</head>
+<body>
+  <header class="container">
+    <h1><%= app_info?.name || 'Application' %></h1>
+  </header>
+  <main class="container">
+    <section class="card">
+      <h1>Receipt</h1>
+      <div class="receipt-info">
+        <div class="info-column">
+          <p><strong>Status:</strong> <span class="status-<%= receipt.payment_status %>"><%= receipt.payment_status %></span></p>
+          <p><strong>Date:</strong> <%= new Date(receipt.created_ms).toLocaleString() %></p>
+          <p><strong>Customer:</strong> <%= receipt.customer_name || receipt.customer_email || '—' %></p>
+        </div>
+        <div class="info-column">
+          <p><strong>Total:</strong> <%= (receipt.amount_total/100).toFixed(2) %> <%= receipt.currency.toUpperCase() %></p>
+          <% if (receipt.card_brand) { %>
+            <p><strong>Card:</strong> <%= receipt.card_brand %> •••• <%= receipt.card_last4 || '—' %></p>
+          <% } %>
+          <% if (receipt.type === 'invoice' && receipt.invoice_number) { %>
+            <p><strong>Invoice #:</strong> <%= receipt.invoice_number %></p>
+          <% } %>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Items</h2>
+      <table class="receipt-items">
+        <thead>
+          <tr>
+            <th>Description</th>
+            <th>Quantity</th>
+            <th>Amount</th>
+          </tr>
+        </thead>
+        <tbody>
+          <% if (receipt.items && receipt.items.length > 0) { %>
+            <% receipt.items.forEach(function (item) { %>
+              <tr>
+                <td><%= item.description %></td>
+                <td><%= item.quantity %></td>
+                <td><%= (item.amount_total/100).toFixed(2) %> <%= (item.currency || receipt.currency).toUpperCase() %></td>
+              </tr>
+            <% }) %>
+          <% } else { %>
+            <tr>
+              <td colspan="3">No line items available.</td>
+            </tr>
+          <% } %>
+        </tbody>
+      </table>
+    </section>
+
+    <div class="actions">
+      <% if (receipt.stripe_receipt_url) { %>
+        <a class="btn" rel="noopener" target="_blank" href="<%= receipt.stripe_receipt_url %>">View official Stripe receipt</a>
+      <% } %>
+      <a class="btn btn-secondary" href="/dashboard/billing">Back to Billing</a>
+    </div>
+  </main>
+
+  <footer class="container">
+    <p>&copy; 2024 <%= app_info?.name || 'Application' %>. <%= app_info?.description || 'A modern web application' %>.</p>
+  </footer>
+</body>
+</html>

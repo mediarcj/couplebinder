@@ -18,6 +18,7 @@
     <script src="/js/sbClient.js" nonce="<%= page.nonce %>"></script>
     <script src="/js/logout.js" nonce="<%= page.nonce %>"></script>
     <script src="/js/modalManager.js" nonce="<%= page.nonce %>"></script>
+    <script src="/js/nav-client.js" nonce="<%= page.nonce %>"></script>
     
     <!-- Cross-tab logout synchronization -->
     <script nonce="<%= page.nonce %>">
@@ -58,27 +59,7 @@
 </head>
 <body>
     <header>
-        <nav>
-            <div class="container">
-                <h1><%= app_info?.name || 'Application' %></h1>
-                <div class="nav-content">
-                    <ul>
-                        <li><a href="/">Home</a></li>
-                        <li><a href="/health">Health</a></li>
-                        <li><a href="/api/hello">API</a></li>
-                    </ul>
-                    <div class="auth-section">
-                        <% if (user.isAuthenticated) { %>
-                            <a href="/dashboard" class="dashboard-link btn btn-primary">Dashboard</a>
-                            <button id="logoutBtn" type="button" class="btn btn-secondary">Logout</button>
-                        <% } else { %>
-                            <a href="#" class="login-link">Login</a>
-                            <a href="#" class="signup-link">Sign Up</a>
-                        <% } %>
-                    </div>
-                </div>
-            </div>
-        </nav>
+        <%- include('partials/nav', { nav: page.nav }) %>
     </header>
 
     <main>

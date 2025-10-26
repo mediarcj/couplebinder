@@ -106,21 +106,24 @@ router.get('/receipt', async (req, res, next) => {
         const qrText = vm.stripe_receipt_url || absoluteSelfUrl;
         const qrSvg = await QRCode.toString(qrText, { type: 'svg', margin: 1, width: 192 });
         
-        res.render('receipt', {
-            page: {
-                title: 'Receipt - ' + (process.env.APP_NAME || 'Application'),
-                nonce: res.locals.nonce
-            },
-            receipt: vm,
-            qrSvg,
-            app_info: {
-                name: process.env.APP_NAME || 'Application',
-                description: process.env.APP_DESCRIPTION || 'A modern web application'
-            },
-            features: {
-                emailReceipt: !!process.env.FEATURE_EMAIL_RECEIPT
-            }
-        });
+        // Build page model using presenter for consistent structure
+        const pageModel = await buildDashboardPageModel(req, res);
+        pageModel.page.title = 'Receipt - ' + (process.env.APP_NAME || 'Application');
+        pageModel.page.nonce = res.locals.nonce;
+        pageModel.page.assetVersion = Date.now();
+        
+        // Add Supabase credentials for client initialization
+        pageModel.ui.supabaseUrl = process.env.SUPABASE_URL;
+        pageModel.ui.supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+        
+        // Add receipt-specific data
+        pageModel.receipt = vm;
+        pageModel.qrSvg = qrSvg;
+        pageModel.features = {
+            emailReceipt: !!process.env.FEATURE_EMAIL_RECEIPT
+        };
+        
+        res.render('receipt', pageModel);
     } catch (err) {
         if ((err.status || 500) === 404) {
             return res.status(404).render('error', {
@@ -162,23 +165,20 @@ router.get('/receipt.pdf', async (req, res, next) => {
         const qrText = vm.stripe_receipt_url || absoluteSelfUrl;
         const qrSvg = await QRCode.toString(qrText, { type: 'svg', margin: 1, width: 192 });
 
+        // Build page model for consistent structure
+        const pageModel = await buildDashboardPageModel(req, res);
+        pageModel.page.title = 'Receipt - ' + (process.env.APP_NAME || 'Application');
+        pageModel.page.nonce = res.locals.nonce;
+        pageModel.page.assetVersion = Date.now();
+        pageModel.ui.supabaseUrl = process.env.SUPABASE_URL;
+        pageModel.ui.supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+        pageModel.receipt = vm;
+        pageModel.qrSvg = qrSvg;
+        pageModel.features = { emailReceipt: !!process.env.FEATURE_EMAIL_RECEIPT };
+        pageModel.pdfMode = true;
+        
         // Render the same EJS to static HTML string
-        req.app.render('receipt', {
-            page: {
-                title: 'Receipt - ' + (process.env.APP_NAME || 'Application'),
-                nonce: res.locals.nonce
-            },
-            receipt: vm,
-            qrSvg,
-            app_info: {
-                name: process.env.APP_NAME || 'Application',
-                description: process.env.APP_DESCRIPTION || 'A modern web application'
-            },
-            features: {
-                emailReceipt: !!process.env.FEATURE_EMAIL_RECEIPT
-            },
-            pdfMode: true
-        }, async (err, html) => {
+        req.app.render('receipt', pageModel, async (err, html) => {
             if (err) return next(err);
             
             const browser = await puppeteer.launch({

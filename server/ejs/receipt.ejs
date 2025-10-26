@@ -3,94 +3,142 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta name="csrf-token" content="<%= page.csrfToken || '' %>">
   <title><%= page.title %></title>
-  <link rel="stylesheet" href="/css/style.css?v=<%= Date.now() %>">
+  <link rel="stylesheet" href="/css/style.css?v=<%= page.assetVersion || Date.now() %>">
 </head>
 <body>
-  <header class="container">
-    <h1><%= app_info?.name || 'Application' %></h1>
-  </header>
-  <main class="container">
-    <section class="card">
-      <h1>Receipt</h1>
-      
-      <div class="receipt-toolbar print-hide">
-        <div class="qr-wrap" title="Scan to open receipt on another device" aria-label="QR code for this receipt">
-          <div class="qr"><%- qrSvg %></div>
-          <div class="qr-caption muted">Scan to view</div>
-        </div>
-        <div class="toolbar-actions">
-          <button class="btn" data-action="print" type="button" aria-label="Print or save as PDF">Print / Save PDF</button>
-          <a class="btn btn-secondary" href="/dashboard/receipt.pdf?session_id=<%= encodeURIComponent(receipt.session_id || '') %>" target="_blank" rel="noopener">Download PDF</a>
-          <% if (features && features.emailReceipt) { %>
-            <button class="btn btn-secondary" data-action="email" type="button" aria-label="Email me this receipt">Email me this receipt</button>
-          <% } %>
-        </div>
-      </div>
-      
-      <div class="receipt-info">
-        <div class="info-column">
-          <p><strong>Status:</strong> <span class="status-<%= receipt.payment_status %>"><%= receipt.payment_status %></span></p>
-          <p><strong>Date:</strong> <%= new Date(receipt.created_ms).toLocaleString() %></p>
-          <p><strong>Customer:</strong> <%= receipt.customer_name || receipt.customer_email || '—' %></p>
-        </div>
-        <div class="info-column">
-          <p><strong>Total:</strong> <%= (receipt.amount_total/100).toFixed(2) %> <%= receipt.currency.toUpperCase() %></p>
-          <% if (receipt.card_brand) { %>
-            <p><strong>Card:</strong> <%= receipt.card_brand %> •••• <%= receipt.card_last4 || '—' %></p>
-          <% } %>
-          <% if (receipt.type === 'invoice' && receipt.invoice_number) { %>
-            <p><strong>Invoice #:</strong> <%= receipt.invoice_number %></p>
-          <% } %>
-        </div>
-      </div>
-    </section>
+  <%- include('partials/nav', { nav: page.nav, app_info: app_info }) %>
 
-    <section class="card">
-      <h2>Items</h2>
-      <table class="receipt-items">
-        <thead>
-          <tr>
-            <th>Description</th>
-            <th>Quantity</th>
-            <th>Amount</th>
-          </tr>
-        </thead>
-        <tbody>
-          <% if (receipt.items && receipt.items.length > 0) { %>
-            <% receipt.items.forEach(function (item) { %>
+  <main>
+    <div class="container">
+      <div class="hero">
+        <h1>Receipt</h1>
+        <p class="subtitle">Your payment confirmation</p>
+      </div>
+
+      <div class="user-profile">
+        <h2>Payment Details</h2>
+        <div class="profile-card">
+          <div class="receipt-toolbar print-hide">
+            <div class="qr-wrap" title="Scan to open receipt on another device" aria-label="QR code for this receipt">
+              <div class="qr"><%- qrSvg %></div>
+              <div class="qr-caption">Scan to view</div>
+            </div>
+            <div class="toolbar-actions print-hide">
+              <button class="btn" data-action="print" type="button">Print / Save PDF</button>
+              <a class="btn btn-secondary" href="/dashboard/receipt.pdf?session_id=<%= encodeURIComponent(receipt.session_id || '') %>" target="_blank" rel="noopener">Download PDF</a>
+              <% if (features && features.emailReceipt) { %>
+                <button class="btn btn-secondary" data-action="email" type="button">Email me this receipt</button>
+              <% } %>
+            </div>
+          </div>
+
+          <div class="profile-info">
+            <div class="info-item">
+              <span class="info-label">Status:</span>
+              <span class="info-value status-value status-<%= receipt.payment_status %>"><%= receipt.payment_status %></span>
+            </div>
+            <div class="info-item">
+              <span class="info-label">Date:</span>
+              <span class="info-value"><%= new Date(receipt.created_ms).toLocaleString() %></span>
+            </div>
+            <div class="info-item">
+              <span class="info-label">Customer:</span>
+              <span class="info-value"><%= receipt.customer_name || receipt.customer_email || '—' %></span>
+            </div>
+            <div class="info-item">
+              <span class="info-label">Total:</span>
+              <span class="info-value"><%= (receipt.amount_total/100).toFixed(2) %> <%= receipt.currency.toUpperCase() %></span>
+            </div>
+            <% if (receipt.card_brand) { %>
+              <div class="info-item">
+                <span class="info-label">Card:</span>
+                <span class="info-value"><%= receipt.card_brand %> •••• <%= receipt.card_last4 || '—' %></span>
+              </div>
+            <% } %>
+            <% if (receipt.type === 'invoice' && receipt.invoice_number) { %>
+              <div class="info-item">
+                <span class="info-label">Invoice #:</span>
+                <span class="info-value"><%= receipt.invoice_number %></span>
+              </div>
+            <% } %>
+          </div>
+        </div>
+      </div>
+
+      <div class="user-profile">
+        <h2>Items</h2>
+        <% if (receipt.items && receipt.items.length > 0) { %>
+          <table class="table">
+            <thead>
               <tr>
-                <td><%= item.description %></td>
-                <td><%= item.quantity %></td>
-                <td><%= (item.amount_total/100).toFixed(2) %> <%= (item.currency || receipt.currency).toUpperCase() %></td>
+                <th>Description</th>
+                <th>Quantity</th>
+                <th>Amount</th>
               </tr>
-            <% }) %>
-          <% } else { %>
-            <tr>
-              <td colspan="3">No line items available.</td>
-            </tr>
-          <% } %>
-        </tbody>
-      </table>
-    </section>
+            </thead>
+            <tbody>
+              <% receipt.items.forEach(function (item) { %>
+                <tr>
+                  <td><%= item.description %></td>
+                  <td><%= item.quantity %></td>
+                  <td><%= (item.amount_total/100).toFixed(2) %> <%= (item.currency || receipt.currency).toUpperCase() %></td>
+                </tr>
+              <% }) %>
+            </tbody>
+          </table>
+        <% } else { %>
+          <p>No line items available.</p>
+        <% } %>
+      </div>
 
-    <div class="actions">
-      <% if (receipt.stripe_receipt_url) { %>
-        <a class="btn" rel="noopener" target="_blank" href="<%= receipt.stripe_receipt_url %>">View official Stripe receipt</a>
-      <% } %>
-      <a class="btn btn-secondary" href="/dashboard/billing">Back to Billing</a>
-      <a class="btn btn-secondary" href="/dashboard">Home</a>
+      <div class="dashboard-actions">
+        <div class="action-grid">
+          <% if (receipt.stripe_receipt_url) { %>
+            <a href="<%= receipt.stripe_receipt_url %>" class="btn btn-primary" rel="noopener" target="_blank">View official Stripe receipt</a>
+          <% } %>
+          <a href="/dashboard/billing" class="btn btn-secondary">Back to Billing</a>
+          <a href="/dashboard" class="btn btn-secondary">Home</a>
+        </div>
+      </div>
     </div>
   </main>
 
-  <footer class="container">
-    <p>&copy; 2024 <%= app_info?.name || 'Application' %>. <%= app_info?.description || 'A modern web application' %>.</p>
+  <footer>
+    <div class="container">
+      <p>&copy; 2024 <%= app_info?.name || 'Application' %>. <%= app_info?.description || 'A modern web application' %>.</p>
+    </div>
   </footer>
 
   <script nonce="<%= page.nonce %>">
     (function () {
       const btn = document.querySelector('[data-action="print"]');
       if (btn) btn.addEventListener('click', function () { window.print(); });
+
+      const emailBtn = document.querySelector('[data-action="email"]');
+      if (emailBtn) {
+        emailBtn.addEventListener('click', async function () {
+          if (emailBtn.disabled) return;
+          emailBtn.disabled = true;
+          const sessionId = "<%= (receipt.session_id || '') %>";
+          try {
+            const res = await fetch('/api/receipt/email', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              credentials: 'include',
+              body: JSON.stringify({ session_id: sessionId })
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok || !data.ok) throw new Error(data.error || 'Failed to queue email');
+            window.modalManager?.showNotification('Email sent', 'We\'ll email your receipt shortly.');
+          } catch (err) {
+            window.modalManager?.showNotification('Error', 'Could not send email. Please try again.');
+          } finally {
+            emailBtn.disabled = false;
+          }
+        });
+      }
     })();
   </script>
 </body>

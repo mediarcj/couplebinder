@@ -27,7 +27,7 @@ function safeLoad(modPath, fallback = {}) {
 }
 
 // Load toggles for feature flags
-const toggles = safeLoad('../../config/toggles', { billing: true, signup: true });
+const toggles = safeLoad('../../config/toggles', { billing: true, signup: true, pricing: false });
 
 /**
  * WHAT:

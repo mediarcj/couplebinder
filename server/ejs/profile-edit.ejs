@@ -55,24 +55,7 @@
     </script>
 </head>
 <body>
-    <header>
-        <nav>
-            <div class="container">
-                <h1><%= app_info?.name || 'Application' %></h1>
-                <div class="nav-content">
-                    <ul>
-                        <li><a href="/">Home</a></li>
-                        <li><a href="/dashboard">Dashboard</a></li>
-                        <li><a href="/health">Health</a></li>
-                    </ul>
-                    <div class="auth-section">
-                        <a href="/dashboard" class="dashboard-link btn btn-primary">Dashboard</a>
-                        <button id="logoutBtn" type="button" class="btn btn-secondary">Logout</button>
-                    </div>
-                </div>
-            </div>
-        </nav>
-    </header>
+    <%- include('partials/nav', { nav: page.nav, app_info: app_info }) %>
 
     <main>
         <div class="container">

@@ -274,9 +274,9 @@ router.post('/clear-cookie', (req, res) => {
     res.set('Vary', 'Accept, X-Requested-With');
 
     if (!isXHR && !isJSONy && accept.includes('text/html')) {
-      // Browser form submit: redirect to home page
+      // Browser form submit: redirect to home page with logout flag
       // 303 = "See Other", correct after POST
-      return res.redirect(303, '/');
+      return res.redirect(303, '/?logged_out=1');
     }
 
     // Programmatic callers (fetch/XHR) get JSON

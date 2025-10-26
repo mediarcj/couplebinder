@@ -304,17 +304,19 @@ window.modalManager = modalManager;
 
 /**
  * WHAT:
- * Cross-page logout success flash support.
+ * Cross-page logout success flash support with init race protection.
  * Shows logout success modal on next page load after logout.
  * 
  * WHY:
  * When logout redirects to home page, we need to show "You have been logged out successfully!" modal.
  * Uses sessionStorage flash flag to persist across page navigation.
  * Also supports /?logged_out=1 query param for no-JS fallback.
+ * Waits for modalManager to be ready to avoid race conditions.
  * 
  * HOW:
+ * Wait for modalManager readiness with retry logic.
  * Check for logout.flash in sessionStorage on page load.
- * If present, show success modal and clear the flag.
+ * If present, show success modal using showNotification.
  * Also check for /?logged_out=1 query param and clean up URL.
  */
 (function showLogoutFlash() {
@@ -344,16 +346,26 @@ window.modalManager = modalManager;
     return false;
   }
 
+  // Wait for modalManager to be ready (retry briefly)
+  function whenManagerReady(cb, tries) {
+    tries = (typeof tries === 'number') ? tries : 20; // ~1s at 50ms
+    if (window.modalManager && typeof window.modalManager.showNotification === 'function') {
+      return cb(window.modalManager);
+    }
+    if (tries <= 0) return;
+    setTimeout(function () { whenManagerReady(cb, tries - 1); }, 50);
+  }
+
   function show() {
     if (!shouldShow()) return;
 
-    // Show logout success modal using existing modalManager
-    if (window.modalManager && typeof window.modalManager.showNotification === 'function') {
-      window.modalManager.showNotification(
+    // Wait for manager to be ready, then show modal
+    whenManagerReady(function (mm) {
+      mm.showNotification(
         'Logged out',
         'You have been logged out successfully!'
       );
-    }
+    });
   }
 
   // Run on DOM ready

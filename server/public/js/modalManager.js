@@ -301,3 +301,81 @@ if (document.readyState === 'loading') {
  * Attach to window object so it's available globally.
  */
 window.modalManager = modalManager;
+
+/**
+ * WHAT:
+ * Expose a global open function for modal management.
+ * Provides compatibility for code that calls window.openModal().
+ * 
+ * WHY:
+ * Some scripts may expect window.openModal('login') instead of window.modalManager.showLogin().
+ * This provides backward compatibility while using the centralized manager.
+ * 
+ * HOW:
+ * Map generic open calls to the specific modalManager methods.
+ */
+window.openModal = function (modalId) {
+  if (modalId === 'login' || modalId === 'loginModal') {
+    modalManager.showLogin();
+  } else if (modalId === 'signup' || modalId === 'signupModal') {
+    modalManager.showSignup();
+  } else {
+    // Generic fallback for any other modal ID
+    modalManager.show(modalId);
+  }
+};
+
+/**
+ * WHAT:
+ * Click interceptor for data-modal-open attributes.
+ * Intercepts clicks on nav links that should open modals instead of navigating.
+ * 
+ * WHY:
+ * Prevents navigation to query param URLs when JS is enabled.
+ * Provides better UX by opening modals instantly without page reload.
+ * Falls back to normal navigation if modal system is unavailable.
+ * 
+ * HOW:
+ * Listen for clicks on elements with data-modal-open attributes.
+ * Prevent default navigation and call the modal open function.
+ * Also handles query param-based modal opening for no-JS fallback.
+ */
+(function () {
+  // Intercept clicks on nav links with modal targets
+  document.addEventListener('click', function (e) {
+    const link = e.target && e.target.closest('[data-modal-open]');
+    if (!link) return;
+
+    const modalId = link.getAttribute('data-modal-open');
+    if (!modalId) return;
+
+    // Prevent navigation and open modal
+    e.preventDefault();
+    if (typeof window.openModal === 'function') {
+      window.openModal(modalId);
+    }
+  }, { capture: true });
+
+  // Open modals from query params (?login=true, ?signup=true)
+  function openFromQuery() {
+    try {
+      const params = new URLSearchParams(window.location.search || '');
+      ['login', 'signup'].forEach(function (key) {
+        if (params.get(key) === 'true') {
+          if (typeof window.openModal === 'function') {
+            window.openModal(key);
+          }
+        }
+      });
+    } catch (_) {
+      // Ignore query param parsing errors
+    }
+  }
+
+  // Run query param check on DOM ready
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', openFromQuery);
+  } else {
+    openFromQuery();
+  }
+})();

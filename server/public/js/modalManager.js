@@ -222,7 +222,29 @@ const modalManager = {
     const okBtn = document.getElementById('notificationOkBtn');
     
     if (titleEl) titleEl.textContent = title;
-    if (messageEl) messageEl.textContent = message;
+    if (messageEl) {
+      // Clear previous content
+      messageEl.textContent = '';
+      // Support both string and structured object:
+      // { text: 'Thanks!', linkHref: 'https://...', linkText: 'View receipt' }
+      if (typeof message === 'string') {
+        messageEl.textContent = message;
+      } else if (message && typeof message === 'object') {
+        if (message.text) {
+          messageEl.appendChild(document.createTextNode(message.text));
+        }
+        if (message.linkHref) {
+          // Add a space if there was preceding text
+          if (message.text) messageEl.appendChild(document.createTextNode(' '));
+          const a = document.createElement('a');
+          a.href = message.linkHref;
+          a.target = '_blank';
+          a.rel = 'noopener';
+          a.textContent = message.linkText || 'View receipt';
+          messageEl.appendChild(a);
+        }
+      }
+    }
     if (modal) modal.classList.add('show');
     
     const closeModalFn = () => {

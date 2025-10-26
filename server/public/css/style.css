@@ -809,6 +809,15 @@ nav ul li a.active {
     font-size: 1.1rem;
 }
 
+.notification-modal .modal-body p a {
+    color: #667eea;
+    text-decoration: underline;
+}
+
+.notification-modal .modal-body p a:hover {
+    color: #764ba2;
+}
+
 .notification-modal .form-actions {
     justify-content: center;
     margin-top: 1.5rem;

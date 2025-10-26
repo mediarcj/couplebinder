@@ -156,12 +156,12 @@
           return null;
         }
 
-        let message = 'Thanks! Your purchase has been recorded.';
+        let message = { text: 'Thanks! Your purchase has been recorded.' };
         
         if (sessionId) {
           const url = await fetchReceiptWithRetry(sessionId);
           if (url) {
-            message = 'Thanks! <a href="' + url + '" target="_blank" rel="noopener">View receipt</a>';
+            message = { text: 'Thanks!', linkHref: url, linkText: 'View receipt' };
           }
         }
         

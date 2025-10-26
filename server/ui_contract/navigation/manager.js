@@ -92,7 +92,10 @@ function compose(req, res) {
     buckets.push(...schema.public);
   }
 
-  const path = req.originalUrl || req.url || '/';
+  // Extract pathname only (ignore query string for route matching)
+  const rawPath = req.originalUrl || req.url || '/';
+  const urlMatch = rawPath.match(/^([^?#]+)/);
+  const path = urlMatch ? urlMatch[1] : rawPath;
 
   // Filter by conditions
   let filtered = buckets

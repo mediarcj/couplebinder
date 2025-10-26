@@ -111,50 +111,62 @@
   <script nonce="<%= page.nonce %>">
     // Tiny toast for return from Checkout with receipt link and retry logic
     (async function(){
-      const qs = new URLSearchParams(location.search);
-      const sessionId = qs.get('session_id');
+      const url = new URL(window.location.href);
+      const isPaid = url.searchParams.get('paid') === '1';
+      const sessionId = url.searchParams.get('session_id');
       
-      if (qs.get('paid') === '1') {
-        // Retry function to handle receipt URL timing issues
-        async function fetchReceiptWithRetry(id) {
-          const delays = [300, 600, 1200, 2000, 3000]; // total ~7s max
-          for (let i = 0; i < delays.length; i++) {
-            try {
-              const res = await fetch(`/api/pay/receipt?session_id=${encodeURIComponent(id)}`, { 
-                credentials: 'include' 
-              });
-              
-              if (res.status === 200) {
-                const data = await res.json().catch(() => ({}));
-                if (data?.ok && data.receipt_url) {
-                  return data.receipt_url;
+      if (!isPaid && url.searchParams.get('canceled') !== '1') return;
+      
+      try {
+        if (isPaid) {
+          // Retry function to handle receipt URL timing issues
+          async function fetchReceiptWithRetry(id) {
+            const delays = [300, 600, 1200, 2000, 3000]; // total ~7s max
+            for (let i = 0; i < delays.length; i++) {
+              try {
+                const res = await fetch(`/api/pay/receipt?session_id=${encodeURIComponent(id)}`, { 
+                  credentials: 'include' 
+                });
+                
+                if (res.status === 200) {
+                  const data = await res.json().catch(() => ({}));
+                  if (data?.ok && data.receipt_url) {
+                    return data.receipt_url;
+                  }
                 }
+              } catch (e) {
+                // Silent fail, continue to next retry
               }
-            } catch (e) {
-              // Silent fail, continue to next retry
+              
+              if (i < delays.length - 1) {
+                await new Promise(r => setTimeout(r, delays[i]));
+              }
             }
-            
-            if (i < delays.length - 1) {
-              await new Promise(r => setTimeout(r, delays[i]));
-            }
+            return null;
           }
-          return null;
-        }
 
-        let message = { text: 'Thanks! Your purchase has been recorded.' };
-        
-        if (sessionId) {
-          const url = await fetchReceiptWithRetry(sessionId);
-          if (url) {
-            message = { text: 'Thanks!', linkHref: url, linkText: 'View receipt' };
+          let message = { text: 'Thanks! Your purchase has been recorded.' };
+          
+          if (sessionId) {
+            const receiptUrl = await fetchReceiptWithRetry(sessionId);
+            if (receiptUrl) {
+              message = { text: 'Thanks!', linkHref: receiptUrl, linkText: 'View receipt' };
+            }
           }
+          
+          window.modalManager?.showNotification('Payment received', message);
+        } else if (url.searchParams.get('canceled') === '1') {
+          window.modalManager?.showNotification('Payment canceled', 'No charge was made.');
         }
+      } catch (err) {
+        console.warn('Receipt fetch failed:', err);
+      } finally {
+        // Clean URL to prevent nav from seeing query params
+        const cleanUrl = url.pathname + (url.hash || '');
+        history.replaceState({}, document.title, cleanUrl);
         
-        window.modalManager?.showNotification('Payment received', message);
-        history.replaceState(null,'',location.pathname); // clean URL
-      } else if (qs.get('canceled') === '1') {
-        window.modalManager?.showNotification('Payment canceled','No charge was made.');
-        history.replaceState(null,'',location.pathname);
+        // Signal any client-side nav to refresh (safe no-op if not loaded yet)
+        window.dispatchEvent(new Event('ui:navigation:refresh'));
       }
     })();
   </script>

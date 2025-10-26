@@ -94,8 +94,8 @@ function compose(req, res) {
 
   const path = req.originalUrl || req.url || '/';
 
-  // Filter and map items
-  const items = buckets
+  // Filter by conditions
+  let filtered = buckets
     .filter(item => {
       // Check auth state
       if (item.when === 'auth' && !isAuthed) return false;
@@ -111,8 +111,10 @@ function compose(req, res) {
       if (item.feature && !featureEnabled(item.feature)) return false;
       
       return true;
-    })
-    .map(item => {
+    });
+
+  // Map, determine active
+  let mapped = filtered.map(item => {
       // Sanitize href and action (remove whitespace, no query strings)
       const safeHref = item.href && String(item.href).replace(/\s/g, '');
       const safeAction = item.action && String(item.action).replace(/\s/g, '');
@@ -133,7 +135,9 @@ function compose(req, res) {
       return {
         id: item.id,
         label: item.label,
-        type: method === 'POST' ? 'action' : 'link',
+        template: item.template,      // for 'welcome' text
+        modal: item.modal,            // for auth modals (login/signup)
+        type: method === 'POST' ? 'action' : (item.type || 'link'),
         href: method === 'POST' ? null : safeHref,
         action: method === 'POST' ? safeAction : null,
         method,
@@ -141,6 +145,41 @@ function compose(req, res) {
         active
       };
     });
+
+  // Build per-page ordering for authed state
+  if (isAuthed) {
+    const primaryOrder = ['home', 'dashboard', 'billing', 'profile'];
+    const byId = new Map(mapped.map(x => [x.id, x]));
+    // Figure out which primary is active
+    const activePrimary = primaryOrder.map(id => byId.get(id)).filter(Boolean).find(x => x.active);
+    const activeId = activePrimary ? activePrimary.id : null;
+    // Visible primaries (exclude the active one)
+    const primaries = primaryOrder
+      .map(id => byId.get(id))
+      .filter(Boolean)
+      .filter(x => x.id !== activeId);
+    // Welcome text -> resolve label
+    let welcome = byId.get('welcome');
+    if (welcome) {
+      const user = res?.locals?.user || req?.user || {};
+      const name = user.full_name || user.name || user.display_name || user.email || 'Friend';
+      welcome = { ...welcome, type: 'text', label: (welcome.template || 'Welcome, {{name}}!').replace('{{name}}', String(name)) };
+    }
+    // Logout action
+    const logout = byId.get('logout');
+    // Optional admin item(s) before logout
+    const admin = mapped.filter(x => x.id === 'admin');
+    // Compose final
+    mapped = []
+      .concat(primaries)
+      .concat(welcome ? [welcome] : [])
+      .concat(admin)
+      .concat(logout ? [logout] : []);
+  }
+
+  // Deduplicate by id (in case templates still include legacy nav)
+  const seen = new Set();
+  const items = mapped.filter(x => (x && !seen.has(x.id) && seen.add(x.id)));
 
   // Provide CSRF token for POST forms (from middleware)
   const csrfToken = res?.locals?.csrfToken || '';

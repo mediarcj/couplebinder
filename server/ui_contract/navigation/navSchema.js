@@ -28,11 +28,15 @@ module.exports = {
 
   // Visible to authenticated users
   auth: [
-    { id: 'dashboard', label: 'Dashboard', href: '/dashboard',               when: 'auth',    activeMatch: '^/dashboard(?:$|/)' },
-    { id: 'billing',   label: 'Billing',   href: '/dashboard/billing',       when: 'auth',    feature: 'billing', activeMatch: '^/dashboard/billing/?$' },
-    { id: 'profile',   label: 'Profile',   href: '/dashboard/profile-edit',  when: 'auth',    activeMatch: '^/dashboard/profile-edit/?$' },
+    // Primary sections (manager will exclude the active one and order per page)
+    { id: 'home',      label: 'Home',      href: '/',                          when: 'auth',    activeMatch: '^/$' },
+    { id: 'dashboard', label: 'Dashboard', href: '/dashboard',                 when: 'auth',    activeMatch: '^/dashboard(?:$|/)' },
+    { id: 'billing',   label: 'Billing',   href: '/dashboard/billing',         when: 'auth',    feature: 'billing', activeMatch: '^/dashboard/billing/?$' },
+    { id: 'profile',   label: 'Profile',   href: '/dashboard/profile-edit',    when: 'auth',    activeMatch: '^/dashboard/profile-edit/?$' },
+    // Non-nav text item (manager fills display name)
+    { id: 'welcome',   type: 'text',       template: 'Welcome, {{name}}!',     when: 'auth' },
     // POST action with CSRF; rendered as a form, not a link
-    { id: 'logout',    label: 'Log out',   action: '/auth/clear-cookie',     method: 'POST', csrf: true, data: { logout: 'true' }, when: 'auth' }
+    { id: 'logout',    label: 'Log out',   action: '/auth/clear-cookie',       method: 'POST', csrf: true, data: { logout: 'true' }, when: 'auth' }
   ],
 
   // Optional admin items

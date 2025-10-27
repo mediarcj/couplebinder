@@ -270,11 +270,11 @@ let redisClient = null;
 /**
  * WHAT:
  * Load Redis client module and prepare for connection.
- * 
+ *
  * WHY:
  * Session middleware needs the Redis client reference.
  * Actual connection happens asynchronously after sessions are mounted.
- * 
+ *
  * HOW:
  * Import Redis client with lazyConnect enabled.
  * Store client reference for session middleware.
@@ -529,88 +529,35 @@ consoleLogger.formatMiddlewareRegistration('Supabase Auth (token verification)')
 app.set('view engine', 'ejs');
 app.set('views', './ejs');
 
-// Resolve public directory (prefer repo-root /public, fallback to /server/public)
-function resolvePublicDir() {
-  const rootPublic = path.resolve(process.cwd(), 'public');
-  const serverPublic = path.resolve(__dirname, 'public');
-  
-  if (fs.existsSync(rootPublic)) {
-    console.log('Using repo-root public directory:', rootPublic);
-    return rootPublic;
-  }
-  if (fs.existsSync(serverPublic)) {
-    console.log('Using server public directory:', serverPublic);
-    return serverPublic;
-  }
-  // Create root public if neither exists
-  fs.mkdirSync(rootPublic, { recursive: true });
-  console.log('Created repo-root public directory:', rootPublic);
-  return rootPublic;
-}
-
-const PUBLIC_DIR = resolvePublicDir();
-const IMAGES_DIR = path.join(PUBLIC_DIR, 'images');
-const CSS_DIR = path.join(PUBLIC_DIR, 'css');
-const JS_DIR = path.join(PUBLIC_DIR, 'js');
-const TRUST_BADGE = path.join(PUBLIC_DIR, 'images', 'payments', 'trust-badge.png');
+// Serve static files from canonical public directory
+const PUBLIC_DIR = path.resolve(process.cwd(), 'public');
 
 console.log('Static files path:', PUBLIC_DIR);
 
-const DEV = process.env.NODE_ENV !== 'production';
-
-// Log asset presence at boot (dev only)
-if (DEV) {
-  try {
-    fs.accessSync(TRUST_BADGE, fs.constants.R_OK);
-    logger.info({ event: 'asset.present', path: TRUST_BADGE }, 'Trust badge present at boot');
-  } catch (e) {
-    logger.warn({ event: 'asset.missing', code: e.code, path: TRUST_BADGE }, 'Trust badge missing at boot');
-  }
-}
-
-// Explicit static mounts for images, css, js before generic static
-app.use('/images', express.static(IMAGES_DIR, {
-  fallthrough: true,
+// Static asset mounts with appropriate cache headers
+app.use('/images', express.static(path.join(PUBLIC_DIR, 'images'), {
   etag: true,
   maxAge: '30d',
-  immutable: true
+  immutable: true,
+  fallthrough: true
 }));
-app.use('/css', express.static(CSS_DIR, {
-  fallthrough: true,
+app.use('/css', express.static(path.join(PUBLIC_DIR, 'css'), {
   etag: true,
-  maxAge: '7d'
+  maxAge: '7d',
+  fallthrough: true
 }));
-app.use('/js', express.static(JS_DIR, {
-  fallthrough: true,
+app.use('/js', express.static(path.join(PUBLIC_DIR, 'js'), {
   etag: true,
-  maxAge: '7d'
+  maxAge: '7d',
+  fallthrough: true
 }));
 
-// Generic static mount as fallback
+// Generic fallback for any other public assets
 app.use(express.static(PUBLIC_DIR, {
-  fallthrough: true,
   etag: true,
-  maxAge: '7d'
+  maxAge: '7d',
+  fallthrough: true
 }));
-
-// Hard, explicit fallback for trust badge (bypasses any later middleware)
-app.get('/images/payments/trust-badge.png', (req, res, next) => {
-  res.type('png');
-  res.set('Cache-Control', 'public, max-age=2592000, immutable');
-  return res.sendFile(TRUST_BADGE, err => err && next(err));
-});
-
-// Dev-only diagnostic endpoint
-if (DEV) {
-  app.get('/__diag/asset/trust-badge', async (req, res) => {
-    try {
-      await fs.promises.access(TRUST_BADGE, fs.constants.R_OK);
-      return res.json({ ok: true, path: TRUST_BADGE });
-    } catch (e) {
-      return res.status(404).json({ ok: false, code: e.code, path: TRUST_BADGE });
-    }
-  });
-}
 
 consoleLogger.formatMiddlewareRegistration('View engine and static assets');
 // Rate limiting configuration logged via structured logger
@@ -998,10 +945,10 @@ app.use((err, req, res, next) => {
       requestId: req.requestId || 'unknown',
       status,
       name: err.name,
-      message: err.message,
+    message: err.message,
       code: err.code,
-      url: req.url,
-      method: req.method,
+    url: req.url,
+    method: req.method,
       ip: req.ip,
       syscall: err.syscall, // Added for ENOENT diagnosis
       // Stack trace in logs only (not sent to client)
@@ -1127,7 +1074,7 @@ function gracefulShutdown(signal) {
   console.log(`   Signal: ${signal}`);
   console.log(`   Time: ${new Date().toLocaleString()}`);
   console.log('   Shutting down gracefully...');
-
+  
   // Stop accepting new connections
   server.close((err) => {
     if (err) {
@@ -1137,7 +1084,7 @@ function gracefulShutdown(signal) {
       return;
     }
     console.log('HTTP server closed');
-    console.log('All active connections closed');
+      console.log('All active connections closed');
     console.log('Graceful shutdown completed');
     process.exit(0); // IMPORTANT: exit(0) so systemd/npm doesn't mark it as failure
   });

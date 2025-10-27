@@ -122,8 +122,7 @@ async function getReceiptVM({ sessionId, userId }) {
     };
   }
 
-  // One-time payment path
-  const pi = session.payment_intent || null;
+  // One-time payment path (pi is already declared above)
   const charge =
     pi?.latest_charge && typeof pi.latest_charge === 'object'
       ? pi.latest_charge

@@ -461,7 +461,9 @@ const publicGlobs = [
   '/css/**', '/js/**', '/images/**', '/favicon.ico',
   '/health/**',
   '/api/auth/set-cookie', '/api/auth/clear-cookie'
-  // Add any intentional public API endpoints here
+  // Note: All /dashboard paths are protected by requireAuth middleware,
+  // but the default-deny guard needs to allow authenticated access
+  // The guard checks for req.user, so authenticated users pass through
 ];
 
 // Mount default-deny guard for API and dashboard prefixes

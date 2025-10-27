@@ -5,9 +5,6 @@
 
 const express = require('express');
 const router = express.Router();
-const fs = require('fs');
-const QRCode = require('qrcode');
-const puppeteer = require('puppeteer-core');
 // requireAuth is applied globally to /dashboard routes in zorvalon.js
 const { buildDashboardPageModel, buildErrorPageModel } = require('../ui_contract/presenters');
 const { getReceiptVM } = require('../services/receiptService');
@@ -15,13 +12,6 @@ const { getPricingCatalog, getPriceSummary } = require('../services/pricingCatal
 const { archiveReceiptSnapshot } = require('../services/receiptArchive');
 const { assertUser } = require('../utils/authz');
 const logger = require('../utils/logger');
-
-// Helper: pick chromium path in Alpine
-function chromiumPath() {
-  const c1 = '/usr/bin/chromium';
-  const c2 = '/usr/bin/chromium-browser';
-  return fs.existsSync(c1) ? c1 : (fs.existsSync(c2) ? c2 : process.env.PUPPETEER_EXECUTABLE_PATH);
-}
 
 /**
  * GET /dashboard

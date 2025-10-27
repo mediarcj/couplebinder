@@ -529,24 +529,27 @@ consoleLogger.formatMiddlewareRegistration('Supabase Auth (token verification)')
 app.set('view engine', 'ejs');
 app.set('views', './ejs');
 
-// Serve static files from canonical public directory
-const PUBLIC_DIR = path.resolve(process.cwd(), 'public');
+// Static/public dir must be the repo-root /public (one level above /server)
+const PUBLIC_DIR = path.resolve(__dirname, '../public');
+const IMAGES_DIR = path.join(PUBLIC_DIR, 'images');
+const CSS_DIR = path.join(PUBLIC_DIR, 'css');
+const JS_DIR = path.join(PUBLIC_DIR, 'js');
 
 console.log('Static files path:', PUBLIC_DIR);
 
 // Static asset mounts with appropriate cache headers
-app.use('/images', express.static(path.join(PUBLIC_DIR, 'images'), {
+app.use('/images', express.static(IMAGES_DIR, {
   etag: true,
   maxAge: '30d',
   immutable: true,
   fallthrough: true
 }));
-app.use('/css', express.static(path.join(PUBLIC_DIR, 'css'), {
+app.use('/css', express.static(CSS_DIR, {
   etag: true,
   maxAge: '7d',
   fallthrough: true
 }));
-app.use('/js', express.static(path.join(PUBLIC_DIR, 'js'), {
+app.use('/js', express.static(JS_DIR, {
   etag: true,
   maxAge: '7d',
   fallthrough: true

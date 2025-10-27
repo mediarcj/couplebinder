@@ -34,11 +34,14 @@ RUN npm install --omit=dev
 # Copy the app
 COPY . .
 
-# Guarantee world-readable static assets inside the image
+# Ensure repo-root public/ is present in the image
+COPY public /app/public
+
+# Normalize permissions for static assets
 RUN set -eux; \
-  if [ -d ./public ]; then \
-    find ./public -type d -exec chmod 0755 {} +; \
-    find ./public -type f -exec chmod 0644 {} +; \
+  if [ -d /app/public ]; then \
+    find /app/public -type d -exec chmod 0755 {} +; \
+    find /app/public -type f -exec chmod 0644 {} +; \
   fi
 
 # Use the built-in non-root user that ships with node images

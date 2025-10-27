@@ -6,11 +6,11 @@
     <meta http-equiv="Cache-Control" content="no-store" />
     <meta http-equiv="Pragma" content="no-cache" />
     <meta name="robots" content="noindex" />
-    <title>Purchase Confirmation</title>
-    <link rel="stylesheet" href="/css/style.css?v=<%= Date.now() %>">
+    <title><%= page?.title || 'Purchase Confirmation' %></title>
+    <link rel="stylesheet" href="/css/style.css?v=<%= page?.assetVersion %>">
 </head>
 <body>
-    <%- include('partials/nav') %>
+    <%- include('partials/nav', { nav: page.nav, app_info: app_info }) %>
 
     <main>
         <div class="container">
@@ -25,7 +25,7 @@
                     <div class="profile-info">
                         <div class="info-item">
                             <span class="info-label">Item:</span>
-                            <span class="info-value"><%= productLabel || 'Your purchase' %></span>
+                            <span class="info-value"><%= confirmation?.productLabel || 'Your purchase' %></span>
                         </div>
                         <div class="info-item">
                             <span class="info-label">Total paid:</span>
@@ -38,7 +38,7 @@
                         <div class="info-item">
                             <span class="info-label">Confirmation ID:</span>
                             <span class="info-value idwrap">
-                                <code class="mono break" id="conf-id"><%= sessionId %></code>
+                                <code class="mono break" id="conf-id"><%= confirmation?.sessionId %></code>
                                 <button id="copy-id" class="btn btn-secondary btn-sm" type="button" aria-label="Copy confirmation ID">Copy</button>
                             </span>
                         </div>
@@ -53,7 +53,7 @@
                 </div>
             </div>
 
-            <p class="muted" style="margin-top:1rem; padding:1rem; background:#f9fafb; border-radius:6px; font-size:0.9rem;">
+            <p class="muted note-blurb">
                 This page is a purchase confirmation for your records. For your <strong>official receipt</strong>, use the button above to access the receipt hosted by our payment processor. We don't show card details on this page. Keep the confirmation ID for support inquiries.
             </p>
         </div>
@@ -61,27 +61,29 @@
 
     <footer>
         <div class="container">
-            <p>&copy; 2024 <%= process.env.APP_NAME || 'Application' %>. All rights reserved.</p>
+            <p>&copy; 2024 <%= app_info?.name || 'Application' %>. All rights reserved.</p>
         </div>
     </footer>
 
     <%- include('partials/modals') %>
 
-    <style nonce="<%= nonce %>">
+    <!-- Local styles (CSP-safe with nonce); no inline style attributes -->
+    <style nonce="<%= page?.nonce %>">
         .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 0.875rem; }
         .break { word-break: break-all; overflow-wrap: anywhere; }
         .idwrap { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
         .idwrap code { padding: 0.25rem 0.5rem; background: #f3f4f6; border: 1px solid #e5e7eb; border-radius: 4px; }
         .btn-sm { padding: 0.25rem 0.75rem; font-size: 0.875rem; }
         .muted { color: #6b7280; }
+        .note-blurb { margin-top: 1rem; padding: 1rem; background: #f9fafb; border-radius: 6px; font-size: 0.9rem; }
     </style>
 
-    <script nonce="<%= nonce %>">
+    <script nonce="<%= page?.nonce %>">
     (function(){
         // Button -> official receipt
         const official = document.getElementById('open-official');
-        const sess = "<%= sessionId %>";
-        const pre = <%- JSON.stringify(officialReceiptUrl || null) %>;
+        const sess = "<%= confirmation?.sessionId || '' %>";
+        const pre = <%- JSON.stringify(confirmation?.officialReceiptUrl || null) %>;
         
         function openUrl(url) {
             if (!url) return;
@@ -123,8 +125,8 @@
         });
 
         // Amount formatting (handles zero-decimal currencies)
-        const amountMinor = <%- JSON.stringify(amountMinor) %>;
-        const currency = "<%= (currency || 'usd').toUpperCase() %>";
+        const amountMinor = <%- JSON.stringify(confirmation?.amountMinor ?? null) %>;
+        const currency = "<%= (confirmation?.currency || 'USD') %>";
         const $amount = document.querySelector('[data-amount]');
         const zeroDecimal = new Set(['BIF','CLP','DJF','GNF','JPY','KMF','KRW','MGA','PYG','RWF','UGX','VND','VUV','XAF','XOF','XPF']);
         
@@ -138,7 +140,7 @@
         }
 
         // Paid at: use ISO from server and let browser localize
-        const iso = "<%= paidAtIso || '' %>";
+        const iso = "<%= confirmation?.paidAtIso || '' %>";
         const $paid = document.querySelector('[data-paidat]');
         if ($paid && iso) {
             try {

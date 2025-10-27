@@ -132,15 +132,37 @@ router.get('/purchase/confirmation', async (req, res, next) => {
             }
         }
         
-        // Render confirmation page with minimal data (no card details)
-        return res.render('purchase-confirmation', {
-            nonce: res.locals.nonce,
+        // Build dashboard-aligned page model so shared partials get expected keys
+        const pageModel = await buildDashboardPageModel(req, res);
+        pageModel.page.nonce = res.locals.nonce;
+        pageModel.page.assetVersion = Date.now();
+        pageModel.page.title = `Purchase Confirmation - ${process.env.APP_NAME || 'Application'}`;
+        pageModel.ui.supabaseUrl = process.env.SUPABASE_URL;
+        pageModel.ui.supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+
+        // Attach confirmation payload (kept minimal—no PM details)
+        pageModel.confirmation = {
             sessionId,
             amountMinor: vm?.amount_total ?? null,
-            currency: vm?.currency || 'usd',
+            currency: (vm?.currency || 'usd').toUpperCase(),
             productLabel: vm?.product_label || vm?.product_key || 'Your purchase',
             paidAtIso: vm?.paid_at_iso || null,
             officialReceiptUrl: vm?.official_receipt_url || vm?.stripe_receipt_url || null
+        };
+
+        // Use callback to capture template errors for logging & handoff to error handler
+        return res.render('purchase-confirmation', pageModel, (err, html) => {
+            if (err) {
+                logger.error({
+                    event: 'purchase.confirmation.view_error',
+                    requestId: req.requestId,
+                    sessionId,
+                    message: err.message,
+                    stack: err.stack
+                }, 'EJS rendering failed for purchase-confirmation');
+                return next(err);
+            }
+            res.send(html);
         });
     } catch (err) {
         logger.error({

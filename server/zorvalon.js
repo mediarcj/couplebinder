@@ -532,7 +532,63 @@ app.set('views', './ejs');
 // Serve static files from public directory
 const publicPath = path.join(__dirname, 'public');
 console.log('Static files path:', publicPath);
-app.use(express.static(publicPath));
+
+// Explicit static mount for images, css, js before generic static
+app.use('/images', express.static(path.join(publicPath, 'images'), {
+  fallthrough: true,
+  etag: true,
+  maxAge: '30d',
+  immutable: true
+}));
+app.use('/css', express.static(path.join(publicPath, 'css'), {
+  fallthrough: true,
+  etag: true,
+  maxAge: '7d'
+}));
+app.use('/js', express.static(path.join(publicPath, 'js'), {
+  fallthrough: true,
+  etag: true,
+  maxAge: '7d'
+}));
+
+// Generic static mount as fallback
+app.use(express.static(publicPath, {
+  fallthrough: true,
+  etag: true,
+  maxAge: '7d'
+}));
+
+// Explicit fallback for trust badge
+const trustBadgePath = path.join(publicPath, 'images', 'payments', 'trust-badge.png');
+const DEV = process.env.NODE_ENV !== 'production';
+
+// Log asset presence at boot (dev only)
+if (DEV) {
+  fs.promises.stat(trustBadgePath)
+    .then(() => logger.info({ event: 'asset.present', path: trustBadgePath }, 'Trust badge present at boot'))
+    .catch(e => logger.warn({ event: 'asset.missing', code: e.code, path: trustBadgePath }, 'Trust badge missing at boot'));
+}
+
+// Hard fallback route for trust badge
+app.get('/images/payments/trust-badge.png', (req, res) => {
+  res.sendFile(trustBadgePath, {
+    headers: {
+      'Cache-Control': 'public, max-age=2592000, immutable'
+    }
+  });
+});
+
+// Dev-only diagnostic endpoint
+if (DEV) {
+  app.get('/__diag/asset/trust-badge', async (req, res) => {
+    try {
+      await fs.promises.stat(trustBadgePath);
+      return res.json({ ok: true, path: trustBadgePath });
+    } catch (e) {
+      return res.status(404).json({ ok: false, code: e.code, path: trustBadgePath });
+    }
+  });
+}
 
 consoleLogger.formatMiddlewareRegistration('View engine and static assets');
 // Rate limiting configuration logged via structured logger

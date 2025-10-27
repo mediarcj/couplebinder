@@ -6,15 +6,6 @@
   <meta name="csrf-token" content="<%= ui?.csrfToken || page?.csrfToken || '' %>">
   <title><%= page.title %></title>
   <link rel="stylesheet" href="/css/style.css?v=<%= page.assetVersion || Date.now() %>">
-  <style nonce="<%= page.nonce %>">
-    .btn-block { display: inline-flex; width: 100%; justify-content: center; }
-    .btn-lg { font-size: 1rem; padding: 0.85rem 1.25rem; }
-    .actions-stack { display: flex; flex-direction: column; gap: 0.75rem; margin-top: 1rem; }
-    .actions-stack__secondary { opacity: 0.92; }
-    @media (min-width: 720px) {
-      .actions-stack { max-width: 520px; }
-    }
-  </style>
 </head>
 <body>
   <%- include('partials/nav', { nav: page.nav, app_info: app_info }) %>
@@ -22,64 +13,87 @@
   <main>
     <div class="container">
       <div class="hero">
-        <h1>Review your purchase</h1>
-        <p class="subtitle">You'll be redirected to <strong>Stripe</strong> to enter your payment details securely.</p>
+        <h1>Review & Continue</h1>
+        <p class="subtitle">Review your order and proceed to secure payment</p>
       </div>
 
-      <div class="user-profile">
-        <h2>Order Summary</h2>
-        <div class="profile-card">
-          <div class="profile-info">
-            <div class="info-item">
-              <span class="info-label">Product</span>
-              <span class="info-value"><%= product.name || productKey %></span>
-            </div>
-            <div class="info-item">
-              <span class="info-label">Quantity</span>
-              <span class="info-value"><%= quantity %></span>
-            </div>
-            <div class="info-item">
-              <span class="info-label">Price</span>
-              <span class="info-value">
-                $<%= (product.unit_amount/100).toFixed(2) %> <%= (product.currency||'usd').toUpperCase() %>
-                <% if (product.interval) { %>/ <%= product.interval %><% } %>
-              </span>
-            </div>
-            <div class="info-item">
-              <span class="info-label">Taxes</span>
-              <span class="info-value">Calculated at Stripe checkout</span>
-            </div>
-            <div class="info-item">
-              <span class="info-label">Total (estimate)</span>
-              <span class="info-value">
-                <strong>$<%= (total/100).toFixed(2) %> <%= (product.currency||'usd').toUpperCase() %></strong>
-                <% if (product.interval) { %>/ <%= product.interval %><% } %>
-              </span>
-            </div>
-          </div>
+      <div class="checkout-card">
+        <div class="checkout-grid">
+          <!-- Left: Trust panel -->
+          <section class="trust-panel" aria-labelledby="trust-title">
+            <figure class="trust-figure">
+              <picture>
+                <source srcset="/images/payments/trust-badge.webp?v=<%= page.assetVersion %>" type="image/webp">
+                <img
+                  src="/images/payments/trust-badge.png?v=<%= page.assetVersion %>"
+                  alt="Secure payments powered by Stripe — major cards and wallets supported"
+                  loading="lazy"
+                  class="trust-img"
+                >
+              </picture>
+            </figure>
 
-          <div class="checkout-review-foot">
-            <div class="payment-note">
-              <span class="lock" aria-hidden="true">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" focusable="false" aria-hidden="true">
-                  <path d="M17 8V7a5 5 0 00-10 0v1H5v14h14V8h-2zm-8 0V7a3 3 0 016 0v1H9zm3 5a2 2 0 11.001 3.999A2 2 0 0112 13z"/>
-                </svg>
-              </span>
-              <span>Secure payment handled by <strong>Stripe</strong>. Supports major cards and wallets (Apple Pay / Google Pay where available).</span>
+            <h2 id="trust-title" class="visually-hidden">Secure payment</h2>
+            <p class="trust-copy">
+              Secure payment handled by Stripe. Supports major cards and wallets
+              (Apple&nbsp;Pay / Google&nbsp;Pay where available).
+            </p>
+
+            <!-- Primary action: BIG and dominant -->
+            <button
+              id="continueToPay"
+              class="btn btn-primary btn-primary-xl btn-full"
+              data-product="<%= product.key %>"
+              data-quantity="<%= quantity %>"
+              data-test="continue-to-secure-payment"
+              aria-label="Continue to secure payment"
+              type="button"
+            >
+              Continue to secure payment
+            </button>
+          </section>
+
+          <!-- Right: Product summary -->
+          <aside class="summary-panel" aria-labelledby="summary-title">
+            <h2 id="summary-title" class="summary-title">Order summary</h2>
+
+            <div class="summary-items">
+              <div class="summary-row">
+                <span class="summary-label">Product</span>
+                <span class="summary-value"><%= product.name || productKey %></span>
+              </div>
+              <div class="summary-row">
+                <span class="summary-label">Quantity</span>
+                <span class="summary-value"><%= quantity %></span>
+              </div>
+              <div class="summary-row">
+                <span class="summary-label">Unit price</span>
+                <span class="summary-value">
+                  $<%= (product.unit_amount/100).toFixed(2) %> <%= (product.currency||'usd').toUpperCase() %>
+                  <% if (product.interval) { %>/<%= product.interval %><% } %>
+                </span>
+              </div>
+              <div class="summary-row">
+                <span class="summary-label">Taxes</span>
+                <span class="summary-value">Calculated at checkout</span>
+              </div>
+              <div class="summary-row summary-row--total">
+                <span class="summary-label">Total (estimate)</span>
+                <span class="summary-value">
+                  <strong>$<%= (total/100).toFixed(2) %> <%= (product.currency||'usd').toUpperCase() %></strong>
+                </span>
+              </div>
             </div>
-          </div>
+          </aside>
         </div>
-      </div>
 
-      <div class="dashboard-actions">
-        <div class="actions-stack">
-          <button id="cta-continue" class="btn btn-primary btn-lg btn-block" 
-                  data-product="<%= product.key %>"
-                  data-quantity="<%= quantity %>"
-                  type="button">
-            Continue to secure payment
-          </button>
-          <a class="btn btn-secondary btn-block actions-stack__secondary" href="/dashboard/billing">Back</a>
+        <!-- Bottom secondary action: single, calm, full width -->
+        <div class="checkout-footer">
+          <a href="/dashboard/billing"
+             class="btn btn-ghost btn-full"
+             data-test="change-selection">
+            I'd like to review other options
+          </a>
         </div>
       </div>
     </div>
@@ -108,7 +122,7 @@
         }
       }
       
-      const btn = document.getElementById('cta-continue');
+      const btn = document.getElementById('continueToPay');
       if (!btn) return;
       
       btn.addEventListener('click', async function () {

@@ -183,6 +183,138 @@ main {
     padding: 0.85rem 1.25rem;
 }
 
+/* Checkout Review layout */
+.checkout-card {
+    border: 1px solid #e6e6e6;
+    border-radius: 12px;
+    background: #fff;
+    padding: 20px;
+    max-width: 960px;
+    margin: 0 auto;
+}
+
+.checkout-grid {
+    display: grid;
+    gap: 24px;
+}
+
+/* >= tablet: two columns */
+@media (min-width: 768px) {
+    .checkout-grid {
+        grid-template-columns: 1fr 1fr;
+        align-items: start;
+    }
+}
+
+.trust-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.trust-figure {
+    margin: 0;
+}
+
+.trust-img {
+    width: 100%;
+    height: auto;
+    max-height: 220px;
+    object-fit: contain;
+    display: block;
+}
+
+.trust-copy {
+    color: #444;
+    line-height: 1.5;
+    margin: 0;
+}
+
+.visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border-width: 0;
+}
+
+.summary-title {
+    margin: 0 0 8px;
+    font-size: 1.1rem;
+    font-weight: 600;
+}
+
+.summary-items {
+    display: grid;
+    gap: 12px;
+}
+
+.summary-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    padding: 8px 0;
+    border-bottom: 1px solid #f0f0f0;
+}
+
+.summary-row--total {
+    border-top: 2px solid #e6e6e6;
+    border-bottom: none;
+    padding-top: 16px;
+    margin-top: 8px;
+}
+
+.summary-label {
+    color: #666;
+    font-weight: 500;
+}
+
+.summary-value {
+    color: #333;
+    font-weight: 400;
+    text-align: right;
+}
+
+.checkout-footer {
+    margin-top: 24px;
+    padding-top: 24px;
+    border-top: 1px solid #e6e6e6;
+}
+
+/* Buttons — reuse existing .btn classes; add stronger primary */
+.btn-full {
+    width: 100%;
+}
+
+.btn-primary-xl {
+    font-size: 1.05rem;
+    padding: 14px 20px;
+    font-weight: 700;
+    border-radius: 10px;
+    box-shadow: 0 8px 18px rgba(0, 0, 0, 0.08);
+    transition: transform 0.02s ease-in, box-shadow 0.2s ease;
+}
+
+.btn-primary-xl:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 10px 22px rgba(0, 0, 0, 0.12);
+}
+
+/* Muted "ghost" secondary for the bottom link */
+.btn-ghost {
+    background: transparent;
+    border: 1px solid #e6e6e6;
+    color: #333;
+}
+
+.btn-ghost:hover {
+    background: #fafafa;
+}
+
 /* Features Section */
 .features {
     margin: 4rem 0;

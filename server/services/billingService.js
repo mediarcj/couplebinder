@@ -34,8 +34,8 @@ const ALLOWED_PRICES = Object.freeze({
     productKey: 'resume_one_time' 
   },
   [process.env.STRIPE_PRICE_RESUME_EXPERT]: { 
-    type: 'recurring', 
-    mode: 'subscription', 
+    type: 'one_time', 
+    mode: 'payment', 
     productKey: 'resume_expert' 
   }
 });

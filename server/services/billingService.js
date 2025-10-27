@@ -185,7 +185,7 @@ async function createCheckoutSession({ user, priceId, quantity = 1, idempotencyK
     line_items: [{ price: trimmedPriceId, quantity }],
     allow_promotion_codes: true,
     billing_address_collection: 'auto',
-    success_url: `${process.env.PUBLIC_ORIGIN}/dashboard/receipt?session_id={CHECKOUT_SESSION_ID}`,
+    success_url: `${process.env.PUBLIC_ORIGIN}/dashboard/purchase/confirmation?session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${process.env.PUBLIC_ORIGIN}/dashboard/billing?canceled=1`,
     client_reference_id: user.id,
     metadata: { 

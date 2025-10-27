@@ -88,42 +88,37 @@ router.get('/profile-edit', async (req, res) => {
 });
 
 /**
- * GET /dashboard/receipt
- * Branded receipt page for successful payments
+ * GET /dashboard/purchase/confirmation
+ * Purchase confirmation page (NOT an official receipt)
+ * Shows minimal purchase details and link to official receipt
  */
-router.get('/receipt', async (req, res, next) => {
+router.get('/purchase/confirmation', async (req, res, next) => {
     try {
-        const sessionId = req.query.session_id;
+        res.set('Cache-Control', 'no-store');
+        res.set('Pragma', 'no-cache');
+        
+        const sessionId = String(req.query.session_id || '').trim();
         if (!sessionId) {
-            return res.redirect('/dashboard/billing');
+            return res.status(400).render('error', {
+                page: {
+                    title: '400 - Bad Request',
+                    nonce: res.locals.nonce
+                },
+                error: {
+                    status: 400,
+                    message: 'Missing session_id parameter'
+                },
+                app_info: {
+                    name: process.env.APP_NAME || 'Application'
+                }
+            });
         }
 
         const user = assertUser(req);
         const userId = user.id;
 
+        // Fetch receipt data for ownership verification and minimal details
         const vm = await getReceiptVM({ sessionId, userId });
-        
-        // Generate QR code for receipt
-        const absoluteSelfUrl = `${req.protocol}://${req.get('host')}${req.originalUrl}`;
-        const qrText = vm.stripe_receipt_url || absoluteSelfUrl;
-        const qrSvg = await QRCode.toString(qrText, { type: 'svg', margin: 1, width: 192 });
-        
-        // Build page model using presenter for consistent structure
-        const pageModel = await buildDashboardPageModel(req, res);
-        pageModel.page.title = 'Receipt - ' + (process.env.APP_NAME || 'Application');
-        pageModel.page.nonce = res.locals.nonce;
-        pageModel.page.assetVersion = Date.now();
-        
-        // Add Supabase credentials for client initialization
-        pageModel.ui.supabaseUrl = process.env.SUPABASE_URL;
-        pageModel.ui.supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
-        
-        // Add receipt-specific data
-        pageModel.receipt = vm;
-        pageModel.qrSvg = qrSvg;
-        pageModel.features = {
-            emailReceipt: !!process.env.FEATURE_EMAIL_RECEIPT
-        };
         
         // Archive receipt snapshot (fire-and-forget, non-blocking)
         if (process.env.FEATURE_ARCHIVE_RECEIPTS === '1') {
@@ -137,7 +132,16 @@ router.get('/receipt', async (req, res, next) => {
                 });
         }
         
-        res.render('receipt', pageModel);
+        // Render confirmation page with minimal data (no card details)
+        return res.render('purchase-confirmation', {
+            nonce: res.locals.nonce,
+            sessionId,
+            amount: vm.amount_total || null,
+            currency: vm.currency || 'usd',
+            productLabel: vm.product_key || 'Your purchase',
+            paidAt: vm.created_ms || null,
+            officialReceiptUrl: vm.stripe_receipt_url || null
+        });
     } catch (err) {
         if ((err.status || 500) === 404) {
             return res.status(404).render('error', {
@@ -147,7 +151,7 @@ router.get('/receipt', async (req, res, next) => {
                 },
                 error: {
                     status: 404,
-                    message: 'Receipt not found'
+                    message: 'Confirmation not found'
                 },
                 app_info: {
                     name: process.env.APP_NAME || 'Application'
@@ -160,67 +164,12 @@ router.get('/receipt', async (req, res, next) => {
 
 /**
  * GET /dashboard/receipt.pdf
- * Server-side PDF render (headless Chromium)
+ * DEPRECATED: This endpoint is deprecated in favor of official receipts
  */
-router.get('/receipt.pdf', async (req, res, next) => {
-    try {
-        const sessionId = req.query.session_id;
-        if (!sessionId) {
-            return res.status(400).send('Missing session_id');
-        }
-
-        const user = assertUser(req);
-        const userId = user.id;
-
-        const vm = await getReceiptVM({ sessionId, userId });
-        
-        // Generate QR code
-        const absoluteSelfUrl = `${req.protocol}://${req.get('host')}/dashboard/receipt?session_id=${encodeURIComponent(sessionId)}`;
-        const qrText = vm.stripe_receipt_url || absoluteSelfUrl;
-        const qrSvg = await QRCode.toString(qrText, { type: 'svg', margin: 1, width: 192 });
-
-        // Build page model for consistent structure
-        const pageModel = await buildDashboardPageModel(req, res);
-        pageModel.page.title = 'Receipt - ' + (process.env.APP_NAME || 'Application');
-        pageModel.page.nonce = res.locals.nonce;
-        pageModel.page.assetVersion = Date.now();
-        pageModel.ui.supabaseUrl = process.env.SUPABASE_URL;
-        pageModel.ui.supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
-        pageModel.receipt = vm;
-        pageModel.qrSvg = qrSvg;
-        pageModel.features = { emailReceipt: !!process.env.FEATURE_EMAIL_RECEIPT };
-        pageModel.pdfMode = true;
-        
-        // Render the same EJS to static HTML string
-        req.app.render('receipt', pageModel, async (err, html) => {
-            if (err) return next(err);
-            
-            const browser = await puppeteer.launch({
-                executablePath: chromiumPath(),
-                args: ['--no-sandbox', '--disable-gpu', '--font-render-hinting=medium']
-            });
-            
-            try {
-                const page = await browser.newPage();
-                await page.setContent(html, { waitUntil: ['domcontentloaded'] });
-                await page.emulateMediaType('print');
-                const pdf = await page.pdf({
-                    printBackground: true,
-                    format: 'A4',
-                    margin: { top: '16mm', right: '16mm', bottom: '16mm', left: '16mm' }
-                });
-                
-                const fileBase = vm.invoice_number ? `Receipt-${vm.invoice_number}` : `Receipt-${sessionId}`;
-                res.setHeader('Content-Type', 'application/pdf');
-                res.setHeader('Content-Disposition', `inline; filename="${fileBase}.pdf"`);
-                return res.send(pdf);
-            } finally {
-                await browser.close();
-            }
-        });
-    } catch (err) {
-        return next(err);
-    }
+router.get('/receipt.pdf', (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    res.set('Pragma', 'no-cache');
+    return res.status(410).send('This endpoint is deprecated. Please use the official receipt via the confirmation page.');
 });
 
 /**

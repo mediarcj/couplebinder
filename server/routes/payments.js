@@ -173,6 +173,8 @@ router.get('/receipt', async (req, res) => {
       userId: user.id 
     }, 'Receipt URL returned');
     
+    res.set('Cache-Control', 'no-store');
+    res.set('Pragma', 'no-cache');
     return res.json({ ok: true, receipt_url: receiptUrl });
   } catch (err) {
     logger.error({ 

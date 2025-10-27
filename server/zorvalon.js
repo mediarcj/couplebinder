@@ -960,13 +960,24 @@ app.use((err, req, res, next) => {
   // Do not leak internals to clients
   const status = err.status || err.statusCode || 500;
 
-  // If static file is missing, respond 404 instead of 500
+  // Handle static file errors appropriately
   const isStaticReq = req.path.startsWith('/images/') || 
                       req.path.startsWith('/css/') || 
-                      req.path.startsWith('/js/');
+                      req.path.startsWith('/js/') ||
+                      req.path === '/favicon.ico' || 
+                      req.path === '/robots.txt';
   
-  if (isStaticReq && (err.code === 'ENOENT' || status === 404)) {
-    return res.status(404).end();
+  // Determine status based on error code
+  let finalStatus = status;
+  if (err.code === 'ENOENT') {
+    finalStatus = 404;
+  } else if (err.code === 'EACCES') {
+    finalStatus = 403;
+  }
+  
+  // For static requests, return proper status without HTML error page
+  if (isStaticReq && (err.code === 'ENOENT' || err.code === 'EACCES' || finalStatus === 404 || finalStatus === 403)) {
+    return res.status(finalStatus).end();
   }
 
   /**

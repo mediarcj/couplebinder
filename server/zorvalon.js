@@ -881,6 +881,15 @@ app.use((err, req, res, next) => {
   // Do not leak internals to clients
   const status = err.status || err.statusCode || 500;
 
+  // If static file is missing, respond 404 instead of 500
+  const isStaticReq = req.path.startsWith('/images/') || 
+                      req.path.startsWith('/css/') || 
+                      req.path.startsWith('/js/');
+  
+  if (isStaticReq && (err.code === 'ENOENT' || status === 404)) {
+    return res.status(404).end();
+  }
+
   /**
    * WHAT:
    * Log full error details server-side only.
@@ -904,6 +913,7 @@ app.use((err, req, res, next) => {
       url: req.url,
       method: req.method,
       ip: req.ip,
+      syscall: err.syscall, // Added for ENOENT diagnosis
       // Stack trace in logs only (not sent to client)
       stack: isProd ? undefined : err.stack,
     });

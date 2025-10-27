@@ -30,16 +30,38 @@ const logger = require('../utils/logger');
  * @returns {Object} Normalized receipt view-model
  */
 async function getReceiptVM({ sessionId, userId }) {
-  // Expand to avoid multiple round trips
-  const session = await stripe.checkout.sessions.retrieve(sessionId, {
-    expand: [
-      'payment_intent.latest_charge',
-      'payment_intent.charges',
-      'invoice.charge',
-      'customer',
-      'line_items.data.price.product'
-    ],
-  });
+  // Check for required environment variable
+  if (!process.env.STRIPE_SECRET_KEY) {
+    const err = new Error('Stripe configuration missing');
+    err.status = 500;
+    logger.error({ event: 'receipt.stripe_config_missing' }, 'Stripe secret key not configured');
+    throw err;
+  }
+
+  // Safer expand set: avoid nested expansions that Stripe may reject on sessions.retrieve
+  const EXPAND_SAFE = [
+    'payment_intent.latest_charge',
+    'payment_intent.charges',
+    'invoice.charge',
+    'customer',
+    'line_items' // plain line_items only; products will be expanded via listLineItems below
+  ];
+  
+  let session;
+  try {
+    session = await stripe.checkout.sessions.retrieve(sessionId, { expand: EXPAND_SAFE });
+  } catch (e) {
+    // Fallback: try again without line_items if the API rejects that expand
+    try {
+      session = await stripe.checkout.sessions.retrieve(
+        sessionId,
+        { expand: EXPAND_SAFE.filter(x => x !== 'line_items') }
+      );
+    } catch (e2) {
+      e2.status = e2.status || 500;
+      throw e2;
+    }
+  }
 
   // Authorization: session must belong to the current user
   const ownerId = session?.metadata?.user_id || session?.client_reference_id || null;
@@ -53,10 +75,17 @@ async function getReceiptVM({ sessionId, userId }) {
   // Line items for display (names/amounts)
   const items = [];
   try {
-    const li = await stripe.checkout.sessions.listLineItems(session.id, { limit: 100 });
+    const li = await stripe.checkout.sessions.listLineItems(session.id, {
+      limit: 100,
+      expand: ['data.price.product']
+    });
     for (const l of li.data) {
       items.push({
-        description: l.description || l.price?.nickname || l.price?.product || 'Item',
+        description: l.description
+          || l.price?.product?.name
+          || l.price?.nickname
+          || (typeof l.price?.product === 'string' ? l.price.product : null)
+          || 'Item',
         quantity: l.quantity || 1,
         amount_subtotal: l.amount_subtotal,
         amount_total: l.amount_total,
@@ -68,15 +97,17 @@ async function getReceiptVM({ sessionId, userId }) {
     logger.warn({ event: 'receipt.line_items_fetch_failed', sessionId, error: err.message });
   }
 
-  // Extract product name from expanded line items
-  const firstLineItem = session?.line_items?.data?.[0] || null;
-  const productName = firstLineItem?.price?.product?.name || 
-                      firstLineItem?.price?.nickname || 
-                      session?.metadata?.product_label || 
-                      session?.metadata?.product_key || 
-                      null;
+  // Prefer names from the fetched line items; fall back to metadata
+  const firstLineItem = items[0] || session?.line_items?.data?.[0] || null;
+  const productName =
+    firstLineItem?.description
+    || firstLineItem?.price?.product?.name
+    || firstLineItem?.price?.nickname
+    || session?.metadata?.product_label
+    || session?.metadata?.product_key
+    || null;
 
-  // Extract payment time (prefer charge creation time, fall back to session/PI)
+  // Extract payment time (prefer charge creation time, fallback to session/PI)
   const pi = session.payment_intent || null;
   const latestCharge = (pi && typeof pi.latest_charge !== 'string') ? pi.latest_charge : null;
   const firstCharge = pi?.charges?.data?.[0] || null;

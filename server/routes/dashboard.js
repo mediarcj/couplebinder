@@ -112,14 +112,24 @@ router.get('/purchase/confirmation', async (req, res, next) => {
         
         // Archive receipt snapshot (fire-and-forget, non-blocking)
         if (process.env.FEATURE_ARCHIVE_RECEIPTS === '1') {
-            archiveReceiptSnapshot({ userId, receipt: vm })
-                .catch(err => {
-                    logger.warn({
-                        event: 'receipt.archive.failed',
-                        sessionId,
-                        error: err.message
-                    }, 'Receipt archival failed (non-blocking)');
-                });
+            try {
+                const maybePromise = archiveReceiptSnapshot && archiveReceiptSnapshot({ userId, receipt: vm });
+                if (maybePromise && typeof maybePromise.then === 'function') {
+                    maybePromise.catch(err => {
+                        logger.warn({
+                            event: 'receipt.archive.failed',
+                            sessionId,
+                            error: err.message
+                        }, 'Receipt archival failed (non-blocking)');
+                    });
+                }
+            } catch (err) {
+                logger.warn({
+                    event: 'receipt.archive.threw_sync',
+                    sessionId,
+                    error: err.message
+                }, 'Receipt archival threw synchronously (ignored)');
+            }
         }
         
         // Render confirmation page with minimal data (no card details)
@@ -133,6 +143,16 @@ router.get('/purchase/confirmation', async (req, res, next) => {
             officialReceiptUrl: vm?.official_receipt_url || vm?.stripe_receipt_url || null
         });
     } catch (err) {
+        logger.error({
+            event: 'purchase.confirmation.error',
+            requestId: req.requestId,
+            sessionId: String(req.query.session_id || ''),
+            status: err.status || err.statusCode || 500,
+            code: err.code,
+            type: err.type,
+            message: err.message
+        }, 'Purchase confirmation route error');
+        
         if ((err.status || 500) === 404) {
             return res.status(404).render('error', {
                 page: {

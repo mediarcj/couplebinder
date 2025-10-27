@@ -22,15 +22,13 @@
           <!-- Left: Trust panel -->
           <section class="trust-panel" aria-labelledby="trust-title">
             <figure class="trust-figure">
-              <picture>
-                <source srcset="/images/payments/trust-badge.webp?v=<%= page.assetVersion %>" type="image/webp">
-                <img
-                  src="/images/payments/trust-badge.png?v=<%= page.assetVersion %>"
-                  alt="Secure payments powered by Stripe — major cards and wallets supported"
-                  loading="lazy"
-                  class="trust-img"
-                >
-              </picture>
+              <!-- Trust badge (PNG only to avoid 404) -->
+              <img
+                src="/images/payments/trust-badge.png?v=<%= page.assetVersion %>"
+                alt="Secure payments powered by Stripe — major cards and wallets supported"
+                loading="lazy"
+                class="trust-img"
+              >
             </figure>
 
             <h2 id="trust-title" class="visually-hidden">Secure payment</h2>

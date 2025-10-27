@@ -21,6 +21,7 @@ const helmet = require('helmet');
 const cors = require('cors');
 const path = require('path');
 const crypto = require('node:crypto');
+const fs = require('fs');
 
 // Install console shim early to intercept JSON event logs
 try {

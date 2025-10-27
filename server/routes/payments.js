@@ -62,6 +62,7 @@ router.post('/checkout', idem, async (req, res) => {
     const skuOrKey = (sku || productKey || 'resume_one_time').trim();
     
     const priceId = PRICES[skuOrKey];
+    const mode = skuOrKey === 'resume_expert' ? 'subscription' : 'payment'; // flip mode by product
     if (!priceId) {
       logger.warn({
         event: 'checkout.sku.invalid',
@@ -80,7 +81,8 @@ router.post('/checkout', idem, async (req, res) => {
       priceId,
       quantity: Number.isFinite(quantity) && quantity > 0 ? quantity : 1,
       idempotencyKey: req.headers['idempotency-key'],
-      requestId: req.requestId
+      requestId: req.requestId,
+      mode // subscription for resume_expert, payment otherwise
     });
 
     const isLive = process.env.STRIPE_SECRET_KEY?.startsWith('sk_live_');

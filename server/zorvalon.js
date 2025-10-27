@@ -526,41 +526,54 @@ consoleLogger.formatMiddlewareRegistration('Supabase Auth (token verification)')
  * We set EJS as the view engine and configure the public directory
  * for static asset serving.
  */
+// ===== View engine =====
 app.set('view engine', 'ejs');
-app.set('views', './ejs');
+app.set('views', path.resolve(__dirname, 'ejs'));
 
-// Static/public dir must be the repo-root /public (one level above /server)
-const PUBLIC_DIR = path.resolve(__dirname, '../public');
-const IMAGES_DIR = path.join(PUBLIC_DIR, 'images');
-const CSS_DIR = path.join(PUBLIC_DIR, 'css');
-const JS_DIR = path.join(PUBLIC_DIR, 'js');
+// ===== Static roots =====
+// Primary (canonical): repo-root /public
+const PUBLIC_DIR_PRIMARY = path.resolve(__dirname, '../public');
+// Legacy (back-compat): /server/public
+const PUBLIC_DIR_LEGACY = path.resolve(__dirname, 'public');
 
-console.log('Static files path:', PUBLIC_DIR);
+console.log('Static files - Primary:', PUBLIC_DIR_PRIMARY);
+console.log('Static files - Legacy:', PUBLIC_DIR_LEGACY);
 
-// Static asset mounts with appropriate cache headers
-app.use('/images', express.static(IMAGES_DIR, {
-  etag: true,
-  maxAge: '30d',
-  immutable: true,
-  fallthrough: true
-}));
-app.use('/css', express.static(CSS_DIR, {
-  etag: true,
-  maxAge: '7d',
-  fallthrough: true
-}));
-app.use('/js', express.static(JS_DIR, {
-  etag: true,
-  maxAge: '7d',
-  fallthrough: true
-}));
+// Subdirs (primary first, then legacy; fallthrough enabled)
+function mountStatic(prefix, subdir, maxAge, immutable = false) {
+  const opts = { etag: true, maxAge, fallthrough: true };
+  if (immutable) opts.immutable = true;
 
-// Generic fallback for any other public assets
-app.use(express.static(PUBLIC_DIR, {
-  etag: true,
-  maxAge: '7d',
-  fallthrough: true
-}));
+  // Primary first
+  app.use(prefix, express.static(path.join(PUBLIC_DIR_PRIMARY, subdir), opts));
+  // Legacy second
+  app.use(prefix, express.static(path.join(PUBLIC_DIR_LEGACY, subdir), opts));
+}
+
+// Images: long-lived
+mountStatic('/images', 'images', '30d', true);
+// CSS/JS: shorter cache
+mountStatic('/css', 'css', '7d');
+mountStatic('/js', 'js', '7d');
+
+// Generic fallbacks (primary then legacy)
+app.use(express.static(PUBLIC_DIR_PRIMARY, { etag: true, maxAge: '7d', fallthrough: true }));
+app.use(express.static(PUBLIC_DIR_LEGACY, { etag: true, maxAge: '7d', fallthrough: true }));
+
+// If a static request got this far, it wasn't found by either root.
+// Return an empty 404 so the browser doesn't treat an HTML body as CSS/JS.
+app.get(
+  [
+    '/images/*',
+    '/css/*',
+    '/js/*',
+    '/favicon.ico',
+    '/robots.txt',
+  ],
+  (req, res, next) => {
+    res.status(404).end();
+  }
+);
 
 consoleLogger.formatMiddlewareRegistration('View engine and static assets');
 // Rate limiting configuration logged via structured logger

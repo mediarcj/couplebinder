@@ -1,111 +1,176 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta http-equiv="Cache-Control" content="no-store" />
-  <meta http-equiv="Pragma" content="no-cache" />
-  <meta name="robots" content="noindex" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Purchase Confirmation</title>
-  <link rel="stylesheet" href="/css/style.css?v=<%= Date.now() %>">
-  <style nonce="<%= nonce %>">
-    * { box-sizing: border-box; }
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f5f5; margin: 0; padding: 1rem; color: #333; }
-    .confirm-wrap { max-width: 720px; margin: 2rem auto; padding: 2rem; border: 1px solid #ddd; border-radius: 8px; background: white; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-    .badge { display: inline-block; padding: 0.25rem 0.75rem; border-radius: 0.375rem; font-size: 0.875rem; font-weight: 500; background: #d1fae5; color: #065f46; }
-    h1 { margin: 0.75rem 0 0; font-size: 1.75rem; font-weight: 600; }
-    .note { margin: 1rem 0 0; font-size: 0.9375rem; color: #666; line-height: 1.6; }
-    .note strong { color: #333; font-weight: 600; }
-    .meta { margin: 2rem 0 0; font-size: 0.9375rem; }
-    .kv { display: flex; justify-content: space-between; align-items: center; padding: 0.75rem 0; border-bottom: 1px dashed #e5e7eb; }
-    .kv:last-child { border-bottom: 0; }
-    .kv span:first-child { color: #666; }
-    .kv strong { color: #111; font-weight: 600; }
-    .actions { margin-top: 2rem; display: flex; gap: 0.75rem; }
-    .btn-primary { display: inline-flex; align-items: center; padding: 0.75rem 1.5rem; border-radius: 6px; background: #2563eb; color: white; text-decoration: none; font-weight: 500; transition: background 0.2s; border: none; cursor: pointer; }
-    .btn-primary:hover { background: #1e40af; }
-    .btn-primary:disabled { background: #9ca3af; cursor: not-allowed; }
-    .btn-primary[aria-busy="true"] { position: relative; color: transparent; }
-    .btn-primary[aria-busy="true"]::after { content: ''; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 1rem; height: 1rem; border: 2px solid currentColor; border-top-color: transparent; border-radius: 50%; animation: spin 0.6s linear infinite; }
-    @keyframes spin { to { transform: translate(-50%, -50%) rotate(360deg); } }
-    .footer-note { margin-top: 1.5rem; padding-top: 1.5rem; border-top: 1px solid #e5e7eb; font-size: 0.875rem; color: #666; }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-store" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta name="robots" content="noindex" />
+    <title>Purchase Confirmation</title>
+    <link rel="stylesheet" href="/css/style.css?v=<%= Date.now() %>">
 </head>
 <body>
-  <main class="confirm-wrap">
-    <div class="badge">Payment Confirmed</div>
-    <h1>Thanks for your purchase</h1>
-    <p class="note">This page is a purchase confirmation for your records. For your <strong>official receipt</strong>, use the button below to access the receipt hosted by our payment processor.</p>
+    <%- include('partials/nav') %>
 
-    <section class="meta" aria-label="Purchase summary">
-      <div class="kv"><span>Item</span><strong><%= productLabel || 'Your purchase' %></strong></div>
-      <% if (amount) { %>
-        <div class="kv"><span>Total paid</span><strong>$<%= (amount/100).toFixed(2) %> <%= (currency || 'usd').toUpperCase() %></strong></div>
-      <% } %>
-      <% if (paidAt) { %>
-        <div class="kv"><span>Paid at</span><strong><%= new Date(paidAt).toLocaleString() %></strong></div>
-      <% } %>
-      <div class="kv"><span>Confirmation ID</span><strong><%= sessionId %></strong></div>
-    </section>
+    <main>
+        <div class="container">
+            <div class="hero">
+                <h1>Thanks for your purchase</h1>
+                <p class="subtitle">Your payment has been confirmed successfully</p>
+            </div>
 
-    <div class="actions">
-      <a id="open-official" class="btn-primary" rel="noopener noreferrer" target="_blank" href="#">View official receipt</a>
-    </div>
+            <div class="user-profile">
+                <h2>Purchase Confirmation</h2>
+                <div class="profile-card">
+                    <div class="profile-info">
+                        <div class="info-item">
+                            <span class="info-label">Item:</span>
+                            <span class="info-value"><%= productLabel || 'Your purchase' %></span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">Total paid:</span>
+                            <span class="info-value" data-amount></span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">Paid at:</span>
+                            <span class="info-value" data-paidat></span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">Confirmation ID:</span>
+                            <span class="info-value idwrap">
+                                <code class="mono break" id="conf-id"><%= sessionId %></code>
+                                <button id="copy-id" class="btn btn-secondary btn-sm" type="button" aria-label="Copy confirmation ID">Copy</button>
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            </div>
 
-    <p class="footer-note">We don't show card details on this page. Keep the confirmation ID for support inquiries.</p>
-  </main>
+            <div class="dashboard-actions">
+                <div class="action-grid">
+                    <a id="open-official" class="btn btn-primary" rel="noopener noreferrer" target="_blank" href="#">View official receipt</a>
+                    <a href="/dashboard/billing" class="btn btn-secondary">Back to Billing</a>
+                </div>
+            </div>
 
-  <script nonce="<%= nonce %>">
-  (function(){
-    const official = document.getElementById('open-official');
-    const sess = "<%= sessionId %>";
-    const pre = <%- JSON.stringify(officialReceiptUrl || null) %>;
-    
-    function openUrl(url) {
-      if (!url) return;
-      try {
-        window.open(url, '_blank', 'noopener,noreferrer');
-      } catch (e) {
-        location.href = url;
-      }
-    }
-    
-    if (pre) {
-      official.href = pre;
-      official.addEventListener('click', function(e) {
-        e.preventDefault();
-        openUrl(pre);
-      });
-      return;
-    }
-    
-    official.addEventListener('click', async function(e) {
-      e.preventDefault();
-      official.setAttribute('aria-busy', 'true');
-      official.disabled = true;
-      
-      try {
-        const res = await fetch(`/api/pay/receipt?session_id=${encodeURIComponent(sess)}`, {
-          credentials: 'same-origin',
-          headers: { 'Accept': 'application/json' }
-        });
+            <p class="muted" style="margin-top:1rem; padding:1rem; background:#f9fafb; border-radius:6px; font-size:0.9rem;">
+                This page is a purchase confirmation for your records. For your <strong>official receipt</strong>, use the button above to access the receipt hosted by our payment processor. We don't show card details on this page. Keep the confirmation ID for support inquiries.
+            </p>
+        </div>
+    </main>
+
+    <footer>
+        <div class="container">
+            <p>&copy; 2024 <%= process.env.APP_NAME || 'Application' %>. All rights reserved.</p>
+        </div>
+    </footer>
+
+    <%- include('partials/modals') %>
+
+    <style nonce="<%= nonce %>">
+        .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 0.875rem; }
+        .break { word-break: break-all; overflow-wrap: anywhere; }
+        .idwrap { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+        .idwrap code { padding: 0.25rem 0.5rem; background: #f3f4f6; border: 1px solid #e5e7eb; border-radius: 4px; }
+        .btn-sm { padding: 0.25rem 0.75rem; font-size: 0.875rem; }
+        .muted { color: #6b7280; }
+    </style>
+
+    <script nonce="<%= nonce %>">
+    (function(){
+        // Button -> official receipt
+        const official = document.getElementById('open-official');
+        const sess = "<%= sessionId %>";
+        const pre = <%- JSON.stringify(officialReceiptUrl || null) %>;
         
-        if (!res.ok) throw new Error('failed');
-        
-        const data = await res.json();
-        if (data && data.receipt_url) {
-          openUrl(data.receipt_url);
-        } else {
-          throw new Error('No receipt URL');
+        function openUrl(url) {
+            if (!url) return;
+            try {
+                window.open(url, '_blank', 'noopener,noreferrer');
+            } catch (e) {
+                location.href = url;
+            }
         }
-      } catch (err) {
-        alert('Could not open the official receipt right now. Please try again later.');
-      } finally {
-        official.removeAttribute('aria-busy');
-        official.disabled = false;
-      }
-    });
-  })();
-  </script>
+        
+        official.addEventListener('click', async function(e) {
+            e.preventDefault();
+            official.disabled = true;
+            
+            try {
+                if (pre) {
+                    openUrl(pre);
+                    return;
+                }
+                
+                const res = await fetch(`/api/pay/receipt?session_id=${encodeURIComponent(sess)}`, {
+                    credentials: 'same-origin',
+                    headers: { 'Accept': 'application/json' }
+                });
+                
+                if (!res.ok) throw new Error('failed');
+                
+                const data = await res.json();
+                if (data && data.receipt_url) {
+                    openUrl(data.receipt_url);
+                } else {
+                    throw new Error('No receipt URL');
+                }
+            } catch (err) {
+                alert('Could not open the official receipt right now. Please try again later.');
+            } finally {
+                official.disabled = false;
+            }
+        });
+
+        // Amount formatting (handles zero-decimal currencies)
+        const amountMinor = <%- JSON.stringify(amountMinor) %>;
+        const currency = "<%= (currency || 'usd').toUpperCase() %>";
+        const $amount = document.querySelector('[data-amount]');
+        const zeroDecimal = new Set(['BIF','CLP','DJF','GNF','JPY','KMF','KRW','MGA','PYG','RWF','UGX','VND','VUV','XAF','XOF','XPF']);
+        
+        if ($amount && amountMinor != null) {
+            const major = zeroDecimal.has(currency) ? amountMinor : (amountMinor / 100);
+            try {
+                $amount.textContent = new Intl.NumberFormat(undefined, { style: 'currency', currency }).format(major);
+            } catch(e) {
+                $amount.textContent = (zeroDecimal.has(currency) ? amountMinor : major.toFixed(2)) + ' ' + currency;
+            }
+        }
+
+        // Paid at: use ISO from server and let browser localize
+        const iso = "<%= paidAtIso || '' %>";
+        const $paid = document.querySelector('[data-paidat]');
+        if ($paid && iso) {
+            try {
+                $paid.textContent = new Date(iso).toLocaleString();
+            } catch(e) {
+                $paid.textContent = iso;
+            }
+        }
+
+        // Copy confirmation ID
+        const btnCopy = document.getElementById('copy-id');
+        const confId = document.getElementById('conf-id')?.textContent || '';
+        if (btnCopy && confId) {
+            btnCopy.addEventListener('click', async () => {
+                try {
+                    await navigator.clipboard.writeText(confId);
+                    btnCopy.textContent = 'Copied';
+                    setTimeout(() => btnCopy.textContent = 'Copy', 1200);
+                } catch(e) {
+                    // Fallback for older browsers
+                    const textarea = document.createElement('textarea');
+                    textarea.value = confId;
+                    document.body.appendChild(textarea);
+                    textarea.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(textarea);
+                    btnCopy.textContent = 'Copied';
+                    setTimeout(() => btnCopy.textContent = 'Copy', 1200);
+                }
+            });
+        }
+    })();
+    </script>
 </body>
 </html>

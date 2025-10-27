@@ -136,11 +136,11 @@ router.get('/purchase/confirmation', async (req, res, next) => {
         return res.render('purchase-confirmation', {
             nonce: res.locals.nonce,
             sessionId,
-            amount: vm.amount_total || null,
-            currency: vm.currency || 'usd',
-            productLabel: vm.product_key || 'Your purchase',
-            paidAt: vm.created_ms || null,
-            officialReceiptUrl: vm.stripe_receipt_url || null
+            amountMinor: vm?.amount_total ?? null,
+            currency: vm?.currency || 'usd',
+            productLabel: vm?.product_label || vm?.product_key || 'Your purchase',
+            paidAtIso: vm?.paid_at_iso || null,
+            officialReceiptUrl: vm?.official_receipt_url || vm?.stripe_receipt_url || null
         });
     } catch (err) {
         if ((err.status || 500) === 404) {

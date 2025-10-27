@@ -32,7 +32,13 @@ const logger = require('../utils/logger');
 async function getReceiptVM({ sessionId, userId }) {
   // Expand to avoid multiple round trips
   const session = await stripe.checkout.sessions.retrieve(sessionId, {
-    expand: ['payment_intent.latest_charge', 'invoice.charge', 'customer'],
+    expand: [
+      'payment_intent.latest_charge',
+      'payment_intent.charges',
+      'invoice.charge',
+      'customer',
+      'line_items.data.price.product'
+    ],
   });
 
   // Authorization: session must belong to the current user
@@ -62,6 +68,27 @@ async function getReceiptVM({ sessionId, userId }) {
     logger.warn({ event: 'receipt.line_items_fetch_failed', sessionId, error: err.message });
   }
 
+  // Extract product name from expanded line items
+  const firstLineItem = session?.line_items?.data?.[0] || null;
+  const productName = firstLineItem?.price?.product?.name || 
+                      firstLineItem?.price?.nickname || 
+                      session?.metadata?.product_label || 
+                      session?.metadata?.product_key || 
+                      null;
+
+  // Extract payment time (prefer charge creation time, fall back to session/PI)
+  const pi = session.payment_intent || null;
+  const latestCharge = (pi && typeof pi.latest_charge !== 'string') ? pi.latest_charge : null;
+  const firstCharge = pi?.charges?.data?.[0] || null;
+  const paidAtUnix = latestCharge?.created || 
+                     firstCharge?.created || 
+                     (typeof pi?.created === 'number' ? pi.created : null) || 
+                     session.created;
+  const paidAtIso = new Date((paidAtUnix || Math.floor(Date.now()/1000)) * 1000).toISOString();
+
+  // Extract receipt URL
+  const receiptUrl = latestCharge?.receipt_url || firstCharge?.receipt_url || null;
+
   const base = {
     session_id: session.id,
     created_ms: (session.created || 0) * 1000,
@@ -71,6 +98,11 @@ async function getReceiptVM({ sessionId, userId }) {
     customer_email: session.customer_details?.email || null,
     customer_name: session.customer_details?.name || null,
     items,
+    // New fields for confirmation page
+    product_label: productName,
+    product_key: session?.metadata?.product_key || null,
+    paid_at_iso: paidAtIso,
+    official_receipt_url: receiptUrl,
   };
 
   // Invoice/subscription path

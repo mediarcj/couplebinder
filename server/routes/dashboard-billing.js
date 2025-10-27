@@ -54,22 +54,8 @@ router.get('/', async (req, res) => {
     // Silently fail - pricing is optional, fallback to defaults in template
   }
 
-  // Optional: basic purchase history for the user
-  let purchases = [];
-  try {
-    const { data, error } = await supabaseAdmin
-      .from('payments')
-      .select('created_at, product_key, amount, currency, status')
-      .eq('user_id', req.user.id)
-      .order('created_at', { ascending: false })
-      .limit(20);
-    
-    if (!error) purchases = data || [];
-  } catch (err) {
-    // Silently fail - purchases are optional
-  }
-  
-  pageModel.billing = { purchases, pricing };
+  // Purchase history removed by request
+  pageModel.billing = { pricing };
   
   // Pass environment variables for price ID lookups in template
   pageModel.env = {

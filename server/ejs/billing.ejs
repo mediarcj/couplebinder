@@ -41,7 +41,7 @@
             <%= pOne.isRecurring ? `/${pOne.interval}` : ' one-time' %>
           </p>
           <% } %>
-          <a class="btn btn-primary" 
+          <a class="btn btn-primary btn-block" 
              id="buyResumeBasic"
              href="/dashboard/checkout/review?product=resume_one_time&qty=1">
             Buy<%= pOne.name ? ` ${pOne.name}` : '' %>
@@ -67,7 +67,7 @@
             <%= pTwo.isRecurring ? `/${pTwo.interval}` : ' one-time' %>
           </p>
           <% } %>
-          <a class="btn btn-secondary" 
+          <a class="btn btn-primary btn-block" 
              id="buyResumeExpert"
              href="/dashboard/checkout/review?product=resume_expert&qty=1">
             Buy<%= pTwo.name ? ` ${pTwo.name}` : '' %>
@@ -76,28 +76,15 @@
         <% } %>
       </div>
 
-      <div class="user-profile">
-        <h2>Purchase History</h2>
-        <% if ((billing?.purchases || []).length === 0) { %>
-          <p>No purchases yet.</p>
-        <% } else { %>
-          <table class="table">
-            <thead><tr><th>Date</th><th>Product</th><th>Amount</th><th>Status</th></tr></thead>
-            <tbody>
-            <% billing.purchases.forEach(p => { %>
-              <tr>
-                <td><%= new Date(p.created_at).toLocaleString() %></td>
-                <td><%= p.product_key %></td>
-                <td><%= (p.amount/100).toFixed(2) %> <%= p.currency.toUpperCase() %></td>
-                <td><%= p.status %></td>
-              </tr>
-            <% }) %>
-            </tbody>
-          </table>
-        <% } %>
-      </div>
+             <!-- Purchase History removed by request -->
     </div>
   </main>
+
+  <footer>
+    <div class="container">
+      <p>&copy; 2024 <%= app_info?.name || 'Detechify' %>. To de-techify anything.</p>
+    </div>
+  </footer>
 
   <%- include('partials/modals') %>
   <script src="/js/supabase-client.js" nonce="<%= page.nonce %>"></script>

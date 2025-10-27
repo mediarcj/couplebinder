@@ -6,6 +6,15 @@
   <meta name="csrf-token" content="<%= ui?.csrfToken || page?.csrfToken || '' %>">
   <title><%= page.title %></title>
   <link rel="stylesheet" href="/css/style.css?v=<%= page.assetVersion || Date.now() %>">
+  <style nonce="<%= page.nonce %>">
+    .btn-block { display: inline-flex; width: 100%; justify-content: center; }
+    .btn-lg { font-size: 1rem; padding: 0.85rem 1.25rem; }
+    .actions-stack { display: flex; flex-direction: column; gap: 0.75rem; margin-top: 1rem; }
+    .actions-stack__secondary { opacity: 0.92; }
+    @media (min-width: 720px) {
+      .actions-stack { max-width: 520px; }
+    }
+  </style>
 </head>
 <body>
   <%- include('partials/nav', { nav: page.nav, app_info: app_info }) %>
@@ -63,14 +72,14 @@
       </div>
 
       <div class="dashboard-actions">
-        <div class="action-grid">
-          <button id="cta-continue" class="btn btn-primary" 
+        <div class="actions-stack">
+          <button id="cta-continue" class="btn btn-primary btn-lg btn-block" 
                   data-product="<%= product.key %>"
                   data-quantity="<%= quantity %>"
                   type="button">
             Continue to secure payment
           </button>
-          <a class="btn btn-secondary" href="/dashboard/billing">Back</a>
+          <a class="btn btn-secondary btn-block actions-stack__secondary" href="/dashboard/billing">Back</a>
         </div>
       </div>
     </div>

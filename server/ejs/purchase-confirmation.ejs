@@ -19,6 +19,28 @@
                 <p class="subtitle">Your payment has been confirmed successfully</p>
             </div>
 
+            <!-- Prominent Receipt CTA (top) -->
+            <section class="receipt-cta card">
+              <div class="receipt-cta__icon" aria-hidden="true">
+                <!-- Inline SVG icon to avoid external loads / CSP issues -->
+                <svg width="36" height="36" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" role="img">
+                  <rect x="4" y="3" width="12" height="18" rx="2" stroke="currentColor" stroke-width="1.5"/>
+                  <path d="M9 8h5M9 12h5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                  <circle cx="18" cy="18" r="5" fill="currentColor" opacity="0.12"/>
+                  <path d="M16.5 18.5l1.5 1.5 3-3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </div>
+              <div class="receipt-cta__body">
+                <h3 class="receipt-cta__title">Your official receipt is ready</h3>
+                <p class="receipt-cta__copy">View or download the receipt hosted by our payment processor.</p>
+              </div>
+              <div class="receipt-cta__action">
+                <a id="open-official" class="btn btn-primary btn-lg btn-block receipt-cta__btn" rel="noopener noreferrer" target="_blank" href="#">
+                  View official receipt
+                </a>
+              </div>
+            </section>
+
             <div class="user-profile">
                 <h2>Purchase Confirmation</h2>
                 <div class="profile-card">
@@ -46,12 +68,7 @@
                 </div>
             </div>
 
-            <div class="dashboard-actions">
-                <div class="action-grid">
-                    <a id="open-official" class="btn btn-primary" rel="noopener noreferrer" target="_blank" href="#">View official receipt</a>
-                    <a href="/dashboard/billing" class="btn btn-secondary">Back to Billing</a>
-                </div>
-            </div>
+            <!-- Removed the old button block and "Back to billing" per request -->
 
             <p class="muted note-blurb">
                 This page is a purchase confirmation for your records. For your <strong>official receipt</strong>, use the button above to access the receipt hosted by our payment processor. We don't show card details on this page. Keep the confirmation ID for support inquiries.
@@ -76,6 +93,18 @@
         .btn-sm { padding: 0.25rem 0.75rem; font-size: 0.875rem; }
         .muted { color: #6b7280; }
         .note-blurb { margin-top: 1rem; padding: 1rem; background: #f9fafb; border-radius: 6px; font-size: 0.9rem; }
+        .card { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 1rem; }
+        .receipt-cta { display: grid; grid-template-columns: auto 1fr; gap: 1rem; align-items: center; margin: 1rem 0 1.25rem; }
+        .receipt-cta__icon { color: #10b981; display: flex; align-items: center; justify-content: center; }
+        .receipt-cta__title { margin: 0 0 0.25rem; font-size: 1.1rem; }
+        .receipt-cta__copy { margin: 0; color: #6b7280; }
+        .receipt-cta__action { grid-column: 1 / -1; }
+        @media (min-width: 720px) {
+            .receipt-cta { grid-template-columns: auto 1fr auto; }
+            .receipt-cta__action { grid-column: auto; }
+        }
+        .btn-lg { font-size: 1rem; padding: 0.85rem 1.25rem; }
+        .btn-block { display: inline-flex; width: 100%; justify-content: center; }
     </style>
 
     <script nonce="<%= page?.nonce %>">

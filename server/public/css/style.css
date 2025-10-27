@@ -172,6 +172,17 @@ main {
     color: white;
 }
 
+.btn-block {
+    display: inline-flex;
+    width: 100%;
+    justify-content: center;
+}
+
+.btn-lg {
+    font-size: 1rem;
+    padding: 0.85rem 1.25rem;
+}
+
 /* Features Section */
 .features {
     margin: 4rem 0;

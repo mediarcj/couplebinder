@@ -529,63 +529,85 @@ consoleLogger.formatMiddlewareRegistration('Supabase Auth (token verification)')
 app.set('view engine', 'ejs');
 app.set('views', './ejs');
 
-// Serve static files from public directory
-const publicPath = path.join(__dirname, 'public');
-console.log('Static files path:', publicPath);
+// Resolve public directory (prefer repo-root /public, fallback to /server/public)
+function resolvePublicDir() {
+  const rootPublic = path.resolve(process.cwd(), 'public');
+  const serverPublic = path.resolve(__dirname, 'public');
+  
+  if (fs.existsSync(rootPublic)) {
+    console.log('Using repo-root public directory:', rootPublic);
+    return rootPublic;
+  }
+  if (fs.existsSync(serverPublic)) {
+    console.log('Using server public directory:', serverPublic);
+    return serverPublic;
+  }
+  // Create root public if neither exists
+  fs.mkdirSync(rootPublic, { recursive: true });
+  console.log('Created repo-root public directory:', rootPublic);
+  return rootPublic;
+}
 
-// Explicit static mount for images, css, js before generic static
-app.use('/images', express.static(path.join(publicPath, 'images'), {
+const PUBLIC_DIR = resolvePublicDir();
+const IMAGES_DIR = path.join(PUBLIC_DIR, 'images');
+const CSS_DIR = path.join(PUBLIC_DIR, 'css');
+const JS_DIR = path.join(PUBLIC_DIR, 'js');
+const TRUST_BADGE = path.join(PUBLIC_DIR, 'images', 'payments', 'trust-badge.png');
+
+console.log('Static files path:', PUBLIC_DIR);
+
+const DEV = process.env.NODE_ENV !== 'production';
+
+// Log asset presence at boot (dev only)
+if (DEV) {
+  try {
+    fs.accessSync(TRUST_BADGE, fs.constants.R_OK);
+    logger.info({ event: 'asset.present', path: TRUST_BADGE }, 'Trust badge present at boot');
+  } catch (e) {
+    logger.warn({ event: 'asset.missing', code: e.code, path: TRUST_BADGE }, 'Trust badge missing at boot');
+  }
+}
+
+// Explicit static mounts for images, css, js before generic static
+app.use('/images', express.static(IMAGES_DIR, {
   fallthrough: true,
   etag: true,
   maxAge: '30d',
   immutable: true
 }));
-app.use('/css', express.static(path.join(publicPath, 'css'), {
+app.use('/css', express.static(CSS_DIR, {
   fallthrough: true,
   etag: true,
   maxAge: '7d'
 }));
-app.use('/js', express.static(path.join(publicPath, 'js'), {
+app.use('/js', express.static(JS_DIR, {
   fallthrough: true,
   etag: true,
   maxAge: '7d'
 }));
 
 // Generic static mount as fallback
-app.use(express.static(publicPath, {
+app.use(express.static(PUBLIC_DIR, {
   fallthrough: true,
   etag: true,
   maxAge: '7d'
 }));
 
-// Explicit fallback for trust badge
-const trustBadgePath = path.join(publicPath, 'images', 'payments', 'trust-badge.png');
-const DEV = process.env.NODE_ENV !== 'production';
-
-// Log asset presence at boot (dev only)
-if (DEV) {
-  fs.promises.stat(trustBadgePath)
-    .then(() => logger.info({ event: 'asset.present', path: trustBadgePath }, 'Trust badge present at boot'))
-    .catch(e => logger.warn({ event: 'asset.missing', code: e.code, path: trustBadgePath }, 'Trust badge missing at boot'));
-}
-
-// Hard fallback route for trust badge
-app.get('/images/payments/trust-badge.png', (req, res) => {
-  res.sendFile(trustBadgePath, {
-    headers: {
-      'Cache-Control': 'public, max-age=2592000, immutable'
-    }
-  });
+// Hard, explicit fallback for trust badge (bypasses any later middleware)
+app.get('/images/payments/trust-badge.png', (req, res, next) => {
+  res.type('png');
+  res.set('Cache-Control', 'public, max-age=2592000, immutable');
+  return res.sendFile(TRUST_BADGE, err => err && next(err));
 });
 
 // Dev-only diagnostic endpoint
 if (DEV) {
   app.get('/__diag/asset/trust-badge', async (req, res) => {
     try {
-      await fs.promises.stat(trustBadgePath);
-      return res.json({ ok: true, path: trustBadgePath });
+      await fs.promises.access(TRUST_BADGE, fs.constants.R_OK);
+      return res.json({ ok: true, path: TRUST_BADGE });
     } catch (e) {
-      return res.status(404).json({ ok: false, code: e.code, path: trustBadgePath });
+      return res.status(404).json({ ok: false, code: e.code, path: TRUST_BADGE });
     }
   });
 }

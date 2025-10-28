@@ -53,11 +53,11 @@
           <div class="trust-col">
             <figure class="trust-figure">
               <img
+                class="trust-badge-img"
                 src="/images/payments/trust-badge.png?v=<%= page.assetVersion %>"
                 alt="Secure payments powered by Stripe"
-                width="560"
-                height="240"
-                decoding="async" loading="lazy" />
+                decoding="async"
+                loading="lazy" />
             </figure>
             <p class="trust-copy">
               Secure payment handled by Stripe. Supports major cards and wallets
@@ -69,14 +69,17 @@
           <div class="cta-row" role="group" aria-label="Checkout actions">
             <button
               id="continueToPay"
-              class="btn btn-primary btn-xl btn-long"
+              class="btn btn-primary btn-xl btn-long btn-with-icon"
               data-product="<%= product.key %>"
               data-quantity="<%= quantity %>"
               data-test="continue-to-secure-payment"
               aria-label="Continue to secure payment"
               type="button"
             >
-              Continue to secure payment
+              <svg class="btn-icon" width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+                <path d="M7 10V8a5 5 0 0 1 10 0v2h1a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h1zm2 0h6V8a3 3 0 0 0-6 0v2z" fill="currentColor"/>
+              </svg>
+              <span>Continue to secure payment</span>
             </button>
 
             <a

@@ -45,3 +45,7 @@ build/
 
 # local curl cookie jar
 jar.txt
+
+.cursor_proofs/
+
+.cursor_proofs/

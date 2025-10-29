@@ -17,7 +17,6 @@ process.on('unhandledRejection', (err) => {
 });
 
 const express = require('express');
-const { startRedisWatchdog } = require('./lib/redisWatchdog');
 const helmet = require('helmet');
 const cors = require('cors');
 const path = require('path');
@@ -132,13 +131,9 @@ const { generalLimiter, loginLimiter, signupLimiter, logoutLimiter, cookieSetLim
  * If this fails, the process will exit and we'll see the error in logs.
  */
 const app = express();
-// Start lightweight Redis watchdog (TCP-based, non-blocking)
-try {
-  startRedisWatchdog(app);
-  console.log('Redis watchdog started');
-} catch (err) {
-  console.error('Failed to start Redis watchdog:', err && err.message);
-}
+// Initialize Redis status tracking
+app.locals.redisReady = false;
+app.locals.rateLimitStoreReady = false;
 
 // Trust proxy for Cloudflare (required for HTTPS redirects)
 app.set('trust proxy', 1);

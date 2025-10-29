@@ -1,32 +1,17 @@
 services:
   redis:
     image: redis:7-alpine
-    restart: unless-stopped
-    env_file:
-      - ./.env
     volumes:
       - redis_data:/data
-    command:
-      - /bin/sh
-      - -lc
-      - >
-        if [ -n "$REDIS_PASSWORD" ]; then
-          exec redis-server --appendonly yes --appendfilename appendonly.aof
-          --dir /data --maxmemory 256mb --maxmemory-policy allkeys-lru
-          --requirepass "$REDIS_PASSWORD";
-        else
-          exec redis-server --appendonly yes --appendfilename appendonly.aof
-          --dir /data --maxmemory 256mb --maxmemory-policy allkeys-lru;
-        fi
+    restart: unless-stopped
+    # IMPORTANT: make sure REDIS_PASSWORD is set in your .env
+    command: >
+      redis-server --appendonly yes
+                   --maxmemory 256mb
+                   --maxmemory-policy allkeys-lru
+                   --requirepass ${REDIS_PASSWORD}
     healthcheck:
-      test:
-        - CMD-SHELL
-        - >
-          if [ -n "$REDIS_PASSWORD" ]; then
-            redis-cli -a "$REDIS_PASSWORD" ping | grep PONG;
-          else
-            redis-cli ping | grep PONG;
-          fi
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5

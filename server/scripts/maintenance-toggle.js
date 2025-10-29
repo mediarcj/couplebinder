@@ -169,21 +169,21 @@ async function toggleMaintenance(client, action, ttl) {
     if (action === 'on') {
       if (ttl) {
         await client.setEx(MAINTENANCE_KEY, ttl, 'on');
-        console.log(`✓ Maintenance mode ENABLED for ${ttl} seconds`);
+        console.log(`[OK] Maintenance mode ENABLED for ${ttl} seconds`);
         console.log(`  Key: ${MAINTENANCE_KEY}`);
         console.log(`  Expires: ${new Date(Date.now() + ttl * 1000).toISOString()}`);
       } else {
         await client.set(MAINTENANCE_KEY, 'on');
-        console.log('✓ Maintenance mode ENABLED (no expiration)');
+        console.log('[OK] Maintenance mode ENABLED (no expiration)');
         console.log(`  Key: ${MAINTENANCE_KEY}`);
       }
     } else {
       const result = await client.del(MAINTENANCE_KEY);
       if (result > 0) {
-        console.log('✓ Maintenance mode DISABLED');
+        console.log('[OK] Maintenance mode DISABLED');
         console.log(`  Key: ${MAINTENANCE_KEY} (removed)`);
       } else {
-        console.log('✓ Maintenance mode was already DISABLED');
+        console.log('[OK] Maintenance mode was already DISABLED');
         console.log(`  Key: ${MAINTENANCE_KEY} (not found)`);
       }
     }

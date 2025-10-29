@@ -6,8 +6,8 @@
     <meta http-equiv="Cache-Control" content="no-store" />
     <meta http-equiv="Pragma" content="no-cache" />
     <meta name="robots" content="noindex" />
-    <title><%= page?.title || 'Purchase Confirmation' %></title>
-    <link rel="stylesheet" href="/css/style.css?v=<%= page?.assetVersion %>">
+    <title><%= (page && page.title) || 'Purchase Confirmation' %></title>
+    <link rel="stylesheet" href="/css/style.css?v=<%= (page && page.assetVersion) || '' %>">
 </head>
 <body>
     <%- include('partials/nav', { nav: page.nav, app_info: app_info }) %>
@@ -85,7 +85,7 @@
     <%- include('partials/modals') %>
 
     <!-- Local styles (CSP-safe with nonce); no inline style attributes -->
-    <style nonce="<%= page?.nonce %>">
+    <style nonce="<%= (page && page.nonce) || '' %>">
         .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 0.875rem; }
         .break { word-break: break-all; overflow-wrap: anywhere; }
         .idwrap { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
@@ -107,12 +107,12 @@
         .btn-block { display: inline-flex; width: 100%; justify-content: center; }
     </style>
 
-    <script nonce="<%= page?.nonce %>">
+    <script nonce="<%= (page && page.nonce) || '' %>">
     (function(){
         // Button -> official receipt
         const official = document.getElementById('open-official');
-        const sess = "<%= confirmation?.sessionId || '' %>";
-        const pre = <%- JSON.stringify(confirmation?.officialReceiptUrl || null) %>;
+        const sess = "<%= (confirmation && confirmation.sessionId) || '' %>";
+        const pre = <%- JSON.stringify(((confirmation && confirmation.officialReceiptUrl) || null)) %>;
         
         function openUrl(url) {
             if (!url) return;
@@ -154,8 +154,8 @@
         });
 
         // Amount formatting (handles zero-decimal currencies)
-        const amountMinor = <%- JSON.stringify(confirmation?.amountMinor ?? null) %>;
-        const currency = "<%= (confirmation?.currency || 'USD') %>";
+        const amountMinor = <%- JSON.stringify(((confirmation && confirmation.amountMinor) != null ? confirmation.amountMinor : null)) %>;
+        const currency = "<%= ((confirmation && confirmation.currency) || 'USD') %>";
         const $amount = document.querySelector('[data-amount]');
         const zeroDecimal = new Set(['BIF','CLP','DJF','GNF','JPY','KMF','KRW','MGA','PYG','RWF','UGX','VND','VUV','XAF','XOF','XPF']);
         
@@ -169,7 +169,7 @@
         }
 
         // Paid at: use ISO from server and let browser localize
-        const iso = "<%= confirmation?.paidAtIso || '' %>";
+        const iso = "<%= ((confirmation && confirmation.paidAtIso) || '') %>";
         const $paid = document.querySelector('[data-paidat]');
         if ($paid && iso) {
             try {

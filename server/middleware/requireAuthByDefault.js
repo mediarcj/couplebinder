@@ -7,6 +7,7 @@
 
 const micromatch = require('micromatch');
 const logger = require('../utils/logger');
+const { respondError } = require('../utils/errorResponder');
 
 /**
  * WHAT:
@@ -75,9 +76,11 @@ function requireAuthByDefault(opts = {}) {
       }, 'Default-deny guard: Blocking unauthenticated request');
     }
 
-    res.status(401).json({ 
-      error: 'auth_required',
-      message: 'Authentication required for this endpoint'
+    // Use centralized error responder for consistent HTML/JSON/text responses
+    return respondError(req, res, {
+      status: 401,
+      message: 'Authentication required for this endpoint',
+      code: 'auth_required'
     });
   };
 }

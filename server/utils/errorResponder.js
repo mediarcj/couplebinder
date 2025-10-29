@@ -22,6 +22,7 @@
 // Status code mapping
 // ============================================================
 const STATUS_TITLES = {
+  401: 'auth_required',
   403: 'forbidden',
   404: 'not_found',
   429: 'too_many_requests',
@@ -41,6 +42,7 @@ const STATUS_TITLES = {
  * Fall back to generic 500 for unmapped codes.
  */
 function chooseView(status) {
+  if (status === 401) return 'errors/401';
   if (status === 403) return 'errors/403';
   if (status === 404) return 'errors/404';
   if (status === 429) return 'errors/429';

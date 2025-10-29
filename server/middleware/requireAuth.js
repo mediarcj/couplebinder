@@ -3,6 +3,8 @@
 // Purpose: Single security gate that handles both API and page authentication
 // Notes: Uses req.user from authBridge middleware (Supabase token verification)
 
+const { respondError } = require('../utils/errorResponder');
+
 /**
  * WHAT:
  * We check if user is authenticated via stateless Supabase tokens.
@@ -66,19 +68,20 @@ function requireAuth(req, res, next) {
     const isApiCall = req.originalUrl.startsWith('/api/') || req.originalUrl.startsWith('/auth/');
     
     if (isApiCall) {
-        // API calls get JSON response
-        return res.status(401).json({
-            success: false,
-            message: 'Authentication required'
+        // API calls get JSON response via centralized error responder
+        return respondError(req, res, {
+            status: 401,
+            message: 'Authentication required',
+            code: 'auth_required'
         });
     } else {
-        // Page requests get redirected to login with next parameter
-        const nextUrl = safeNext(req.originalUrl);
-        const redirectUrl = nextUrl ? `/login?next=${encodeURIComponent(nextUrl)}` : '/login';
-        res.status(401);
-        res.set('Location', redirectUrl);
-        res.send(`<html><head><meta http-equiv="refresh" content="0; url=${redirectUrl}"></head><body>Redirecting to <a href="${redirectUrl}">login page</a>...</body></html>`);
-        return;
+        // Page requests get the 401 error page instead of redirect
+        // This provides better UX for direct URL access attempts
+        return respondError(req, res, {
+            status: 401,
+            message: 'Authentication required for this page',
+            code: 'auth_required'
+        });
     }
 }
 

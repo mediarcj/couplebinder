@@ -17,6 +17,7 @@ process.on('unhandledRejection', (err) => {
 });
 
 const express = require('express');
+const { startRedisWatchdog } = require('./lib/redisWatchdog');
 const helmet = require('helmet');
 const cors = require('cors');
 const path = require('path');
@@ -100,6 +101,21 @@ const corsAllowlist = require('./middleware/corsAllowlist');
 const { generalLimiter, loginLimiter, signupLimiter, logoutLimiter, cookieSetLimiter } = require('./middleware/rateLimiter');
 
 // ============================================================
+// STEP 0: Boot Order
+// ============================================================
+
+/**
+ * 
+ * Express → Preflight OPTIONS → Toggles → CSP Nonce → Method Guard → Credential Guard → 
+ * Security Headers → Cache-Control → Trust Proxy + Client IP → Request ID → /health → 
+ * Redis Degrade Guard (early) → IP Firewall → Redis client init (async) → Maintenance Guard → 
+ * HTTPS Enforce → Permissions-Policy → CORS allowlist → Stripe webhook (raw) → Body parsers → 
+ * Cookies → App config → AuthBridge → Default-deny guard (/api,/dashboard) → Request timing logs → 
+ * Static → CSRF → App rate limiters → Routes → Error handlers → Start → Graceful shutdown
+ */
+
+
+// ============================================================
 // STEP 1: Application Initialization
 // ============================================================
 
@@ -116,6 +132,13 @@ const { generalLimiter, loginLimiter, signupLimiter, logoutLimiter, cookieSetLim
  * If this fails, the process will exit and we'll see the error in logs.
  */
 const app = express();
+// Start lightweight Redis watchdog (TCP-based, non-blocking)
+try {
+  startRedisWatchdog(app);
+  console.log('Redis watchdog started');
+} catch (err) {
+  console.error('Failed to start Redis watchdog:', err && err.message);
+}
 
 // Trust proxy for Cloudflare (required for HTTPS redirects)
 app.set('trust proxy', 1);
@@ -225,6 +248,20 @@ console.log('Security: Trust proxy and clientIp extraction enabled');
 app.use(requestIdMiddleware);
 console.log('Security: Request ID tracking enabled');
 
+// Health routes (fast, Redis-free) mounted early
+try {
+  const { router: healthRouter } = require('./routes/health');
+  app.use('/health', healthRouter);
+  console.log('Health routes mounted early');
+} catch (error) {
+  console.error('Failed to load health routes:', error.message);
+}
+
+// Redis Degrade Guard - must run before IP firewall and rate limiters
+const degradeGuard = require('./middleware/degradeGuard');
+app.use(degradeGuard);
+console.log('Security: Redis degrade guard enabled (early; 503 on sensitive paths if Redis down)');
+
 // 6. IP Firewall - block abusive IPs before they reach route logic
 const { ipFirewall } = require('./middleware/ipFirewall');
 app.use(ipFirewall());
@@ -333,10 +370,8 @@ const createMaintenanceGuard = require('./middleware/maintenanceGuard');
 app.use(createMaintenanceGuard(redisClient));
 console.log('Security: Maintenance guard enabled (Redis/env toggle)');
 
-// 8. Redis Degrade Guard - block sensitive paths when Redis is down
-const degradeGuard = require('./middleware/degradeGuard');
-app.use(degradeGuard);
-console.log('Security: Redis degrade guard enabled (503 for sensitive paths when Redis down)');
+// 8. Redis Degrade Guard — already mounted early to protect pre-firewall paths
+console.log('Security: Redis degrade guard ready (mounted once, early)');
 
 // 9. Default-Deny Auth Guard will be mounted after authBridge (see below)
 
@@ -773,14 +808,7 @@ if (toggles.exposeDebugRoutes) {
   }
 }
 
-// Import health routes
-try {
-  const { router: healthRouter } = require('./routes/health');
-  app.use('/health', healthRouter);
-  console.log('Health routes loaded successfully');
-} catch (error) {
-  console.error('Failed to load health routes:', error.message);
-}
+// (removed) late health mount — now mounted early
 
 try {
   app.use('/dashboard', requireAuth, require('./routes/dashboard'));

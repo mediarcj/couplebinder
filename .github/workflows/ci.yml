@@ -53,5 +53,10 @@ jobs:
           EOF
       
       - name: Run tests
-        run: npm run test:ci
+        run: |
+          echo "NODE_ENV=test" >> $GITHUB_ENV
+          if [ -f ".env.test" ]; then
+            cp .env.test .env
+          fi
+          npm run test:ci
 

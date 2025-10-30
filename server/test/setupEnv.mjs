@@ -45,7 +45,7 @@ setIfEmpty('TEXT_MAX_LENGTH', 5000);
 
 // Core server defaults
 setIfEmpty('HOST', '127.0.0.1');
-setIfEmpty('PORT', '0');
+setIfEmpty('PORT', '3000');
 setIfEmpty('APP_NAME', 'Detechify (Test)');
 setIfEmpty('PUBLIC_ORIGIN', 'http://localhost:3000');
 setIfEmpty('CSRF_SECRET', 'test_csrf_secret');
@@ -54,6 +54,9 @@ setIfEmpty('CSRF_SECRET', 'test_csrf_secret');
 setIfEmpty('SUPABASE_URL', 'http://localhost:54321');
 setIfEmpty('SUPABASE_ANON_KEY', 'test_anon_key');
 setIfEmpty('SUPABASE_JWKS', '{"keys":[{"kty":"oct","k":"dGVzdF9zZWNyZXQ"}]}');
+setIfEmpty('SUPABASE_JWKS_URL', 'http://localhost:54321/.well-known/jwks.json');
+setIfEmpty('SUPABASE_ISSUER', 'http://localhost:54321');
+setIfEmpty('SUPABASE_EXPECTED_AUD', 'authenticated');
 setIfEmpty('JWT_ALLOWED_ALGS', 'HS256,RS256,ES256');
 
 // Rate limit defaults

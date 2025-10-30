@@ -10,11 +10,11 @@ export default defineConfig({
     environment: 'node',
     globals: true,
     setupFiles: [
-      './test/setupGlobals.mjs',
-      './test/setupEnv.mjs'
+      './test/setupEnv.mjs',
+      './test/setupGlobals.mjs'
     ],
     isolate: true,
-    passWithNoTests: false,
+    sequence: { shuffle: false },
     include: ['__tests__/**/*.test.js'],
     coverage: { 
       reporter: ['text', 'html'] 

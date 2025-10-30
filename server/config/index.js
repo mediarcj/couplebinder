@@ -233,7 +233,12 @@ const validationErrors = validateConfig();
 if (validationErrors.length > 0) {
   console.error('Configuration validation failed:');
   validationErrors.forEach(error => console.error(`  - ${error}`));
-  process.exit(1);
+  const isTest = process.env.NODE_ENV === 'test';
+  if (isTest) {
+    throw new Error(`Configuration validation failed: ${validationErrors.join('; ')}`);
+  } else {
+    process.exit(1);
+  }
 }
 
 // Log configuration summary (without secrets)

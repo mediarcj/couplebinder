@@ -217,5 +217,3 @@ module.exports = {
 };
 
 // End of normal runtime code (closes the else block from above)
-}
-

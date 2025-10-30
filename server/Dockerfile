@@ -1,57 +1,42 @@
 # File: server/Dockerfile
-# Description: Docker configuration for Detechify server
-# Purpose: Creates secure containerized environment for production deployment
-# Notes: Uses Alpine Linux, non-root user, and includes health checks
-# Keeps it simple (no build step), pins Node via ARG, runs as non-root.
+# Description: Detechify server image (lean, prod-only deps, non-root)
+# Notes: Build context is repo root; this Dockerfile lives in server/
 
-# Declare the ARG BEFORE using it in FROM, and give it a sane default (LTS).
+# 1) Base image
 ARG NODE_VERSION=20
-
 FROM node:${NODE_VERSION}-alpine
 
-# PDF deps (Chromium + fonts)
-RUN apk add --no-cache \
-  chromium \
-  nss \
-  freetype \
-  harfbuzz \
-  ca-certificates \
-  ttf-freefont \
-  wqy-zenhei \
-  font-noto \
-  font-noto-cjk
-
-# Let puppeteer-core know where Chromium lives
-ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
-
+# 2) App directory and env
 WORKDIR /app
 ENV NODE_ENV=production
 
-# Install prod deps with lockfile fidelity
-COPY package*.json ./
-RUN npm install --omit=dev
+# 3) Install production deps using lockfile if available
+#    We copy only the server's package files to leverage Docker layer caching.
+COPY server/package*.json ./
+# If package-lock.json exists, npm ci; else npm i
+RUN if [ -f package-lock.json ]; then npm ci --omit=dev; else npm i --omit=dev; fi
 
-# Copy the app
-COPY . .
+# 4) Copy application code
+#    Place server code under /app/server so `node server/zorvalon.js` works.
+COPY server/ ./server/
 
-# Ensure repo-root public/ is present in the image
+# 5) Bring in repo-root public/ for static assets (if present)
 COPY public /app/public
 
-# Normalize permissions for static assets
+# 6) Normalize permissions for static assets (fixes the /aap typo)
 RUN set -eux; \
   if [ -d /app/public ]; then \
     find /app/public -type d -exec chmod 0755 {} +; \
     find /app/public -type f -exec chmod 0644 {} +; \
   fi
 
-# Use the built-in non-root user that ships with node images
+# 7) Drop privileges
 USER node
 
+# 8) Network + health
 EXPOSE 3000
-
-# Health check against your liveness route
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD node -e "require('http').get('http://127.0.0.1:3000/health/liveness', r => process.exit(r.statusCode===200?0:1)).on('error', () => process.exit(1))"
 
-# Start (uses your package.json "start" script)
-CMD ["npm", "start"]
+# 9) Start the server (no build step; files live in /app/server)
+CMD ["node", "server/zorvalon.js"]

@@ -42,7 +42,8 @@ try {
   console.log('Configuration module loaded successfully');
 } catch (error) {
   console.error('Failed to load config module:', error.message);
-  process.exit(1); // Critical module - cannot continue without config
+  if (process.env.NODE_ENV !== 'test') process.exit(1);
+  throw error;
 }
 
 try {
@@ -51,7 +52,8 @@ try {
 } catch (error) {
   console.error('FATAL: Cannot load CSRF middleware:', error);
   console.error('CRITICAL: CSRF protection is mandatory. Server cannot start.');
-  process.exit(1);
+  if (process.env.NODE_ENV !== 'test') process.exit(1);
+  throw error;
 }
 
 try {
@@ -60,7 +62,8 @@ try {
 } catch (error) {
   console.error('FATAL: Cannot load request ID middleware:', error);
   console.error('CRITICAL: Request tracking is mandatory for audit trails. Server cannot start.');
-  process.exit(1);
+  if (process.env.NODE_ENV !== 'test') process.exit(1);
+  throw error;
 }
 
 try {

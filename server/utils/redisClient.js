@@ -14,14 +14,53 @@
  * We create a Redis client with retry strategy, structured logging, and graceful error handling.
  */
 
-// Test-only memory mode: present no client so callers take their fail-closed paths
-if (process.env.NODE_ENV === 'test' && process.env.REDIS_TEST_MODE === 'memory') {
-  module.exports = {
-    client: null,
-    connectRedis: async () => {},
-    disconnectRedis: async () => {},
+// Test-only healthy stub
+const isTest = process.env.NODE_ENV === 'test';
+
+if (isTest) {
+  const { EventEmitter } = require('events');
+  
+  const client = new EventEmitter();
+  
+  client.ping = async () => 'PONG';
+  client.exists = async () => 0;
+  client.get = async () => null;
+  client.set = async () => 'OK';
+  client.del = async () => 0;
+  client.incr = async () => 1;
+  client.sAdd = async () => 1;
+  client.sRem = async () => 0;
+  client.expire = async () => 1;
+  client.multi = () => {
+    const chain = {
+      set() { return chain; },
+      get() { return chain; },
+      sAdd() { return chain; },
+      expire() { return chain; },
+      del() { return chain; },
+      sRem() { return chain; },
+      incr() { return chain; },
+      exec: async () => []
+    };
+    return chain;
   };
-} else {
+  client.end = () => {};
+  client.quit = async () => {};
+  client.isOpen = true;
+  
+  async function connectRedis() {
+    process.nextTick(() => client.emit('connect'));
+    return;
+  }
+  
+  async function disconnectRedis() {
+    return;
+  }
+  
+  module.exports = { client, connectRedis, disconnectRedis };
+  return;
+}
+
 // Normal runtime code follows...
 
 const redis = require('redis');

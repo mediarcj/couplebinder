@@ -1,6 +1,31 @@
 // File: server/utils/supabaseClient.js
 // Purpose: Centralized Supabase clients (anon + service role) for server-side use
 
+const isTest = process.env.NODE_ENV === 'test';
+
+if (isTest) {
+  const supabase = {
+    auth: {
+      getUser: async () => ({ data: { user: null }, error: null }),
+      updateUser: async () => ({ data: { user: null }, error: null })
+    },
+    from: () => ({ select: async () => ({ data: [], error: null }) })
+  };
+  
+  const supabaseAdmin = {
+    auth: {
+      admin: {
+        getUserById: async (id) => ({ data: { user: { id } }, error: null }),
+        updateUserById: async (id, payload) => ({ data: { user: { id, ...payload } }, error: null })
+      }
+    },
+    from: () => ({ select: async () => ({ data: [], error: null }) })
+  };
+  
+  module.exports = { supabase, supabaseAdmin };
+  return;
+}
+
 const path = require('path');
 const { createClient } = require('@supabase/supabase-js');
 
@@ -12,7 +37,12 @@ const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 if (!SUPABASE_URL) {
-  throw new Error('Missing SUPABASE_URL in environment.');
+  const isTest = process.env.NODE_ENV === 'test';
+  if (isTest) {
+    console.warn('[warn] SUPABASE_URL missing in test mode  using test stubs');
+  } else {
+    throw new Error('Missing SUPABASE_URL in environment.');
+  }
 }
 if (!SUPABASE_ANON_KEY) {
   console.warn('[warn] SUPABASE_ANON_KEY missing  public client will be null');

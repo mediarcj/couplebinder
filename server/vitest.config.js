@@ -1,46 +1,27 @@
 // File: server/vitest.config.js
-// Description: Vitest configuration for enterprise-grade testing
-// Purpose: Configure test environment with proper mocking and globals
-// Notes: Enables globals for cleaner test syntax
+// Description: Vitest configuration for testing
+// Purpose: Configure test environment with proper setup
+// Notes: Uses setup files for environment and globals
 
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   test: {
-    // Enable global test functions (describe, it, expect, etc.)
-    globals: true,
-    
-    // Test environment
     environment: 'node',
-    
-    // Test file patterns
+    globals: true,
+    setupFiles: [
+      './test/setupEnv.mjs',
+      './test/setupGlobals.mjs'
+    ],
     include: ['__tests__/**/*.test.js'],
-    
-    // Mock configuration
-    mockReset: true,
-    clearMocks: true,
-    restoreMocks: true,
-    
-    // Coverage configuration
-    coverage: {
-      provider: 'v8',
-      reporter: ['text', 'json', 'html'],
-      exclude: [
-        'node_modules/',
-        '__tests__/',
-        'coverage/',
-        '*.config.js'
-      ]
+    coverage: { 
+      reporter: ['text', 'html'] 
     },
-    
-    // Timeout configuration
-    testTimeout: 10000,
-    hookTimeout: 10000,
-    
-    // Setup files
-    setupFiles: [],
-    
-    // Reporter configuration
-    reporter: ['verbose']
-  }
+    // Support both ESM and CommonJS
+    poolOptions: {
+      threads: {
+        singleThread: false
+      }
+    }
+  },
 });

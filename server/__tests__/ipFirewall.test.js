@@ -3,8 +3,8 @@
 // Purpose: Ensure IP blocking and auto-ban functionality works correctly
 // Notes: Tests Redis integration and graceful fallback behavior
 
-const { describe, it, expect, beforeEach, afterEach, vi } = require('vitest');
-const { ipFirewall, blockIp, unblockIp, isBlocked } = require('../middleware/ipFirewall');
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { ipFirewall, blockIp, unblockIp, isBlocked } from '../middleware/ipFirewall';
 
 // Mock Redis client
 const mockRedis = {

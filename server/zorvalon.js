@@ -7,13 +7,13 @@
 process.on('uncaughtException', (err) => {
   console.error('FATAL: Uncaught exception detected', err);
   console.error('Server cannot continue safely. Exiting.');
-  process.exit(1);
+  if (process.env.NODE_ENV !== 'test') process.exit(1);
 });
 
 process.on('unhandledRejection', (err) => {
   console.error('FATAL: Unhandled promise rejection detected', err);
   console.error('Server cannot continue safely. Exiting.');
-  process.exit(1);
+  if (process.env.NODE_ENV !== 'test') process.exit(1);
 });
 
 const express = require('express');

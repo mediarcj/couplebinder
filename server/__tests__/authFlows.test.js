@@ -3,8 +3,8 @@
 // Purpose: Ensure auth endpoints work correctly with security middleware
 // Notes: Tests rate limiting, lockouts, and CSRF protection
 
-const { describe, it, expect, beforeEach, afterEach, vi } = require('vitest');
-const request = require('supertest');
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import request from 'supertest';
 
 // Mock dependencies
 const mockRedis = {
@@ -54,7 +54,7 @@ vi.mock('../utils/supabaseClient', () => ({
 }));
 
 // Import app after mocks are set up
-const app = require('../zorvalon');
+import app from '../zorvalon.js';
 
 describe('Authentication Flows', () => {
   beforeEach(() => {

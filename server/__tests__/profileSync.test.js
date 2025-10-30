@@ -3,8 +3,8 @@
 // Purpose: Ensure profile updates maintain consistency between auth.users and profiles
 // Notes: Tests both success and failure scenarios with rollback
 
-const { describe, it, expect, beforeEach, afterEach, vi } = require('vitest');
-const { updateProfileTransactional, reconcileProfileData } = require('../services/profileSyncService');
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { updateProfileTransactional, reconcileProfileData } from '../services/profileSyncService';
 
 // Mock Supabase admin client
 const mockSupabaseAdmin = {

@@ -14,6 +14,16 @@
  * We create a Redis client with retry strategy, structured logging, and graceful error handling.
  */
 
+// Test-only memory mode: present no client so callers take their fail-closed paths
+if (process.env.NODE_ENV === 'test' && process.env.REDIS_TEST_MODE === 'memory') {
+  module.exports = {
+    client: null,
+    connectRedis: async () => {},
+    disconnectRedis: async () => {},
+  };
+} else {
+// Normal runtime code follows...
+
 const redis = require('redis');
 const logger = require('./logger');
 const { config } = require('../config');
@@ -166,3 +176,7 @@ module.exports = {
   connectRedis,
   disconnectRedis
 };
+
+// End of normal runtime code (closes the else block from above)
+}
+

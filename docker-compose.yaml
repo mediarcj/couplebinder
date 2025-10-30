@@ -21,8 +21,8 @@ services:
     stop_signal: SIGTERM
     stop_grace_period: 30s
     build:
-      context: ./server
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: server/Dockerfile
       args:
         NODE_VERSION: "20"
     env_file:

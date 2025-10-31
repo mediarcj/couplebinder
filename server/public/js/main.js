@@ -851,6 +851,15 @@ async function postAuthCookieWithBackoff(payload, opts) {
  */
 async function checkSessionStatus() {
     try {
+        // OPT-IN CHECK: Only run hydration if page explicitly opts in
+        const shouldHydrate = document.body?.dataset?.authHydrate === 'true' || 
+                             document.querySelector('meta[name="auth-hydrate"]')?.content === 'true';
+        
+        if (!shouldHydrate) {
+            logger.info('Session hydration skipped - page did not opt in');
+            return;
+        }
+        
         // Check for logout sentinel before attempting re-hydration
         try {
             if (sessionStorage.getItem('justLoggedOut') === '1' || document.cookie.indexOf('auth_logout=1') !== -1) {

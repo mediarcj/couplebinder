@@ -198,7 +198,7 @@ main {
     display: grid;
     grid-template-columns: minmax(280px, 1fr) minmax(280px, 1fr);
     gap: 24px;
-    align-items: start;
+    align-items: stretch;
 }
 
 /* Mobile: single column */
@@ -221,7 +221,7 @@ main {
 
 .trust-badge-img {
   display: block;
-  width: clamp(266px, 43.5vw, 435px);
+  width: clamp(240px, 40vw, 400px);
   height: auto;
   margin: 0 auto;
 }
@@ -1671,6 +1671,7 @@ nav ul li a.active {
 .summary-col {
     display: flex;
     flex-direction: column;
+    justify-content: space-between;
 }
 
 .order-summary__title {

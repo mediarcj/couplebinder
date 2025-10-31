@@ -8,7 +8,7 @@
   <title>Billing – <%= app_info?.name || 'Detechify' %></title>
   <link rel="stylesheet" href="/css/style.css?v=<%= page.assetVersion || Date.now() %>">
 </head>
-<body>
+<body data-auth-hydrate="true">
   <%- include('partials/nav', { nav: page.nav, app_info: app_info }) %>
 
   <main>

@@ -220,17 +220,14 @@ main {
 }
 
 .trust-badge-img {
-    display: block;
-    max-width: clamp(220px, 36vw, 360px);
-    max-height: clamp(80px, 14vw, 140px);
-    width: auto;          /* never force 100% */
-    height: auto;         /* keep aspect ratio */
-    object-fit: contain;  /* just in case */
+  display: block;
+  width: clamp(266px, 43.5vw, 435px);
+  height: auto;
 }
 
 /* Keep the copy readable; avoid pushing layout */
 .trust-copy {
-    margin-top: 12px;
+    margin-top: 8px;
     color: #4B5563;
     line-height: 1.5;
 }
@@ -1722,6 +1719,29 @@ nav ul li a.active {
     display: flex;
     flex-direction: column;
     gap: 12px;
+    justify-content: flex-end;
+}
+
+/* Desktop: align trust copy with Total (estimate) row */
+@media (min-width: 768px) {
+    .trust-col {
+        gap: 8px;
+    }
+    
+    .trust-col .trust-copy {
+        margin-top: 0;
+    }
+}
+
+/* Mobile: restore normal spacing */
+@media (max-width: 767px) {
+    .trust-col {
+        gap: 12px;
+    }
+    
+    .trust-col .trust-copy {
+        margin-top: 8px;
+    }
 }
 
 /* CTAs row spans both columns */

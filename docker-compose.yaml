@@ -44,6 +44,7 @@ services:
       redis:
         condition: service_healthy
     restart: unless-stopped
+    # Do NOT publish 3000 to the host; proxy will front it.
     logging:
       driver: json-file
       options:
@@ -55,6 +56,29 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
+
+  proxy:
+    image: nginx:1.27-alpine
+    depends_on:
+      app:
+        condition: service_healthy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx:/etc/nginx/conf.d:ro
+      - ./certs:/etc/nginx/certs:ro
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    healthcheck:
+      test: ["CMD-SHELL", "nginx -t || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
 volumes:
   redis_data:

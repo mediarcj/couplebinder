@@ -1,15 +1,21 @@
+version: "3.9"
+
 services:
   redis:
     image: redis:7-alpine
     volumes:
       - redis_data:/data
     restart: unless-stopped
-    # IMPORTANT: make sure REDIS_PASSWORD is set in your .env
     command: >
       redis-server --appendonly yes
                    --maxmemory 256mb
                    --maxmemory-policy allkeys-lru
                    --requirepass ${REDIS_PASSWORD}
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     healthcheck:
       test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
       interval: 10s
@@ -38,6 +44,11 @@ services:
       redis:
         condition: service_healthy
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     healthcheck:
       test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/health/liveness', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })"]
       interval: 30s

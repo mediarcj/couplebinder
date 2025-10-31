@@ -223,11 +223,12 @@ main {
   display: block;
   width: clamp(266px, 43.5vw, 435px);
   height: auto;
+  margin: 0 auto;
 }
 
 /* Keep the copy readable; avoid pushing layout */
 .trust-copy {
-    margin-top: 8px;
+    margin: 0;
     color: #4B5563;
     line-height: 1.5;
 }
@@ -1718,29 +1719,36 @@ nav ul li a.active {
 .trust-col {
     display: flex;
     flex-direction: column;
-    gap: 12px;
-    justify-content: flex-end;
+    gap: 0;
 }
 
 /* Desktop: align trust copy with Total (estimate) row */
 @media (min-width: 768px) {
     .trust-col {
-        gap: 8px;
+        gap: 0;
+        align-items: center;
+    }
+    
+    .trust-figure {
+        margin-bottom: 0;
     }
     
     .trust-col .trust-copy {
-        margin-top: 0;
+        margin-top: auto;
+        margin-bottom: 0;
+        text-align: center;
     }
 }
 
 /* Mobile: restore normal spacing */
 @media (max-width: 767px) {
     .trust-col {
-        gap: 12px;
+        gap: 0;
+        align-items: center;
     }
     
     .trust-col .trust-copy {
-        margin-top: 8px;
+        margin-top: 12px;
     }
 }
 

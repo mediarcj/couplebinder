@@ -25,11 +25,23 @@ const { checkAccountLockout, recordFailedAttempt, clearFailedAttempts } = requir
 const logger = require('../utils/logger');
 
 // ============================================================
+// Redis Client Setup
+// ============================================================
+let redis = null;
+try {
+  const { client } = require('../utils/redisClient');
+  redis = client;
+} catch {
+  // No Redis available, Redis-based locks will be disabled
+}
+
+// ============================================================
 // Configuration
 // ============================================================
 const COOKIE_NAME = process.env.AUTH_COOKIE_NAME || 'sb_session';
 const COOKIE_TTL_MS = 1000 * 60 * 60 * 24 * 7; // 7 days
 const LEGACY_DOMAIN = '.detechify.com'; // used only to clear old cookies
+const LOGOUT_SENTINEL_MS = parseInt(process.env.AUTH_LOGOUT_SENTINEL_MS || '90000', 10); // 90s default
 
 // Base attributes for our auth cookie
 const baseCookie = {
@@ -71,7 +83,7 @@ router.post('/set-cookie', async (req, res) => {
      * after logout, causing immediate re-login via checkSessionStatus().
      * 
      * HOW:
-     * Check for auth_logout sentinel cookie (set during logout, expires in 10s).
+     * Check for auth_logout sentinel cookie (set during logout, expires in configurable time).
      * Return 204 No Content to silently refuse re-authentication.
      */
     if (req.cookies && req.cookies['auth_logout'] === '1') {
@@ -85,6 +97,42 @@ router.post('/set-cookie', async (req, res) => {
 
     /**
      * WHAT:
+     * Check for server-side Redis lock from recent logout.
+     * 
+     * WHY:
+     * Double-check even if cookie is missing (defense in depth).
+     * Handles edge cases where cookie expires but lock is still active.
+     * 
+     * HOW:
+     * Check Redis key lock:logout:ip:<ip> for active lockout.
+     * Return 204 if lock exists.
+     */
+    const ip = req.clientIp || req.ip || 'unknown';
+    const lockKey = `lock:logout:ip:${ip}`;
+    
+    if (redis) {
+      try {
+        const isLocked = await redis.exists(lockKey);
+        if (isLocked === 1) {
+          logger.info({
+            event: 'auth.set_cookie.denied_by_redis_lock',
+            requestId: req.requestId
+          }, 'Re-authentication blocked - Redis logout lock active');
+          res.set('X-Auth-Sentinel', 'active');
+          return res.status(204).end();
+        }
+      } catch (err) {
+        // Non-fatal: continue if Redis check fails
+        logger.warn({
+          event: 'auth.set_cookie.redis_lock_check_failed',
+          error: err.message,
+          requestId: req.requestId
+        }, 'Failed to check Redis logout lock');
+      }
+    }
+
+    /**
+     * WHAT:
      * Check for account/IP lockouts before processing token.
      * 
      * WHY:
@@ -92,12 +140,11 @@ router.post('/set-cookie', async (req, res) => {
      * Lockouts must be checked server-side before any auth attempt.
      * 
      * HOW:
-     * Extract IP from request.
+     * Use IP extracted above for lockout check.
      * Extract email from token payload if available (or use 'ip-only' as placeholder).
      * Check Redis for active lockouts.
      * Return 429 if locked with remaining time.
      */
-    const ip = req.clientIp || req.ip || 'unknown';
     const emailFromBody = (req.body?.email || '').toLowerCase().trim();
     
     // Check lockout status before processing
@@ -249,15 +296,32 @@ router.post('/clear-cookie', (req, res) => {
     });
 
     // ============================================================
-    // Set a short-lived sentinel cookie to prevent immediate re-login
+    // Set a configurable sentinel cookie to prevent immediate re-login
     // ============================================================
     const isProd = process.env.NODE_ENV === 'production';
     res.cookie('auth_logout', '1', {
       httpOnly: false, // Must be readable by client JavaScript
       sameSite: 'Lax',
       secure: isProd,
-      maxAge: 10_000 // 10s window to avoid race with boot code
+      maxAge: LOGOUT_SENTINEL_MS
     });
+
+    // ============================================================
+    // Set server-side Redis lock for extra protection
+    // ============================================================
+    const ip = req.clientIp || req.ip || 'unknown';
+    const lockKey = `lock:logout:ip:${ip}`;
+    const lockTTLSeconds = Math.floor(LOGOUT_SENTINEL_MS / 1000);
+    
+    if (redis && lockTTLSeconds > 0) {
+      redis.set(lockKey, '1', { EX: lockTTLSeconds }).catch((err) => {
+        logger.warn({
+          event: 'auth.clear_cookie.redis_lock_failed',
+          error: err.message,
+          requestId: req.requestId
+        }, 'Failed to set Redis logout lock');
+      });
+    }
 
     // ============================================================
     // Audit log: successful cookie clear

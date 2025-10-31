@@ -255,6 +255,27 @@ async function performLogout() {
       logoutLogger.info('Supabase signOut exception (non-fatal)', { error: e?.message || String(e) });
     }
 
+    // 2b) Explicitly remove all Supabase localStorage keys as safety net
+    try {
+      const keysToRemove = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && (key.startsWith('sb-') || key.includes('supabase'))) {
+          keysToRemove.push(key);
+        }
+      }
+      keysToRemove.forEach(key => {
+        try {
+          localStorage.removeItem(key);
+        } catch {}
+      });
+      if (keysToRemove.length > 0) {
+        logoutLogger.info('Explicitly cleared Supabase localStorage keys:', keysToRemove);
+      }
+    } catch (e) {
+      logoutLogger.info('Failed to clear Supabase localStorage (non-fatal)', { error: e?.message || String(e) });
+    }
+
     // 3) Clear JS cookies & storage (keep HOLD in localStorage)
     document.cookie = 'sb-access-token=; Path=/; Max-Age=0; SameSite=Lax';
     document.cookie = 'sb_access_token=; Path=/; Max-Age=0; SameSite=Lax';

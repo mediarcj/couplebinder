@@ -9,7 +9,7 @@
     <title><%= (page && page.title) || 'Purchase Confirmation' %></title>
     <link rel="stylesheet" href="/css/style.css?v=<%= (page && page.assetVersion) || '' %>">
 </head>
-<body>
+<body data-auth-hydrate="true">
     <%- include('partials/nav', { nav: page.nav, app_info: app_info }) %>
 
     <main>

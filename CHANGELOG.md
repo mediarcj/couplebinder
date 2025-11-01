@@ -2,6 +2,33 @@
 
 ## [Unreleased] - 2025-01-XX
 
+### Added
+
+#### Infrastructure
+
+- **Conditional Nginx SSL configuration:** Dynamic plaintext/SSL proxy setup based on certificates and environment
+  - Added `NGINX_USE_SSL` environment variable (default: `false`) to control SSL mode
+  - Added startup script that auto-selects plaintext config when certs are missing or SSL disabled
+  - Added `nginx/templates/plain.conf` for development (HTTP-only, no certs required)
+  - Added `nginx/templates/ssl.conf` for production (HTTPS with HTTP redirect)
+  - Graceful fallback: if SSL requested but certs missing, uses plaintext instead of crashing
+  - Preserves `X-Forwarded-Proto` via `map` directive for ALB/Cloudflare compatibility
+  - Docker DNS resolver configured for upstream name resolution
+
+**Technical Details:**
+- Templates mounted to `/etc/nginx/templates/:ro` (read-only)
+- Startup command copies selected template to `/etc/nginx/conf.d/default.conf`
+- `docker-compose.override.yml` sets `NGINX_USE_SSL=false` for local development
+- Production sets `NGINX_USE_SSL=true` only when origin certs are present
+
+**Impact:**
+- Developers can run `docker compose up` without generating TLS certificates
+- No more Nginx SSL errors or crash loops in development
+- Production deployments unchanged (existing behavior preserved)
+- Supports both ALB TLS termination and Cloudflare direct-to-origin
+
+---
+
 ### Fixed
 
 #### Authentication

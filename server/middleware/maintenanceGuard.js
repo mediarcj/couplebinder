@@ -1,51 +1,59 @@
 // File: server/middleware/maintenanceGuard.js
-// Description: Maintenance mode guard with Redis/env toggle and IP allowlist
-// Purpose: Production-ready maintenance mode that can be toggled instantly without redeploy
-// Notes: Follows existing middleware patterns and integrates with current security stack
+// Description: Ultra-hardened maintenance mode guard (Redis/env toggle, IP allowlist, header bypass)
+// Purpose: Lock down the app during maintenance while still allowing health + ACME; zero data leaks
+// Notes: Defensive headers, strict CSP, constant-time bypass token, safe HTML escaping, light file caching
 
 /**
  * WHAT:
- * Maintenance mode middleware that blocks non-essential traffic during maintenance.
- * 
+ * A middleware that, when maintenance is ON, returns a locked-down 503 response for everyone
+ * except health/ACME, ops allowlisted IPs, or an optional secret bypass header.
+ *
  * WHY:
- * Need instant maintenance toggle without redeploy for production operations.
- * Health checks and ops IPs must always pass through.
- * 
- * HOW:
- * 1. Check allowed paths (health, ACME) - always pass
- * 2. Check IP allowlist - pass if trusted
- * 3. Check maintenance mode (Redis key or env fallback)
- * 4. If maintenance ON: return 503 with Retry-After
- * 5. If maintenance OFF: continue to next middleware
+ * During maintenance you want all “gates closed”: no API, no pages, no hints, no indexing.
+ *
+ * HOW (order matters):
+ * 1) Allow health + ACME paths
+ * 2) Allow IP allowlist (ops)
+ * 3) If maintenance ON:
+ *    3a) Allow optional header bypass (constant-time compare) if configured
+ *    3b) Otherwise, return 503 with strict headers and a minimal, safe HTML page (or JSON for API)
+ * 4) If maintenance OFF: continue
  */
 
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const logger = require('../utils/logger');
 
-// Configuration with sensible defaults
+// ──────────────────────────────────────────────────────────────────────────────
+// Configuration (env-driven with safe defaults)
+// ──────────────────────────────────────────────────────────────────────────────
 const MAINTENANCE_CONFIG = {
-  // Redis key for maintenance toggle
+  // Redis key controlling ON/OFF
   key: process.env.MAINTENANCE_KEY || 'maintenance:mode',
-  
-  // Environment fallback when Redis unavailable
+
+  // Fallback if Redis unavailable
   default: process.env.MAINTENANCE_DEFAULT || 'off',
-  
-  // IP allowlist (CSV format)
-  allowlist: process.env.MAINTENANCE_ALLOWLIST 
-    ? process.env.MAINTENANCE_ALLOWLIST.split(',').map(ip => ip.trim()).filter(Boolean)
+
+  // CSV allowlist of IPs that can pass during maintenance (e.g., ops)
+  allowlist: process.env.MAINTENANCE_ALLOWLIST
+    ? process.env.MAINTENANCE_ALLOWLIST.split(',').map(s => s.trim()).filter(Boolean)
     : ['127.0.0.1', '::1'],
-  
-  // Retry-After header value (seconds)
-  retryAfter: parseInt(process.env.MAINTENANCE_RETRY_AFTER, 10) || 120,
-  
-  // Maintenance page path
-  pagePath: process.env.MAINTENANCE_PAGE || path.join(__dirname, '../public/maintenance.html'),
-  
-  // Fallback message if page file missing
-  message: process.env.MAINTENANCE_MESSAGE || 'We\'ll be back soon.',
-  
-  // Allowed paths that always pass through
+
+  // Retry-After seconds (hint for clients/loaders)
+  retryAfter: Number.parseInt(process.env.MAINTENANCE_RETRY_AFTER, 10) || 120,
+
+  // Absolute path inside the container for a dedicated HTML page
+  // NOTE: default points to /app/server/public which exists in your image
+  pagePath: process.env.MAINTENANCE_PAGE || '/app/server/public/maintenance.html',
+
+  // Simple message if page file is missing (we escape this before injecting)
+  message: process.env.MAINTENANCE_MESSAGE || 'We will be back soon.',
+
+  // Optional owner bypass token (header: x-maintenance-bypass). If unset, bypass is disabled.
+  bypassToken: process.env.MAINTENANCE_BYPASS_TOKEN ? String(process.env.MAINTENANCE_BYPASS_TOKEN) : null,
+
+  // Paths that should always work (strict, prefix match)
   allowedPaths: [
     '/health/liveness',
     '/health/readiness',
@@ -54,246 +62,228 @@ const MAINTENANCE_CONFIG = {
   ]
 };
 
-// Cache for maintenance page content (avoid reading file on every request)
+// ──────────────────────────────────────────────────────────────────────────────
+// Small helpers
+// ──────────────────────────────────────────────────────────────────────────────
+
+/** Constant-time string compare. If either side is missing or lengths differ, returns false without leaking timing. */
+function safeEquals(a, b) {
+  if (!a || !b) return false;
+  const ab = Buffer.from(String(a));
+  const bb = Buffer.from(String(b));
+  if (ab.length !== bb.length) {
+    // consume roughly the same code path to avoid obvious timing differences
+    const pad = Buffer.alloc(Math.max(ab.length, bb.length) || 1, 0);
+    try { crypto.timingSafeEqual(pad, pad); } catch {}
+    return false;
+  }
+  try {
+    return crypto.timingSafeEqual(ab, bb);
+  } catch {
+    return false;
+  }
+}
+
+/** Escape minimal HTML entities so env text can’t break tags if it’s ever customized. */
+function escapeHtml(s) {
+  return String(s)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
+/** ACME + health allowed paths */
+function isAllowedPath(req) {
+  const p = req.path || req.url || '';
+  for (const prefix of MAINTENANCE_CONFIG.allowedPaths) {
+    if (p.startsWith(prefix)) return true;
+  }
+  return false;
+}
+
+/** Prefer Cloudflare’s real IP header, with IPv6-mapped IPv4 normalization */
+function clientIp(req) {
+  const raw = req.get('CF-Connecting-IP') || req.ip || '';
+  return raw.replace(/^::ffff:/, '');
+}
+
+/** IP allowlist check */
+function isAllowedIP(req) {
+  const ip = clientIp(req);
+  return MAINTENANCE_CONFIG.allowlist.some(allow => ip === allow.replace(/^::ffff:/, '') || ip === allow);
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Minimal maintenance page cache (avoid disk I/O every request)
+// ─────────────────────────────────────────────────────────────────────────────-
 let maintenancePageCache = null;
 let maintenancePageCacheTime = 0;
-const CACHE_TTL = 30000; // 30 seconds
+const CACHE_TTL_MS = 30_000;
 
-/**
- * WHAT:
- * Load maintenance page content with caching to avoid file I/O on every request.
- * 
- * WHY:
- * File I/O on every maintenance request would slow down the response.
- * Cache the content and refresh periodically.
- * 
- * HOW:
- * Read file once, cache for 30 seconds, fallback to minimal HTML if file missing.
- */
+/** Load the dedicated maintenance page if present; else return a tiny safe inline HTML. */
 function loadMaintenancePage() {
   const now = Date.now();
-  
-  // Return cached version if still valid
-  if (maintenancePageCache && (now - maintenancePageCacheTime) < CACHE_TTL) {
+
+  if (maintenancePageCache && (now - maintenancePageCacheTime) < CACHE_TTL_MS) {
     return maintenancePageCache;
   }
-  
+
   try {
-    // Try to read the maintenance page file
     if (fs.existsSync(MAINTENANCE_CONFIG.pagePath)) {
       maintenancePageCache = fs.readFileSync(MAINTENANCE_CONFIG.pagePath, 'utf8');
       maintenancePageCacheTime = now;
       return maintenancePageCache;
     }
-  } catch (error) {
-    logger.warn({
-      event: 'maintenance.page_load_failed',
-      path: MAINTENANCE_CONFIG.pagePath,
-      error: error.message
-    }, 'Failed to load maintenance page file');
+  } catch (err) {
+    logger.warn(
+      { event: 'maintenance.page_load_failed', path: MAINTENANCE_CONFIG.pagePath, error: err.message },
+      'Failed to load dedicated maintenance page file'
+    );
   }
-  
-  // Fallback to minimal HTML
-  const fallbackHtml = `<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Maintenance</title>
-    <style>
-        body { font-family: system-ui, sans-serif; text-align: center; padding: 50px; background: #f5f5f5; }
-        .container { max-width: 600px; margin: 0 auto; background: white; padding: 40px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-        h1 { color: #333; margin-bottom: 20px; }
-        p { color: #666; line-height: 1.6; }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1>Maintenance Mode</h1>
-        <p>${MAINTENANCE_CONFIG.message}</p>
-        <p>Please check back in a few minutes.</p>
-    </div>
-</body>
-</html>`;
-  
-  maintenancePageCache = fallbackHtml;
+
+  // Safe fallback (minified and escaped)
+  const msg = escapeHtml(MAINTENANCE_CONFIG.message);
+  maintenancePageCache =
+    '<!doctype html><html lang="en"><head><meta charset="utf-8">'+
+    '<meta name="viewport" content="width=device-width,initial-scale=1">'+
+    '<title>Maintenance</title>'+
+    // inline CSS only; no scripts; no external refs
+    '<style>body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,"Helvetica Neue",Arial,sans-serif;background:#f5f5f5;color:#111}'+
+    '.wrap{max-width:640px;margin:12vh auto;background:#fff;padding:32px 28px;border-radius:10px;box-shadow:0 2px 12px rgba(0,0,0,.08);text-align:center}'+
+    'h1{margin:0 0 8px 0;font-size:26px;font-weight:700}p{margin:8px 0 0 0;line-height:1.55;color:#444}</style>'+
+    '</head><body><main class="wrap"><h1>Maintenance Mode</h1>'+
+    `<p>${msg}</p><p>Please check back shortly.</p>`+
+    '</main></body></html>';
+
   maintenancePageCacheTime = now;
   return maintenancePageCache;
 }
 
-/**
- * WHAT:
- * Check if the request path is in the allowed paths list.
- * 
- * WHY:
- * Health checks and ACME challenges must always work during maintenance.
- * 
- * HOW:
- * Check if request path starts with any allowed path pattern.
- */
-function isAllowedPath(req) {
-  return MAINTENANCE_CONFIG.allowedPaths.some(allowedPath => 
-    req.path.startsWith(allowedPath)
-  );
-}
-
-/**
- * WHAT:
- * Check if the client IP is in the maintenance allowlist.
- * 
- * WHY:
- * Ops team needs access during maintenance for monitoring and debugging.
- * 
- * HOW:
- * Use CF-Connecting-IP header (preferred) or req.ip as fallback.
- * Compare against allowlist with IPv4/IPv6 support.
- */
-function isAllowedIP(req) {
-  // Prefer Cloudflare real IP header
-  const clientIP = req.get('CF-Connecting-IP') || req.ip;
-  
-  // Handle IPv6-mapped IPv4 addresses
-  const normalizedIP = clientIP.replace(/^::ffff:/, '');
-  
-  return MAINTENANCE_CONFIG.allowlist.some(allowedIP => {
-    const normalizedAllowed = allowedIP.replace(/^::ffff:/, '');
-    return normalizedIP === normalizedAllowed || normalizedIP === allowedIP;
-  });
-}
-
-/**
- * WHAT:
- * Check maintenance mode status from Redis or environment fallback.
- * 
- * WHY:
- * Need instant toggle capability without server restart.
- * Redis provides real-time control, env provides fallback.
- * 
- * HOW:
- * Try Redis first, fall back to environment variable if Redis unavailable.
- */
+// ──────────────────────────────────────────────────────────────────────────────
+// Maintenance state (Redis first, then env default)
+// ─────────────────────────────────────────────────────────────────────────────-
 async function getMaintenanceMode(redisClient) {
   try {
     if (redisClient && redisClient.isReady) {
-      const mode = await redisClient.get(MAINTENANCE_CONFIG.key);
-      return mode || MAINTENANCE_CONFIG.default;
+      const v = await redisClient.get(MAINTENANCE_CONFIG.key);
+      return v || MAINTENANCE_CONFIG.default;
     }
-  } catch (error) {
-    logger.debug({
-      event: 'maintenance.redis_check_failed',
-      error: error.message
-    }, 'Redis maintenance check failed, using env fallback');
+  } catch (err) {
+    logger.debug(
+      { event: 'maintenance.redis_check_failed', error: err.message },
+      'Redis maintenance check failed; falling back to env default'
+    );
   }
-  
   return MAINTENANCE_CONFIG.default;
 }
 
-/**
- * WHAT:
- * Send maintenance response with appropriate content type and headers.
- * 
- * WHY:
- * Must return proper 503 status with Retry-After for client behavior.
- * Content negotiation between JSON (API) and HTML (browser) requests.
- * 
- * HOW:
- * Set cache headers, Retry-After, and return appropriate content.
- */
+// ──────────────────────────────────────────────────────────────────────────────
 function sendMaintenanceResponse(req, res) {
-  // Set maintenance-specific headers
+  // Very strict, minimal headers
   res.set({
-    'Cache-Control': 'no-store, no-cache, must-revalidate',
-    'Retry-After': MAINTENANCE_CONFIG.retryAfter.toString(),
+    // Do not cache, anywhere
+    'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
+    'Pragma': 'no-cache',
+    'Expires': '0',
+
+    // Retry hint
+    'Retry-After': String(MAINTENANCE_CONFIG.retryAfter),
+
+    // SEO: never index the maintenance page
+    'X-Robots-Tag': 'noindex, nofollow, noarchive',
+
+    // Lock everything down
+    'X-Frame-Options': 'DENY',
+    'X-Content-Type-Options': 'nosniff',
+    'Referrer-Policy': 'no-referrer',
+    'Cross-Origin-Opener-Policy': 'same-origin',
+    'Cross-Origin-Resource-Policy': 'same-origin',
+    'Permissions-Policy':
+      'accelerometer=(),camera=(),display-capture=(),document-domain=(),encrypted-media=(),geolocation=(),' +
+      'gyroscope=(),magnetometer=(),microphone=(),midi=(),payment=(),usb=(),sync-xhr=()',
+
+    // We vary on Accept (HTML vs JSON)
     'Vary': 'Accept'
   });
-  
-  // Content negotiation: JSON for API requests, HTML for browsers
-  const isApiRequest = req.path.startsWith('/api/') || 
-                      req.get('Accept')?.includes('application/json');
-  
-  if (isApiRequest) {
-    res.status(503).json({
+
+  // Content negotiation
+  const acceptsJson = req.path.startsWith('/api/') || (req.get('Accept') || '').includes('application/json');
+  if (acceptsJson) {
+    return res.status(503).json({
       error: 'maintenance_mode',
       message: 'Service temporarily unavailable for maintenance',
       retryAfter: MAINTENANCE_CONFIG.retryAfter
     });
-  } else {
-    // For HTML requests, set a narrow CSP that allows the maintenance page
-    // This is the only place we modify CSP - only for maintenance responses
-    res.set('Content-Security-Policy', 
-      "default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; font-src 'self'");
-    
-    res.status(503).send(loadMaintenancePage());
   }
+
+  // Tightest possible CSP to render the tiny HTML/CSS only
+  res.set(
+    'Content-Security-Policy',
+    "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; " +
+    "img-src 'self' data:; style-src 'unsafe-inline';"
+  );
+
+  res.type('html').status(503).send(loadMaintenancePage());
 }
 
-/**
- * WHAT:
- * Main maintenance guard middleware function.
- * 
- * WHY:
- * Must integrate with existing middleware stack and security headers.
- * Should run after IP firewall but before auth/session middleware.
- * 
- * HOW:
- * 1. Check allowed paths - always pass
- * 2. Check IP allowlist - pass if trusted  
- * 3. Check maintenance mode - block if ON
- * 4. Continue to next middleware if OFF
- */
+// ─────────────────────────────────────────────────────────────────────────────-
 function createMaintenanceGuard(redisClient) {
   return async (req, res, next) => {
     try {
-      // Step 1: Always allow health checks and ACME challenges
-      if (isAllowedPath(req)) {
-        return next();
-      }
-      
-      // Step 2: Always allow ops team IPs
+      // 1) Health + ACME must always pass
+      if (isAllowedPath(req)) return next();
+
+      // 2) Ops IPs always pass
       if (isAllowedIP(req)) {
-        // Log once per boot to avoid noise, then at debug level
-        logger.debug({
-          event: 'maintenance.allow_passthrough',
-          clientIp: req.get('CF-Connecting-IP') || req.ip,
-          path: req.path,
-          method: req.method
-        }, 'Maintenance allowlist passthrough');
+        logger.debug(
+          { event: 'maintenance.allow_passthrough', clientIp: clientIp(req), path: req.path, method: req.method },
+          'Maintenance allowlist passthrough'
+        );
         return next();
       }
-      
-      // Step 3: Check maintenance mode status
+
+      // 3) Check mode
       const mode = await getMaintenanceMode(redisClient);
-      
       if (mode === 'on') {
-        // Log the maintenance block
-        logger.info({
-          event: 'maintenance.block',
-          clientIp: req.get('CF-Connecting-IP') || req.ip,
-          path: req.path,
-          method: req.method,
-          userAgent: req.get('User-Agent'),
-          retryAfter: MAINTENANCE_CONFIG.retryAfter
-        }, 'Request blocked during maintenance mode');
-        
-        // Send maintenance response
-        sendMaintenanceResponse(req, res);
-        return; // Don't call next()
+        // 3a) Optional owner bypass (if token is configured)
+        if (MAINTENANCE_CONFIG.bypassToken) {
+          const presented = req.get('x-maintenance-bypass');
+          if (safeEquals(presented, MAINTENANCE_CONFIG.bypassToken)) {
+            logger.debug(
+              { event: 'maintenance.bypass_token_ok', path: req.path, method: req.method },
+              'Maintenance bypass token accepted'
+            );
+            return next();
+          }
+        }
+
+        // 3b) Otherwise block with 503
+        logger.info(
+          {
+            event: 'maintenance.block',
+            clientIp: clientIp(req),
+            path: req.path,
+            method: req.method,
+            ua: req.get('User-Agent'),
+            retryAfter: MAINTENANCE_CONFIG.retryAfter
+          },
+          'Request blocked during maintenance'
+        );
+
+        return sendMaintenanceResponse(req, res);
       }
-      
-      // Step 4: Maintenance mode is OFF - continue to next middleware
-      next();
-      
-    } catch (error) {
-      // If maintenance guard fails, log error but don't block requests
-      logger.error({
-        event: 'maintenance.guard_error',
-        error: error.message,
-        clientIp: req.get('CF-Connecting-IP') || req.ip,
-        path: req.path
-      }, 'Maintenance guard error - allowing request through');
-      
-      // Fail open - allow request to continue
-      next();
+
+      // 4) Not in maintenance
+      return next();
+    } catch (err) {
+      // Fail open: never brick the site because of the guard itself
+      logger.error(
+        { event: 'maintenance.guard_error', error: err.message, clientIp: clientIp(req), path: req.path },
+        'Maintenance guard error - allowing request through'
+      );
+      return next();
     }
   };
 }

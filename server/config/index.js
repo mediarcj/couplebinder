@@ -170,13 +170,17 @@ const config = {
 
   // Ops health access control
   ops: {
-    token: process.env.OPS_HEALTH_TOKEN,
-    ips: csv(process.env.OPS_HEALTH_IPS) || ['127.0.0.1', '::1']
+    // Canonical token is OPS_HEALTH_TOKEN; HEALTH_TOKEN allowed for backward compatibility
+    token: process.env.OPS_HEALTH_TOKEN || process.env.HEALTH_TOKEN,
+    // Prefer OPS_HEALTH_IPS; fallback to HEALTH_ALLOWLIST; final default
+    ips: csv(process.env.OPS_HEALTH_IPS || process.env.HEALTH_ALLOWLIST) || ['127.0.0.1', '::1']
   },
   health: {
     public: bool(process.env.HEALTH_PUBLIC, false),
-    token: process.env.HEALTH_TOKEN,
-    allowlist: csv(process.env.HEALTH_ALLOWLIST) || ['127.0.0.1', '::1']
+    // Deprecated: use ops.token (OPS_HEALTH_TOKEN) instead; keep mirrored to avoid breaking readers
+    token: process.env.OPS_HEALTH_TOKEN || process.env.HEALTH_TOKEN,
+    // Mirror union logic too so old readers behave
+    allowlist: csv(process.env.OPS_HEALTH_IPS || process.env.HEALTH_ALLOWLIST) || ['127.0.0.1', '::1']
   }
 };
 

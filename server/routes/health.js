@@ -16,12 +16,17 @@ const logger = require('../utils/logger');
 const { supabaseAdmin } = require('../utils/supabaseClient');
 const healthShield = require('../middleware/healthShield');
 
-// Ops health access control
-const OPS_TOKEN = process.env.OPS_HEALTH_TOKEN;
-const OPS_IPS = (process.env.OPS_HEALTH_IPS || '127.0.0.1,::1')
-  .split(',')
-  .map(s => s.trim())
-  .filter(Boolean);
+// Resolve ops token/IPs at request time (test-friendly, supports overrides)
+function getOpsToken() {
+  return process.env.OPS_HEALTH_TOKEN || process.env.HEALTH_TOKEN || '';
+}
+
+function getOpsIps() {
+  return (process.env.OPS_HEALTH_IPS || process.env.HEALTH_ALLOWLIST || '127.0.0.1,::1')
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean);
+}
 
 /**
  * Check if request is from authorized ops source
@@ -30,7 +35,9 @@ const OPS_IPS = (process.env.OPS_HEALTH_IPS || '127.0.0.1,::1')
  */
 function isOps(req) {
   const ip = req.headers['cf-connecting-ip'] || req.ip;
-  return (OPS_TOKEN && req.get('X-Ops-Token') === OPS_TOKEN) || OPS_IPS.includes(ip);
+  const token = getOpsToken();
+  const ips = getOpsIps();
+  return (token && (req.get('X-Ops-Token') === token || req.get('X-Health-Token') === token)) || ips.includes(ip);
 }
 
 /**

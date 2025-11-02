@@ -36,7 +36,6 @@ Example:
 const publicGlobs = [
   '/', '/login',
   '/css/**', '/js/**', '/images/**', '/favicon.ico',
-  '/health/**',
   '/api/auth/set-cookie', '/api/auth/clear-cookie',
   '/api/profile/public/**', // Add new public API here
 ];

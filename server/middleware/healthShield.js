@@ -57,16 +57,16 @@ function checkAccess(req) {
     return { authorized: true, reason: 'public_mode' };
   }
 
-  // Token-based auth
-  const expectedToken = process.env.HEALTH_TOKEN || '';
-  const providedToken = req.get('X-Health-Token') || '';
+  // Token-based auth - unified on OPS_HEALTH_TOKEN with backward compatibility
+  const expectedToken = process.env.OPS_HEALTH_TOKEN || process.env.HEALTH_TOKEN || '';
+  const providedToken = req.get('X-Ops-Token') || req.get('X-Health-Token') || '';
   if (expectedToken && providedToken && expectedToken === providedToken) {
     return { authorized: true, reason: 'token_match' };
   }
 
-  // IP allowlist
+  // IP allowlist - prefer OPS_HEALTH_IPS, fallback to HEALTH_ALLOWLIST
   const ip = getClientIp(req);
-  const allowlist = (process.env.HEALTH_ALLOWLIST || '127.0.0.1,::1')
+  const allowlist = (process.env.OPS_HEALTH_IPS || process.env.HEALTH_ALLOWLIST || '127.0.0.1,::1')
     .split(',')
     .map(s => s.trim())
     .filter(Boolean);

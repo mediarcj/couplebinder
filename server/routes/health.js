@@ -5,8 +5,8 @@
 //
 // AUTH REQUIREMENTS:
 // - GET /: GATED - basic health check (token/IP/public mode)
-// - GET /liveness: PUBLIC - liveness probe for containers
-// - GET /readiness: PUBLIC - readiness probe for containers (ops get detailed)
+// - GET /liveness: GATED - liveness probe for containers (token/IP/public mode)
+// - GET /readiness: GATED - readiness probe for containers (token/IP/public mode)
 // - GET /detailed: GATED - detailed system status (ops only)
 // - GET /ops: GATED - comprehensive SRE metrics (ops only)
 
@@ -60,9 +60,9 @@ router.get('/', healthShield, (req, res) => {
 
 /**
  * GET /health/liveness
- * Liveness probe for Kubernetes/Docker - PUBLIC endpoint
+ * Liveness probe for Kubernetes/Docker - GATED endpoint
  */
-router.get('/liveness', (req, res) => {
+router.get('/liveness', healthShield, (req, res) => {
   // Liveness only checks if the process is running - minimal response
   res.status(200).send('OK');
 });
@@ -71,7 +71,7 @@ router.get('/liveness', (req, res) => {
  * GET /health/readiness
  * Readiness probe for Kubernetes/Docker - GATED endpoint
  */
-router.get('/readiness', async (req, res) => {
+router.get('/readiness', healthShield, async (req, res) => {
   try {
     // Minimal response for non-ops requests
     if (!isOps(req)) {

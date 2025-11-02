@@ -23,7 +23,7 @@ The following paths remain publicly accessible without authentication:
 - `/js/**` - Static JavaScript files  
 - `/images/**` - Static image files
 - `/favicon.ico` - Favicon
-- `/health/**` - Health check endpoints
+- Public health links removed from templates (endpoints now gated)
 - `/api/auth/set-cookie` - Cookie setting endpoint
 - `/api/auth/clear-cookie` - Cookie clearing endpoint
 
@@ -55,20 +55,30 @@ Use the following helpers from `utils/authz.js` instead of direct `req.user` acc
 
 ## Health Endpoint Security
 
-### Public Endpoints
+### Gated Endpoints (Require Token, IP Allowlist, or PUBLIC Mode)
+
+All health endpoints are now gated and require authorization:
 
 - `/health` - Returns minimal `{ok: true}` response (no internal details)
 - `/health/liveness` - Returns plain text "OK" for load balancer probes
-
-### Gated Endpoints (Require Ops Token or IP Allowlist)
-
 - `/health/readiness` - Detailed readiness information
+
+### Health Shield Access Control
+
+Health endpoints require at least one of:
+
+1. **PUBLIC Mode**: Set `HEALTH_PUBLIC=true` (for local/dev environments only)
+2. **X-Health-Token Header**: Set `X-Health-Token` to the value of `HEALTH_TOKEN` environment variable
+3. **IP Allowlist**: Request from an IP in the `HEALTH_ALLOWLIST` environment variable (comma-separated)
+
+### Ops-Only Endpoints
+
+These endpoints require additional ops authorization:
+
 - `/health/ops` - Comprehensive operational metrics
 - `/health/detailed` - Detailed system information for debugging
 
-### Ops Access Control
-
-Gated health endpoints require either:
+Ops endpoints require either:
 
 1. **X-Ops-Token Header**: Set `X-Ops-Token` to the value of `OPS_HEALTH_TOKEN` environment variable
 2. **IP Allowlist**: Request from an IP in the `OPS_HEALTH_IPS` environment variable (comma-separated)
@@ -76,8 +86,13 @@ Gated health endpoints require either:
 ### Environment Variables
 
 ```bash
-# Required for ops access to gated health endpoints
-OPS_HEALTH_TOKEN=your-secure-token-here
+# Health shield access control
+HEALTH_PUBLIC=false                    # Set to 'true' for local development (not recommended for production)
+HEALTH_TOKEN=your-secure-token-here   # Optional token for monitoring tools
+HEALTH_ALLOWLIST=127.0.0.1,::1        # Comma-separated IP allowlist (default: localhost only)
+
+# Required for ops access to detailed endpoints
+OPS_HEALTH_TOKEN=your-secure-ops-token
 OPS_HEALTH_IPS=127.0.0.1,::1,your-admin-ip
 ```
 

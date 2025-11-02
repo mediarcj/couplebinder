@@ -4,15 +4,17 @@
 // Notes: Used by load balancers, monitoring systems, and deployment tools
 //
 // AUTH REQUIREMENTS:
-// - GET /: PUBLIC - basic health check
+// - GET /: GATED - basic health check (token/IP/public mode)
 // - GET /liveness: PUBLIC - liveness probe for containers
-// - GET /readiness: PUBLIC - readiness probe for containers
-// - GET /detailed: PUBLIC - detailed system status
+// - GET /readiness: PUBLIC - readiness probe for containers (ops get detailed)
+// - GET /detailed: GATED - detailed system status (ops only)
+// - GET /ops: GATED - comprehensive SRE metrics (ops only)
 
 const express = require('express');
 const router = express.Router();
 const logger = require('../utils/logger');
 const { supabaseAdmin } = require('../utils/supabaseClient');
+const healthShield = require('../middleware/healthShield');
 
 // Ops health access control
 const OPS_TOKEN = process.env.OPS_HEALTH_TOKEN;
@@ -51,7 +53,7 @@ let redisStatus = { connected: false, lastCheck: null };
  * GET /health
  * Minimal health check endpoint - no internal details exposed
  */
-router.get('/', (req, res) => {
+router.get('/', healthShield, (req, res) => {
   // Minimal response - no uptime, memory, or version details
   res.status(200).json({ ok: true });
 });

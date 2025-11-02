@@ -172,6 +172,11 @@ const config = {
   ops: {
     token: process.env.OPS_HEALTH_TOKEN,
     ips: csv(process.env.OPS_HEALTH_IPS) || ['127.0.0.1', '::1']
+  },
+  health: {
+    public: bool(process.env.HEALTH_PUBLIC, false),
+    token: process.env.HEALTH_TOKEN,
+    allowlist: csv(process.env.HEALTH_ALLOWLIST) || ['127.0.0.1', '::1']
   }
 };
 

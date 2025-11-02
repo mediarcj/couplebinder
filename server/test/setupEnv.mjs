@@ -76,6 +76,9 @@ setIfEmpty('FIREWALL_FAIL_CLOSED', 'true');
 // Submission limits
 setIfEmpty('MAX_SUBMISSIONS', '10');
 
+// Health endpoint access (public in tests)
+setIfEmpty('HEALTH_PUBLIC', 'true');
+
 // Block process.exit during tests
 const originalExit = process.exit;
 process.exit = (code) => {

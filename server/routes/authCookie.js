@@ -164,6 +164,11 @@ function clearAllAuthCookies(res) {
  */
 router.post('/set-cookie', async (req, res) => {
   res.set('Vary', 'Cookie, Authorization, Accept');
+  // For debugging in DevTools; safe meta only
+  try {
+    const sentinelActive = (req.cookies && String(req.cookies[SENTINEL_COOKIE_NAME] || '') === '1');
+    res.set('X-Auth-Sentinel', sentinelActive ? 'active' : 'inactive');
+  } catch (_) {}
 
   try {
     // Extract Bearer token
@@ -200,6 +205,7 @@ router.post('/set-cookie', async (req, res) => {
 
     // User logout watermark
     const lastLogoutSec = await getLastLogoutAt(uid);
+    res.set('X-Auth-Watermark', String(lastLogoutSec || 0));
 
     // Primary rule: reject stale tokens (token issued at or before last logout)
     if (lastLogoutSec && tokenIatSec && tokenIatSec <= lastLogoutSec) {

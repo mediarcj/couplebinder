@@ -1,47 +1,60 @@
 // File: server/routes/authCookie.js
-// Description: Set and clear the auth cookie using __Host- rules
-// Notes: __Host- cookies must be Secure, Path=/, and have no Domain
+// Description: Set and clear the auth cookie using __Host- rules (big-tech style watermark)
+// Notes:
+// - Verifies the token with JWKS (verifyToken)
+// - Blocks only *stale* tokens (iat <= last_logout_at[uid])
+// - Allows instant re-login with a *fresh* token (no cooldown)
+// - Keeps account/IP lockout protections
+// - __Host- cookies: Secure + Path=/ + no Domain
+// - Fallback sentinel is only used when watermark is unavailable (e.g., Redis down)
 
-/**
- * WHAT:
- * Set the cookie named from env (default: sb_session) and, if it starts
- * with "__Host-", do NOT set a Domain. Clear old cookie names for safety.
- *
- * WHY:
- * "__Host-" prevents subdomain fixation. Clearing old names avoids
- * conflicting cookies lingering on browsers.
- *
- * HOW:
- * 1) Use env-driven cookie name (AUTH_COOKIE_NAME)
- * 2) If cookie name starts with "__Host-", omit domain (required by spec)
- * 3) Clear legacy cookie names on set/clear for migration safety
- */
-
+// =======================
+// Imports
+// =======================
 const express = require('express');
 const router = express.Router();
+
 const { verifyToken } = require('../middleware/auth/supabaseJwt');
 const { audit } = require('../lib/audit');
-const { checkAccountLockout, recordFailedAttempt, clearFailedAttempts } = require('../middleware/lockout');
+const {
+  checkAccountLockout,
+  recordFailedAttempt,
+  clearFailedAttempts
+} = require('../middleware/lockout');
 const logger = require('../utils/logger');
 
-// ============================================================
-// Redis Client Setup
-// ============================================================
+// =======================
+// Redis client (optional)
+// =======================
 let redis = null;
 try {
   const { client } = require('../utils/redisClient');
   redis = client;
 } catch {
-  // No Redis available, Redis-based locks will be disabled
+  // No Redis available -> watermark will be unavailable; sentinel fallback will be used.
 }
 
-// ============================================================
+// =======================
 // Configuration
-// ============================================================
+// =======================
 const COOKIE_NAME = process.env.AUTH_COOKIE_NAME || 'sb_session';
 const COOKIE_TTL_MS = 1000 * 60 * 60 * 24 * 7; // 7 days
 const LEGACY_DOMAIN = '.detechify.com'; // used only to clear old cookies
-const LOGOUT_SENTINEL_MS = parseInt(process.env.AUTH_LOGOUT_SENTINEL_MS || '90000', 10); // 90s default
+
+// Watermark storage (seconds precision, per-user)
+const LAST_LOGOUT_KEY = (uid) => `auth:last_logout_at:${uid}`;
+const LAST_LOGOUT_TTL_SEC = parseInt(process.env.AUTH_LAST_LOGOUT_TTL_SEC || `${60 * 60 * 24 * 14}`, 10); // default 14 days
+
+// Sentinel (fallback only). Keep small to reduce friction if used.
+const SENTINEL_COOKIE_NAME = 'auth_logout';
+const SENTINEL_MS = Math.min(
+  Math.max(parseInt(process.env.AUTH_LOGOUT_SENTINEL_MS || '10000', 10), 0),
+  30000
+); // 0..30000 ms (default 10s, capped at 30s)
+
+// If Redis watermark missing, allow *fresh* tokens to pass immediately, even if sentinel present.
+// A newly issued token will usually have iat within a few seconds of "now".
+const FRESH_LOGIN_GRACE_SEC = parseInt(process.env.AUTH_FRESH_LOGIN_GRACE_SEC || '20', 10);
 
 // Base attributes for our auth cookie
 const baseCookie = {
@@ -51,319 +64,251 @@ const baseCookie = {
   path: '/', // REQUIRED for __Host-
 };
 
+// =======================
+// Helpers
+// =======================
+
+/**
+ * Return the user logout watermark (seconds since epoch).
+ * Returns 0 if watermark not found or Redis unavailable.
+ */
+async function getLastLogoutAt(uid) {
+  if (!uid || !redis) return 0;
+  try {
+    const s = await redis.get(LAST_LOGOUT_KEY(uid));
+    return s ? Number(s) || 0 : 0;
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * Set the user logout watermark to "now" (seconds) with TTL.
+ * No-op if Redis unavailable.
+ */
+async function setLastLogoutNow(uid) {
+  if (!uid || !redis) return;
+  try {
+    const nowSec = Math.floor(Date.now() / 1000);
+    await redis.set(LAST_LOGOUT_KEY(uid), String(nowSec), { EX: LAST_LOGOUT_TTL_SEC });
+  } catch (err) {
+    logger.warn({ event: 'auth.set_last_logout.failed', error: err.message }, 'Failed to set logout watermark');
+  }
+}
+
+/**
+ * Determine if the sentinel (fallback) should block this request.
+ * Only applied when watermark is unavailable (0).
+ * We *allow* tokens that look fresh (iat within FRESH_LOGIN_GRACE_SEC),
+ * and block the rest while the sentinel is active.
+ */
+function sentinelBlocks(req, tokenIatSec) {
+  try {
+    const sentinelActive =
+      req.cookies && String(req.cookies[SENTINEL_COOKIE_NAME] || '') === '1';
+    if (!sentinelActive) return false;
+
+    // Allow *fresh* tokens to pass (interactive login just happened)
+    const nowSec = Math.floor(Date.now() / 1000);
+    if (tokenIatSec && nowSec - tokenIatSec <= FRESH_LOGIN_GRACE_SEC) {
+      return false;
+    }
+
+    // Otherwise treat as stale background re-hydration while sentinel is active.
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Build cookie options honoring __Host- rules.
+ */
+function buildCookieOpts() {
+  const opts = { ...baseCookie };
+  // If cookie name starts with __Host-, DO NOT set domain.
+  if (!COOKIE_NAME.startsWith('__Host-') && process.env.AUTH_COOKIE_DOMAIN) {
+    opts.domain = process.env.AUTH_COOKIE_DOMAIN;
+  }
+  return opts;
+}
+
+/**
+ * Clear current and legacy cookies safely.
+ */
+function clearAllAuthCookies(res) {
+  // Clear current name and legacy names
+  ['__Host-sb_session', COOKIE_NAME, 'sb-access-token', 'sb_session'].forEach((n) => {
+    const clearOpts = n.startsWith('__Host-')
+      ? { httpOnly: true, secure: true, sameSite: 'lax', path: '/' } // NO domain for __Host-
+      : { path: '/', domain: process.env.AUTH_COOKIE_DOMAIN || undefined };
+
+    res.clearCookie(n, clearOpts);
+  });
+}
+
+// =======================
+// Routes
+// =======================
+
 /**
  * POST /auth/set-cookie
- * 
- * WHAT:
- * Accepts a Bearer token from the Authorization header, verifies it server-side,
- * and sets it as an HttpOnly cookie only if valid. Supports __Host- prefix.
- * 
- * WHY:
- * We never trust the client. Before storing a token in a secure cookie, we must
- * verify it's legitimate. __Host- prefix prevents subdomain cookie attacks.
- * 
- * HOW:
- * 1. Extract token from Authorization: Bearer header
- * 2. Verify token signature, issuer, audience, and expiration via JWKS
- * 3. Set cookie with proper flags (omit domain if __Host-)
- * 4. Clear legacy cookie names for migration safety
- * 5. Return user ID on success for client confirmation
+ *
+ * Big-tech flow:
+ * 1) Verify the Bearer token server-side (JWKS).
+ * 2) Fetch user's logout watermark (last_logout_at) from Redis.
+ * 3) Reject only *stale* tokens: token.iat <= last_logout_at.
+ * 4) Allow *fresh* tokens immediately (no cooldown).
+ * 5) If watermark unavailable (Redis down), use a *small* sentinel fallback:
+ *    deny background re-hydration while sentinel active, but allow fresh tokens.
  */
 router.post('/set-cookie', async (req, res) => {
+  res.set('Vary', 'Cookie, Authorization, Accept');
+
   try {
-    // Set Vary header for cache control
-    res.set('Vary', 'Cookie, Authorization, Accept');
-
-    /**
-     * WHAT:
-     * Safety net: refuse to re-set auth cookies if user just logged out.
-     * 
-     * WHY:
-     * Prevents race condition where Supabase session still exists in localStorage
-     * after logout, causing immediate re-login via checkSessionStatus().
-     * 
-     * HOW:
-     * Check for auth_logout sentinel cookie (set during logout, expires in configurable time).
-     * Return 204 No Content to silently refuse re-authentication.
-     */
-    if (req.cookies && req.cookies['auth_logout'] === '1') {
-      logger.info({
-        event: 'auth.set_cookie.denied_by_sentinel',
-        requestId: req.requestId
-      }, 'Re-authentication blocked - user just logged out');
-      res.set('X-Auth-Sentinel', 'active');
-      return res.status(204).end();
-    }
-
-    /**
-     * WHAT:
-     * Check for server-side Redis lock from recent logout.
-     * 
-     * WHY:
-     * Double-check even if cookie is missing (defense in depth).
-     * Handles edge cases where cookie expires but lock is still active.
-     * 
-     * HOW:
-     * Check Redis key lock:logout:ip:<ip> for active lockout.
-     * Return 204 if lock exists.
-     */
-    const ip = req.clientIp || req.ip || 'unknown';
-    const lockKey = `lock:logout:ip:${ip}`;
-    
-    if (redis) {
-      try {
-        const isLocked = await redis.exists(lockKey);
-        if (isLocked === 1) {
-          logger.info({
-            event: 'auth.set_cookie.denied_by_redis_lock',
-            requestId: req.requestId
-          }, 'Re-authentication blocked - Redis logout lock active');
-          res.set('X-Auth-Sentinel', 'active');
-          return res.status(204).end();
-        }
-      } catch (err) {
-        // Non-fatal: continue if Redis check fails
-        logger.warn({
-          event: 'auth.set_cookie.redis_lock_check_failed',
-          error: err.message,
-          requestId: req.requestId
-        }, 'Failed to check Redis logout lock');
-      }
-    }
-
-    /**
-     * WHAT:
-     * Check for account/IP lockouts before processing token.
-     * 
-     * WHY:
-     * Prevent brute force attacks on token verification.
-     * Lockouts must be checked server-side before any auth attempt.
-     * 
-     * HOW:
-     * Use IP extracted above for lockout check.
-     * Extract email from token payload if available (or use 'ip-only' as placeholder).
-     * Check Redis for active lockouts.
-     * Return 429 if locked with remaining time.
-     */
-    const emailFromBody = (req.body?.email || '').toLowerCase().trim();
-    
-    // Check lockout status before processing
-    const lock = await checkAccountLockout(emailFromBody || 'ip-only', ip);
-    if (lock.locked) {
-      res.set('Retry-After', String(lock.remainingTime || 60));
-      return res.status(429).json({
-        ok: false,
-        error: lock.message
-      });
-    }
-
-    // Extract Bearer token from Authorization header
+    // Extract Bearer token
     const auth = req.get('authorization') || '';
     const token = auth.startsWith('Bearer ') ? auth.slice(7).trim() : null;
-    
     if (!token) {
-      return res.status(400).json({ 
-        ok: false, 
-        error: 'Missing bearer token in Authorization header' 
-      });
+      return res.status(400).json({ ok: false, error: 'Missing bearer token in Authorization header' });
     }
 
-    // Verify token server-side before setting cookie (CRITICAL SECURITY CHECK)
+    // Verify token (signature, issuer, audience, exp, etc.)
     let payload;
     try {
       payload = await verifyToken(token);
     } catch (verifyError) {
-      /**
-       * WHAT:
-       * Record failed token verification attempt.
-       * 
-       * WHY:
-       * Failed token verification indicates potential brute force attack.
-       * Progressive lockout deters attackers.
-       * 
-       * HOW:
-       * Record failure in Redis with user email (from payload if available) and IP.
-       * Lockout duration increases with each failure.
-       */
-      const code = verifyError?.code || 'verify_failed';
-      logger.warn({
-        event: 'auth.set_cookie.rejected',
-        code,
-        requestId: req.requestId
-      }, 'Set-cookie token verification failed');
-      
-      // Record failed attempt for lockout tracking
+      const ip = req.clientIp || req.ip || 'unknown';
+      const emailFromBody = (req.body?.email || '').toLowerCase().trim();
       await recordFailedAttempt(emailFromBody || 'ip-only', ip);
-      
-      // Audit log: failed cookie set
-      audit('auth.set_cookie.fail', { reason: code }, req);
-      
-      return res.status(401).json({ 
-        ok: false, 
-        code: code,
-        error: 'Invalid token' 
-      });
+      logger.warn({ event: 'auth.set_cookie.rejected', code: verifyError?.code || 'verify_failed', requestId: req.requestId }, 'Set-cookie token verification failed');
+      audit('auth.set_cookie.fail', { reason: verifyError?.code || 'verify_failed' }, req);
+      return res.status(401).json({ ok: false, error: 'Invalid token' });
     }
 
-    /**
-     * WHAT:
-     * Clear failed attempts on successful token verification.
-     * 
-     * WHY:
-     * Successful authentication should reset lockout state.
-     * Prevents legitimate users from being locked out.
-     * 
-     * HOW:
-     * Extract email from verified token payload.
-     * Clear all lockout counters and locks in Redis.
-     */
-    const userEmail = payload.email || emailFromBody || 'ip-only';
-    await clearFailedAttempts(userEmail, ip);
+    const uid = payload.sub;
+    const tokenIatSec = Number(payload.iat || 0); // JWT iat is seconds
+    const ip = req.clientIp || req.ip || 'unknown';
+    const emailFromBody = (req.body?.email || '').toLowerCase().trim();
 
-    // ============================================================
-    // Set the new cookie with __Host- support
-    // ============================================================
-    // IMPORTANT: do not set Domain if using __Host- prefix (spec requirement)
-    const opts = { ...baseCookie };
-    if (!COOKIE_NAME.startsWith('__Host-') && process.env.AUTH_COOKIE_DOMAIN) {
-      opts.domain = process.env.AUTH_COOKIE_DOMAIN;
+    // Pre-auth brute-force guard
+    const lock = await checkAccountLockout(emailFromBody || 'ip-only', ip);
+    if (lock.locked) {
+      res.set('Retry-After', String(lock.remainingTime || 60));
+      return res.status(429).json({ ok: false, error: lock.message });
     }
 
-    // Set the new cookie
+    // User logout watermark
+    const lastLogoutSec = await getLastLogoutAt(uid);
+
+    // Primary rule: reject stale tokens (token issued at or before last logout)
+    if (lastLogoutSec && tokenIatSec && tokenIatSec <= lastLogoutSec) {
+      logger.info(
+        { event: 'auth.set_cookie.denied_stale_token', uid, tokenIatSec, lastLogoutSec, requestId: req.requestId },
+        'Re-auth blocked: token predates last logout'
+      );
+      audit('auth.set_cookie.stale', { uid }, req);
+      await recordFailedAttempt(emailFromBody || 'ip-only', ip); // count as failure for lockout
+      return res.status(401).json({ ok: false, error: 'Stale token (logged out)' });
+    }
+
+    // Fallback: watermark missing (Redis unavailable or no key) -> apply small sentinel rule
+    if (!lastLogoutSec && sentinelBlocks(req, tokenIatSec)) {
+      // Deny only silent/background hydration while sentinel active
+      logger.info(
+        { event: 'auth.set_cookie.hydrate_denied_by_sentinel', requestId: req.requestId },
+        'Hydration blocked by sentinel fallback'
+      );
+      res.set('X-Auth-Sentinel', 'active');
+      // 204 so client backoff can retry quietly; interactive flows should not hit this due to fresh iat
+      return res.status(204).end();
+    }
+
+    // Success path: token is valid and not stale -> clear failures, set cookie
+    await clearFailedAttempts(emailFromBody || 'ip-only', ip);
+
+    const opts = buildCookieOpts();
     res.cookie(COOKIE_NAME, token, { ...opts, maxAge: COOKIE_TTL_MS });
 
-    // ============================================================
-    // One-time cleanup of legacy cookie names (migration safety)
-    // ============================================================
-    // Clear old cookie names to prevent conflicts during migration
+    // Clean up legacy cookie names to prevent conflicts
     ['sb-access-token', 'sb_session'].forEach((n) => {
-      // Clear domain-scoped variant (old deployments)
       res.clearCookie(n, { path: '/', domain: LEGACY_DOMAIN });
-      // Clear host-scoped variant (old deployments)
       res.clearCookie(n, { path: '/' });
     });
 
-    // ============================================================
-    // Audit log: successful cookie set
-    // ============================================================
     audit('auth.set_cookie.ok', { ttl_ms: COOKIE_TTL_MS }, req);
-
-    return res.json({ ok: true, userId: payload.sub });
+    return res.json({ ok: true, userId: uid });
   } catch (error) {
-    logger.error({
-      event: 'auth.set_cookie.exception',
-      error: error.message,
-      requestId: req.requestId
-    }, 'Set-cookie route exception');
-    return res.status(500).json({ 
-      ok: false, 
-      error: 'Failed to set cookie' 
-    });
+    logger.error({ event: 'auth.set_cookie.exception', error: error.message, requestId: req.requestId }, 'Set-cookie route exception');
+    return res.status(500).json({ ok: false, error: 'Failed to set cookie' });
   }
 });
 
 /**
  * POST /auth/clear-cookie
- * 
- * WHAT:
- * Clears the auth cookie and legacy cookie names for complete logout.
- * Content-negotiation: HTML navigation gets a redirect; XHR/fetch gets JSON.
- * 
- * WHY:
- * On logout, we need to remove all authentication cookies from the browser,
- * including legacy names from previous deployments.
- * Browser form submits should redirect to home page, not show JSON.
- * Programmatic calls need JSON for compatibility.
- * 
- * HOW:
- * Clear the current cookie name and all legacy names with proper options.
- * __Host- cookies must NOT have domain set when clearing.
- * Detect request type via Accept header and X-Requested-With header.
- * Redirect HTML requests to home page (303 See Other after POST).
- * Return JSON for programmatic callers.
+ *
+ * - Clears current and legacy cookies (complete logout).
+ * - Sets per-user logout watermark in Redis (last_logout_at = now).
+ * - Optionally sets a *small* client sentinel cookie as a fallback
+ *   if Redis watermark is unavailable to the server later.
+ * - Content negotiation: HTML forms -> redirect 303; XHR/fetch -> JSON.
  */
-router.post('/clear-cookie', (req, res) => {
+router.post('/clear-cookie', async (req, res) => {
   try {
-    // ============================================================
-    // Clear the new name and old names for complete logout
-    // ============================================================
-    ['__Host-sb_session', COOKIE_NAME, 'sb-access-token', 'sb_session'].forEach((n) => {
-      const clearOpts = n.startsWith('__Host-')
-        ? { httpOnly: true, secure: true, sameSite: 'lax', path: '/' } // NO domain (spec requirement)
-        : { path: '/', domain: process.env.AUTH_COOKIE_DOMAIN || undefined };
+    // Try to capture uid from the existing auth cookie BEFORE clearing it
+    let uidFromCookie = null;
+    try {
+      const raw = req.cookies?.[COOKIE_NAME];
+      if (raw) {
+        const payload = await verifyToken(raw).catch(() => null);
+        uidFromCookie = payload?.sub || null;
+      }
+    } catch {
+      // ignore
+    }
 
-      res.clearCookie(n, clearOpts);
-    });
+    // Clear cookies (new + legacy)
+    clearAllAuthCookies(res);
 
-    // ============================================================
-    // Set a configurable sentinel cookie to prevent immediate re-login
-    // ============================================================
-    const isProd = process.env.NODE_ENV === 'production';
-    res.cookie('auth_logout', '1', {
-      httpOnly: false, // Must be readable by client JavaScript
-      sameSite: 'Lax',
-      secure: isProd,
-      maxAge: LOGOUT_SENTINEL_MS
-    });
+    // Write logout watermark for this user (if we could identify them)
+    if (uidFromCookie) {
+      await setLastLogoutNow(uidFromCookie);
+      audit('auth.clear_cookie.ok', { uid: uidFromCookie }, req);
+    } else {
+      audit('auth.clear_cookie.ok', {}, req);
+    }
 
-    // ============================================================
-    // Set server-side Redis lock for extra protection
-    // ============================================================
-    const ip = req.clientIp || req.ip || 'unknown';
-    const lockKey = `lock:logout:ip:${ip}`;
-    const lockTTLSeconds = Math.floor(LOGOUT_SENTINEL_MS / 1000);
-    
-    if (redis && lockTTLSeconds > 0) {
-      redis.set(lockKey, '1', { EX: lockTTLSeconds }).catch((err) => {
-        logger.warn({
-          event: 'auth.clear_cookie.redis_lock_failed',
-          error: err.message,
-          requestId: req.requestId
-        }, 'Failed to set Redis logout lock');
+    // Optional: tiny client sentinel as a fallback if Redis is down somewhere later.
+    // This does NOT block fresh tokens (see set-cookie logic).
+    if (SENTINEL_MS > 0) {
+      const isProd = process.env.NODE_ENV === 'production';
+      res.cookie(SENTINEL_COOKIE_NAME, '1', {
+        httpOnly: false, // must be readable by client JS (fallback behavior)
+        sameSite: 'Lax',
+        secure: isProd,
+        maxAge: SENTINEL_MS
       });
     }
 
-    // ============================================================
-    // Audit log: successful cookie clear
-    // ============================================================
-    audit('auth.clear_cookie.ok', {}, req);
-
-    // ============================================================
-    // Content-negotiation: HTML navigation -> redirect, programmatic -> JSON
-    // ============================================================
+    // Negotiation: HTML submit -> redirect; XHR -> JSON
     const accept = String(req.headers.accept || '');
     const isXHR = (req.xhr === true) || (String(req.headers['x-requested-with'] || '').toLowerCase() === 'xmlhttprequest');
     const isJSONy = accept.includes('application/json') || accept.includes('text/json');
-
-    // Help caches pick the right variant
     res.set('Vary', 'Accept, X-Requested-With');
 
     if (!isXHR && !isJSONy && accept.includes('text/html')) {
-      // Browser form submit: redirect to home page with logout flag
-      // 303 = "See Other", correct after POST
       return res.redirect(303, '/?logged_out=1');
     }
-
-    // Programmatic callers (fetch/XHR) get JSON
     return res.status(200).json({ ok: true });
   } catch (error) {
-    logger.error({
-      event: 'auth.clear_cookie.exception',
-      error: error.message,
-      requestId: req.requestId
-    }, 'Clear-cookie route exception');
-    
-    // Content-negotiation for error responses too
+    logger.error({ event: 'auth.clear_cookie.exception', error: error.message, requestId: req.requestId }, 'Clear-cookie route exception');
+
     const accept = String(req.headers.accept || '');
     const wantsHTML = accept.includes('text/html') && !accept.includes('application/json');
     if (wantsHTML) {
       return res.redirect(303, '/?logged_out=0');
     }
-    
-    return res.status(500).json({ 
-      ok: false, 
-      error: 'Failed to clear cookie' 
-    });
+    return res.status(500).json({ ok: false, error: 'Failed to clear cookie' });
   }
 });
 

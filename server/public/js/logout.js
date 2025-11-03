@@ -255,6 +255,13 @@ async function performLogout() {
       logoutLogger.info('Supabase signOut exception (non-fatal)', { error: e?.message || String(e) });
     }
 
+    // Cross-tab sync: tell other tabs we logged out
+    try {
+      const bc = new BroadcastChannel('auth');
+      bc.postMessage({ type: 'LOGOUT' });
+      bc.close();
+    } catch (_) {}
+
     // 2b) Explicitly remove all Supabase localStorage keys as safety net
     try {
       const keysToRemove = [];
@@ -395,6 +402,13 @@ function attachLogoutHandler(selector = '#logoutBtn') {
     } catch (e) {
       console.warn(CSL, 'signOut error', e);
     }
+
+    // Cross-tab sync: tell other tabs we logged out
+    try {
+      const bc = new BroadcastChannel('auth');
+      bc.postMessage({ type: 'LOGOUT' });
+      bc.close();
+    } catch (_) {}
 
     // Clear server cookies
     const csrf = getCsrf(triggerEl);

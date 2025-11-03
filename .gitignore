@@ -50,3 +50,4 @@ jar.txt
 
 .cursor_proofs/
 .env
+docker-compose.local.yml

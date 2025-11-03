@@ -1,12 +1,2 @@
-services:
-  app:
-    ports:
-      - "3000:3000"
-
-  redis:
-    ports:
-      - "6379:6379"
-
-  proxy:
-    environment:
-      - NGINX_USE_SSL=false
+# docker-compose.override.yml (safe for prod because it changes nothing)
+services: {}

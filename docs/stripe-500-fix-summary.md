@@ -138,7 +138,7 @@ const ALLOWED_PRICES = Object.freeze({
 - [x] Idempotency cache working correctly
 - [x] Email properly saved on customer creation
 - [x] Indexes use correct column names
-- [x] Webhook path remains `/webhooks/stripe`
+- [x] Webhook path remains `/api/stripe/webhook`
 
 ---
 

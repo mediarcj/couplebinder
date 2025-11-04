@@ -43,8 +43,8 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
  * 4. Update payment records accordingly
  */
 function mountStripeWebhook(app) {
-  // Mount at /webhooks/stripe (not under /api) to bypass auth guards
-  app.post('/webhooks/stripe', express.raw({ type: 'application/json' }), async (req, res) => {
+  // Mount at /api/stripe/webhook (not under /api) to bypass auth guards
+  app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
     const sig = req.headers['stripe-signature'];
     const secret = process.env.STRIPE_WEBHOOK_SECRET;
     const requestId = req.id || crypto.randomUUID();

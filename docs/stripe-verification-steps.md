@@ -25,7 +25,7 @@ brew install stripe/stripe-cli/stripe
 stripe login
 
 # Forward webhooks to local endpoint
-stripe listen --forward-to localhost:3000/webhooks/stripe
+stripe listen --forward-to localhost:3000/api/stripe/webhook
 ```
 
 **Expected Output:**
@@ -163,7 +163,7 @@ echo $STRIPE_PRICE_RESUME_EXPERT
 **Cause:** Webhook endpoint not accessible or signature mismatch.
 
 **Solution:**
-1. Verify Stripe CLI is running: `stripe listen --forward-to localhost:3000/webhooks/stripe`
+1. Verify Stripe CLI is running: `stripe listen --forward-to localhost:3000/api/stripe/webhook`
 2. Check `STRIPE_WEBHOOK_SECRET` matches CLI output
 3. Verify application is listening on port 3000
 

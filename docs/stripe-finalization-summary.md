@@ -1,8 +1,8 @@
 # Stripe Integration Finalization Summary
 
 **Date:** October 24, 2025  
-**Status:** ✅ Complete  
-**Webhook Path:** `/webhooks/stripe` (confirmed)
+**Status:** Complete  
+**Webhook Path:** `/api/stripe/webhook` (confirmed)
 
 ---
 
@@ -48,7 +48,7 @@
 
 ### Endpoint Details
 
-- **Path:** `/webhooks/stripe` (NOT under `/api`)
+- **Path:** `/api/stripe/webhook` (NOT under `/api`)
 - **Mount:** Before body parsers and auth guards
 - **Raw Body:** `express.raw({ type: 'application/json' })`
 - **Auth Bypass:** Public endpoint (signature-verified only)
@@ -165,7 +165,7 @@ All webhook events now include:
 
 1. Start Stripe CLI:
    ```bash
-   stripe listen --forward-to localhost:3000/webhooks/stripe
+   stripe listen --forward-to localhost:3000/api/stripe/webhook
    ```
 
 2. Update `.env` with test credentials:
@@ -193,7 +193,7 @@ All webhook events now include:
 
 ### Verification Checklist
 
-- [x] Webhook path: `/webhooks/stripe` (confirmed)
+- [x] Webhook path: `/api/stripe/webhook` (confirmed)
 - [x] Raw body processing enabled
 - [x] Signature verification working
 - [x] Customer creation in both test and live modes
@@ -217,7 +217,7 @@ All webhook events now include:
    ```
 
 2. **Configure production webhook:**
-   - URL: `https://yourdomain.com/webhooks/stripe`
+   - URL: `https://yourdomain.com/api/stripe/webhook`
    - Events: `checkout.session.completed`, `charge.refunded`
    - Copy webhook signing secret to `.env`
 

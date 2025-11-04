@@ -77,15 +77,15 @@ Notes
 
 ### Webhook Configuration
 
-**Webhook Path:** `/webhooks/stripe` (bypasses auth, signature-verified)
+**Webhook Path:** `/api/stripe/webhook` (bypasses auth, signature-verified)
 
 **Local Development:**
-- Use Stripe CLI forwarding: `stripe listen --forward-to localhost:3000/webhooks/stripe`
+- Use Stripe CLI forwarding: `stripe listen --forward-to localhost:3000/api/stripe/webhook`
 - Test events are logged to console with request IDs
 
 **Production:**
 - Configure in Stripe Dashboard → Webhooks → Add endpoint
-- URL: `https://yourdomain.com/webhooks/stripe`
+- URL: `https://yourdomain.com/api/stripe/webhook`
 - Required events: `checkout.session.completed`, `charge.refunded`
 
 ### Go-Live Checklist

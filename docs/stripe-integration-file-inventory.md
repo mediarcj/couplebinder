@@ -223,7 +223,7 @@ async function upsertPaymentFromSession(session, statusOverride) {
 
 **Purpose:** Receives and processes Stripe webhook events for payment status updates.
 
-**Route:** `POST /webhooks/stripe`
+**Route:** `POST /api/stripe/webhook`
 
 **Key Features:**
 - Raw body processing (`express.raw()`)
@@ -579,7 +579,7 @@ FOR SELECT USING (auth.uid() = user_id);
    - Copy price IDs
 
 3. **Set Up Webhook**
-   - Add endpoint: `https://yourdomain.com/webhooks/stripe`
+   - Add endpoint: `https://yourdomain.com/api/stripe/webhook`
    - Select events: `checkout.session.completed`
    - Copy webhook signing secret
 
@@ -655,7 +655,7 @@ echo $STRIPE_PRICE_RESUME_EXPERT
 **Solution:** 
 - Verify webhook URL in Stripe dashboard
 - Check webhook secret matches environment variable
-- Test with Stripe CLI: `stripe listen --forward-to localhost:3000/webhooks/stripe`
+- Test with Stripe CLI: `stripe listen --forward-to localhost:3000/api/stripe/webhook`
 
 #### 3. "null value violates not-null constraint"
 
@@ -760,7 +760,7 @@ Creates a Stripe checkout session.
 
 ---
 
-### POST /webhooks/stripe
+### POST /api/stripe/webhook
 
 Receives Stripe webhook events.
 

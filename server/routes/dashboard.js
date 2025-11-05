@@ -325,4 +325,20 @@ router.get('/checkout/review', async (req, res, next) => {
     }
 });
 
+// ============================================================
+// CONNECT: ADD-NEW-HERE — future template route
+// WHAT:
+//  This example shows how to hook in the new master protected template.
+//  Do not uncomment until you are ready to activate it.
+// ============================================================
+
+// const { buildTemplateProtectedPageModel } = require('../ui_contract/presenters');
+
+// // GET /dashboard/template-protected
+// router.get('/template-protected', async (req, res) => {
+//   const model = await buildTemplateProtectedPageModel(req, res, {
+//     title: 'Template Protected Page'
+//   });
+//   res.render('_template-protected', model);
+// });
 module.exports = router;

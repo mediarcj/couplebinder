@@ -7,6 +7,13 @@
 //   - Keep it free of secrets and inline HTML injections
 // ============================================================
 
+// CONNECT: This file belongs to the master protected page system.
+// CLONE GUIDE:
+// 1. Copy _template-protected.ejs → newpage.ejs
+// 2. Copy _templatePresenter.js → newpagePresenter.js
+// 3. Add route in dashboard.js → /newpage
+// 4. Export new builder in presenters/index.js if needed.
+
 /**
  * WHAT:
  * Runs once the DOM is ready.

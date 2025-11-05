@@ -5,6 +5,15 @@ Purpose: Defines the base structure for any secure page (nonce, CSRF, nav, UI co
 Usage: Copy this file, rename it, and connect to a matching route and presenter.
 ============================================================ -->
 
+<!-- 
+// CONNECT: This file belongs to the master protected page system.
+// CLONE GUIDE:
+// 1. Copy _template-protected.ejs → newpage.ejs
+// 2. Copy _templatePresenter.js → newpagePresenter.js
+// 3. Add route in dashboard.js → /newpage
+// 4. Export new builder in presenters/index.js if needed.
+-->
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -102,7 +111,7 @@ Usage: Copy this file, rename it, and connect to a matching route and presenter.
     ============================================================ -->
 
     <!-- Example (commented):
-    <%- include('partials/modal-template', { id: 'exampleModal', title: 'Example Modal' }) %>
+    <%# include('partials/modal-template', { id: 'exampleModal', title: 'Example Modal' }) %>
     -->
 
     <!-- ============================================================

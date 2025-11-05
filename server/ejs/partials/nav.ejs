@@ -33,6 +33,9 @@ const appName = typeof app_info !== 'undefined' ? app_info?.name : 'Detechify';
               </li>
             <% } else { %>
               <li class="nav-text" aria-live="polite"><span><%= it.label %></span></li>
+              <!-- ADD-NEW-HERE: turn on this nav item when ready
+              <li><a href="/template-protected">Template Example</a></li>
+              -->
             <% } %>
           <% }) %>
         </ul>

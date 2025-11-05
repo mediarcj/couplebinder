@@ -7,6 +7,7 @@ const express = require('express');
 const router = express.Router();
 // requireAuth is applied globally to /dashboard routes in zorvalon.js
 const { buildDashboardPageModel, buildErrorPageModel } = require('../ui_contract/presenters');
+const { buildTemplateProtectedPageModel } = require('../ui_contract/presenters/_templatePresenter');
 const { getReceiptVM } = require('../services/receiptService');
 const { getPricingCatalog, getPriceSummary } = require('../services/pricingCatalog');
 const { archiveReceiptSnapshot } = require('../services/receiptArchive');
@@ -332,13 +333,34 @@ router.get('/checkout/review', async (req, res, next) => {
 //  Do not uncomment until you are ready to activate it.
 // ============================================================
 
-// const { buildTemplateProtectedPageModel } = require('../ui_contract/presenters');
+// GET /template-protected
+router.get('/template-protected', async (req, res) => {
+  console.log('[ROUTE] /dashboard/template-protected - reached handler');
+  try {
+    const model = await buildTemplateProtectedPageModel(req, res, {
+      title: 'Template Protected Page'
+    });
+    console.log('[ROUTE] model built successfully:', Object.keys(model));
 
-// // GET /dashboard/template-protected
-// router.get('/template-protected', async (req, res) => {
-//   const model = await buildTemplateProtectedPageModel(req, res, {
-//     title: 'Template Protected Page'
-//   });
-//   res.render('_template-protected', model);
-// });
+    res.render('_template-protected', model, (err, html) => {
+      if (err) {
+        console.error('[ROUTE] EJS render failed:', err);
+        return res.status(500).render('error', {
+          page: { title: 'EJS Render Error' },
+          error: { message: err.message || 'EJS rendering failed' },
+          app_info: { name: process.env.APP_NAME || 'Detechify' }
+        });
+      }
+      console.log('[ROUTE] render succeeded');
+      res.send(html);
+    });
+  } catch (error) {
+    console.error('[ROUTE] buildTemplateProtectedPageModel failed:', error);
+    res.status(500).render('error', {
+      page: { title: 'Error 500 - Template Protected Page' },
+      error: { message: error.message || 'Unexpected error occurred' },
+      app_info: { name: process.env.APP_NAME || 'Detechify' }
+    });
+  }
+});
 module.exports = router;

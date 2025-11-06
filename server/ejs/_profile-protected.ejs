@@ -1,0 +1,118 @@
+<!-- ============================================================
+File: server/ejs/_profile-protected.ejs
+Description: Profile protected page (example clone of master)
+Purpose: Defines the base structure for any secure page (nonce, CSRF, nav, UI consistency)
+Usage: Copy this file, rename it, and connect to a matching route and presenter.
+============================================================ -->
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <!-- ============================================================
+    SECTION: HEAD / SECURITY META
+    WHAT:
+      This section defines document meta info, viewport, and security tokens.
+    WHY:
+      The CSP nonce and CSRF token keep the page safe against XSS and CSRF.
+    HOW:
+      These values are injected by Express middleware (res.locals.nonce / res.locals.csrfToken).
+    ============================================================ -->
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="<%= ui.csrfToken || '' %>">
+    <meta id="app-config"
+          data-supabase-url="<%= APP_CONFIG.SUPABASE_URL %>"
+          data-supabase-anon-key="<%= APP_CONFIG.SUPABASE_ANON_KEY %>">
+    <title><%= page.title || 'Profile Protected Page' %></title>
+
+    <!-- ============================================================
+    SECTION: STYLES
+    WHAT: Load the global stylesheet (cache-busted by version).
+    ============================================================ -->
+    <link rel="stylesheet"
+          href="/css/style.css?v=<%= page.assetVersion || Date.now() %>">
+
+    <!-- ============================================================
+    SECTION: SCRIPT INJECTIONS
+    WHAT:
+      Load client scripts securely (nonce required).
+    WHY:
+      CSP blocks any script without a nonce.
+    HOW:
+      Add or remove scripts as needed for the page.
+    ============================================================ -->
+    <script src="/js/supabase-client.js" nonce="<%= page.nonce %>"></script>
+    <script src="/js/_profile-protected.js" nonce="<%= page.nonce %>"></script>
+
+    <!-- Example of inline nonce-based script -->
+    <script nonce="<%= page.nonce %>">
+      // WHAT: Basic cross-tab logout sync (shared pattern)
+      try {
+          const bc = new BroadcastChannel('auth');
+          bc.onmessage = (e) => {
+              if (e?.data?.type === 'LOGOUT') window.location.replace('/');
+          };
+      } catch (err) {
+          console.warn('BroadcastChannel unavailable', err);
+      }
+    </script>
+</head>
+
+<body data-auth-hydrate="true">
+    <!-- ============================================================
+    SECTION: NAVIGATION
+    WHAT: Include shared nav partial (server-rendered)
+    HOW:
+      Keep this partial consistent across all protected pages.
+      It can show user info, logout, or dashboard links.
+    ============================================================ -->
+    <%- include('partials/nav', { nav: page.nav, app_info: app_info }) %>
+
+    <!-- ============================================================
+    SECTION: MAIN CONTENT
+    WHAT:
+      Core page content goes here. When creating a new page,
+      duplicate this file and replace this area.
+    ============================================================ -->
+    <main>
+        <div class="container">
+            <h1><%= page.title %></h1>
+
+            <!-- ============================================================
+            CONNECT: ADD-NEW-FORM-OR-SECTION-HERE
+            WHAT:
+              Add your page-specific content below.
+              Forms should always include CSRF token hidden field.
+            SAMPLE:
+              <form id="exampleForm" method="POST">
+                  <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                  <label>Message</label>
+                  <textarea name="message" maxlength="5000"></textarea>
+                  <button type="submit">Send</button>
+              </form>
+            ============================================================ -->
+        </div>
+    </main>
+
+    <!-- ============================================================
+    SECTION: FOOTER / MODALS / EXTENSIONS
+    WHAT:
+      Place optional modals or shared footers here.
+      Keep commented until ready to enable.
+    ============================================================ -->
+
+    <!-- Example (commented):
+    <%# include('partials/modal-template', { id: 'exampleModal', title: 'Example Modal' }) %>
+    -->
+
+    <!-- ============================================================
+    SECTION: TURN-ON NAV ITEM
+    WHAT:
+      To show this page in the main nav, open partials/nav.ejs
+      and find the “ADD-NEW-HERE” comment.
+      Add:
+        <li><a href="/template-protected">Template Example</a></li>
+      Leave commented until ready to publish.
+    ============================================================ -->
+</body>
+</html>

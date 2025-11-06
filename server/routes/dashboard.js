@@ -7,7 +7,8 @@ const express = require('express');
 const router = express.Router();
 // requireAuth is applied globally to /dashboard routes in zorvalon.js
 const { buildDashboardPageModel, buildErrorPageModel } = require('../ui_contract/presenters');
-const { buildTemplateProtectedPageModel } = require('../ui_contract/presenters/_templatePresenter');
+// const { buildTemplateProtectedPageModel } = require('../ui_contract/presenters/_templatePresenter');
+const { buildProfileProtectedPageModel } = require('../ui_contract/presenters/_profilePresenter');
 const { getReceiptVM } = require('../services/receiptService');
 const { getPricingCatalog, getPriceSummary } = require('../services/pricingCatalog');
 const { archiveReceiptSnapshot } = require('../services/receiptArchive');
@@ -334,15 +335,59 @@ router.get('/checkout/review', async (req, res, next) => {
 // ============================================================
 
 // GET /template-protected
-router.get('/template-protected', async (req, res) => {
-  console.log('[ROUTE] /dashboard/template-protected - reached handler');
+// router.get('/template-protected', async (req, res) => {
+//   console.log('[ROUTE] /dashboard/template-protected - reached handler');
+//   try {
+//     const model = await buildTemplateProtectedPageModel(req, res, {
+//       title: 'Template Protected Page'
+//     });
+//     console.log('[ROUTE] model built successfully:', Object.keys(model));
+
+//     res.render('_template-protected', model, (err, html) => {
+//       if (err) {
+//         console.error('[ROUTE] EJS render failed:', err);
+//         return res.status(500).render('error', {
+//           page: { title: 'EJS Render Error' },
+//           error: { message: err.message || 'EJS rendering failed' },
+//           app_info: { name: process.env.APP_NAME || 'Detechify' }
+//         });
+//       }
+//       console.log('[ROUTE] render succeeded');
+//       res.send(html);
+//     });
+//   } catch (error) {
+//     console.error('[ROUTE] buildTemplateProtectedPageModel failed:', error);
+//     res.status(500).render('error', {
+//       page: { title: 'Error 500 - Template Protected Page' },
+//       error: { message: error.message || 'Unexpected error occurred' },
+//       app_info: { name: process.env.APP_NAME || 'Detechify' }
+//     });
+//   }
+// });
+
+// ------------------------------------------------------------
+// ROUTE: /dashboard/profile-protected
+// ------------------------------------------------------------
+router.get('/profile-protected', async (req, res, next) => {
   try {
-    const model = await buildTemplateProtectedPageModel(req, res, {
-      title: 'Template Protected Page'
+    const model = await buildProfileProtectedPageModel(req, res, {
+      title: 'Profile Protected Page',
+    });
+    res.render('_profile-protected', model);
+  } catch (err) {
+    console.error('[ROUTE] /dashboard/profile-protected failed', err);
+    next(err);
+  }
+});
+router.get('/profile-protected', async (req, res) => {
+  console.log('[ROUTE] /dashboard/profile-protected - reached handler');
+  try {
+    const model = await buildProfileProtectedPageModel(req, res, {
+      title: 'Profile Protected Page'
     });
     console.log('[ROUTE] model built successfully:', Object.keys(model));
 
-    res.render('_template-protected', model, (err, html) => {
+    res.render('_profile-protected', model, (err, html) => {
       if (err) {
         console.error('[ROUTE] EJS render failed:', err);
         return res.status(500).render('error', {
@@ -355,9 +400,9 @@ router.get('/template-protected', async (req, res) => {
       res.send(html);
     });
   } catch (error) {
-    console.error('[ROUTE] buildTemplateProtectedPageModel failed:', error);
+    console.error('[ROUTE] buildProfileProtectedPageModel failed:', error);
     res.status(500).render('error', {
-      page: { title: 'Error 500 - Template Protected Page' },
+      page: { title: 'Error 500 - Profile Protected Page' },
       error: { message: error.message || 'Unexpected error occurred' },
       app_info: { name: process.env.APP_NAME || 'Detechify' }
     });

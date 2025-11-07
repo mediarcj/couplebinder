@@ -17,111 +17,170 @@ Usage: Copy this file, rename it, and connect to a matching route and presenter.
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <!-- ============================================================
-    SECTION: HEAD / SECURITY META
-    WHAT:
-      This section defines document meta info, viewport, and security tokens.
-    WHY:
-      The CSP nonce and CSRF token keep the page safe against XSS and CSRF.
-    HOW:
-      These values are injected by Express middleware (res.locals.nonce / res.locals.csrfToken).
-    ============================================================ -->
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="csrf-token" content="<%= ui.csrfToken || '' %>">
-    <meta id="app-config"
-          data-supabase-url="<%= APP_CONFIG.SUPABASE_URL %>"
-          data-supabase-anon-key="<%= APP_CONFIG.SUPABASE_ANON_KEY %>">
-    <title><%= page.title || 'Untitled Page' %></title>
+  <!-- ============================================================
+  SECTION: HEAD / SECURITY META
+  ============================================================ -->
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="csrf-token" content="<%= ui.csrfToken || '' %>">
+  <meta id="app-config"
+        data-supabase-url="<%= APP_CONFIG.SUPABASE_URL %>"
+        data-supabase-anon-key="<%= APP_CONFIG.SUPABASE_ANON_KEY %>">
+  <title><%= page.title || 'Untitled Page' %></title>
+  <link rel="stylesheet" href="/css/style.css?v=<%= page.assetVersion || Date.now() %>">
 
-    <!-- ============================================================
-    SECTION: STYLES
-    WHAT: Load the global stylesheet (cache-busted by version).
-    ============================================================ -->
-    <link rel="stylesheet"
-          href="/css/style.css?v=<%= page.assetVersion || Date.now() %>">
+  <!-- Scripts (nonce-based) -->
+  <script src="/js/supabase-client.js" nonce="<%= page.nonce %>"></script>
+  <script src="/js/_template-protected.js" nonce="<%= page.nonce %>"></script>
 
-    <!-- ============================================================
-    SECTION: SCRIPT INJECTIONS
-    WHAT:
-      Load client scripts securely (nonce required).
-    WHY:
-      CSP blocks any script without a nonce.
-    HOW:
-      Add or remove scripts as needed for the page.
-    ============================================================ -->
-    <script src="/js/supabase-client.js" nonce="<%= page.nonce %>"></script>
-    <script src="/js/_template-protected.js" nonce="<%= page.nonce %>"></script>
-
-    <!-- Example of inline nonce-based script -->
-    <script nonce="<%= page.nonce %>">
-      // WHAT: Basic cross-tab logout sync (shared pattern)
-      try {
-          const bc = new BroadcastChannel('auth');
-          bc.onmessage = (e) => {
-              if (e?.data?.type === 'LOGOUT') window.location.replace('/');
-          };
-      } catch (err) {
-          console.warn('BroadcastChannel unavailable', err);
-      }
-    </script>
+  <!-- Inline nonce-safe boot -->
+  <script nonce="<%= page.nonce %>">
+    try {
+      const bc = new BroadcastChannel('auth');
+      bc.onmessage = (e) => {
+        if (e?.data?.type === 'LOGOUT') window.location.replace('/');
+      };
+    } catch (err) {
+      console.warn('BroadcastChannel unavailable', err);
+    }
+  </script>
 </head>
 
 <body data-auth-hydrate="true">
-    <!-- ============================================================
-    SECTION: NAVIGATION
-    WHAT: Include shared nav partial (server-rendered)
-    HOW:
-      Keep this partial consistent across all protected pages.
-      It can show user info, logout, or dashboard links.
-    ============================================================ -->
-    <%- include('partials/nav', { nav: page.nav, app_info: app_info }) %>
+  <%- include('partials/nav', { nav: page.nav, app_info: app_info }) %>
 
-    <!-- ============================================================
-    SECTION: MAIN CONTENT
-    WHAT:
-      Core page content goes here. When creating a new page,
-      duplicate this file and replace this area.
-    ============================================================ -->
-    <main>
-        <div class="container">
-            <h1><%= page.title %></h1>
+  <main>
+    <div class="container">
+      <!-- ============================================================
+      SECTION: HERO HEADER
+      ============================================================ -->
+      <div class="hero">
+        <h1><%= page.title %></h1>
+        <p class="subtitle">Optional short tagline or explanation goes here.</p>
+      </div>
 
-            <!-- ============================================================
-            CONNECT: ADD-NEW-FORM-OR-SECTION-HERE
-            WHAT:
-              Add your page-specific content below.
-              Forms should always include CSRF token hidden field.
-            SAMPLE:
-              <form id="exampleForm" method="POST">
-                  <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-                  <label>Message</label>
-                  <textarea name="message" maxlength="5000"></textarea>
-                  <button type="submit">Send</button>
-              </form>
-            ============================================================ -->
+      <!-- ============================================================
+      SECTION: LAYOUT OPTIONS
+      ============================================================ -->
+
+      <!-- ============================================================
+      OPTION A: TWO-BOX GRID (layout sample)
+      ============================================================ -->
+      <!--
+      <div class="action-grid">
+        <div class="action-card">
+          <h3>Left Panel</h3>
+          <p>
+            Lorem ipsum dolor sit amet, consectetur adipiscing elit. Vestibulum
+            ultricies, dolor id lobortis accumsan, nibh arcu efficitur dui, vitae
+            dictum nisl justo et nibh.
+          </p>
+          <ul class="summary-items mt-half">
+            <li class="summary-row"><span class="summary-label">Point</span><span class="summary-value">A</span></li>
+            <li class="summary-row"><span class="summary-label">Point</span><span class="summary-value">B</span></li>
+            <li class="summary-row summary-row--total"><span class="summary-label">Focus</span><span class="summary-value">Key</span></li>
+          </ul>
+          <div class="checkout-footer">
+            <a class="btn btn-secondary btn-block" href="#">Explore</a>
+          </div>
         </div>
-    </main>
 
-    <!-- ============================================================
-    SECTION: FOOTER / MODALS / EXTENSIONS
-    WHAT:
-      Place optional modals or shared footers here.
-      Keep commented until ready to enable.
-    ============================================================ -->
+        <div class="action-card">
+          <h3>Right Panel</h3>
+          <p>
+            Integer at mi nec magna ullamcorper lacinia. Proin et sapien a nibh
+            tristique porta. Duis tincidunt ante non hendrerit tempor.
+          </p>
+          <ul class="summary-items mt-half">
+            <li class="summary-row"><span class="summary-label">Item</span><span class="summary-value">One</span></li>
+            <li class="summary-row"><span class="summary-label">Item</span><span class="summary-value">Two</span></li>
+            <li class="summary-row summary-row--total"><span class="summary-label">Status</span><span class="summary-value">Ready</span></li>
+          </ul>
+          <div class="checkout-footer">
+            <a class="btn btn-primary btn-block" href="#">Continue</a>
+          </div>
+        </div>
+      </div>
+      -->
 
-    <!-- Example (commented):
-    <%# include('partials/modal-template', { id: 'exampleModal', title: 'Example Modal' }) %>
-    -->
+      <!-- ============================================================
+      OPTION B: SINGLE CENTER BOX (for forms, dashboards, etc.)
+      ============================================================ -->
+      <div class="dashboard-actions">
+        <h2>Section Title</h2>
+        <p class="subtitle text-center text-muted">
+          Use this block for focused content, announcements, or a simple overview.
+        </p>
 
-    <!-- ============================================================
-    SECTION: TURN-ON NAV ITEM
-    WHAT:
-      To show this page in the main nav, open partials/nav.ejs
-      and find the “ADD-NEW-HERE” comment.
-      Add:
-        <li><a href="/template-protected">Template Example</a></li>
-      Leave commented until ready to publish.
-    ============================================================ -->
+        <div class="text-submission">
+          <h3>Overview</h3>
+          <p>
+            Lorem ipsum dolor sit amet, consectetur adipiscing elit. Integer nec
+            urna nec erat posuere faucibus. Aliquam erat volutpat. Suspendisse
+            potenti. Curabitur pharetra, velit sit amet gravida vulputate, turpis
+            massa elementum sapien, sed placerat lectus lacus ac libero.
+          </p>
+          <p>
+            Vivamus dictum, ipsum at convallis luctus, arcu dui efficitur enim,
+            at accumsan augue risus non nunc. Praesent dapibus, eros in congue
+            bibendum, elit mauris malesuada risus, id rhoncus lorem lorem non
+            diam. Sed id libero sit amet massa lobortis interdum.
+          </p>
+
+          <div class="features">
+            <div class="feature-grid">
+              <div class="feature-card">
+                <h3>Clarity</h3>
+                <p>
+                  Nunc placerat, tellus at cursus fringilla, sem mi fermentum
+                  felis, quis aliquet est ligula sed arcu. Sed non magna ut justo
+                  feugiat luctus.
+                </p>
+              </div>
+              <div class="feature-card">
+                <h3>Consistency</h3>
+                <p>
+                  Quisque sodales, lorem id euismod dictum, risus turpis
+                  pellentesque mi, non venenatis nunc nisl nec ipsum. Donec sed
+                  arcu at arcu convallis tempus.
+                </p>
+              </div>
+              <div class="feature-card">
+                <h3>Speed</h3>
+                <p>
+                  Fusce porta, neque non tincidunt convallis, arcu urna cursus
+                  lectus, eget gravida turpis arcu quis magna. Integer semper
+                  faucibus dui.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <p class="text-muted mt-one">
+            Curabitur congue, enim non malesuada sagittis, nibh risus consectetur
+            nibh, a mattis sem magna id eros. Aenean a libero at velit maximus
+            condimentum.
+          </p>
+        </div>
+      </div>
+
+      <!-- ============================================================
+      SECTION: PLACEHOLDER (default empty if no content)
+      ============================================================ -->
+      <!-- 
+      <h1><%= page.title %></h1>
+      <p class="text-muted">Replace this area with your page content.</p>
+      -->
+    </div>
+  </main>
+
+  <!-- ============================================================
+  SECTION: FOOTER / MODALS
+  ============================================================ -->
+  <footer>
+    <div class="container">
+      <p>&copy; 2024 <%= app_info?.name || 'Detechify' %>. To de-techify anything.</p>
+    </div>
+  </footer>
 </body>
 </html>

@@ -4,7 +4,6 @@
 // Purpose: Builds the page model (page, user, ui_instructions, ui, app_info)
 // Purpose: Orchestrates helpers to build full page model
 // ============================================================
-
 // CONNECT: This file belongs to the master protected page system.
 // CLONE GUIDE:
 // 1. Copy _template-protected.ejs → newpage.ejs

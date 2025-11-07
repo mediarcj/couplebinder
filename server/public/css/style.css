@@ -1187,6 +1187,15 @@ nav ul li a.active {
     color: #6c757d !important;
 }
 
+/* === Utility spacing classes (CSP-safe replacement for inline styles) === */
+.mt-half {
+  margin-top: 0.5rem !important;
+}
+
+.mt-one {
+  margin-top: 1rem !important;
+}
+
 /* Modal/Toast helpers (CSP friendly, no inline styles) */
 .cancel-btn {
     margin-left: 8px;

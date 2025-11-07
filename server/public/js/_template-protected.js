@@ -7,7 +7,7 @@
 //   - Keep it free of secrets and inline HTML injections
 // ============================================================
 
-// CONNECT: This file belongs to the master protected page system.
+// CONNECT!: This file belongs to the master protected page system.
 // CLONE GUIDE:
 // 1. Copy _template-protected.ejs → newpage.ejs
 // 2. Copy _templatePresenter.js → newpagePresenter.js
@@ -23,7 +23,6 @@
  * Uses 'DOMContentLoaded' to wait until the page is parsed.
  */
 document.addEventListener('DOMContentLoaded', () => {
-  console.log('[TemplateProtected] Page initialized');
 
   // ============================================================
   // SECTION: BASIC UTILITIES

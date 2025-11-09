@@ -338,4 +338,14 @@ router.get('/checkout/review', async (req, res, next) => {
 //   console.log('[ROUTE] /dashboard/template-protected - reached handler');
 // });
 
+// ------------------------------------------------------------
+// ROUTE: /dashboard/newpage
+// Purpose:
+// ------------------------------------------------------------
+
+// ------------------------------------------------------------
+// ROUTE: /dashboard/media
+// Purpose:
+// ------------------------------------------------------------
+
 module.exports = router;

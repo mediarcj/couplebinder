@@ -184,15 +184,18 @@ function buildHomePageModel(req, res) {
       nav: navManager.compose(req, res)  // Centralized navigation
     },
     user: {
-      isAuthenticated: req.user?.id ? true : false || false,
+      isAuthenticated: Boolean(req.user && req.user.id),
       email: req.user?.email || null,
       id: req.user?.id || null
     },
     // UI instructions from backend - frontend must follow these rules
     ui_instructions: {
-      allowed_actions: req.user?.id ? true : false ? 
-        ['submit_text', 'view_dashboard', 'view_submissions', 'logout'] : 
-        ['submit_text', 'login', 'view_public_content'],
+      allowed_actions: (() => {
+        const isAuthed = Boolean(req.user && req.user.id);
+        return isAuthed
+          ? ['view_dashboard', 'logout']
+          : ['login', 'view_public_content'];
+      })(),
       
       input_limits: {
         text_min: 20,
@@ -204,23 +207,17 @@ function buildHomePageModel(req, res) {
       },
       
       feature_flags: {
-        text_submission: true,
-        dashboard_access: req.user?.id ? true : false || false,
+        text_submission: false, // Removed from homepage
+        dashboard_access: Boolean(req.user && req.user.id),
         admin_panel: false, // Will be set based on user role
         advanced_mode: false
       },
       
       form_schema: {
-        text: {
-          required: true,
-          min: 20,
-          max: 5000,
-          placeholder: 'Enter your text here (minimum 20 characters, maximum 5000 characters)...'
-        }
+        // No text submission form on homepage anymore
       },
       
       cooldowns: {
-        text_submission: 0, // No cooldown for text submission
         login_attempts: 0   // Will be managed by rate limiting
       },
       
@@ -232,9 +229,9 @@ function buildHomePageModel(req, res) {
       
       display_rules: {
         show_login_modal: req.query.login === 'true',
-        show_user_menu: req.user?.id ? true : false || false,
-        show_submission_form: true,
-        show_public_submissions: true
+        show_user_menu: Boolean(req.user && req.user.id),
+        show_submission_form: false, // Removed from homepage
+        show_public_submissions: false // Removed from homepage
       }
     },
     // Legacy fields for backward compatibility

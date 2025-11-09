@@ -1,7 +1,7 @@
 <!-- File: server/ejs/index.ejs
      Description: Main homepage template for application
-     Purpose: Displays the main page with text submission form and recent submissions
-     Notes: Uses EJS templating with server-provided configuration values -->
+     Purpose: Displays the main page with application overview and feature information
+     Notes: Uses EJS templating with server-provided configuration values, follows Master Protected Template Constitution -->
 
 <!DOCTYPE html>
 <html lang="en">
@@ -57,75 +57,70 @@
         }
     </script>
 </head>
-<body>
+<body data-auth-hydrate="true">
     <%- include('partials/nav', { nav: page.nav, app_info: app_info }) %>
 
     <main>
         <div class="container">
+            <!-- ============================================================
+            SECTION: HERO HEADER
+            ============================================================ -->
             <div class="hero">
                 <h1>Welcome to <%= app_info?.name || 'Application' %></h1>
                 <p class="subtitle"><%= page.description %></p>
-                <div class="cta-buttons">
-                    <a href="/api/hello" class="btn btn-primary">API Test</a>
-                </div>
             </div>
 
-            <div class="text-submission">
-                <h2>Text Submission Demo</h2>
-                <p>Enter text below to test backend validation:</p>
-                <form id="textForm">
-                    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-                    <div class="form-group">
-                        <textarea 
-                            id="textInput" 
-                            name="text" 
-                            placeholder="Enter your text here (minimum <%= features.textLimits.min %> characters, maximum <%= features.textLimits.max %> characters)..."
-                            rows="4"
-                            maxlength="<%= features.textLimits.max %>"
-                        ></textarea>
-                        <div class="char-count">
-                            <span id="charCount">0</span> / <%= features.textLimits.max %> characters
+            <!-- ============================================================
+            SECTION: MAIN CONTENT (Master Template Style)
+            ============================================================ -->
+            <div class="dashboard-actions">
+                <h2>About <%= app_info?.name || 'Application' %></h2>
+                <p class="subtitle text-center text-muted">
+                    A modern, secure web application built with defense-in-depth security.
+                </p>
+
+                <div class="text-submission">
+                    <h3>Overview</h3>
+                    <p>
+                        <%= app_info?.name || 'Application' %> is built with security-first principles,
+                        featuring comprehensive middleware protection, nonce-based CSP, CSRF protection,
+                        and server-authoritative validation.
+                    </p>
+                    <p>
+                        All user actions are validated server-side. The frontend follows backend instructions
+                        to ensure consistent security and user experience.
+                    </p>
+
+                    <div class="features">
+                        <div class="feature-grid">
+                            <div class="feature-card">
+                                <h3>Secure by Design</h3>
+                                <p>
+                                    Built with strong security middleware including Helmet, CORS, rate limiting,
+                                    and progressive lockouts. Defense-in-depth architecture protects at every layer.
+                                </p>
+                            </div>
+                            <div class="feature-card">
+                                <h3>Clean Code</h3>
+                                <p>
+                                    Built with simple and reliable code following the Detechify Building Laws.
+                                    Plain English documentation and modular architecture.
+                                </p>
+                            </div>
+                            <div class="feature-card">
+                                <h3>EJS Frontend</h3>
+                                <p>
+                                    Starting with EJS templates, ready for future Next.js migration when needed.
+                                    Presenter pattern separates business logic from templates.
+                                </p>
+                            </div>
                         </div>
                     </div>
-                    <button type="submit" class="btn btn-secondary">Submit Text</button>
-                </form>
-                <div id="result" class="result-message"></div>
-                <div class="submission-actions">
-                    <button id="viewSubmissionsBtn" class="btn btn-secondary">View Recent Submissions</button>
-                </div>
-                <div id="submissionsList" class="submissions-list"></div>
-            </div>
 
-            <div class="features">
-                <div class="feature-grid">
-                    <div class="feature-card">
-                        <h3>Secure by Design</h3>
-                        <p>Built with strong security middleware including Helmet, CORS, and rate limiting.</p>
-                    </div>
-                    <div class="feature-card">
-                        <h3>Clean Code</h3>
-                        <p>Built with simple and reliable code.</p>
-                    </div>
-                    <div class="feature-card">
-                        <h3>EJS Frontend</h3>
-                        <p>Starting with EJS templates, ready for future Next.js migration when needed.</p>
-                    </div>
-                </div>
-            </div>
-
-            <div class="status">
-                <h2>Server Status</h2>
-                <div class="status-item">
-                    <span class="status-label">API Endpoint:</span>
-                    <span class="status-value">Active</span>
-                </div>
-                <div class="status-item">
-                    <span class="status-label">Security Middleware:</span>
-                    <span class="status-value">Enabled</span>
-                </div>
-                <div class="status-item">
-                    <span class="status-label">Rate Limiting:</span>
-                    <span class="status-value">100 req/15min</span>
+                    <p class="text-muted mt-one">
+                        All pages follow the Master Protected Template Constitution for consistent security
+                        and user experience across the application.
+                    </p>
                 </div>
             </div>
         </div>
@@ -140,11 +135,6 @@
     <!-- Centralized Modals (login, signup, notifications) -->
     <%- include('partials/modals') %>
 
-    <!-- Pass feature config to client-side JavaScript via data attributes -->
-    <div id="feature-config" 
-         class="hidden"
-         data-text-min-length="<%= features.textLimits.min %>" 
-         data-text-max-length="<%= features.textLimits.max %>"></div>
     <script src="/js/main.js?v=<%= page.assetVersion || Date.now() %>" nonce="<%= page.nonce %>"></script>
 </body>
 </html>

@@ -151,6 +151,7 @@ function compose(req, res) {
           req.user?.display_name ||
           req.user?.full_name ||
           req.user?.name ||
+          req.user?.given_name ||
           req.user?.email ||
           'User'
         );
@@ -158,7 +159,7 @@ function compose(req, res) {
 
       let label = labelSrc;
       if (item.id === 'welcome' && isAuthed) {
-        label = labelSrc.replace('{{name}}', pickDisplayName(req, res));
+        label = labelSrc.replace('{{given_name}}', pickDisplayName(req, res));
         if (!label) label = `Welcome, ${pickDisplayName(req, res)}!`;
       }
 
@@ -179,29 +180,66 @@ function compose(req, res) {
   const seen = new Set();
   let items = mapped.filter(it => (it && it.id && !seen.has(it.id)) ? (seen.add(it.id), true) : false);
 
-  // Reorder for authenticated pages per spec
+  // ---------- SIMPLE NAV CONFIGURATION SYSTEM ----------
+  // One explicit configuration per page. No regex tricks, no auto-filtering.
+  // You just define the buttons you want visible for each page here.
+
   if (isAuthed) {
-    const isHome = path === '/' || /^\/\?$/.test(path);
-    const isDash = /^\/dashboard(?:$|\/)/.test(path) && !/\/billing|\/profile-edit/.test(path);
-    const isBilling = /^\/dashboard\/billing\/?$/.test(path);
-    const isProfile = /^\/dashboard\/profile-edit\/?$/.test(path);
+    // Determine which page we're on by simple path includes
+    const path = req.originalUrl || req.url || '/';
 
-    const orderHome = ['dashboard', 'billing', 'profile', 'welcome', 'logout'];
-    const orderDashboard = ['home', 'billing', 'profile', 'welcome', 'logout'];
-    const orderProfile = ['home', 'billing', 'dashboard', 'welcome', 'logout'];
-    const orderBilling = ['home', 'dashboard', 'profile', 'welcome', 'logout'];
+    // Explicit button sets per page
+    // === START_NAVSETS_BLOCK ===
+    const navSets = {
+        home: [
+          'dashboard',
+          'billing', // NEW_BUTTON_MARKER
+          'profile',
+          'welcome',
+          'logout'
+        ],
+        dashboard: [
+          'home',
+          'billing', // NEW_BUTTON_MARKER
+          'profile',
+          'welcome',
+          'logout'
+        ],
+        billing: [
+          'home',
+          'dashboard', // NEW_BUTTON_MARKER
+          'profile',
+          'welcome',
+          'logout'
+        ],
+        profile: [
+          'home',
+          'dashboard',
+          'billing', // NEW_BUTTON_MARKER
+          'welcome',
+          'logout'
+        ]
+    }; // NEW_ARRAY_MARKER
+    // === END_NAVSETS_BLOCK ===
 
-    const desired = isHome ? orderHome
-                  : isDash ? orderDashboard
-                  : isProfile ? orderProfile
-                  : isBilling ? orderBilling
-                  : orderHome;
+    // Figure out which key to use (direct mapping)
+    let current = 'home';
+    if (path.startsWith('/dashboard/profile-edit')) current = 'profile';
+    else if (path.startsWith('/dashboard/billing')) current = 'billing';
+    else if (path.startsWith('/dashboard')) current = 'dashboard';
+    else if (path === '/' || path === '/?') current = 'home';
 
+    // Select nav set explicitly
+    const desired = navSets[current] || navSets.home;
+
+    // Build lookup table for final ordered nav items
     const byId = {};
     items.forEach(it => { byId[it.id] = it; });
+
+    // Finalize order (hide any undefined)
     items = desired.map(id => byId[id]).filter(Boolean);
   }
-
+  
   // Provide CSRF token for POST forms (from middleware)
   const csrfToken = res?.locals?.csrfToken || '';
 

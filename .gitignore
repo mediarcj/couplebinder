@@ -52,3 +52,4 @@ jar.txt
 .env
 docker-compose.local.yml
 certs/docs/audit/
+docs/audit/docs/audit/

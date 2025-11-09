@@ -51,4 +51,4 @@ jar.txt
 .cursor_proofs/
 .env
 docker-compose.local.yml
-certs/
+certs/docs/audit/

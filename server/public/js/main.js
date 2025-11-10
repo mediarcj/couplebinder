@@ -277,28 +277,31 @@ document.addEventListener('DOMContentLoaded', function() {
     // Global button loader removed - causes misleading UI and encourages double-clicks
     // Each form now handles its own loading state locally
     
-    // Add fade-in animation for feature cards
+    // Add fade-in animation for feature cards (CSP-safe: uses CSS classes instead of inline styles)
     const featureCards = document.querySelectorAll('.feature-card');
-    const observerOptions = {
-        threshold: 0.1,
-        rootMargin: '0px 0px -50px 0px'
-    };
-    
-    const observer = new IntersectionObserver(function(entries) {
-        entries.forEach(entry => {
-            if (entry.isIntersecting) {
-                entry.target.style.opacity = '1';
-                entry.target.style.transform = 'translateY(0)';
-            }
+    if (featureCards.length > 0) {
+        const observerOptions = {
+            threshold: 0.1,
+            rootMargin: '0px 0px -50px 0px'
+        };
+        
+        const observer = new IntersectionObserver(function(entries) {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    entry.target.classList.add('visible');
+                    // Remove transform after animation completes to allow hover effect
+                    setTimeout(() => {
+                        entry.target.classList.add('animation-complete');
+                    }, 600); // Match transition duration
+                }
+            });
+        }, observerOptions);
+        
+        featureCards.forEach(card => {
+            card.classList.add('animate-in');
+            observer.observe(card);
         });
-    }, observerOptions);
-    
-    featureCards.forEach(card => {
-        card.style.opacity = '0';
-        card.style.transform = 'translateY(20px)';
-        card.style.transition = 'opacity 0.6s ease, transform 0.6s ease';
-        observer.observe(card);
-    });
+    }
     
     // Text submission form functionality
     initializeTextForm();
@@ -334,16 +337,17 @@ function initializeTextForm() {
         const count = this.value.length;
         charCount.textContent = count;
         
-        // Visual feedback for limits
+        // Visual feedback for limits (CSP-safe: uses CSS classes instead of inline styles)
         const minLength = window.appConfig ? window.appConfig.textMinLength : 20;
         const maxLength = window.appConfig ? window.appConfig.textMaxLength : 5000;
         
-        if (count < minLength) {
-            charCount.style.color = '#e74c3c';
-        } else if (count > maxLength) {
-            charCount.style.color = '#e74c3c';
+        // Remove existing validation classes
+        charCount.classList.remove('error', 'valid');
+        
+        if (count < minLength || count > maxLength) {
+            charCount.classList.add('error');
         } else {
-            charCount.style.color = '#27ae60';
+            charCount.classList.add('valid');
         }
     });
     

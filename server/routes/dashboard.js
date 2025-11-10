@@ -28,7 +28,9 @@ router.get('/', async (req, res) => {
         // Add nonce to page.nonce for EJS template (matches index.ejs pattern)
         pageModel.page.nonce = res.locals.nonce;
         
-        // Add Supabase credentials for client initialization (dashboard needs them for logout)
+        // Ensure ui object exists and has required fields (canonical block)
+        pageModel.ui = pageModel.ui || {};
+        pageModel.ui.csrfToken = res.locals.csrfToken || '';
         pageModel.ui.supabaseUrl = process.env.SUPABASE_URL;
         pageModel.ui.supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
         
@@ -58,7 +60,9 @@ router.get('/profile-edit', async (req, res) => {
         // Add nonce to page.nonce for EJS template
         pageModel.page.nonce = res.locals.nonce;
         
-        // Add Supabase credentials for client initialization
+        // Ensure ui object exists and has required fields
+        pageModel.ui = pageModel.ui || {};
+        pageModel.ui.csrfToken = res.locals.csrfToken || '';
         pageModel.ui.supabaseUrl = process.env.SUPABASE_URL;
         pageModel.ui.supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
         
@@ -138,6 +142,8 @@ router.get('/purchase/confirmation', async (req, res, next) => {
         pageModel.page.nonce = res.locals.nonce;
         pageModel.page.assetVersion = Date.now();
         pageModel.page.title = `Purchase Confirmation - ${process.env.APP_NAME || 'Application'}`;
+        pageModel.ui = pageModel.ui || {};
+        pageModel.ui.csrfToken = res.locals.csrfToken || '';
         pageModel.ui.supabaseUrl = process.env.SUPABASE_URL;
         pageModel.ui.supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
 
@@ -290,6 +296,8 @@ router.get('/checkout/review', async (req, res, next) => {
         pageModel.page.title = 'Review Purchase - ' + (process.env.APP_NAME || 'Application');
         pageModel.page.nonce = res.locals.nonce;
         pageModel.page.assetVersion = Date.now();
+        pageModel.ui = pageModel.ui || {};
+        pageModel.ui.csrfToken = res.locals.csrfToken || '';
         pageModel.ui.supabaseUrl = process.env.SUPABASE_URL;
         pageModel.ui.supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
 

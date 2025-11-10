@@ -45,6 +45,11 @@ router.get('/', async (req, res) => {
 
   const pageModel = await buildDashboardPageModel(req, res);
   pageModel.page.nonce = res.locals.nonce;
+  pageModel.page.title = `Billing – ${process.env.APP_NAME || 'Detechify'}`;
+  pageModel.ui = pageModel.ui || {};
+  pageModel.ui.csrfToken = res.locals.csrfToken || '';
+  pageModel.ui.supabaseUrl = process.env.SUPABASE_URL || '';
+  pageModel.ui.supabaseAnonKey = process.env.SUPABASE_ANON_KEY || '';
 
   // Fetch pricing catalog from Stripe
   let pricing = [];

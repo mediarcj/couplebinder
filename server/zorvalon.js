@@ -593,9 +593,9 @@ mountStatic('/js', 'js', '7d');
 app.use(express.static(PUBLIC_DIR_PRIMARY, { etag: true, maxAge: '7d', fallthrough: true }));
 app.use(express.static(PUBLIC_DIR_LEGACY, { etag: true, maxAge: '7d', fallthrough: true }));
 
-// Serve the SVG favicon
-app.get('/favicon.svg', (req, res) => {
-  res.sendFile(path.resolve(__dirname, '/images/favicon.svg'));
+// Route for favicon
+app.get('/favicon.ico', (req, res) => {
+  res.sendFile(path.resolve(__dirname, '../public/images/favicon.ico'));
 });
 
 // If a static request got this far, it wasn't found by either root.

@@ -593,6 +593,11 @@ mountStatic('/js', 'js', '7d');
 app.use(express.static(PUBLIC_DIR_PRIMARY, { etag: true, maxAge: '7d', fallthrough: true }));
 app.use(express.static(PUBLIC_DIR_LEGACY, { etag: true, maxAge: '7d', fallthrough: true }));
 
+// Serve the SVG favicon
+app.get('/favicon.ico', (req, res) => {
+  res.redirect(302, '/images/favicon.svg');
+});
+
 // If a static request got this far, it wasn't found by either root.
 // Return an empty 404 so the browser doesn't treat an HTML body as CSS/JS.
 app.get(
@@ -600,7 +605,6 @@ app.get(
     '/images/*',
     '/css/*',
     '/js/*',
-    '/favicon.ico',
     '/robots.txt',
   ],
   (req, res, next) => {

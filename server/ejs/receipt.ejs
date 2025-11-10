@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <meta name="csrf-token" content="<%= page.csrfToken || '' %>">
+  <meta name="csrf-token" content="<%= ui.csrfToken || '' %>">
   <title><%= page.title %></title>
   <link rel="stylesheet" href="/css/style.css?v=<%= page.assetVersion || Date.now() %>">
 </head>
@@ -110,6 +110,8 @@
       <p>&copy; 2024 <%= app_info?.name || 'Application' %>. <%= app_info?.description || 'A modern web application' %>.</p>
     </div>
   </footer>
+
+  <%- include('partials/modals') %>
 
   <script nonce="<%= page.nonce %>">
     (function () {

@@ -594,8 +594,8 @@ app.use(express.static(PUBLIC_DIR_PRIMARY, { etag: true, maxAge: '7d', fallthrou
 app.use(express.static(PUBLIC_DIR_LEGACY, { etag: true, maxAge: '7d', fallthrough: true }));
 
 // Serve the SVG favicon
-app.get('/favicon.ico', (req, res) => {
-  res.redirect(302, '/images/favicon.svg');
+app.get('/favicon.svg', (req, res) => {
+  res.sendFile(path.resolve(__dirname, '/images/favicon.svg'));
 });
 
 // If a static request got this far, it wasn't found by either root.

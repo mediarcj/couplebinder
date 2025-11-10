@@ -4,6 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="<%= ui.csrfToken || '' %>">
+    <% if (typeof APP_CONFIG !== 'undefined') { %>
+      <meta id="app-config"
+        data-supabase-url="<%= APP_CONFIG.SUPABASE_URL %>"
+        data-supabase-anon-key="<%= APP_CONFIG.SUPABASE_ANON_KEY %>">
+    <% } %>
     <meta http-equiv="Cache-Control" content="no-store" />
     <meta http-equiv="Pragma" content="no-cache" />
     <meta name="robots" content="noindex" />
@@ -85,6 +90,9 @@
 
     <%- include('partials/modals') %>
 
+    <!-- load the centralized modal behavior -->
+    <script src="/js/modalManager.js" nonce="<%= (page && page.nonce) || '' %>"></script>
+
     <!-- Local styles (CSP-safe with nonce); no inline style attributes -->
     <style nonce="<%= (page && page.nonce) || '' %>">
         .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 0.875rem; }
@@ -124,35 +132,45 @@
             }
         }
         
-        official.addEventListener('click', async function(e) {
-            e.preventDefault();
-            official.disabled = true;
-            
-            try {
-                if (pre) {
-                    openUrl(pre);
-                    return;
+        if (official) {
+            official.addEventListener('click', async function(e) {
+                e.preventDefault();
+                official.disabled = true;
+                
+                try {
+                    if (pre) {
+                        openUrl(pre);
+                        return;
+                    }
+                    
+                    const res = await fetch(`/api/pay/receipt?session_id=${encodeURIComponent(sess)}`, {
+                        credentials: 'same-origin',
+                        headers: { 'Accept': 'application/json' }
+                    });
+                    
+                    if (!res.ok) throw new Error('failed');
+                    
+                    const data = await res.json();
+                    if (data && data.receipt_url) {
+                        openUrl(data.receipt_url);
+                    } else {
+                        throw new Error('No receipt URL');
+                    }
+                } catch (err) {
+                    // use centralized modal if available
+                    if (window.modalManager && typeof window.modalManager.showNotification === 'function') {
+                        window.modalManager.showNotification(
+                            'Receipt unavailable',
+                            'Could not open the official receipt right now. Please try again later.'
+                        );
+                    } else {
+                        alert('Could not open the official receipt right now. Please try again later.');
+                    }
+                } finally {
+                    official.disabled = false;
                 }
-                
-                const res = await fetch(`/api/pay/receipt?session_id=${encodeURIComponent(sess)}`, {
-                    credentials: 'same-origin',
-                    headers: { 'Accept': 'application/json' }
-                });
-                
-                if (!res.ok) throw new Error('failed');
-                
-                const data = await res.json();
-                if (data && data.receipt_url) {
-                    openUrl(data.receipt_url);
-                } else {
-                    throw new Error('No receipt URL');
-                }
-            } catch (err) {
-                alert('Could not open the official receipt right now. Please try again later.');
-            } finally {
-                official.disabled = false;
-            }
-        });
+            });
+        }
 
         // Amount formatting (handles zero-decimal currencies)
         const amountMinor = <%- JSON.stringify(((confirmation && confirmation.amountMinor) != null ? confirmation.amountMinor : null)) %>;

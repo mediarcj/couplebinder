@@ -203,7 +203,7 @@ function buildHomePageModel(req, res) {
         title_max: 140,
         email_max: 40,
         password_min: 8,
-        password_max: 50
+        password_max: 40
       },
       
       feature_flags: {

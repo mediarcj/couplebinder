@@ -493,7 +493,12 @@ const requireAuthByDefault = require('./middleware/requireAuthByDefault');
 const publicGlobs = [
   '/', '/login',
   '/css/**', '/js/**', '/images/**', '/favicon.ico',
-  '/api/auth/set-cookie', '/api/auth/clear-cookie'
+
+  // auth public endpoints
+  '/api/auth/set-cookie',
+  '/api/auth/clear-cookie',
+  '/api/auth/signup',   // ← ADD THIS
+  '/auth/signup'        // ← add too, since we rate-limit this path later
   // Note: /health/** is now gated behind healthShield middleware (not in public globs)
   // Note: All /dashboard paths are protected by requireAuth middleware,
   // but the default-deny guard needs to allow authenticated access

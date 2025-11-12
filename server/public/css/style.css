@@ -1307,15 +1307,16 @@ nav ul li a.active {
     justify-content: center;
 }
 
-/* Sign Up Modal Styles */
+/* Sign Up Modal Styles (narrower + scroll) */
 .signup-modal {
-    max-width: 600px;
-    max-height: 90vh;
+    max-width: 420px;     /* was 600px */
+    max-height: 80vh;     /* was 90vh */
     overflow-y: auto;
+    margin: 6% auto;      /* keep it a bit higher */
 }
 
 .signup-modal .modal-body {
-    padding: 0;
+    padding: 1.25rem;
 }
 
 .signup-modal .form-group {
@@ -1392,14 +1393,14 @@ nav ul li a.active {
     display: block;
 }
 
+/* make footer sticky to bottom of modal content */
 .signup-modal .form-actions {
-    display: flex;
-    gap: 1rem;
-    justify-content: flex-end;
-    margin-top: 2rem;
-    padding: 1.5rem;
-    background-color: #f8f9fa;
-    border-radius: 0 0 10px 10px;
+    position: sticky;
+    bottom: 0;
+    background: #f8f9fa;
+    border-top: 1px solid #e1e8ed;
+    padding: 1rem 0 0;
+    margin-top: 1.25rem;
 }
 
 .signup-modal .form-actions .btn {

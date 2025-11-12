@@ -1082,30 +1082,31 @@ function initializeSignupModal() {
     const closeBtn = modal?.querySelector('.close');
     const cancelBtn = document.getElementById('signupCancelBtn');
     const signupForm = document.getElementById('signupForm');
-    
-    if (!signupLink || !modal) {
-        return; // Modal elements not found
+
+    // If modal itself is missing, then yeah, nothing to do
+    if (!modal) {
+        return;
     }
-    
-    // Show modal when sign up link is clicked
-    signupLink.addEventListener('click', function(e) {
-        e.preventDefault();
-        handleSignup();
-    });
-    
-    // Close modal when close button is clicked
+
+    // Hook up “open modal” if there's a link in the nav
+    if (signupLink) {
+        signupLink.addEventListener('click', function (e) {
+            e.preventDefault();
+            handleSignup();
+        });
+    }
+
+    // Close button
     if (closeBtn) {
         closeBtn.addEventListener('click', () => modalManager.closeSignup());
     }
-    
-    // Close modal when cancel button is clicked
+
+    // Cancel button (your template doesn't have id="signupCancelBtn" right now, so this will just no-op)
     if (cancelBtn) {
         cancelBtn.addEventListener('click', () => modalManager.closeSignup());
     }
-    
-    // Modal can only be closed by Cancel button or OK button (no click outside)
-    
-    // Handle form submission
+
+    // always attach to the form if it exists
     if (signupForm) {
         signupForm.addEventListener('submit', handleSignupSubmit);
         logger.info('Signup form event listener attached');
@@ -1172,8 +1173,8 @@ function validateSignupPassword(password) {
     if (password.length < 8) {
         return 'Password must be at least 8 characters long';
     }
-    if (password.length > 50) {
-        return 'Password must be 50 characters or less';
+    if (password.length > 40) {
+        return 'Password must be 40 characters or less';
     }
     // No character restrictions - allow any characters for better security
     return '';
@@ -1207,8 +1208,8 @@ function validateDisplayName(displayName, fieldName) {
     if (!displayName) {
         return `${fieldName} is required`;
     }
-    if (displayName.length > 100) {
-        return `${fieldName} must be 100 characters or less`;
+    if (displayName.length > 40) {
+        return `${fieldName} must be 40 characters or less`;
     }
     if (displayName.length < 2) {
         return `${fieldName} must be at least 2 characters long`;
@@ -1277,141 +1278,170 @@ function _validateAccountPrivacy(privacy) {
 }
 
 async function handleSignupSubmit(e) {
-    e.preventDefault();
-    
-    // Get form data
-    const formData = new FormData(e.target);
-    const data = Object.fromEntries(formData.entries());
-    
-    // Clear previous errors
-    modalManager.clearSignupForm();
-    
-    let hasErrors = false;
-    
-    // Validate required fields
-    const displayNameError = validateDisplayName(data.display_name, 'Display name');
-    if (displayNameError) {
-        modalManager.showSignupFieldError('signupDisplayNameError', displayNameError);
-        hasErrors = true;
+  e.preventDefault();
+
+  const formData = new FormData(e.target);
+  let data = Object.fromEntries(formData.entries());
+
+  // hard limits (authoritative on the client)
+  const NAME_MAX = 40;
+  const EMAIL_MAX = 40;
+  const PASS_MAX = 40;
+  const PHONE_MAX = 15;
+
+  // normalize + clamp
+  data.display_name = (data.display_name || '').trim().slice(0, NAME_MAX);
+  data.email = (data.email || '').trim().slice(0, EMAIL_MAX);
+  data.password = (data.password || '').slice(0, PASS_MAX);
+  data.confirm_password = (data.confirm_password || '').slice(0, PASS_MAX);
+  data.phone = (data.phone || '').replace(/\D+/g, '').slice(0, PHONE_MAX);
+
+  // push clamped values back to the form so the user sees them
+  const f = e.target;
+  if (f.signupDisplayName) f.signupDisplayName.value = data.display_name;
+  if (f.signupEmail) f.signupEmail.value = data.email;
+  if (f.signupPassword) f.signupPassword.value = data.password;
+  if (f.signupConfirmPassword) f.signupConfirmPassword.value = data.confirm_password;
+  if (f.signupPhone) f.signupPhone.value = data.phone;
+
+  // 1) only clear previous ERRORS, not the whole form
+  if (window.modalManager && typeof modalManager.clearSignupErrors === 'function') {
+    modalManager.clearSignupErrors();
+  }
+
+  let hasErrors = false;
+
+  // ===== client-side validations =====
+  const displayNameError = validateDisplayName(data.display_name, 'Display name');
+  if (displayNameError) {
+    modalManager.showSignupFieldError('signupDisplayNameError', displayNameError);
+    hasErrors = true;
+  }
+
+  const emailError = validateSignupEmail(data.email);
+  if (emailError) {
+    modalManager.showSignupFieldError('signupEmailError', emailError);
+    hasErrors = true;
+  }
+
+  const passwordError = validateSignupPassword(data.password);
+  if (passwordError) {
+    modalManager.showSignupFieldError('signupPasswordError', passwordError);
+    hasErrors = true;
+  }
+
+  const confirmPasswordError = validateConfirmPassword(data.password, data.confirm_password);
+  if (confirmPasswordError) {
+    modalManager.showSignupFieldError('confirmPasswordError', confirmPasswordError);
+    hasErrors = true;
+  }
+
+  const phoneError = validatePhone(data.phone);
+  if (phoneError) {
+    modalManager.showSignupFieldError('signupPhoneError', phoneError);
+    hasErrors = true;
+  }
+
+  if (hasErrors) {
+    // keep the form filled so the user can fix it
+    return;
+  }
+
+  try {
+    const client = window.SB || window.supabase;
+    if (!client) {
+      modalManager.showSignupError('Authentication system not initialized. Please refresh the page.');
+      return;
     }
-    
-    const emailError = validateSignupEmail(data.email);
-    if (emailError) {
-        modalManager.showSignupFieldError('signupEmailError', emailError);
-        hasErrors = true;
+
+    // split name like before
+    const fullName = (data.display_name || '').trim();
+    const nameParts = fullName.split(' ').filter(Boolean);
+
+    let given_name = '';
+    let family_name = null;
+
+    if (nameParts.length === 1) {
+      given_name = nameParts[0];
+    } else if (nameParts.length === 2) {
+      given_name = nameParts[0];
+      family_name = nameParts[1];
+    } else if (nameParts.length >= 3) {
+      given_name = nameParts[0];
+      family_name = nameParts.slice(1).join(' ');
     }
-    
-    const passwordError = validateSignupPassword(data.password);
-    if (passwordError) {
-        modalManager.showSignupFieldError('signupPasswordError', passwordError);
-        hasErrors = true;
-    }
-    
-    const confirmPasswordError = validateConfirmPassword(data.password, data.confirm_password);
-    if (confirmPasswordError) {
-        modalManager.showSignupFieldError('confirmPasswordError', confirmPasswordError);
-        hasErrors = true;
-    }
-    
-    const phoneError = validatePhone(data.phone);
-    if (phoneError) {
-        modalManager.showSignupFieldError('signupPhoneError', phoneError);
-        hasErrors = true;
-    }
-    
-    if (hasErrors) {
-        return;
-    }
-    
-    // Use Supabase Auth for sign up (shared client)
-    try {
-        const client = window.SB || window.supabase;
-        if (!client) {
-            modalManager.showSignupError('Authentication system not initialized. Please refresh the page.');
-            return;
+
+    const { data: authData, error: authError } = await client.auth.signUp({
+      email: data.email,
+      password: data.password,
+      options: {
+        data: {
+          display_name: data.display_name,
+          phone: data.phone || null,
+          given_name,
+          family_name
         }
-        
-        logger.info('Attempting sign up with Supabase');
-        
-        // Parse display name into first and last name with smart logic
-        const fullName = (data.display_name || '').trim();
-        const nameParts = fullName.split(' ').filter(part => part.length > 0);
-        
-        let given_name = '';
-        let family_name = null;
-        
-        if (nameParts.length === 1) {
-            // Single name: "John" -> given_name: "John", family_name: null
-            given_name = nameParts[0];
-            family_name = null;
-        } else if (nameParts.length === 2) {
-            // Two names: "John Doe" -> given_name: "John", family_name: "Doe"
-            given_name = nameParts[0];
-            family_name = nameParts[1];
-        } else if (nameParts.length >= 3) {
-            // Three or more names: "John Michael Doe" -> given_name: "John", family_name: "Michael Doe"
-            // This handles middle names by treating them as part of the family name
-            given_name = nameParts[0];
-            family_name = nameParts.slice(1).join(' ');
-        }
-        
-        // Create user with Supabase Auth
-        const { data: authData, error: authError } = await client.auth.signUp({
-            email: data.email,
-            password: data.password,
-            options: {
-                data: {
-                    display_name: data.display_name,
-                    phone: data.phone || null,
-                    given_name: given_name,
-                    family_name: family_name
-                }
-            }
-        });
-        
-        if (authError) {
-            logger.error('Sign up failed:', authError.message);
-            modalManager.showSignupError(`Sign up failed: ${authError.message}`);
-            return;
-        }
-        
-        if (authData.user) {
-            logger.info('Sign up successful');
-            
-            // Sign out the user immediately after sign-up to prevent auto-login
-            await client.auth.signOut();
-            logger.info('User signed out after sign-up to prevent auto-login');
-            
-            // Show success state with login prompt
-            modalManager.switchToSignupSuccess(
-                'Account Created Successfully!',
-                `Welcome ${data.display_name}! Your account has been created. Please login to continue.`,
-                () => {
-                    modalManager.closeSignup();
-                    // Open login modal after closing signup modal
-                    setTimeout(() => {
-                        handleLogin();
-                    }, 300);
-                }
-            );
-        } else {
-            modalManager.showSignupError('Sign up failed: No user data returned');
-        }
-        
-    } catch (error) {
-        logger.error('Sign up error:', error);
-        let errorMessage = 'Network error. Please try again.';
-        
-        if (error.name === 'TypeError' && error.message.includes('fetch')) {
-            errorMessage = 'Unable to connect to authentication server. Please check your internet connection.';
-        } else if (error.name === 'SyntaxError') {
-            errorMessage = 'Server response error. Please try again.';
-        } else if (error.message) {
-            errorMessage = error.message;
-        }
-        
-        modalManager.showSignupError(errorMessage);
+      }
+    });
+
+    // ===== handle Supabase errors nicely =====
+    if (authError) {
+      // Supabase often returns this exact string when signups are disabled
+      if (
+        authError.message &&
+        authError.message.toLowerCase().includes('signups not allowed')
+      ) {
+        modalManager.showSignupError(
+          'Sign up is currently disabled. Please try again later or contact support.'
+        );
+      } else if (authError.status === 422) {
+        // extra guard for the 422 your console showed
+        modalManager.showSignupError(
+          'Sign up is currently disabled for this project.'
+        );
+      } else {
+        // default / other errors (email taken, etc.)
+        modalManager.showSignupError('Sign up failed: ' + authError.message);
+      }
+      // DO NOT clear the form here
+      return;
     }
+
+    // ===== success path =====
+    if (authData && authData.user) {
+      // optional: sign out to prevent auto-login
+      await client.auth.signOut();
+
+      // now it's safe to clear everything
+      modalManager.clearSignupForm();
+
+      modalManager.switchToSignupSuccess(
+        'Account Created Successfully!',
+        `Welcome ${data.display_name}! Your account has been created. Please login to continue.`,
+        () => {
+          modalManager.closeSignup();
+          setTimeout(() => {
+            handleLogin();
+          }, 300);
+        }
+      );
+    } else {
+      // very rare: no error but also no user
+      modalManager.showSignupError('Sign up failed: please try again.');
+    }
+  } catch (error) {
+    logger.error('Sign up error:', error);
+    let errorMessage = 'Network error. Please try again.';
+
+    if (error.name === 'TypeError' && error.message.includes('fetch')) {
+      errorMessage = 'Unable to connect to authentication server. Please check your internet connection.';
+    } else if (error.message) {
+      errorMessage = error.message;
+    }
+
+    modalManager.showSignupError(errorMessage);
+    // keep the form filled
+  }
 }
 
 /**

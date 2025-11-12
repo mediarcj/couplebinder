@@ -143,23 +143,29 @@ const modalManager = {
   resetSignupModal() {
     const formState = document.getElementById('signupFormState');
     const successState = document.getElementById('signupSuccessState');
-    
+
     if (formState) formState.classList.remove('hidden');
     if (successState) successState.classList.add('hidden');
-    
-    this.clearSignupForm();
+
+    this.clearSignupForm(); // full reset when the modal is re-opened
   },
-  
+
   clearSignupForm() {
     const form = document.getElementById('signupForm');
     if (form) form.reset();
-    
-    const errors = [
-      'displayNameError', 'signupEmailError', 'signupPhoneError',
-      'signupPasswordError', 'confirmPasswordError', 'signupGeneralError'
+    this.clearSignupErrors();
+  },
+
+  clearSignupErrors() {
+    const errorIds = [
+      'signupDisplayNameError',
+      'signupEmailError',
+      'signupPhoneError',
+      'signupPasswordError',
+      'confirmPasswordError',
+      'signupGeneralError'
     ];
-    
-    errors.forEach(id => {
+    errorIds.forEach(id => {
       const el = document.getElementById(id);
       if (el) {
         el.textContent = '';

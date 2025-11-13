@@ -61,8 +61,6 @@ router.post('/', submissionIdempotency, async (req, res) => {
       });
     }
     
-    // Insert into database with RLS protection
-    // Note: RLS policies ensure users can only insert their own data
     const { data, error } = await supabaseAdmin
       .from('submissions')
       .insert({

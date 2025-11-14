@@ -45,7 +45,11 @@ router.get('/', async (req, res) => {
 
   const pageModel = await buildDashboardPageModel(req, res);
   pageModel.page.nonce = res.locals.nonce;
-  pageModel.page.title = `Billing – ${process.env.APP_NAME || 'Detechify'}`;
+  const effectiveAppName =
+    (pageModel && pageModel.app_info && pageModel.app_info.name) ||
+    process.env.APP_NAME ||
+    'Application';
+  pageModel.page.title = `Billing – ${effectiveAppName}`;
   pageModel.ui = pageModel.ui || {};
   pageModel.ui.csrfToken = res.locals.csrfToken || '';
   pageModel.ui.supabaseUrl = process.env.SUPABASE_URL || '';

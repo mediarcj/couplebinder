@@ -181,6 +181,16 @@ const config = {
     token: process.env.OPS_HEALTH_TOKEN || process.env.HEALTH_TOKEN,
     // Mirror union logic too so old readers behave
     allowlist: csv(process.env.OPS_HEALTH_IPS || process.env.HEALTH_ALLOWLIST) || ['127.0.0.1', '::1']
+  },
+
+  // Branding and domain configuration (env-driven for project reuse)
+  branding: {
+    appName: process.env.APP_NAME || 'Application',
+    appDescription: process.env.APP_DESCRIPTION || 'A secure modern web application',
+    baseDomain: process.env.BASE_DOMAIN || '',
+    appSubdomain: process.env.APP_SUBDOMAIN || 'app',
+    legacyCookieDomain: process.env.LEGACY_COOKIE_DOMAIN || '',
+    xClientInfo: process.env.X_CLIENT_INFO || 'app-server/1.0.0'
   }
 };
 

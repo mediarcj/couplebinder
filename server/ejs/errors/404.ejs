@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Page not found - <%= app_info?.name || 'Detechify' %></title>
+  <title>Page not found - <%= app_info?.name || 'Application' %></title>
   <link rel="stylesheet" href="/css/style.css?v=<%= page.assetVersion || Date.now() %>">
 </head>
 <body>
@@ -21,7 +21,7 @@
   </main>
   
   <footer class="container" style="text-align: center; padding: 2rem 0;">
-    <p>&copy; <%= new Date().getFullYear() %> <%= app_info?.name || 'Detechify' %></p>
+    <p>&copy; <%= new Date().getFullYear() %> <%= app_info?.name || 'Application' %></p>
   </footer>
 </body>
 </html>

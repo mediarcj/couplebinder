@@ -11,7 +11,7 @@ User-agent: *
 Disallow:
 
 # If/when you have a sitemap, uncomment the next line:
-# Sitemap: https://detechify.com/sitemap.xml
+# Sitemap: set PUBLIC_ORIGIN and serve /sitemap.xml (e.g., https://example.com/sitemap.xml)
 
 # Block specific crawlers
 User-agent: SerpstatBot

@@ -57,7 +57,7 @@ const baseOptions = {
     autoRefreshToken: false, // node server  no auto-refresh
   },
   global: {
-    headers: { 'X-Client-Info': 'detechify-server/1.0.0' },
+    headers: { 'X-Client-Info': (process.env.X_CLIENT_INFO || 'app-server/1.0.0') },
   },
 };
 

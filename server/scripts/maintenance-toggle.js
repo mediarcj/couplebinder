@@ -210,7 +210,7 @@ async function toggleMaintenance(client, action, ttl) {
 async function main() {
   const { action, ttl } = parseArgs();
   
-  console.log('Detechify Maintenance Mode Toggle');
+  console.log('Maintenance Mode Toggle');
   console.log('================================');
   console.log('');
   

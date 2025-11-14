@@ -46,7 +46,7 @@ setIfEmpty('TEXT_MAX_LENGTH', 5000);
 // Core server defaults
 setIfEmpty('HOST', '127.0.0.1');
 setIfEmpty('PORT', '3000');
-setIfEmpty('APP_NAME', 'Detechify (Test)');
+setIfEmpty('APP_NAME', 'Test App');
 setIfEmpty('PUBLIC_ORIGIN', 'http://localhost:3000');
 setIfEmpty('CSRF_SECRET', 'test_csrf_secret');
 

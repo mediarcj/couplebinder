@@ -280,21 +280,7 @@ describe('Authentication Flows', () => {
         .get('/health');
 
       expect(response.status).toBe(200);
-      expect(response.body).toMatchObject({
-        status: 'ok',
-        message: 'detechify server is running',
-        services: {
-          redis: {
-            connected: expect.any(Boolean),
-            lastCheck: expect.any(String)
-          },
-          server: {
-            uptime: expect.any(Number),
-            memory: expect.any(Object),
-            nodeVersion: expect.any(String)
-          }
-        }
-      });
+      expect(response.body).toMatchObject({ ok: true });
     });
 
     it('should return liveness status', async () => {

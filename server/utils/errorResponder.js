@@ -115,7 +115,7 @@ function respondError(req, res, { status = 500, message, code, extra = {} }) {
         nonce: res.locals.nonce || '',
         assetVersion: res.locals.assetVersion || Date.now()
       },
-      app_info: { name: process.env.APP_NAME || 'Detechify' },
+      app_info: { name: process.env.APP_NAME || 'Application' },
       ui: res.locals.ui || {},
       requestId,
     });

@@ -12,7 +12,7 @@
  *
  * HOW:
  * 1. Check explicit CORS_ORIGINS env var
- * 2. Allow detechify.com and all subdomains
+ * 2. Allow BASE_DOMAIN (if set) and all subdomains, or fallback to detechify.com (legacy)
  * 3. Allow localhost in development
  * 4. Deny all others with error
  */
@@ -26,7 +26,18 @@ const allowedList = (process.env.CORS_ORIGINS || '')
   .map(s => s.trim())
   .filter(Boolean);
 
-// Regex to match any subdomain of detechify.com
+// Helper to escape regex special characters
+function escapeRegex(s) {
+  return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+// Build regex from BASE_DOMAIN if set, otherwise null
+const BASE_DOMAIN = process.env.BASE_DOMAIN;
+const allowBaseDomain = BASE_DOMAIN
+  ? new RegExp(`^https?:\\/\\/([a-z0-9-]+\\.)?${escapeRegex(BASE_DOMAIN)}(?::\\d+)?$`, 'i')
+  : null;
+
+// Regex to match any subdomain of detechify.com (legacy fallback)
 const allowDetechify = /^https?:\/\/([a-z0-9-]+\.)?detechify\.com(?::\d+)?$/i;
 
 const corsOptions = {
@@ -39,8 +50,8 @@ const corsOptions = {
       return callback(null, true);
     }
     
-    // Check if origin matches *.detechify.com pattern
-    if (allowDetechify.test(origin)) {
+    // Allow *.BASE_DOMAIN if set; otherwise fallback to *.detechify.com (legacy)
+    if ((allowBaseDomain && allowBaseDomain.test(origin)) || allowDetechify.test(origin)) {
       return callback(null, true);
     }
     

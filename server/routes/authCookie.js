@@ -39,7 +39,7 @@ try {
 // =======================
 const COOKIE_NAME = process.env.AUTH_COOKIE_NAME || 'sb_session';
 const COOKIE_TTL_MS = 1000 * 60 * 60 * 24 * 7; // 7 days
-const LEGACY_DOMAIN = '.detechify.com'; // used only to clear old cookies
+const LEGACY_DOMAIN = process.env.LEGACY_COOKIE_DOMAIN || '.detechify.com'; // used only to clear old cookies
 
 // Watermark storage (seconds precision, per-user)
 const LAST_LOGOUT_KEY = (uid) => `auth:last_logout_at:${uid}`;

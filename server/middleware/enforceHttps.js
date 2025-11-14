@@ -45,7 +45,7 @@ function parseCfVisitor(header) {
  * 3. Never use req.socket.localAddress or req.ip
  * 
  * @param {Object} req - Express request object
- * @returns {string} - Canonical base URL (e.g., https://detechify.com)
+ * @returns {string} - Canonical base URL (e.g., from PUBLIC_ORIGIN env)
  */
 function buildCanonicalBase(req) {
   // Prefer explicitly-set PUBLIC_ORIGIN (best practice, no guessing)
@@ -121,7 +121,7 @@ function enforceHttps(req, res, next) {
   }
 
   // Build canonical redirect URL (never uses internal IPs)
-  const base = buildCanonicalBase(req);   // e.g., https://detechify.com
+  const base = buildCanonicalBase(req);   // e.g., from PUBLIC_ORIGIN env
   const loc = base + req.originalUrl;     // preserve path and query
 
   // Use 308 to preserve method/body for POSTs if they ever hit HTTP

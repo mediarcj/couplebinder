@@ -228,16 +228,60 @@ async function performLogout() {
 
     const csrf = getCsrfToken();
 
-    // 1) Clear HttpOnly cookie
+    // 1) Clear HttpOnly cookie with CSRF token
     try {
       await fetch('/auth/clear-cookie', {
         method: 'POST',
         credentials: 'include',
-        headers: csrf ? { 'X-CSRF-Token': csrf } : {}
+        headers: {
+          'Accept': 'application/json',
+          ...(csrf ? { 'X-CSRF-Token': csrf } : {})
+        }
       });
       logoutLogger.info('Server cookie cleared');
     } catch {
       logoutLogger.warn('Server cookie clear failed; proceeding');
+    }
+
+    // 1b) Verify server sees us signed-out (with retry for race conditions)
+    try {
+      let status = await fetch('/api/auth/status', { 
+        credentials: 'include',
+        headers: { 'Accept': 'application/json' }
+      }).then(r => r.json()).catch(() => null);
+      
+      if (status?.authenticated) {
+        // One more attempt (race with proxy/cache)
+        logoutLogger.info('Status still authenticated, retrying clear...');
+        await new Promise(r => setTimeout(r, 150));
+        await fetch('/auth/clear-cookie', {
+          method: 'POST',
+          credentials: 'include',
+          headers: {
+            'Accept': 'application/json',
+            ...(csrf ? { 'X-CSRF-Token': csrf } : {})
+          }
+        });
+        status = await fetch('/api/auth/status', { 
+          credentials: 'include',
+          headers: { 'Accept': 'application/json' }
+        }).then(r => r.json()).catch(() => null);
+        
+        if (status?.authenticated) {
+          // Fallback: try clear-all variant
+          logoutLogger.warn('Status still authenticated after retry, trying clear-all...');
+          await fetch('/auth/clear-cookie?all=1', {
+            method: 'POST',
+            credentials: 'include',
+            headers: {
+              'Accept': 'application/json',
+              ...(csrf ? { 'X-CSRF-Token': csrf } : {})
+            }
+          });
+        }
+      }
+    } catch (e) {
+      logoutLogger.warn('Status verification failed (non-fatal)', { error: e?.message || String(e) });
     }
 
     // 2) Supabase signOut (use the shared singleton)
@@ -397,20 +441,65 @@ function attachLogoutHandler(selector = '#logoutBtn') {
       console.warn(CSL, 'signOut error', e);
     }
 
-    // Clear server cookies
+    // Clear server cookies with CSRF token
     const csrf = getCsrf(triggerEl);
     try {
-      await fetch(LOGOUT_PATH, {
+      const res = await fetch(LOGOUT_PATH, {
         method: 'POST',
         headers: Object.assign(
-          { 'Accept': 'application/json' },
-          csrf ? { 'CSRF-Token': csrf } : {}
+          { 'Accept': 'application/json', 'X-Requested-With': 'fetch' },
+          csrf ? { 'X-CSRF-Token': csrf } : {}
         ),
         credentials: 'include'
       });
-      console.debug(CSL, 'server cookie cleared');
+      if (!res.ok && res.status !== 204) {
+        console.warn(CSL, 'clear-cookie failed', res.status);
+      } else {
+        console.debug(CSL, 'server cookie cleared');
+      }
     } catch (e) {
       console.warn(CSL, 'clear-cookie fetch error', e);
+    }
+
+    // Verify server sees us signed-out (with retry for race conditions)
+    try {
+      let status = await fetch('/api/auth/status', { 
+        credentials: 'include',
+        headers: { 'Accept': 'application/json' }
+      }).then(r => r.json()).catch(() => null);
+      
+      if (status?.authenticated) {
+        // One more attempt (race with proxy/cache)
+        console.debug(CSL, 'status still authenticated, retrying clear...');
+        await new Promise(r => setTimeout(r, 150));
+        await fetch(LOGOUT_PATH, {
+          method: 'POST',
+          credentials: 'include',
+          headers: Object.assign(
+            { 'Accept': 'application/json', 'X-Requested-With': 'fetch' },
+            csrf ? { 'X-CSRF-Token': csrf } : {}
+          )
+        });
+        status = await fetch('/api/auth/status', { 
+          credentials: 'include',
+          headers: { 'Accept': 'application/json' }
+        }).then(r => r.json()).catch(() => null);
+        
+        if (status?.authenticated) {
+          // Fallback: try clear-all variant
+          console.warn(CSL, 'status still authenticated after retry, trying clear-all...');
+          await fetch(`${LOGOUT_PATH}?all=1`, {
+            method: 'POST',
+            credentials: 'include',
+            headers: Object.assign(
+              { 'Accept': 'application/json', 'X-Requested-With': 'fetch' },
+              csrf ? { 'X-CSRF-Token': csrf } : {}
+            )
+          });
+        }
+      }
+    } catch (e) {
+      console.warn(CSL, 'status verification failed (non-fatal)', e);
     }
 
     // Set flash flag for modal on next page load

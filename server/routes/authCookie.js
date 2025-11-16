@@ -130,7 +130,7 @@ function sentinelBlocks(req, tokenIatSec) {
  *    deny background re-hydration while sentinel active, but allow fresh tokens.
  */
 router.post('/set-cookie', async (req, res) => {
-  res.set('Vary', 'Cookie, Authorization, Accept, Origin');
+  res.vary('Origin'); res.vary('Cookie'); res.vary('Authorization'); res.vary('Accept');
   res.set('Cache-Control', 'no-store');
   // For debugging in DevTools; safe meta only
   try {

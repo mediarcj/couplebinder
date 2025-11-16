@@ -18,6 +18,7 @@
  */
 
 const crypto = require('crypto');
+const { config } = require('../config');
 const { supabaseAdmin } = require('../utils/supabaseClient');
 const logger = require('../utils/logger');
 
@@ -87,7 +88,7 @@ async function archiveReceiptSnapshot({ userId, receipt }) {
   try {
     const snapshot = toSnapshot(receipt);
     const digest = sha256(JSON.stringify(snapshot));
-    const table = process.env.FEATURE_ARCHIVE_RECEIPTS_TABLE || 'payments';
+    const table = config.features.archiveReceiptsTable || 'payments';
 
     if (table === 'payments') {
       // Update existing payments row with receipt snapshot

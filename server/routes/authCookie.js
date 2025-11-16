@@ -130,7 +130,8 @@ function sentinelBlocks(req, tokenIatSec) {
  *    deny background re-hydration while sentinel active, but allow fresh tokens.
  */
 router.post('/set-cookie', async (req, res) => {
-  res.set('Vary', 'Cookie, Authorization, Accept');
+  res.set('Vary', 'Cookie, Authorization, Accept, Origin');
+  res.set('Cache-Control', 'no-store');
   // For debugging in DevTools; safe meta only
   try {
     const sentinelActive = (req.cookies && String(req.cookies[SENTINEL_COOKIE_NAME] || '') === '1');
@@ -203,6 +204,19 @@ router.post('/set-cookie', async (req, res) => {
     // Use centralized cookie helper (ensures consistent attributes)
     setAuthCookie(res, req, token, COOKIE_TTL_MS);
 
+    // Optional: rotate a fresh CSRF token so the new session starts clean
+    try {
+      const name = config.csrf.cookieName;
+      const fresh = require('crypto').randomBytes(32).toString('base64url');
+      const isProd = config.server?.nodeEnv === 'production';
+      res.cookie(name, fresh, {
+        path: '/',
+        sameSite: 'Strict',
+        secure: isProd,
+        httpOnly: false,
+        maxAge: 7 * 24 * 60 * 60 * 1000
+      });
+    } catch (_) {}
     // Clean up legacy cookie names to prevent conflicts
     // BUT: Don't clear the cookie we just set (COOKIE_NAME)
     const legacyNames = ['sb-access-token', 'sb_session'].filter(n => n !== COOKIE_NAME);
@@ -232,6 +246,7 @@ router.post('/set-cookie', async (req, res) => {
  */
 router.post('/clear-cookie', async (req, res) => {
   try {
+    res.set('Cache-Control', 'no-store');
     // Try to capture uid from the existing auth cookie BEFORE clearing it
     let uidFromCookie = null;
     try {

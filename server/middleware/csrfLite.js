@@ -20,13 +20,14 @@
 
 const crypto = require('crypto');
 const logger = require('../utils/logger');
+const { config } = require('../config');
 
 // ============================================================
-// Configuration (override with env for flexibility)
+// Configuration (from centralized config)
 // ============================================================
-const CSRF_COOKIE_NAME = process.env.CSRF_COOKIE_NAME || 'csrf_token';
-const CSRF_HEADER_NAME = (process.env.CSRF_HEADER_NAME || 'x-csrf-token').toLowerCase();
-const AUTH_COOKIE_DOMAIN = process.env.AUTH_COOKIE_DOMAIN || undefined; // leave undefined if you ever switch to __Host- cookies
+const CSRF_COOKIE_NAME = config.csrf.cookieName;
+const CSRF_HEADER_NAME = config.csrf.headerName;
+const AUTH_COOKIE_DOMAIN = config.auth.cookieDomain; // leave undefined if you ever switch to __Host- cookies
 
 // ============================================================
 // Helper Functions
@@ -90,6 +91,12 @@ function isAuthCookieEndpoint(req) {
   return req.path === '/auth/set-cookie' || req.path === '/auth/clear-cookie';
 }
 
+function isWebhookEndpoint(req) {
+  // Webhook endpoints are CSRF-exempt (they use HMAC verification instead)
+  // Stripe webhook is mounted at /api/stripe/webhook before body parsers and CSRF
+  return req.path === '/api/stripe/webhook' || req.path.startsWith('/api/stripe/webhook');
+}
+
 function wantsJson(req) {
   const acc = req.get('accept') || '';
   const ct  = req.get('content-type') || '';
@@ -101,6 +108,13 @@ function wantsJson(req) {
 // ============================================================
 module.exports = function csrfLite(req, res, next) {
   try {
+    // ============================================================
+    // 0) OPTIONS preflight: always allow (CORS handles it)
+    // ============================================================
+    if (req.method === 'OPTIONS') {
+      return next();
+    }
+    
     // ============================================================
     // 1) Idempotent requests: just ensure the cookie exists
     // ============================================================
@@ -127,16 +141,37 @@ module.exports = function csrfLite(req, res, next) {
     // ============================================================
     // Skip CSRF if:
     //   - Bearer token present (pure API client), or
-    //   - This is an auth-cookie endpoint (set/clear happens after JWT verify)
-    if (hasBearerToken(req) || isAuthCookieEndpoint(req)) {
+    //   - This is an auth-cookie endpoint (set/clear happens after JWT verify), or
+    //   - This is a webhook endpoint (uses HMAC verification instead)
+    if (hasBearerToken(req) || isAuthCookieEndpoint(req) || isWebhookEndpoint(req)) {
       return next();
     }
 
     // ============================================================
-    // 3) If client sent no cookies, likely not a browser + cookie flow
+    // 3) If client sent no cookies, check if this is a public auth endpoint
+    // Public auth endpoints (login/signup) don't need CSRF if no cookies
     // ============================================================
     if (!usesCookies(req)) {
-      return next();
+      // Public auth endpoints are exempt from CSRF when no cookies
+      const isPublicAuth = req.path.startsWith('/api/auth/login') || 
+                          req.path.startsWith('/api/auth/signup') ||
+                          req.path.startsWith('/auth/login') ||
+                          req.path.startsWith('/auth/signup');
+      if (isPublicAuth) {
+        return next();
+      }
+      // For other unsafe methods without cookies, require CSRF token in header/body
+      const headerVal = getProvidedToken(req);
+      if (!headerVal) {
+        logger.warn({
+          event: 'csrf.token_missing_no_cookies',
+          method: req.method,
+          path: req.path,
+          requestId: req.requestId
+        }, 'CSRF token missing (no cookies, but unsafe method)');
+        return res.status(403).json({ ok: false, error: 'Missing or invalid CSRF token' });
+      }
+      // If token provided, continue (will be validated below)
     }
 
     // ============================================================
@@ -146,7 +181,6 @@ module.exports = function csrfLite(req, res, next) {
     const headerVal  = getProvidedToken(req);
 
     if (!cookieVal || !headerVal) {
-      const body = { error: 'csrf_invalid', code: 'missing' };
       logger.warn({
         event: 'csrf.token_missing',
         method: req.method,
@@ -155,28 +189,26 @@ module.exports = function csrfLite(req, res, next) {
         hasHeader: Boolean(headerVal),
         requestId: req.requestId
       }, 'CSRF token missing');
-      return wantsJson(req) ? res.status(403).json(body) : res.status(403).send('CSRF check failed');
+      return res.status(403).json({ ok: false, error: 'Missing or invalid CSRF token' });
     }
 
     if (!timingSafeEqual(cookieVal, headerVal)) {
-      const body = { error: 'csrf_invalid', code: 'mismatch' };
       logger.warn({
         event: 'csrf.token_mismatch',
         method: req.method,
         path: req.path,
         requestId: req.requestId
       }, 'CSRF token mismatch');
-      return wantsJson(req) ? res.status(403).json(body) : res.status(403).send('CSRF check failed');
+      return res.status(403).json({ ok: false, error: 'Missing or invalid CSRF token' });
     }
 
     return next();
   } catch (err) {
-    const body = { error: 'csrf_invalid', code: 'exception' };
     logger.error({
       event: 'csrf.exception',
       error: err.message,
       requestId: req.requestId
     }, 'CSRF validation exception');
-    return wantsJson(req) ? res.status(403).json(body) : res.status(403).send('CSRF check failed');
+    return res.status(403).json({ ok: false, error: 'Missing or invalid CSRF token' });
   }
 };

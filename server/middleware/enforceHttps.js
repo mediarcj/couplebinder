@@ -48,9 +48,10 @@ function parseCfVisitor(header) {
  * @returns {string} - Canonical base URL (e.g., from PUBLIC_ORIGIN env)
  */
 function buildCanonicalBase(req) {
+  const { config } = require('../config');
   // Prefer explicitly-set PUBLIC_ORIGIN (best practice, no guessing)
-  if (process.env.PUBLIC_ORIGIN) {
-    return process.env.PUBLIC_ORIGIN;
+  if (config.publicOrigin) {
+    return config.publicOrigin;
   }
 
   // Fallback: derive from Host header (strip any port)
@@ -110,8 +111,9 @@ function isAlreadyHttps(req) {
  * @param {Function} next - Express next function
  */
 function enforceHttps(req, res, next) {
+  const { config } = require('../config');
   // Skip if HTTPS enforcement is disabled (dev environments)
-  if (String(process.env.ENFORCE_HTTPS).toLowerCase() !== 'true') {
+  if (!config.security.enforceHttps) {
     return next();
   }
 

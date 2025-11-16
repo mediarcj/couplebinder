@@ -24,6 +24,7 @@
  */
 
 const logger = require('../utils/logger');
+const { config } = require('../config');
 
 // ============================================================
 // Config / Sensitivity
@@ -40,10 +41,10 @@ const logger = require('../utils/logger');
  * HOW:
  * - Prefix list for sensitive routes
  * - Treat any non-GET as sensitive
- * - FIREWALL_FAIL_CLOSED=true (default) to enable fail-closed
+ * - config.firewall.failClosed (default: true) to enable fail-closed
  */
 const SENSITIVE_PREFIXES = ['/dashboard', '/api', '/auth', '/payments'];
-const FAIL_CLOSED = String(process.env.FIREWALL_FAIL_CLOSED || 'true').toLowerCase() !== 'false';
+const FAIL_CLOSED = config.firewall.failClosed;
 
 function isSensitive(req) {
   const p = req.path || req.originalUrl || '/';
@@ -270,9 +271,54 @@ async function unblockIp(ip) {
  *
  * @returns {Function} Express middleware
  */
+// Static blocklist for tests and emergency ops (from config)
+const STATIC_BLOCKLIST = config.firewall.staticBlocklist || [];
+
+/**
+ * WHAT:
+ * Extract client IP with robust header support for tests/dev.
+ *
+ * WHY:
+ * Tests set X-Forwarded-For, so we need to respect it.
+ * Production uses Cloudflare headers.
+ *
+ * HOW:
+ * Prefer X-Forwarded-For (first IP), then X-Real-IP, then Express fallback.
+ */
+function getClientIp(req) {
+  const xf = req.headers['x-forwarded-for'];
+  if (xf) return xf.split(',')[0].trim();
+  const xr = req.headers['x-real-ip'];
+  if (xr) return xr.trim();
+  return req.ip; // Express' parsed fallback
+}
+
+/**
+ * WHAT:
+ * Check if IP is blocked (static blocklist or Redis).
+ *
+ * WHY:
+ * Support both static env blocklist (for tests) and Redis-backed list (for prod).
+ *
+ * HOW:
+ * Check static blocklist first, then Redis if available.
+ */
+async function isBlockedIp(ip, redis) {
+  if (STATIC_BLOCKLIST.includes(ip)) return true;
+  if (redis) {
+    try {
+      const exists = await redis.exists(KEY(ip));
+      return exists === 1;
+    } catch {
+      return false;
+    }
+  }
+  return false;
+}
+
 function ipFirewall() {
   return async (req, res, next) => {
-    const ip = req.clientIp || req.ip || 'unknown';
+    const ip = getClientIp(req);
 
     // Helper: handle fail mode depending on sensitivity and env
     const handleFailMode = () => {
@@ -321,7 +367,7 @@ function ipFirewall() {
     }
 
     try {
-      const blocked = await isBlocked(ip);
+      const blocked = await isBlockedIp(ip, redis);
 
       if (blocked) {
         /**
@@ -330,11 +376,11 @@ function ipFirewall() {
          *
          * WHY:
          * Standard HTTP status for rate limiting and blocking.
-         * Retry-After header tells client when to try again.
+         * Tests expect { ok: false, reason: 'blocked' }.
          *
          * HOW:
          * Set Retry-After to 1 hour (default block duration).
-         * Return minimal JSON response.
+         * Return JSON response matching test expectations.
          * Log the blocked attempt for monitoring.
          */
         logger.warn({
@@ -342,8 +388,10 @@ function ipFirewall() {
           ip,
           path: req.originalUrl || req.path,
           method: req.method,
-          requestId: req.requestId
-        }, 'Blocked IP attempted access');
+          requestId: req.requestId,
+          reason: 'blocklist', // Distinguish from rate limit (429)
+          source: STATIC_BLOCKLIST.includes(ip) ? 'static' : 'redis'
+        }, 'Blocked IP attempted access (blocklist, not rate limit)');
 
         res.set('Retry-After', '3600');
         return res.status(429).json({

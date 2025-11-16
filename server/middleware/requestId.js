@@ -1,7 +1,7 @@
 // File: server/middleware/requestId.js
 // Description: Request ID middleware for tracking requests across the application
 // Purpose: Adds unique request ID to all requests for logging and debugging
-// Notes: Generates UUID for each request and adds to headers and request object
+// Notes: Accepts client-provided UUID if valid, otherwise generates per-request
 
 /**
  * WHAT:
@@ -9,12 +9,25 @@
  *
  * WHY:
  * Request IDs help trace requests through the application and correlate logs.
+ * Server-generated IDs are canonical to prevent log correlation attacks.
  *
  * HOW:
- * We generate a UUID for each request and attach it to the request object and response headers.
+ * Always generate a server UUID as the canonical request ID.
+ * Optionally store a validated client-provided ID separately for correlation.
+ * Never cache UUIDs in module scope (each request gets a fresh ID).
  */
 
-const crypto = require('node:crypto');
+const { randomUUID } = require('crypto');
+
+/**
+ * Validate UUID v4 format (strict)
+ * @param {string} v - Value to validate
+ * @returns {boolean} True if valid UUID v4
+ */
+function isUuid(v) {
+  if (!v || typeof v !== 'string' || v.length > 128) return false;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(v);
+}
 
 /**
  * Request ID middleware
@@ -24,16 +37,20 @@ const crypto = require('node:crypto');
  * @param {Function} next - Express next function
  */
 function requestIdMiddleware(req, res, next) {
-  // Generate unique request ID
-  const requestId = crypto.randomUUID();
+  // Always generate server ID as canonical (prevents log correlation attacks)
+  const serverId = randomUUID();
   
-  // Add to request object
-  req.requestId = requestId;
+  req.id = serverId;
+  req.requestId = serverId;
+  res.locals.requestId = serverId;
+  res.set('x-request-id', serverId);
   
-  // Add to response headers
-  res.setHeader('X-Request-ID', requestId);
+  // Optionally store validated client ID separately (for correlation, not canonical)
+  const clientHdr = req.get('x-request-id');
+  if (clientHdr && isUuid(clientHdr)) {
+    req.clientRequestId = clientHdr;
+  }
   
-  // Continue to next middleware
   next();
 }
 

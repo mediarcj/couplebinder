@@ -53,7 +53,8 @@ function requireAuthByDefault(opts = {}) {
   const whitelist = compilePublicGlobs(publicGlobs);
 
   return function guard(req, res, next) {
-    const path = req.path || req.url || '';
+    // Use originalUrl for full path matching (includes /api prefix)
+    const path = req.originalUrl || req.path || req.url || '';
     const isPublic = whitelist.length && micromatch.isMatch(path, whitelist);
 
     if (isPublic) {

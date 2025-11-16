@@ -3,6 +3,8 @@
 // Purpose: Protect health endpoints from public access while allowing monitoring
 // Notes: Supports token, IP allowlist, and public mode for local development
 
+const { config } = require('../config');
+
 /**
  * WHAT:
  * We gate health endpoints to prevent public exposure of operational details.
@@ -51,25 +53,21 @@ function getClientIp(req) {
  * @returns {Object} - { authorized: boolean, reason: string }
  */
 function checkAccess(req) {
-  // Public mode (dev/local only)
-  const isPublic = String(process.env.HEALTH_PUBLIC || 'false').toLowerCase() === 'true';
-  if (isPublic) {
+  // Public mode (dev/local only) - use config.health.public
+  if (config.health?.public === true) {
     return { authorized: true, reason: 'public_mode' };
   }
 
-  // Token-based auth - unified on OPS_HEALTH_TOKEN with backward compatibility
-  const expectedToken = process.env.OPS_HEALTH_TOKEN || process.env.HEALTH_TOKEN || '';
+  // Token-based auth - use config.ops.token or config.health.token
+  const expectedToken = (config.ops?.token || config.health?.token || '').trim();
   const providedToken = req.get('X-Ops-Token') || req.get('X-Health-Token') || '';
   if (expectedToken && providedToken && expectedToken === providedToken) {
     return { authorized: true, reason: 'token_match' };
   }
 
-  // IP allowlist - prefer OPS_HEALTH_IPS, fallback to HEALTH_ALLOWLIST
+  // IP allowlist - use config.health.allowlist
   const ip = getClientIp(req);
-  const allowlist = (process.env.OPS_HEALTH_IPS || process.env.HEALTH_ALLOWLIST || '127.0.0.1,::1')
-    .split(',')
-    .map(s => s.trim())
-    .filter(Boolean);
+  const allowlist = (config.health?.allowlist || []).map(String);
 
   if (allowlist.includes(ip)) {
     return { authorized: true, reason: 'ip_allowlist' };

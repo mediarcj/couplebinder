@@ -79,6 +79,18 @@ setIfEmpty('MAX_SUBMISSIONS', '10');
 // Health endpoint access (public in tests)
 setIfEmpty('HEALTH_PUBLIC', 'true');
 
+// Rate limit and firewall behavior in tests
+process.env.SKIP_RATE_LIMIT_IN_TEST = 'true';
+process.env.RATE_LIMIT_ENABLED = 'false';
+process.env.IP_BLOCKLIST = '192.168.1.100';
+
+// Default cookie & header names if your CSRF code needs them
+setIfEmpty('CSRF_COOKIE_NAME', 'csrf_token');
+setIfEmpty('CSRF_HEADER_NAME', 'x-csrf-token');
+
+// If your auth guard reads this to decide cookie name:
+setIfEmpty('AUTH_COOKIE_NAME', 'sb_session');
+
 // Block process.exit during tests
 const originalExit = process.exit;
 process.exit = (code) => {

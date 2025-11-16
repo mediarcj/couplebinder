@@ -3,27 +3,8 @@
 // Boot order: Express  Database  Redis  SecurityHeaders  CORS  TrustProxy  RequestID  IPFirewall  Parsers  CacheControl  Auth  Sessions  CSRF  Routes  Errors
 // Notes: Console logs mark important checkpoints for audit and debugging
 
-// CRITICAL: Global error handlers - exit immediately on unhandled errors
-process.on('uncaughtException', (err) => {
-  console.error('FATAL: Uncaught exception detected', err);
-  console.error('Server cannot continue safely. Exiting.');
-  // Note: NODE_ENV check is allowed in global error handlers (before config loads)
-  if ((process.env.NODE_ENV || 'development') !== 'test') process.exit(1);
-});
-
-process.on('unhandledRejection', (err) => {
-  console.error('FATAL: Unhandled promise rejection detected', err);
-  console.error('Server cannot continue safely. Exiting.');
-  // Note: NODE_ENV check is allowed in global error handlers (before config loads)
-  if ((process.env.NODE_ENV || 'development') !== 'test') process.exit(1);
-});
-
 const express = require('express');
-const helmet = require('helmet');
-const cors = require('cors');
 const path = require('path');
-const crypto = require('node:crypto');
-const fs = require('fs');
 
 // Install console shim early to intercept JSON event logs
 try {
@@ -139,6 +120,7 @@ const { generalLimiter, loginLimiter, signupLimiter, logoutLimiter, cookieSetLim
  * If this fails, the process will exit and we'll see the error in logs.
  */
 const app = express();
+app.disable('x-powered-by');
 // Initialize Redis status tracking
 app.locals.redisReady = false;
 app.locals.rateLimitStoreReady = false;
@@ -180,16 +162,26 @@ if (config.server.canonicalHost) {
 app.use((req, res, next) => {
   if (req.method !== 'OPTIONS') return next();
 
-  const origin = req.get('Origin') || '*';
-  const reqHeaders = req.get('Access-Control-Request-Headers') || 'Content-Type, Authorization';
+  const origin = req.get('Origin');
+  const acrh = req.get('Access-Control-Request-Headers') || 'Content-Type, Authorization, X-CSRF-Token';
+  const acrm = req.get('Access-Control-Request-Method') || 'GET,POST,PUT,PATCH,DELETE,OPTIONS';
 
-  res.set('Vary', 'Origin');
-  res.set('Access-Control-Allow-Origin', origin);
-  res.set('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
-  res.set('Access-Control-Allow-Headers', reqHeaders);
-  res.set('Access-Control-Allow-Credentials', 'true');
+  // Vary on all the usual suspects
+  res.set('Vary', 'Origin, Access-Control-Request-Headers, Access-Control-Request-Method');
 
-  return res.status(204).end(); // NOTE: no next()
+  if (origin) {
+    res.set('Access-Control-Allow-Origin', origin);
+    res.set('Access-Control-Allow-Credentials', 'true');
+  } else {
+    res.set('Access-Control-Allow-Origin', '*');
+    // no Allow-Credentials with "*"
+  }
+
+  res.set('Access-Control-Allow-Methods', acrm);
+  res.set('Access-Control-Allow-Headers', acrh);
+  res.set('Access-Control-Max-Age', '600');
+
+  return res.status(204).end();
 });
 
 /**
@@ -722,9 +714,13 @@ app.use(['/auth/signup', '/api/auth/signup'], signupLimiter());
 // Import modular routes (CSRF protection handled globally by csrfLite)
 // CRITICAL SECTION: Safe route loading to prevent crashes
 
-const profileRouter = require('./routes/profile');
-
-app.use('/api/profile', requireAuth, profileRouter);
+try {
+  const profileRouter = require('./routes/profile');
+  app.use('/api/profile', requireAuth, profileRouter);
+  console.log('Profile API routes loaded successfully');
+} catch (error) {
+  console.error('Failed to load profile API routes:', error.message);
+}
 
 try {
   app.use('/auth', require('./routes/authCookie'));  // HttpOnly cookie management (set/clear)
@@ -1157,12 +1153,12 @@ process.once('SIGTERM', () => gracefulShutdown('SIGTERM'));
 process.once('SIGINT', () => gracefulShutdown('SIGINT'));
 
 // Handle uncaught exceptions and unhandled rejections
-process.on('uncaughtException', (error) => {
+process.once('uncaughtException', (error) => {
   console.error('Uncaught Exception:', error);
   gracefulShutdown('UNCAUGHT_EXCEPTION');
 });
 
-process.on('unhandledRejection', (reason, promise) => {
+process.once('unhandledRejection', (reason, promise) => {
   console.error('Unhandled Rejection at:', promise, 'reason:', reason);
   gracefulShutdown('UNHANDLED_REJECTION');
 });

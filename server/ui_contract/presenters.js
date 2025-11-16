@@ -16,7 +16,7 @@
  */
 
 const { getProfileByUserId } = require('../services/profileService');
-const { ASSET_VERSION } = require('../config');
+const { ASSET_VERSION, config } = require('../config');
 const logger = require('../utils/logger');
 const navManager = require('./navigation/manager');
 // Removed usersRepo import - now using Supabase user data directly
@@ -176,8 +176,8 @@ function buildHomePageModel(req, res) {
   
   return {
     page: {
-      title: process.env.APP_NAME || 'Application',
-      description: process.env.APP_DESCRIPTION || 'A modern web application',
+      title: config.branding.appName,
+      description: config.branding.appDescription,
       type: 'home',
       assetVersion: ASSET_VERSION,  // Cache-busting for JS/CSS
       nonce: res.locals.nonce || '',  // CSP nonce for inline scripts
@@ -247,10 +247,10 @@ function buildHomePageModel(req, res) {
       csrfToken: res.locals.csrfToken || ''
     },
     app_info: {
-      name: process.env.APP_NAME || 'Application',
-      description: process.env.APP_DESCRIPTION || 'A modern web application',
-      version: process.env.APP_VERSION || '1.0.0',
-      environment: process.env.NODE_ENV || 'development'
+      name: config.branding.appName,
+      description: config.branding.appDescription,
+      version: config.branding.appVersion,
+      environment: config.server.nodeEnv
     }
   };
 }
@@ -268,7 +268,7 @@ async function buildDashboardPageModel(req, res) {
 
   return {
     page: {
-      title: `Dashboard - ${process.env.APP_NAME || 'Application'}`,
+      title: `Dashboard - ${config.branding.appName}`,
       description: 'User dashboard and controls',
       type: 'dashboard',
       nonce: res.locals.nonce || '',   //  ensure CSP nonce for dashboard.ejs
@@ -312,14 +312,14 @@ async function buildDashboardPageModel(req, res) {
     },
     ui: { 
       csrfToken: res.locals.csrfToken || '',
-      supabaseUrl: process.env.SUPABASE_URL || '',
-      supabaseAnonKey: process.env.SUPABASE_ANON_KEY || ''
+      supabaseUrl: config.supabase.url || '',
+      supabaseAnonKey: config.supabase.anonKey || ''
     },
     app_info: {
-      name: process.env.APP_NAME || 'Application',
-      description: process.env.APP_DESCRIPTION || 'A modern web application',
-      version: process.env.APP_VERSION || '1.0.0',
-      environment: process.env.NODE_ENV || 'development'
+      name: config.branding.appName,
+      description: config.branding.appDescription,
+      version: config.branding.appVersion,
+      environment: config.server.nodeEnv
     }
   };
 }
@@ -362,10 +362,10 @@ async function buildUserProfilePageModel(req, res, userId) {
     profile: { user: viewed || (isOwn ? self : null), isOwnProfile: !!isOwn },
     ui: { csrfToken: res.locals.csrfToken || '' },
     app_info: {
-      name: process.env.APP_NAME || 'Application',
-      description: process.env.APP_DESCRIPTION || 'A modern web application',
-      version: process.env.APP_VERSION || '1.0.0',
-      environment: process.env.NODE_ENV || 'development'
+      name: config.branding.appName,
+      description: config.branding.appDescription,
+      version: config.branding.appVersion,
+      environment: config.server.nodeEnv
     }
   };
 }
@@ -382,7 +382,7 @@ async function buildSettingsPageModel(req, res) {
 
   return {
     page: {
-      title: `Settings - ${process.env.APP_NAME || 'Application'}`,
+      title: `Settings - ${config.branding.appName}`,
       description: 'User settings and preferences',
       type: 'settings'
     },
@@ -393,10 +393,10 @@ async function buildSettingsPageModel(req, res) {
     },
     ui: { csrfToken: res.locals.csrfToken || '' },
     app_info: {
-      name: process.env.APP_NAME || 'Application',
-      description: process.env.APP_DESCRIPTION || 'A modern web application',
-      version: process.env.APP_VERSION || '1.0.0',
-      environment: process.env.NODE_ENV || 'development'
+      name: config.branding.appName,
+      description: config.branding.appDescription,
+      version: config.branding.appVersion,
+      environment: config.server.nodeEnv
     }
   };
 }
@@ -412,7 +412,7 @@ async function buildSettingsPageModel(req, res) {
 function buildErrorPageModel(req, res, statusCode, errorMessage) {
   return {
     page: {
-      title: `Error ${statusCode} - ${process.env.APP_NAME || 'Application'}`,
+      title: `Error ${statusCode} - ${config.branding.appName}`,
       description: 'An error occurred',
       type: 'error',
       nonce: res.locals.nonce,
@@ -432,10 +432,10 @@ function buildErrorPageModel(req, res, statusCode, errorMessage) {
       csrfToken: res.locals.csrfToken || ''
     },
     app_info: {
-      name: process.env.APP_NAME || 'Application',
-      description: process.env.APP_DESCRIPTION || 'A modern web application',
-      version: process.env.APP_VERSION || '1.0.0',
-      environment: process.env.NODE_ENV || 'development'
+      name: config.branding.appName,
+      description: config.branding.appDescription,
+      version: config.branding.appVersion,
+      environment: config.server.nodeEnv
     }
   };
 }

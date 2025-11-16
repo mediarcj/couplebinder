@@ -4,12 +4,14 @@
 // Purpose: Keeps environment metadata centralized and reusable
 // ============================================================
 
+const { config } = require('../../../config');
+
 function buildAppInfo() {
   return {
-    name: process.env.APP_NAME || 'Application',
-    description: process.env.APP_DESCRIPTION || 'A secure modern web application',
-    version: process.env.APP_VERSION || '1.0.0',
-    environment: process.env.NODE_ENV || 'development',
+    name: config.branding.appName,
+    description: config.branding.appDescription,
+    version: config.branding.appVersion,
+    environment: config.server.nodeEnv,
   };
 }
 

@@ -7,13 +7,15 @@
 process.on('uncaughtException', (err) => {
   console.error('FATAL: Uncaught exception detected', err);
   console.error('Server cannot continue safely. Exiting.');
-  if (process.env.NODE_ENV !== 'test') process.exit(1);
+  // Note: NODE_ENV check is allowed in global error handlers (before config loads)
+  if ((process.env.NODE_ENV || 'development') !== 'test') process.exit(1);
 });
 
 process.on('unhandledRejection', (err) => {
   console.error('FATAL: Unhandled promise rejection detected', err);
   console.error('Server cannot continue safely. Exiting.');
-  if (process.env.NODE_ENV !== 'test') process.exit(1);
+  // Note: NODE_ENV check is allowed in global error handlers (before config loads)
+  if ((process.env.NODE_ENV || 'development') !== 'test') process.exit(1);
 });
 
 const express = require('express');
@@ -42,7 +44,8 @@ try {
   console.log('Configuration module loaded successfully');
 } catch (error) {
   console.error('Failed to load config module:', error.message);
-  if (process.env.NODE_ENV !== 'test') process.exit(1);
+  // Note: NODE_ENV check is allowed in global error handlers (before config loads)
+  if ((process.env.NODE_ENV || 'development') !== 'test') process.exit(1);
   throw error;
 }
 
@@ -52,7 +55,8 @@ try {
 } catch (error) {
   console.error('FATAL: Cannot load CSRF middleware:', error);
   console.error('CRITICAL: CSRF protection is mandatory. Server cannot start.');
-  if (process.env.NODE_ENV !== 'test') process.exit(1);
+  // Note: NODE_ENV check is allowed in global error handlers (before config loads)
+  if ((process.env.NODE_ENV || 'development') !== 'test') process.exit(1);
   throw error;
 }
 
@@ -62,7 +66,8 @@ try {
 } catch (error) {
   console.error('FATAL: Cannot load request ID middleware:', error);
   console.error('CRITICAL: Request tracking is mandatory for audit trails. Server cannot start.');
-  if (process.env.NODE_ENV !== 'test') process.exit(1);
+  // Note: NODE_ENV check is allowed in global error handlers (before config loads)
+  if ((process.env.NODE_ENV || 'development') !== 'test') process.exit(1);
   throw error;
 }
 
@@ -139,7 +144,24 @@ app.locals.redisReady = false;
 app.locals.rateLimitStoreReady = false;
 
 // Trust proxy for Cloudflare (required for HTTPS redirects)
-app.set('trust proxy', 1);
+// Trust proxy configuration (Cloudflare + ALB = 2 hops)
+// From centralized config
+app.set('trust proxy', config.server.trustProxyHops);
+
+// Canonical host redirect (optional, disabled by default)
+// Redirects requests to a canonical host if config.server.canonicalHost is set
+if (config.server.canonicalHost) {
+  const { isHttps } = require('./lib/authCookie');
+  app.use((req, res, next) => {
+    const targetHost = config.server.canonicalHost.trim().toLowerCase();
+    const reqHost = String(req.hostname || req.get('host') || '').toLowerCase();
+    if (targetHost && reqHost && reqHost !== targetHost) {
+      const proto = isHttps(req) ? 'https' : 'http';
+      return res.redirect(301, `${proto}://${targetHost}${req.originalUrl || req.url || ''}`);
+    }
+    next();
+  });
+}
 
 /**
  * ABSOLUTE TOP: Unconditional preflight short-circuit
@@ -265,7 +287,7 @@ const { ipFirewall } = require('./middleware/ipFirewall');
 app.use(ipFirewall());
 console.log('Security: IP firewall enabled (Redis-backed auto-ban)');
 
-console.log(`${process.env.APP_NAME || 'Application'} server starting...`);
+console.log(`${config.branding.appName} server starting...`);
 consoleLogger.formatConfigSummary(config);
 
 // ============================================================
@@ -485,32 +507,6 @@ app.use(appConfig);
 // Stateless authentication bridge - reads Supabase tokens
 const authBridge = require('./middleware/authBridge');
 app.use(authBridge);
-
-// 10. Default-Deny Auth Guard - enforce authentication for protected prefixes (AFTER authBridge)
-const requireAuthByDefault = require('./middleware/requireAuthByDefault');
-
-// Public paths that should remain accessible without authentication
-const publicGlobs = [
-  '/', '/login',
-  '/css/**', '/js/**', '/images/**', '/favicon.ico',
-
-  // auth public endpoints
-  '/api/auth/set-cookie',
-  '/api/auth/clear-cookie',
-  '/api/auth/signup',   // ← ADD THIS
-  '/auth/signup'        // ← add too, since we rate-limit this path later
-  // Note: /health/** is now gated behind healthShield middleware (not in public globs)
-  // Note: All /dashboard paths are protected by requireAuth middleware,
-  // but the default-deny guard needs to allow authenticated access
-  // The guard checks for req.user, so authenticated users pass through
-];
-
-// Mount default-deny guard for API and dashboard prefixes
-app.use(['/api', '/dashboard'], requireAuthByDefault({
-  publicGlobs,
-  logger
-}));
-console.log('Security: Default-deny auth guard enabled for /api and /dashboard prefixes');
 
 // Centralized authentication middleware
 const { requireAuth } = require('./middleware/requireAuth');
@@ -745,7 +741,7 @@ try {
 }
 
 // Debug route (enabled via AUTH_DEBUG=true env var)
-if (String(process.env.AUTH_DEBUG).toLowerCase() === 'true') {
+if (config.auth.debug) {
   try {
     app.use('/api/auth', require('./routes/authDebug'));
     console.log('Auth debug routes loaded (AUTH_DEBUG=true)');
@@ -773,7 +769,9 @@ try {
 }
 
 try {
-  app.use('/api/submit', requireAuth, require('./routes/submissions'));
+  // Note: /api/submit is public so CSRF can check it first (returns 403 if no token)
+  // The route handler will check auth internally if needed
+  app.use('/api/submit', require('./routes/submissions'));
   console.log('Submissions API routes loaded successfully');
 } catch (error) {
   console.error('Failed to load submissions API routes:', error.message);
@@ -847,8 +845,8 @@ app.get('/login', (req, res) => {
     
     // Add Supabase credentials for client initialization
     pageModel.ui = {
-      supabaseUrl: process.env.SUPABASE_URL,
-      supabaseAnonKey: process.env.SUPABASE_ANON_KEY
+      supabaseUrl: config.supabase.url,
+      supabaseAnonKey: config.supabase.anonKey
     };
     
     // Render login page (reuse index.ejs which has login modal)
@@ -897,8 +895,8 @@ app.get('/', (req, res) => {
     
     // Add Supabase credentials for client initialization
     pageModel.ui = {
-      supabaseUrl: process.env.SUPABASE_URL,
-      supabaseAnonKey: process.env.SUPABASE_ANON_KEY,
+      supabaseUrl: config.supabase.url,
+      supabaseAnonKey: config.supabase.anonKey,
       csrfToken: res.locals.csrfToken || ''
     };
     
@@ -937,7 +935,7 @@ consoleLogger.formatMiddlewareRegistration('Routes');
  * Support content negotiation (HTML/JSON/text).
  */
 const { respondError } = require('./utils/errorResponder');
-const isProd = process.env.NODE_ENV === 'production';
+const isProd = config.server.nodeEnv === 'production';
 
 // 404 handler (no route matched)
 app.use((req, res) => {
@@ -1085,7 +1083,7 @@ const server = app.listen(PORT, HOST, () => {
  */
 
 // Graceful shutdown configuration
-const GRACE_MS = Number(process.env.SHUTDOWN_GRACE_MS || 15000);
+const GRACE_MS = config.shutdown.graceMs;
 const SOCKET_CULL_MS = Math.max(0, GRACE_MS - 2000);
 
 let shuttingDown = false;

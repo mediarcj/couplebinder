@@ -26,8 +26,9 @@ const { getReceiptVM } = require('../services/receiptService');
 const { createIdempotencyMiddleware } = require('../middleware/idempotency');
 const { assertUser } = require('../utils/authz');
 const logger = require('../utils/logger');
+const { config } = require('../config');
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
+const stripe = new Stripe(config.stripe.secretKey, {
   apiVersion: '2025-09-30.clover'
 });
 
@@ -35,8 +36,8 @@ const idem = createIdempotencyMiddleware({ ttl: 3600, headerName: 'Idempotency-K
 
 // Server-side SKU to price ID mapping (never trust client-supplied price IDs)
 const PRICES = {
-  resume_one_time: process.env.STRIPE_PRICE_RESUME_ONE_TIME?.trim(),
-  resume_expert: process.env.STRIPE_PRICE_RESUME_EXPERT?.trim()
+  resume_one_time: config.stripe.priceResumeOneTime?.trim(),
+  resume_expert: config.stripe.priceResumeExpert?.trim()
 };
 
 /**
@@ -85,7 +86,7 @@ router.post('/checkout', idem, async (req, res) => {
       mode // subscription for resume_expert, payment otherwise
     });
 
-    const isLive = process.env.STRIPE_SECRET_KEY?.startsWith('sk_live_');
+    const isLive = config.stripe.secretKey?.startsWith('sk_live_');
     logger.info({ 
       event: 'checkout.created',
       sessionId: session.id,

@@ -18,9 +18,10 @@
 
 module.exports = function trustProxyIp(app) {
   // ============================================================
-  // Trust first proxy hop (Cloudflare/AWS)
+  // Trust proxy configuration (already set in zorvalon.js)
   // ============================================================
-  app.set('trust proxy', 1);
+  // NOTE: trust proxy is set in zorvalon.js before this middleware
+  // We do NOT override it here - just extract the client IP
   
   // ============================================================
   // Extract and expose real client IP

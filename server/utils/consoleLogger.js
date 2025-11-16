@@ -65,9 +65,8 @@ function safeStringify(val) {
   }
 }
 
-// We do not import app config here; this module formats output.
-// If you pass us a config/serverInfo object, we’ll use it; otherwise we derive
-// safe fallbacks from process.env so we never print undefined.
+// We import config for safe fallbacks, but prefer passed-in serverInfo/config objects.
+const { config: appConfig } = require('../config');
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Shared helpers (kept tiny and explained)
@@ -141,9 +140,9 @@ function int(v, def) {
  * Best-effort provider normalization.
  */
 function normalizeProvider(p) {
-  const s = (p || process.env.DB_PROVIDER || 'supabase-http').toLowerCase();
+  const s = (p || appConfig?.database?.provider || 'supabase-http').toLowerCase();
   if (s === 'postgres' || s === 'postgresql') return 'postgres';
-  return s; // 'supabase-http' or anything else -> we’ll still be safe
+  return s; // 'supabase-http' or anything else -> we'll still be safe
 }
 
 /**
@@ -156,7 +155,7 @@ function parseDbFromEnv(provider) {
 
   try {
     if (provider === 'supabase-http') {
-      const supa = process.env.SUPABASE_URL;
+      const supa = appConfig?.database?.url;
       if (supa) {
         const u = new URL(supa);
         const host = u.host || 'unknown';
@@ -169,19 +168,19 @@ function parseDbFromEnv(provider) {
     }
 
     // postgres
-    const url = process.env.SUPABASE_DB_URL || process.env.DATABASE_URL;
+    const url = appConfig?.database?.url;
     if (url) {
       const u = new URL(url);
       const host = u.hostname || 'localhost';
       const port = u.port ? int(u.port, 5432) : 5432;
-      const name = (u.pathname || '/').replace(/^\//, '') || process.env.DB_NAME || 'postgres';
+      const name = (u.pathname || '/').replace(/^\//, '') || 'postgres';
       return { host, port, name, provider: 'postgres' };
     }
-    // discrete vars
+    // discrete vars (fallback if config not available)
     return {
-      host: process.env.DB_HOST || 'localhost',
-      port: int(process.env.DB_PORT, 5432),
-      name: process.env.DB_NAME || 'postgres',
+      host: 'localhost',
+      port: 5432,
+      name: 'postgres',
       provider: 'postgres'
     };
   } catch {
@@ -358,7 +357,7 @@ function formatServerStartup(serverInfo = {}) {
     ? serverInfo.maxSubmissions
     : 'unknown';
 
-  console.log(`\n${process.env.APP_NAME || 'APPLICATION'} SERVER STARTING`);
+  console.log(`\n${appConfig?.branding?.appName?.toUpperCase() || 'APPLICATION'} SERVER STARTING`);
   console.log(`${LINE}`);
   console.log(`Server: ${serverInfo.host}:${serverInfo.port}`);
   console.log(`Environment: ${serverInfo.nodeEnv}`);

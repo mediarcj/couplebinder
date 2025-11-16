@@ -20,10 +20,11 @@
 
 const Stripe = require('stripe');
 const logger = require('../utils/logger');
+const { config } = require('../config');
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
+const stripe = config.stripe.secretKey ? new Stripe(config.stripe.secretKey, {
   apiVersion: '2025-09-30.clover'
-});
+}) : null;
 
 // In-memory cache for pricing data
 let catalogCache = null;
@@ -52,8 +53,8 @@ async function getPricingCatalog() {
   }
 
   const priceIds = [
-    process.env.STRIPE_PRICE_RESUME_ONE_TIME,
-    process.env.STRIPE_PRICE_RESUME_EXPERT
+    config.stripe.priceResumeOneTime,
+    config.stripe.priceResumeExpert
   ].filter(Boolean);
 
   if (priceIds.length === 0) {

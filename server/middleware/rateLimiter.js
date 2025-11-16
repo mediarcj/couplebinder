@@ -42,35 +42,38 @@
 const { RateLimiterRedis, RateLimiterMemory } = require('rate-limiter-flexible');
 const logger = require('../utils/logger');
 const { blockIp } = require('./ipFirewall');
+const { config } = require('../config');
 
 // ============================================================
-// Environment Configuration
+// Configuration (from centralized config)
 // ============================================================
 // NOTE: These rate limiters work IN ADDITION to Cloudflare edge protection
 // Cloudflare handles volumetric attacks; these handle application-specific logic
-const isProd = process.env.NODE_ENV === 'production';
-const enabled = process.env.RATE_LIMIT_ENABLED !== 'false';         // default ON
-const skipInDev = process.env.SKIP_RATE_LIMIT_IN_DEV === 'true';    // optional skip
+const isProd = config.server.nodeEnv === 'production';
+const isTest = config.server.nodeEnv === 'test';
+const enabled = config.rateLimit.enabled;
+const skipInDev = config.rateLimit.skipInDev;
+const skipInTest = config.rateLimit.skipInTest;
 
 // ============================================================
 // Per-Route Configurations (Application-Specific Limits)
 // ============================================================
 // These limits are applied AFTER Cloudflare edge filtering
 // They provide granular control for different endpoint types
-const GENERAL_WINDOW_S   = Number(process.env.RATE_LIMIT_WINDOW_MS  || 60_000) / 1000;         // 60s
-const GENERAL_MAX        = Number(process.env.RATE_LIMIT_MAX        || 300);
+const GENERAL_WINDOW_S   = config.rateLimit.windows.general.windowMs / 1000;
+const GENERAL_MAX        = config.rateLimit.windows.general.max;
 
-const LOGIN_WINDOW_S     = Number(process.env.LOGIN_WINDOW_MS       || 15 * 60_000) / 1000;    // 15m
-const LOGIN_MAX          = Number(process.env.LOGIN_MAX             || 10);
+const LOGIN_WINDOW_S     = config.rateLimit.windows.login.windowMs / 1000;
+const LOGIN_MAX          = config.rateLimit.windows.login.max;
 
-const SIGNUP_WINDOW_S    = Number(process.env.SIGNUP_WINDOW_MS      || 60 * 60_000) / 1000;    // 1h
-const SIGNUP_MAX         = Number(process.env.SIGNUP_MAX            || 5);
+const SIGNUP_WINDOW_S    = config.rateLimit.windows.signup.windowMs / 1000;
+const SIGNUP_MAX         = config.rateLimit.windows.signup.max;
 
-const LOGOUT_WINDOW_S    = Number(process.env.LOGOUT_WINDOW_MS      || 10 * 60_000) / 1000;    // 10m
-const LOGOUT_MAX         = Number(process.env.LOGOUT_MAX            || 120);
+const LOGOUT_WINDOW_S    = config.rateLimit.windows.logout.windowMs / 1000;
+const LOGOUT_MAX         = config.rateLimit.windows.logout.max;
 
-const COOKIE_SET_WINDOW_S= Number(process.env.COOKIE_SET_WINDOW_MS  || 60_000) / 1000;         // 60s
-const COOKIE_SET_MAX     = Number(process.env.COOKIE_SET_MAX        || 300);
+const COOKIE_SET_WINDOW_S= config.rateLimit.windows.cookieSet.windowMs / 1000;
+const COOKIE_SET_MAX     = config.rateLimit.windows.cookieSet.max;
 
 // ============================================================
 // Redis Client Setup
@@ -177,10 +180,14 @@ function keyFor(req) {
 function limiterMiddleware(limiter, name, limit, windowSeconds) {
   return async (req, res, next) => {
     try {
-      // Skip if disabled or in dev mode with skip flag
-      if (!enabled || (!isProd && skipInDev)) {
-        return next();
-      }
+      // Skip if disabled
+      if (!enabled) return next();
+      
+      // Skip in test mode if flag is set (only honored when NODE_ENV=test)
+      if (isTest && skipInTest) return next();
+      
+      // Skip in dev mode if flag is set (only when not in production)
+      if (!isProd && skipInDev) return next();
 
       const key = keyFor(req);
       const rlRes = await limiter.consume(key, 1);

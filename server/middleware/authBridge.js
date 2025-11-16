@@ -35,26 +35,47 @@ function jwksFetcher() {
  * Extract the Supabase access token from the request.
  * 
  * WHY:
- * For web pages, we use HttpOnly cookies (secure). For API tools/CLI,
- * we support Bearer tokens. Priority: cookie first (web), then header (API).
+ * For SSR pages (HTML), we ONLY use HttpOnly cookies to prevent hidden re-authentication.
+ * For API routes (JSON), we support Bearer tokens for API tools/CLI.
  * 
  * HOW:
- * 1. Check for sb-access-token HttpOnly cookie
- * 2. Fallback to Authorization: Bearer header
+ * 1. Always check HttpOnly cookie first (cookie-only for SSR)
+ * 2. For API routes only: fallback to Authorization: Bearer header
  * 3. Return null if no token found
  */
-function readAccessToken(req) {
+function readAccessToken(req, cookieOnly = false) {
+  const { AUTH_COOKIE_NAME } = require('../lib/authCookie');
+  const cookieName = AUTH_COOKIE_NAME;
+  const hostPrefixed = `__Host-${cookieName}`;
+  
   // Priority 1: HttpOnly cookie (web pages) - env-driven name + legacy fallback
-  const cookieName = process.env.AUTH_COOKIE_NAME || 'sb_session';
-  const cookieToken = req.cookies?.[cookieName] 
-    || req.cookies?.['sb-access-token']  // legacy
-    || req.cookies?.['sb_session']       // legacy
+  const cookieToken = req.cookies?.[hostPrefixed]
+    || req.cookies?.[cookieName]
+    || req.cookies?.['sb-access-token']   // legacy
+    || req.cookies?.['sb_session']        // legacy
     || null;
+
+  // Debug logging for cookie read attempt (only when AUTH_DEBUG=true)
+  if (config.auth.debug) {
+    const logger = require('../utils/logger');
+    logger.debug({
+      event: 'auth.cookie.read.attempt',
+      cookieOnly,
+      hasHostPrefixed: !!(req.cookies?.[hostPrefixed]),
+      hasPlain: !!(req.cookies?.[cookieName]),
+      hasLegacy1: !!(req.cookies?.['sb-access-token']),
+      hasLegacy2: !!(req.cookies?.['sb_session']),
+      allCookieNames: req.cookies ? Object.keys(req.cookies) : []
+    }, 'Cookie read attempt');
+  }
+
   if (cookieToken) return cookieToken;
   
-  // Priority 2: Bearer header (API tools, CLI)
-  const auth = req.headers.authorization || '';
-  if (auth.startsWith('Bearer ')) return auth.slice(7).trim();
+  // Priority 2: Bearer header (API tools, CLI) - ONLY for API routes, not SSR
+  if (!cookieOnly) {
+    const auth = req.headers.authorization || '';
+    if (auth.startsWith('Bearer ')) return auth.slice(7).trim();
+  }
   
   return null;
 }
@@ -78,9 +99,21 @@ function readAccessToken(req) {
  */
 module.exports = async function authBridge(req, res, next) {
   try {
-    // Debug logging (controlled by AUTH_DEBUG env var)
-    if (String(process.env.AUTH_DEBUG).toLowerCase() === 'true') {
-      const cookieName = process.env.AUTH_COOKIE_NAME || 'sb_session';
+    // Determine if this is an SSR route (HTML) or API route (JSON)
+    // SSR routes must ONLY use cookies to prevent hidden re-authentication
+    // Status endpoint is special: cookie-only to reflect actual cookie state
+    const isSSR = (!req.path.startsWith('/api/') && 
+                   !req.path.startsWith('/auth/') &&
+                   (req.headers.accept?.includes('text/html') || 
+                    req.path.startsWith('/dashboard') ||
+                    req.path === '/' ||
+                    req.path === '/login')) ||
+                  req.path === '/api/auth/status'; // Status endpoint is cookie-only
+    
+    // Debug logging (controlled by config.auth.debug)
+    if (config.auth.debug) {
+      const { AUTH_COOKIE_NAME } = require('../lib/authCookie');
+      const cookieName = AUTH_COOKIE_NAME;
       const hasBearer = /^Bearer\s+/.test(req.headers.authorization || '');
       const hasCookie = !!(req.cookies && Object.prototype.hasOwnProperty.call(req.cookies, cookieName));
       
@@ -89,18 +122,63 @@ module.exports = async function authBridge(req, res, next) {
         event: 'auth.debug',
         method: req.method,
         path: req.originalUrl,
+        isSSR,
         hasBearer,
         hasCookie,
-        cookieName
+        cookieName,
+        authSource: hasCookie ? 'cookie' : (hasBearer ? 'bearer' : 'none')
       }));
     }
     
-    // Step 1: Read token from cookie or header
-    const token = readAccessToken(req);
+    // Step 1: Read token - cookie-only for SSR, cookie+header for API
+    const token = readAccessToken(req, isSSR);
     if (!token) {
       req.user = null;
+      // Log auth source for SSR routes (debug level only - expected when not logged in)
+      if (isSSR && config.auth.debug) {
+        const logger = require('../utils/logger');
+        const { AUTH_COOKIE_NAME } = require('../lib/authCookie');
+        const cookieName = AUTH_COOKIE_NAME;
+        const hostPrefixed = `__Host-${cookieName}`;
+        logger.debug({
+          event: 'auth.ssr.no_token',
+          path: req.path,
+          requestId: req.requestId,
+          authSource: 'none',
+          cookieName,
+          hostPrefixed,
+          hasHostPrefixed: !!(req.cookies?.[hostPrefixed]),
+          hasPlain: !!(req.cookies?.[cookieName]),
+          hasLegacy1: !!(req.cookies?.['sb-access-token']),
+          hasLegacy2: !!(req.cookies?.['sb_session']),
+          allCookieNames: req.cookies ? Object.keys(req.cookies) : [],
+          cookieHeaderLength: req.headers.cookie ? req.headers.cookie.length : 0,
+          cookieHeaderPreview: req.headers.cookie ? req.headers.cookie.substring(0, 100) : '(none)',
+          cookiesObjectKeys: req.cookies ? Object.keys(req.cookies) : [],
+          cookiesObjectSize: req.cookies ? Object.keys(req.cookies).length : 0
+        }, 'SSR route: no auth cookie (cookie-only) - expected when not logged in');
+      }
       return next();
     }
+    
+    // Log auth source (debug level, PII-safe)
+    const logger = require('../utils/logger');
+    const { AUTH_COOKIE_NAME } = require('../lib/authCookie');
+    const cookieName = AUTH_COOKIE_NAME;
+    const hostPrefixed = `__Host-${cookieName}`;
+    // Check all cookie variants to determine source
+    const hasCookie = !!(req.cookies?.[hostPrefixed] || 
+                        req.cookies?.[cookieName] || 
+                        req.cookies?.['sb-access-token'] || 
+                        req.cookies?.['sb_session']);
+    const authSource = hasCookie ? 'cookie' : 'bearer';
+    logger.debug({
+      event: 'auth.verified',
+      path: req.path,
+      isSSR,
+      authSource,
+      requestId: req.requestId
+    }, `Auth verified (${isSSR ? 'SSR' : 'API'}, source: ${authSource})`);
 
     // Step 2: Decode header to check algorithm (don't verify yet)
     let header;
@@ -125,13 +203,13 @@ module.exports = async function authBridge(req, res, next) {
        * WHY: Supabase projects use HS256 by default for simplicity
        * HOW: Use jose.jwtVerify with secret key and validate all claims
        */
-      if (!process.env.SUPABASE_JWT_SECRET) {
+      if (!config.jwt.secret) {
         // Missing secret - silently reject
         req.user = null;
         return next();
       }
       
-      const secret = new TextEncoder().encode(process.env.SUPABASE_JWT_SECRET);
+      const secret = new TextEncoder().encode(config.jwt.secret);
       const result = await jwtVerify(token, secret, {
         algorithms: ['HS256'],  // Only accept HS256 for symmetric verification
         issuer: config.jwt.issuer,  // e.g., https://xxx.supabase.co/auth/v1

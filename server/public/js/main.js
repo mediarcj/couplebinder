@@ -892,6 +892,24 @@ async function postAuthCookieWithBackoff(payload, opts) {
  */
 async function checkSessionStatus() {
     try {
+        // Early server-truth check (before client re-hydration)
+        // This prevents flicker and ensures logout state is immediately reflected
+        try {
+            const status = await fetch('/api/auth/status', { 
+                credentials: 'include',
+                headers: { 'Accept': 'application/json' }
+            }).then(r => r.json()).catch(() => null);
+            
+            if (status && !status.authenticated) {
+                logger.info('Server status: not authenticated - updating UI immediately');
+                updateUIForLoggedOutUser();
+                // Optionally return here if you don't want local re-hydration on home:
+                // return;
+            }
+        } catch (e) {
+            logger.info('Server status check failed (non-fatal)', e);
+        }
+        
         // OPT-IN CHECK: Only run hydration if page explicitly opts in
         const shouldHydrate = document.body?.dataset?.authHydrate === 'true' || 
                              document.querySelector('meta[name="auth-hydrate"]')?.content === 'true';
@@ -914,7 +932,10 @@ async function checkSessionStatus() {
         // Check if Supabase has an existing session (use shared client)
         const client = window.SB || window.supabase;
         if (!client) {
-            logger.warn('No Supabase client available');
+            if (logoutHoldActive()) {
+              logger.info('No Supabase client; clearing HOLD');
+              clearLogoutHold();
+            }
             updateUIForLoggedOutUser();
             return;
         }
@@ -1463,3 +1484,22 @@ async function handleSignupSubmit(e) {
 function handleSignup() {
     modalManager.showSignup();
 }
+
+// Failsafe: clear HOLD if there is no live session
+(function holdJanitor() {
+  setTimeout(async () => {
+    if (!logoutHoldActive()) return;
+    try {
+      // If SB is present, only clear when there's no session
+      if (window.SB?.auth?.getSession || window.supabase?.auth?.getSession) {
+        const s = await getSessionSafe();
+        if (!s) clearLogoutHold();
+      } else {
+        // No auth client on this page; safe to clear HOLD to avoid sticky UI
+        clearLogoutHold();
+      }
+    } catch {
+      clearLogoutHold();
+    }
+  }, 1500);
+})();

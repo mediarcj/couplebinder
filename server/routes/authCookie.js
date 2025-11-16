@@ -22,7 +22,8 @@ const {
   clearFailedAttempts
 } = require('../middleware/lockout');
 const logger = require('../utils/logger');
-
+const { config } = require('../config');
+const { setAuthCookie, clearAuthCookie, AUTH_COOKIE_NAME } = require('../lib/authCookie');
 // =======================
 // Redis client (optional)
 // =======================
@@ -37,32 +38,22 @@ try {
 // =======================
 // Configuration
 // =======================
-const COOKIE_NAME = process.env.AUTH_COOKIE_NAME || 'sb_session';
+const COOKIE_NAME = AUTH_COOKIE_NAME; // Use centralized name
 const COOKIE_TTL_MS = 1000 * 60 * 60 * 24 * 7; // 7 days
-const LEGACY_DOMAIN = process.env.LEGACY_COOKIE_DOMAIN || '.detechify.com'; // used only to clear old cookies
+const LEGACY_DOMAIN = config.branding.legacyCookieDomain; // used only to clear old cookies
+
 
 // Watermark storage (seconds precision, per-user)
 const LAST_LOGOUT_KEY = (uid) => `auth:last_logout_at:${uid}`;
-const LAST_LOGOUT_TTL_SEC = parseInt(process.env.AUTH_LAST_LOGOUT_TTL_SEC || `${60 * 60 * 24 * 14}`, 10); // default 14 days
+const LAST_LOGOUT_TTL_SEC = 60 * 60 * 24 * 14; // 14 days
 
 // Sentinel (fallback only). Keep small to reduce friction if used.
 const SENTINEL_COOKIE_NAME = 'auth_logout';
-const SENTINEL_MS = Math.min(
-  Math.max(parseInt(process.env.AUTH_LOGOUT_SENTINEL_MS || '10000', 10), 0),
-  30000
-); // 0..30000 ms (default 10s, capped at 30s)
+const SENTINEL_MS = 10000; // 10s fallback, capped logic removed (no env)
 
 // If Redis watermark missing, allow *fresh* tokens to pass immediately, even if sentinel present.
 // A newly issued token will usually have iat within a few seconds of "now".
-const FRESH_LOGIN_GRACE_SEC = parseInt(process.env.AUTH_FRESH_LOGIN_GRACE_SEC || '20', 10);
-
-// Base attributes for our auth cookie
-const baseCookie = {
-  httpOnly: true,
-  secure: true,
-  sameSite: 'lax',
-  path: '/', // REQUIRED for __Host-
-};
+const FRESH_LOGIN_GRACE_SEC = 20;
 
 // =======================
 // Helpers
@@ -121,31 +112,7 @@ function sentinelBlocks(req, tokenIatSec) {
   }
 }
 
-/**
- * Build cookie options honoring __Host- rules.
- */
-function buildCookieOpts() {
-  const opts = { ...baseCookie };
-  // If cookie name starts with __Host-, DO NOT set domain.
-  if (!COOKIE_NAME.startsWith('__Host-') && process.env.AUTH_COOKIE_DOMAIN) {
-    opts.domain = process.env.AUTH_COOKIE_DOMAIN;
-  }
-  return opts;
-}
-
-/**
- * Clear current and legacy cookies safely.
- */
-function clearAllAuthCookies(res) {
-  // Clear current name and legacy names
-  ['__Host-sb_session', COOKIE_NAME, 'sb-access-token', 'sb_session'].forEach((n) => {
-    const clearOpts = n.startsWith('__Host-')
-      ? { httpOnly: true, secure: true, sameSite: 'lax', path: '/' } // NO domain for __Host-
-      : { path: '/', domain: process.env.AUTH_COOKIE_DOMAIN || undefined };
-
-    res.clearCookie(n, clearOpts);
-  });
-}
+// Cookie helpers now use centralized module (setAuthCookie, clearAuthCookie)
 
 // =======================
 // Routes
@@ -233,12 +200,16 @@ router.post('/set-cookie', async (req, res) => {
     // Success path: token is valid and not stale -> clear failures, set cookie
     await clearFailedAttempts(emailFromBody || 'ip-only', ip);
 
-    const opts = buildCookieOpts();
-    res.cookie(COOKIE_NAME, token, { ...opts, maxAge: COOKIE_TTL_MS });
+    // Use centralized cookie helper (ensures consistent attributes)
+    setAuthCookie(res, req, token, COOKIE_TTL_MS);
 
     // Clean up legacy cookie names to prevent conflicts
-    ['sb-access-token', 'sb_session'].forEach((n) => {
-      res.clearCookie(n, { path: '/', domain: LEGACY_DOMAIN });
+    // BUT: Don't clear the cookie we just set (COOKIE_NAME)
+    const legacyNames = ['sb-access-token', 'sb_session'].filter(n => n !== COOKIE_NAME);
+    legacyNames.forEach((n) => {
+      if (LEGACY_DOMAIN) {
+        res.clearCookie(n, { path: '/', domain: LEGACY_DOMAIN });
+      }
       res.clearCookie(n, { path: '/' });
     });
 
@@ -273,8 +244,9 @@ router.post('/clear-cookie', async (req, res) => {
       // ignore
     }
 
-    // Clear cookies (new + legacy)
-    clearAllAuthCookies(res);
+    // Clear cookies (new + legacy) - use clearAll if ?all=1 query param
+    const clearAll = req.query?.all === '1' || req.query?.all === 'true';
+    clearAuthCookie(res, req, clearAll);
 
     // Write logout watermark for this user (if we could identify them)
     if (uidFromCookie) {
@@ -287,11 +259,13 @@ router.post('/clear-cookie', async (req, res) => {
     // Optional: tiny client sentinel as a fallback if Redis is down somewhere later.
     // This does NOT block fresh tokens (see set-cookie logic).
     if (SENTINEL_MS > 0) {
-      const isProd = process.env.NODE_ENV === 'production';
+      const isProd = config.server.nodeEnv === 'production';
+      // Use same secure logic as auth cookie (false in dev over http)
       res.cookie(SENTINEL_COOKIE_NAME, '1', {
         httpOnly: false, // must be readable by client JS (fallback behavior)
-        sameSite: 'Lax',
-        secure: isProd,
+        sameSite: 'lax',
+        secure: isProd, // Must match auth cookie secure flag logic
+        path: '/',
         maxAge: SENTINEL_MS
       });
     }

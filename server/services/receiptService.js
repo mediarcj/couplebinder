@@ -20,8 +20,10 @@
  */
 
 const Stripe = require('stripe');
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: '2023-10-16' });
+const { config } = require('../config');
 const logger = require('../utils/logger');
+
+const stripe = config.stripe.secretKey ? new Stripe(config.stripe.secretKey, { apiVersion: '2023-10-16' }) : null;
 
 /**
  * Fetch receipt data for a checkout session
@@ -30,8 +32,8 @@ const logger = require('../utils/logger');
  * @returns {Object} Normalized receipt view-model
  */
 async function getReceiptVM({ sessionId, userId }) {
-  // Check for required environment variable
-  if (!process.env.STRIPE_SECRET_KEY) {
+  // Check for required configuration
+  if (!stripe || !config.stripe.secretKey) {
     const err = new Error('Stripe configuration missing');
     err.status = 500;
     logger.error({ event: 'receipt.stripe_config_missing' }, 'Stripe secret key not configured');

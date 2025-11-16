@@ -19,12 +19,10 @@
 
 const cors = require('cors');
 const logger = require('../utils/logger');
+const { config } = require('../config');
 
-// Parse explicit allowed origins from environment
-const allowedList = (process.env.CORS_ORIGINS || '')
-  .split(',')
-  .map(s => s.trim())
-  .filter(Boolean);
+// Parse explicit allowed origins from config
+const allowedList = (config.security.allowedOrigins || []);
 
 // Helper to escape regex special characters
 function escapeRegex(s) {
@@ -32,7 +30,7 @@ function escapeRegex(s) {
 }
 
 // Build regex from BASE_DOMAIN if set, otherwise null
-const BASE_DOMAIN = process.env.BASE_DOMAIN;
+const BASE_DOMAIN = config.branding.baseDomain;
 const allowBaseDomain = BASE_DOMAIN
   ? new RegExp(`^https?:\\/\\/([a-z0-9-]+\\.)?${escapeRegex(BASE_DOMAIN)}(?::\\d+)?$`, 'i')
   : null;
@@ -56,7 +54,7 @@ const corsOptions = {
     }
     
     // Development: allow localhost
-    const nodeEnv = process.env.NODE_ENV || 'production';
+    const nodeEnv = config.server.nodeEnv;
     if (nodeEnv === 'development' && origin.includes('localhost')) {
       return callback(null, true);
     }

@@ -21,6 +21,8 @@
 // ============================================================
 // Status code mapping
 // ============================================================
+const { config } = require('../config');
+
 const STATUS_TITLES = {
   401: 'auth_required',
   403: 'forbidden',
@@ -115,7 +117,7 @@ function respondError(req, res, { status = 500, message, code, extra = {} }) {
         nonce: res.locals.nonce || '',
         assetVersion: res.locals.assetVersion || Date.now()
       },
-      app_info: { name: process.env.APP_NAME || 'Application' },
+      app_info: { name: config.branding.appName },
       ui: res.locals.ui || {},
       requestId,
     });

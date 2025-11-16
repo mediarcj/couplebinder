@@ -15,6 +15,7 @@ const { buildCanonicalUser } = require('./helpers/buildCanonicalUser');
 const { buildPageMetadata } = require('./helpers/buildPageMetadata');
 const { buildUiInstructions } = require('./helpers/buildUiInstructions');
 const { buildAppInfo } = require('./helpers/buildAppInfo');
+const { config } = require('../../config');
 
 /**
  * Build model for any protected page using master template.
@@ -39,8 +40,8 @@ async function buildTemplateProtectedPageModel(req, res, opts = {}) {
 
   const ui = {
     csrfToken,
-    supabaseUrl: process.env.SUPABASE_URL || '',
-    supabaseAnonKey: process.env.SUPABASE_ANON_KEY || '',
+    supabaseUrl: config.supabase.url || '',
+    supabaseAnonKey: config.supabase.anonKey || '',
   };
 
   const app_info = buildAppInfo();

@@ -1,217 +1,152 @@
 // File: server/utils/redisClient.js
-// Description: Redis client with improved connection management and error handling
-// Purpose: Provides reliable Redis connections with automatic reconnection and structured logging
-// Notes: Built as a universal foundation component for future applications
+// Description: Centralized Redis client that reads ONLY from config (single source of truth)
+// Purpose: Reliable Redis with auto-reconnect, test stub, and structured logs
 
-/**
- * WHAT:
- * We create a centralized Redis client with automatic reconnection and error handling.
- *
- * WHY:
- * Redis connections can fail and need reliable recovery. This provides robust connection management.
- *
- * HOW:
- * We create a Redis client with retry strategy, structured logging, and graceful error handling.
- */
+const { config } = require('../config');       // <-- single source of truth
+const logger = require('./logger');
 
+const isTest = config.server.nodeEnv === 'test';
+
+// -------------------------------
 // Test-only healthy stub
-const isTest = process.env.NODE_ENV === 'test';
-
+// -------------------------------
 if (isTest) {
   const { EventEmitter } = require('events');
-  
   const client = new EventEmitter();
-  
-  client.ping = async () => 'PONG';
+
+  client.ping   = async () => 'PONG';
   client.exists = async () => 0;
-  client.get = async () => null;
-  client.set = async () => 'OK';
-  client.del = async () => 0;
-  client.incr = async () => 1;
-  client.sAdd = async () => 1;
-  client.sRem = async () => 0;
+  client.get    = async () => null;
+  client.set    = async () => 'OK';
+  client.del    = async () => 0;
+  client.incr   = async () => 1;
+  client.sAdd   = async () => 1;
+  client.sRem   = async () => 0;
   client.expire = async () => 1;
-  client.multi = () => {
+  client.multi  = () => {
     const chain = {
-      set() { return chain; },
-      get() { return chain; },
-      sAdd() { return chain; },
-      expire() { return chain; },
-      del() { return chain; },
-      sRem() { return chain; },
-      incr() { return chain; },
+      set()   { return chain; },
+      get()   { return chain; },
+      sAdd()  { return chain; },
+      expire(){ return chain; },
+      del()   { return chain; },
+      sRem()  { return chain; },
+      incr()  { return chain; },
       exec: async () => []
     };
     return chain;
   };
-  client.end = () => {};
-  client.quit = async () => {};
+  client.quit   = async () => {};
   client.isOpen = true;
-  
+
   async function connectRedis() {
     process.nextTick(() => client.emit('connect'));
-    return;
+    logger.info({ event: 'redis.test.stub' }, 'Redis test stub connected');
   }
-  
   async function disconnectRedis() {
-    return;
+    // no-op in stub
   }
-  
+
   module.exports = { client, connectRedis, disconnectRedis };
   return;
 }
 
-// Normal runtime code follows...
+// -------------------------------
+// Normal runtime client
+// -------------------------------
+const { createClient } = require('redis');
 
-const redis = require('redis');
-const logger = require('./logger');
-const { config } = require('../config');
-
-// ============================================================
-// SECTION: Environment Configuration
-// Reads Redis configuration from environment or config
-// ============================================================
+// Pull from config only (config.redis is populated from env in one place)
 const REDIS_CONFIG = {
-  host: config.redis.host,
-  port: config.redis.port,
+  url:      config.redis.url,       // preferred if set
+  host:     config.redis.host,      // fallback path
+  port:     config.redis.port,
   password: config.redis.password
 };
 
-// ============================================================
-// SECTION: Redis Client Initialization
-// Creates a new Redis client with retry strategy and error handling
-// ============================================================
-const client = redis.createClient({
-  socket: {
-    host: REDIS_CONFIG.host,
-    port: REDIS_CONFIG.port,
-    connectTimeout: 5000,
-    reconnectStrategy: (retries) => {
-      logger.warn('Redis reconnect attempt', { retries });
-      // Gradual backoff: wait longer for each retry (up to 2 seconds max)
-      return Math.min(retries * 50, 2000);
-    },
-  },
-  password: REDIS_CONFIG.password,
-  lazyConnect: false // Connect immediately when connectRedis() is called
-});
+const socketBase = {
+  connectTimeout: 5000,
+  reconnectStrategy: (retries) => {
+    // Gradual backoff up to 2s
+    const delay = Math.min(retries * 50, 2000);
+    logger.warn({ event: 'redis.reconnect_attempt', retries, delay }, 'Redis reconnect attempt');
+    return delay;
+  }
+};
 
-// ============================================================
-// SECTION: Redis Event Bindings - Observability Layer
-// ============================================================
+// Prefer REDIS_URL, else host/port/password
+const client = REDIS_CONFIG.url
+  ? createClient({
+      url: REDIS_CONFIG.url,
+      socket: socketBase,
+      password: REDIS_CONFIG.password
+    })
+  : createClient({
+      socket: { ...socketBase, host: REDIS_CONFIG.host, port: REDIS_CONFIG.port },
+      password: REDIS_CONFIG.password
+    });
 
-/**
- * WHAT:
- * Set up event listeners for Redis connection lifecycle.
- * 
- * WHY:
- * We need visibility into Redis connection status for debugging and monitoring.
- * Proper logging helps diagnose connection issues in production.
- * 
- * HOW:
- * Listen to Redis client events and log them with structured data.
- * Use appropriate log levels (info for success, warn/error for issues).
- */
-
-// Fired when Redis has successfully connected
+// -------------------------------
+// Observability
+// -------------------------------
 client.on('connect', () => {
-  logger.info({
-    event: 'redis.ready',
-    host: REDIS_CONFIG.host,
-    port: REDIS_CONFIG.port
-  }, 'Redis connected');
+  logger.info(
+    { event: 'redis.connect', usingUrl: !!REDIS_CONFIG.url, host: REDIS_CONFIG.host, port: REDIS_CONFIG.port },
+    'Redis TCP connected'
+  );
 });
 
-// Fired if Redis disconnects or cannot connect
+client.on('ready', () => {
+  logger.info({ event: 'redis.ready' }, 'Redis ready');
+});
+
 client.on('error', (err) => {
-  logger.error({
-    event: 'redis.error',
-    error: err.message,
-    code: err.code
-  }, 'Redis connection error');
+  logger.error({ event: 'redis.error', code: err.code, message: err.message }, 'Redis connection error');
 });
 
-// Fired during a reconnect attempt
 client.on('reconnecting', () => {
-  logger.warn({
-    event: 'redis.reconnecting'
-  }, 'Redis attempting to reconnect');
+  logger.warn({ event: 'redis.reconnecting' }, 'Redis attempting to reconnect');
 });
 
-// Fired when Redis disconnects
 client.on('end', () => {
-  logger.error({
-    event: 'redis.disconnected'
-  }, 'Redis disconnected');
+  logger.error({ event: 'redis.disconnected' }, 'Redis disconnected');
 });
 
-/**
- * WHAT:
- * Explicitly initialize the Redis connection.
- * 
- * WHY:
- * We want to control when Redis connects (during server boot).
- * Allows us to handle connection failures gracefully.
- * 
- * HOW:
- * Check if client is already connected to avoid duplicate connections.
- * Use async/await for proper error handling.
- * Throw errors during boot so server fails fast if Redis is required.
- * 
- * @returns {Promise<void>}
- * @throws {Error} If Redis connection fails
- */
+// -------------------------------
+// Lifecycle helpers
+// -------------------------------
 async function connectRedis() {
   try {
     if (!client.isOpen) {
-      logger.info('Redis initiating connection');
+      logger.info({ event: 'redis.connect_start' }, 'Redis initiating connection');
       await client.connect();
-      logger.info('Redis connection established');
+      // Optional quick probe for sanity
+      try {
+        const t0 = Date.now();
+        const pong = await client.ping();
+        logger.info({ event: 'redis.ping', pong, ms: Date.now() - t0 }, 'Redis ping after connect');
+      } catch (probeErr) {
+        logger.warn({ event: 'redis.ping_fail', message: probeErr.message }, 'Redis ping failed');
+      }
+      logger.info({ event: 'redis.connect_ok' }, 'Redis connection established');
     } else {
-      logger.info('Redis already connected');
+      logger.info({ event: 'redis.already_open' }, 'Redis already connected');
     }
   } catch (err) {
-    logger.error('Redis failed to connect', {
-      message: err.message,
-      code: err.code
-    });
-    throw err; // Fail loudly during boot if Redis is not accessible
+    logger.error({ event: 'redis.connect_fail', code: err.code, message: err.message }, 'Redis failed to connect');
+    throw err; // fail fast if your app requires Redis
   }
 }
 
-/**
- * WHAT:
- * Gracefully close the Redis connection.
- * 
- * WHY:
- * Proper cleanup during server shutdown prevents connection leaks.
- * Ensures data is flushed before closing.
- * 
- * HOW:
- * Use quit() instead of disconnect() for graceful shutdown.
- * Handle errors during disconnect (connection might already be closed).
- * 
- * @returns {Promise<void>}
- */
 async function disconnectRedis() {
   try {
     if (client.isOpen) {
-      await client.quit();
-      logger.info('Redis connection closed');
+      await client.quit(); // graceful close
+      logger.info({ event: 'redis.quit_ok' }, 'Redis connection closed');
     }
   } catch (err) {
-    logger.error('Redis disconnect error', {
-      message: err.message
-    });
+    logger.error({ event: 'redis.quit_err', message: err.message }, 'Redis disconnect error');
   }
 }
 
-// ============================================================
-// EXPORTS
-// Exposes the Redis client and connection management functions
-// ============================================================
-module.exports = {
-  client,
-  connectRedis,
-  disconnectRedis
-};
+module.exports = { client, connectRedis, disconnectRedis };

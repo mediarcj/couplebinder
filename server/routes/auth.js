@@ -17,6 +17,7 @@ const { hasUser, getUserId, getUserEmail } = require('../utils/authz');
 const { loginLimiter, signupLimiter } = require('../middleware/rateLimiter');
 const { validateUserRegistration } = require('../middleware/validation');
 const logger = require('../utils/logger');
+const { config } = require('../config');
 const router = express.Router();
 
 /**
@@ -38,8 +39,8 @@ const router = express.Router();
  */
 router.post('/login', loginLimiter(), async (req, res) => {
     try {
-        const isProd = process.env.NODE_ENV === 'production';
-        const allowLegacy = process.env.ALLOW_LEGACY_LOGIN === 'true';
+        const isProd = config.server.nodeEnv === 'production';
+        const allowLegacy = config.auth.allowLegacyLogin;
         
         // In production, return 404 unless explicitly allowed
         if (isProd && !allowLegacy) {
@@ -116,23 +117,35 @@ router.post('/logout', (req, res) => {
 
 /**
  * GET /api/auth/status
- * Returns current authentication status from stateless tokens
+ * Returns current authentication status from cookie truth only
+ * 
+ * WHAT:
+ * Verifies the auth cookie the same way SSR does (cookie-only, no Bearer fallback).
+ * 
+ * WHY:
+ * Status endpoint must reflect server truth (cookie state), not client localStorage.
+ * This ensures logout verification works correctly.
+ * 
+ * HOW:
+ * authBridge treats this route as cookie-only (SSR-like), so req.user will only be
+ * set if a valid cookie exists. No Bearer token fallback.
  */
 router.get('/status', (req, res) => {
     try {
-        if (hasUser(req)) {
-            res.json({
-                success: true,
-                authenticated: true,
+        // Status endpoint uses cookie-only auth (same as SSR)
+        // authBridge now treats /api/auth/status as cookie-only, so req.user
+        // will only be set if a valid cookie exists
+        const isAuthenticated = hasUser(req);
+        
+        // Return format that matches test expectations
+        res.json({
+            success: true,
+            authenticated: isAuthenticated,
+            ...(isAuthenticated ? {
                 userId: getUserId(req),
                 userEmail: getUserEmail(req)
-            });
-        } else {
-            res.json({
-                success: true,
-                authenticated: false
-            });
-        }
+            } : {})
+        });
     } catch (error) {
         logger.error('Auth status route error', {
             requestId: req.requestId,

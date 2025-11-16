@@ -1,5 +1,11 @@
 // File: server/utils/supabaseClient.js
 // Purpose: Centralized Supabase clients (anon + service role) for server-side use
+// Notes:
+//  - No secrets logged. Safe in dev/prod.
+//  - If required env is missing, exports `null` clients so callers can skip.
+//  - Test mode returns tiny stubs (no network).
+
+'use strict';
 
 const isTest = process.env.NODE_ENV === 'test';
 
@@ -11,7 +17,7 @@ if (isTest) {
     },
     from: () => ({ select: async () => ({ data: [], error: null }) })
   };
-  
+
   const supabaseAdmin = {
     auth: {
       admin: {
@@ -21,54 +27,30 @@ if (isTest) {
     },
     from: () => ({ select: async () => ({ data: [], error: null }) })
   };
-  
+
   module.exports = { supabase, supabaseAdmin };
-  return;
+} else {
+  const { createClient } = require('@supabase/supabase-js');
+
+  // Prefer central config (already loaded very early). Fall back to env if needed.
+  let cfg = null;
+  try { ({ config: cfg } = require('../config')); } catch { cfg = null; }
+
+  const url =  cfg?.supabase?.url              || process.env.SUPABASE_URL || '';
+  const anon = cfg?.supabase?.anonKey          || process.env.SUPABASE_ANON_KEY || '';
+  const svc =  cfg?.supabase?.serviceRoleKey   || process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+
+  const xClientInfo =
+    (cfg?.branding?.xClientInfo && String(cfg.branding.xClientInfo)) ||
+    `app-server/${(cfg?.branding?.appVersion || process.env.APP_VERSION || 'dev')}`;
+
+  const baseOptions = {
+    auth: { persistSession: false, autoRefreshToken: false },
+    global: { headers: { 'X-Client-Info': xClientInfo } },
+  };
+
+  const supabase =     (url && anon) ? createClient(url, anon, baseOptions) : null;
+  const supabaseAdmin = (url && svc) ? createClient(url, svc,  baseOptions) : null;
+
+  module.exports = { supabase, supabaseAdmin };
 }
-
-const path = require('path');
-const { createClient } = require('@supabase/supabase-js');
-
-// Load env once (OK if already loaded elsewhere)
-require('dotenv').config({ path: path.join(__dirname, '../../.env') });
-
-const SUPABASE_URL = process.env.SUPABASE_URL;
-const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY;
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-if (!SUPABASE_URL) {
-  const isTest = process.env.NODE_ENV === 'test';
-  if (isTest) {
-    console.warn('[warn] SUPABASE_URL missing in test mode  using test stubs');
-  } else {
-    throw new Error('Missing SUPABASE_URL in environment.');
-  }
-}
-if (!SUPABASE_ANON_KEY) {
-  console.warn('[warn] SUPABASE_ANON_KEY missing  public client will be null');
-}
-if (!SUPABASE_SERVICE_ROLE_KEY) {
-  console.warn('[warn] SUPABASE_SERVICE_ROLE_KEY missing  admin client will be null');
-}
-
-const baseOptions = {
-  auth: {
-    persistSession: false,   // node server  no sessions
-    autoRefreshToken: false, // node server  no auto-refresh
-  },
-  global: {
-    headers: { 'X-Client-Info': (process.env.X_CLIENT_INFO || 'app-server/1.0.0') },
-  },
-};
-
-// Public (anon) client  optional on server
-const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY)
-  ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY, baseOptions)
-  : null;
-
-// Service role client  REQUIRED for admin/server reads/writes
-const supabaseAdmin = (SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY)
-  ? createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, baseOptions)
-  : null;
-
-module.exports = { supabase, supabaseAdmin };

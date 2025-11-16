@@ -5,12 +5,11 @@
 // ============================================================
 
 const navManager = require('../../navigation/manager');
+const { ASSET_VERSION } = require('../../../config');
 
 function buildPageMetadata(req, res, opts = {}) {
   const nonce = res.locals.nonce || '';
-  const assetVersion =
-    process.env.ASSET_VERSION ||
-    new Date().toISOString().replace(/[-:TZ.]/g, '').slice(0, 14);
+  const assetVersion = ASSET_VERSION || new Date().toISOString().replace(/[-:TZ.]/g, '').slice(0, 14);
 
   return {
     title: opts.title || 'Untitled Page',

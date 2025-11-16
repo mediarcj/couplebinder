@@ -21,19 +21,20 @@
 const Stripe = require('stripe');
 const logger = require('../utils/logger');
 const { supabaseAdmin } = require('../utils/supabaseClient');
+const { config } = require('../config');
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
+const stripe = new Stripe(config.stripe.secretKey, {
   apiVersion: '2025-09-30.clover'
 });
 
 // Price configuration: maps price IDs to their expected mode and product key
 const ALLOWED_PRICES = Object.freeze({
-  [process.env.STRIPE_PRICE_RESUME_ONE_TIME]: { 
+  [config.stripe.priceResumeOneTime]: { 
     type: 'one_time', 
     mode: 'payment', 
     productKey: 'resume_one_time' 
   },
-  [process.env.STRIPE_PRICE_RESUME_EXPERT]: { 
+  [config.stripe.priceResumeExpert]: { 
     type: 'one_time', 
     mode: 'payment', 
     productKey: 'resume_expert' 
@@ -72,7 +73,7 @@ function productKeyForPrice(priceId) {
  * 4. Return customer ID for checkout session
  */
 async function getOrCreateStripeCustomer(userId, email) {
-  const isLive = process.env.STRIPE_SECRET_KEY?.startsWith('sk_live_');
+  const isLive = config.stripe.secretKey?.startsWith('sk_live_');
   const col = isLive ? 'stripe_customer_id_live' : 'stripe_customer_id_test';
 
   // Fetch current row with environment-specific column
@@ -178,6 +179,88 @@ async function createCheckoutSession({ user, priceId, quantity = 1, idempotencyK
     }, 'Could not verify price; proceeding with allowlisted mode');
   }
 
+  // Validate publicOrigin is set (required for Stripe checkout URLs)
+  if (!config.publicOrigin || !config.publicOrigin.trim()) {
+    logger.error({ 
+      event: 'checkout.config.missing_public_origin', 
+      requestId,
+      publicOrigin: config.publicOrigin,
+      nodeEnv: config.server?.nodeEnv
+    }, 'publicOrigin is missing or empty - required for Stripe checkout');
+    const err = new Error('Server configuration error: publicOrigin not set');
+    err.status = 500;
+    throw err;
+  }
+
+  // Build URLs
+  // The original code used: `${process.env.PUBLIC_ORIGIN}/dashboard/purchase/confirmation?session_id={CHECKOUT_SESSION_ID}`
+  // We maintain this behavior for consistency, but allow override via env for flexibility
+  const baseUrl = config.publicOrigin.replace(/\/+$/, ''); // Remove trailing slashes
+  
+  // Use env paths if provided and valid, otherwise use defaults (matching original behavior)
+  // Default success path: /dashboard/purchase/confirmation (matches original)
+  // Default cancel path: /dashboard/billing (matches original)
+  const defaultSuccessPath = '/dashboard/purchase/confirmation';
+  const defaultCancelPath = '/dashboard/billing';
+  
+  // Check if env paths are full URLs (backward compatibility for users who set full URLs)
+  const isFullUrl = (path) => {
+    if (!path) return false;
+    try {
+      const url = new URL(path);
+      return url.protocol === 'http:' || url.protocol === 'https:';
+    } catch {
+      return false;
+    }
+  };
+  
+  let successPath, cancelPath;
+  
+  if (config.stripe.successPath && !isFullUrl(config.stripe.successPath)) {
+    // Use env path if it's a relative path
+    successPath = config.stripe.successPath.startsWith('/') 
+      ? config.stripe.successPath 
+      : `/${config.stripe.successPath}`;
+  } else {
+    // Use default (original behavior)
+    successPath = defaultSuccessPath;
+  }
+  
+  if (config.stripe.cancelPath && !isFullUrl(config.stripe.cancelPath)) {
+    // Use env path if it's a relative path
+    cancelPath = config.stripe.cancelPath.startsWith('/') 
+      ? config.stripe.cancelPath 
+      : `/${config.stripe.cancelPath}`;
+  } else {
+    // Use default (original behavior)
+    cancelPath = defaultCancelPath;
+  }
+  
+  // Build final URLs (always absolute, matching original behavior)
+  const successUrl = `${baseUrl}${successPath}?session_id={CHECKOUT_SESSION_ID}`;
+  const cancelUrl = `${baseUrl}${cancelPath}?canceled=1`;
+
+  // Validate URLs are absolute (Stripe requirement)
+  // Note: {CHECKOUT_SESSION_ID} is a Stripe placeholder, so we validate with a dummy value
+  try {
+    const testSuccessUrl = successUrl.replace('{CHECKOUT_SESSION_ID}', 'test_session_id');
+    const testCancelUrl = cancelUrl;
+    new URL(testSuccessUrl); // Will throw if not valid
+    new URL(testCancelUrl);  // Will throw if not valid
+  } catch (urlError) {
+    logger.error({ 
+      event: 'checkout.url.invalid', 
+      requestId,
+      successUrl,
+      cancelUrl,
+      publicOrigin: config.publicOrigin,
+      error: urlError.message
+    }, 'Generated checkout URLs are invalid');
+    const err = new Error(`Invalid checkout URL: ${urlError.message}`);
+    err.status = 500;
+    throw err;
+  }
+
   // Build session config - conditional fields based on mode
   const sessionConfig = {
     mode: effectiveMode,
@@ -185,8 +268,8 @@ async function createCheckoutSession({ user, priceId, quantity = 1, idempotencyK
     line_items: [{ price: trimmedPriceId, quantity }],
     allow_promotion_codes: true,
     billing_address_collection: 'auto',
-    success_url: `${process.env.PUBLIC_ORIGIN}/dashboard/purchase/confirmation?session_id={CHECKOUT_SESSION_ID}`,
-    cancel_url: `${process.env.PUBLIC_ORIGIN}/dashboard/billing?canceled=1`,
+    success_url: successUrl,
+    cancel_url: cancelUrl,
     client_reference_id: user.id,
     metadata: { 
       user_id: user.id, 
@@ -200,6 +283,15 @@ async function createCheckoutSession({ user, priceId, quantity = 1, idempotencyK
   if (effectiveMode === 'payment') {
     sessionConfig.payment_intent_data = { setup_future_usage: 'off_session' };
   }
+
+  logger.debug({
+    event: 'checkout.session.config',
+    requestId,
+    successUrl,
+    cancelUrl,
+    publicOrigin: config.publicOrigin,
+    mode: effectiveMode
+  }, 'Creating Stripe checkout session');
 
   const session = await stripe.checkout.sessions.create(
     sessionConfig,

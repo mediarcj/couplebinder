@@ -5,6 +5,7 @@ const { supabaseAdmin } = require('../utils/supabaseClient');
 const { createClient } = require('@supabase/supabase-js');
 const logger = require('../utils/logger');
 const { updateProfileTransactional } = require('./profileSyncService');
+const { config } = require('../config');
 
 function ensureAdmin() {
   if (!supabaseAdmin) {
@@ -30,8 +31,8 @@ async function getProfileByUserId(userId, userAccessToken) {
   // Use user-context client for RLS compliance
   if (userAccessToken) {
     const userSupabase = createClient(
-      process.env.SUPABASE_URL,
-      process.env.SUPABASE_ANON_KEY,
+      config.supabase.url,
+      config.supabase.anonKey,
       {
         global: {
           headers: { Authorization: `Bearer ${userAccessToken}` }

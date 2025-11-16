@@ -23,6 +23,7 @@ const router = express.Router();
 const { buildDashboardPageModel } = require('../ui_contract/presenters');
 const { supabaseAdmin } = require('../utils/supabaseClient');
 const { getPricingCatalog } = require('../services/pricingCatalog');
+const { config } = require('../config');
 
 /**
  * WHAT:
@@ -47,13 +48,12 @@ router.get('/', async (req, res) => {
   pageModel.page.nonce = res.locals.nonce;
   const effectiveAppName =
     (pageModel && pageModel.app_info && pageModel.app_info.name) ||
-    process.env.APP_NAME ||
-    'Application';
+    config.branding.appName;
   pageModel.page.title = `Billing – ${effectiveAppName}`;
   pageModel.ui = pageModel.ui || {};
   pageModel.ui.csrfToken = res.locals.csrfToken || '';
-  pageModel.ui.supabaseUrl = process.env.SUPABASE_URL || '';
-  pageModel.ui.supabaseAnonKey = process.env.SUPABASE_ANON_KEY || '';
+  pageModel.ui.supabaseUrl = config.supabase.url || '';
+  pageModel.ui.supabaseAnonKey = config.supabase.anonKey || '';
 
   // Fetch pricing catalog from Stripe
   let pricing = [];
@@ -66,10 +66,10 @@ router.get('/', async (req, res) => {
   // Purchase history removed by request
   pageModel.billing = { pricing };
   
-  // Pass environment variables for price ID lookups in template
+  // Pass price IDs for lookups in template
   pageModel.env = {
-    STRIPE_PRICE_RESUME_ONE_TIME: process.env.STRIPE_PRICE_RESUME_ONE_TIME,
-    STRIPE_PRICE_RESUME_EXPERT: process.env.STRIPE_PRICE_RESUME_EXPERT
+    STRIPE_PRICE_RESUME_ONE_TIME: config.stripe.priceResumeOneTime,
+    STRIPE_PRICE_RESUME_EXPERT: config.stripe.priceResumeExpert
   };
 
   res.render('billing', pageModel);

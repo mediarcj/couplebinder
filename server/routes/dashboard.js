@@ -13,6 +13,7 @@ const { getPricingCatalog, getPriceSummary } = require('../services/pricingCatal
 const { archiveReceiptSnapshot } = require('../services/receiptArchive');
 const { assertUser } = require('../utils/authz');
 const logger = require('../utils/logger');
+const { config } = require('../config');
 
 /**
  * GET /dashboard
@@ -31,8 +32,8 @@ router.get('/', async (req, res) => {
         // Ensure ui object exists and has required fields (canonical block)
         pageModel.ui = pageModel.ui || {};
         pageModel.ui.csrfToken = res.locals.csrfToken || '';
-        pageModel.ui.supabaseUrl = process.env.SUPABASE_URL;
-        pageModel.ui.supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+        pageModel.ui.supabaseUrl = config.supabase.url;
+        pageModel.ui.supabaseAnonKey = config.supabase.anonKey;
         
         // Render EJS template with page model
         res.render('dashboard', pageModel);
@@ -63,11 +64,11 @@ router.get('/profile-edit', async (req, res) => {
         // Ensure ui object exists and has required fields
         pageModel.ui = pageModel.ui || {};
         pageModel.ui.csrfToken = res.locals.csrfToken || '';
-        pageModel.ui.supabaseUrl = process.env.SUPABASE_URL;
-        pageModel.ui.supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+        pageModel.ui.supabaseUrl = config.supabase.url;
+        pageModel.ui.supabaseAnonKey = config.supabase.anonKey;
         
         // Update page title for profile edit
-        pageModel.page.title = `Edit Profile - ${process.env.APP_NAME || 'Application'}`;
+        pageModel.page.title = `Edit Profile - ${config.branding.appName}`;
         
         // Render EJS template with page model
         res.render('profile-edit', pageModel);
@@ -104,7 +105,7 @@ router.get('/purchase/confirmation', async (req, res, next) => {
                     message: 'Missing session_id parameter'
                 },
                 app_info: {
-                    name: process.env.APP_NAME || 'Application'
+                    name: config.branding.appName
                 }
             });
         }
@@ -116,7 +117,7 @@ router.get('/purchase/confirmation', async (req, res, next) => {
         const vm = await getReceiptVM({ sessionId, userId });
         
         // Archive receipt snapshot (fire-and-forget, non-blocking)
-        if (process.env.FEATURE_ARCHIVE_RECEIPTS === '1') {
+        if (config.features.archiveReceipts) {
             try {
                 const maybePromise = archiveReceiptSnapshot && archiveReceiptSnapshot({ userId, receipt: vm });
                 if (maybePromise && typeof maybePromise.then === 'function') {
@@ -141,11 +142,11 @@ router.get('/purchase/confirmation', async (req, res, next) => {
         const pageModel = await buildDashboardPageModel(req, res);
         pageModel.page.nonce = res.locals.nonce;
         pageModel.page.assetVersion = Date.now();
-        pageModel.page.title = `Purchase Confirmation - ${process.env.APP_NAME || 'Application'}`;
+        pageModel.page.title = `Purchase Confirmation - ${config.branding.appName}`;
         pageModel.ui = pageModel.ui || {};
         pageModel.ui.csrfToken = res.locals.csrfToken || '';
-        pageModel.ui.supabaseUrl = process.env.SUPABASE_URL;
-        pageModel.ui.supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+        pageModel.ui.supabaseUrl = config.supabase.url;
+        pageModel.ui.supabaseAnonKey = config.supabase.anonKey;
 
         // Attach confirmation payload (kept minimal—no PM details)
         pageModel.confirmation = {
@@ -193,7 +194,7 @@ router.get('/purchase/confirmation', async (req, res, next) => {
                     message: 'Confirmation not found'
                 },
                 app_info: {
-                    name: process.env.APP_NAME || 'Application'
+                    name: config.branding.appName
                 }
             });
         }
@@ -241,7 +242,7 @@ router.get('/checkout/review', async (req, res, next) => {
                     message: 'Missing product parameter'
                 },
                 app_info: {
-                    name: process.env.APP_NAME || 'Application'
+                    name: config.branding.appName
                 }
             });
         }
@@ -254,16 +255,16 @@ router.get('/checkout/review', async (req, res, next) => {
 
         // Helper function to select product by key with multiple fallback strategies
         function selectByKey(key) {
-            const isOneTime = process.env.STRIPE_PRICE_RESUME_ONE_TIME && key === 'resume_one_time';
-            const isExpert = process.env.STRIPE_PRICE_RESUME_EXPERT && key === 'resume_expert';
+            const isOneTime = config.stripe.priceResumeOneTime && key === 'resume_one_time';
+            const isExpert = config.stripe.priceResumeExpert && key === 'resume_expert';
             
             return catalog.find(p =>
                 // Prefer explicit metadata keys if present
                 p.product_metadata?.product_key === key ||
                 p.product_key === key ||
-                // Fallback: match the known env price IDs for the two products
-                (isOneTime && p.priceId === process.env.STRIPE_PRICE_RESUME_ONE_TIME) ||
-                (isExpert && p.priceId === process.env.STRIPE_PRICE_RESUME_EXPERT)
+                // Fallback: match the known config price IDs for the two products
+                (isOneTime && p.priceId === config.stripe.priceResumeOneTime) ||
+                (isExpert && p.priceId === config.stripe.priceResumeExpert)
             );
         }
 
@@ -286,20 +287,20 @@ router.get('/checkout/review', async (req, res, next) => {
                     message: 'Product not found'
                 },
                 app_info: {
-                    name: process.env.APP_NAME || 'Application'
+                    name: config.branding.appName
                 }
             });
         }
 
         // Build page model for consistent dashboard layout
         const pageModel = await buildDashboardPageModel(req, res);
-        pageModel.page.title = 'Review Purchase - ' + (process.env.APP_NAME || 'Application');
+        pageModel.page.title = 'Review Purchase - ' + config.branding.appName;
         pageModel.page.nonce = res.locals.nonce;
         pageModel.page.assetVersion = Date.now();
         pageModel.ui = pageModel.ui || {};
         pageModel.ui.csrfToken = res.locals.csrfToken || '';
-        pageModel.ui.supabaseUrl = process.env.SUPABASE_URL;
-        pageModel.ui.supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+        pageModel.ui.supabaseUrl = config.supabase.url;
+        pageModel.ui.supabaseAnonKey = config.supabase.anonKey;
 
         // Normalize product data for template
         const normalizedProduct = {

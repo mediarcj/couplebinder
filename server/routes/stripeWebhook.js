@@ -23,8 +23,9 @@ const Stripe = require('stripe');
 const crypto = require('crypto');
 const logger = require('../utils/logger');
 const { supabaseAdmin } = require('../utils/supabaseClient');
+const { config } = require('../config');
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, { 
+const stripe = new Stripe(config.stripe.secretKey, { 
   apiVersion: '2025-09-30.clover' 
 });
 
@@ -46,7 +47,7 @@ function mountStripeWebhook(app) {
   // Mount at /api/stripe/webhook (not under /api) to bypass auth guards
   app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
     const sig = req.headers['stripe-signature'];
-    const secret = process.env.STRIPE_WEBHOOK_SECRET;
+    const secret = config.stripe.webhookSecret;
     const requestId = req.id || crypto.randomUUID();
     let event;
 
@@ -82,10 +83,10 @@ function mountStripeWebhook(app) {
           const li = fullSession?.line_items?.data?.[0] || null;
           const priceId = li?.price?.id || null;
 
-          // Map price_id to product_key from env allowlist
+          // Map price_id to product_key from config allowlist
           const PRICE_TO_KEY = {
-            [process.env.STRIPE_PRICE_RESUME_ONE_TIME]: 'resume_one_time',
-            [process.env.STRIPE_PRICE_RESUME_EXPERT]: 'resume_expert'
+            [config.stripe.priceResumeOneTime]: 'resume_one_time',
+            [config.stripe.priceResumeExpert]: 'resume_expert'
           };
           const productKey = priceId ? (PRICE_TO_KEY[priceId] || null) : null;
 

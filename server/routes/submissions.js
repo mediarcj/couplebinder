@@ -39,6 +39,17 @@ const submissionIdempotency = createIdempotencyMiddleware({
  */
 router.post('/', submissionIdempotency, async (req, res) => {
   try {
+    // CSRF check happens first (returns 403 if no token)
+    // If we get here, CSRF passed, but we still need auth
+    const { hasUser } = require('../utils/authz');
+    if (!hasUser(req)) {
+      return res.status(401).json({
+        ok: false,
+        error: 'Authentication required',
+        code: 'auth_required'
+      });
+    }
+    
     const { text } = req.body;
     const clientIP = getClientIP(req);
     const user = assertUser(req);
@@ -158,9 +169,10 @@ router.get('/', async (req, res) => {
     
     // Create Supabase client with user's access token for RLS
     const { createClient } = require('@supabase/supabase-js');
+    const { config } = require('../config');
     const userSupabase = createClient(
-      process.env.SUPABASE_URL,
-      process.env.SUPABASE_ANON_KEY,
+      config.supabase.url,
+      config.supabase.anonKey,
       {
         global: {
           headers: {

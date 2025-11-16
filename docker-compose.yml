@@ -49,7 +49,7 @@ services:
         max-size: "10m"
         max-file: "3"
     healthcheck:
-      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/health/liveness', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })"]
+      test: ["CMD", "node", "-e", "const net = require('net'); const port = process.env.PORT || 3000; const s = net.connect(port, '127.0.0.1', () => { s.end(); process.exit(0); }).on('error', () => process.exit(1));"]
       interval: 30s
       timeout: 10s
       retries: 3

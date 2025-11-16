@@ -126,44 +126,14 @@ function loadCoreModules() {
 function loadRouteModules() {
   console.log('Loading route modules with error isolation...');
   
-  const modules = [
-    {
-      path: './routes/health',
-      name: 'Health Routes',
-      fallback: null,
-      key: 'health'
-    },
-    {
-      path: './routes/auth',
-      name: 'Auth Routes',
-      fallback: null,
-      key: 'auth'
-    },
-    {
-      path: './routes/submissions',
-      name: 'Submissions Routes',
-      fallback: null,
-      key: 'submissions'
-    },
-    {
-      path: './routes/dashboard',
-      name: 'Dashboard Routes',
-      fallback: null,
-      key: 'dashboard'
-    },
-    {
-      path: './routes/users',
-      name: 'Users Routes',
-      fallback: null,
-      key: 'users'
-    },
-    {
-      path: './routes/pageApi',
-      name: 'Page API Routes',
-      fallback: null,
-      key: 'pageApi'
-    }
-  ];
+const modules = [
+  { path: '../routes/health',      name: 'Health Routes',      fallback: null, key: 'health' },
+  { path: '../routes/auth',        name: 'Auth Routes',        fallback: null, key: 'auth' },
+  { path: '../routes/submissions', name: 'Submissions Routes', fallback: null, key: 'submissions' },
+  { path: '../routes/dashboard',   name: 'Dashboard Routes',   fallback: null, key: 'dashboard' },
+  { path: '../routes/users',       name: 'Users Routes',       fallback: null, key: 'users' },
+  { path: '../routes/pageApi',     name: 'Page API Routes',    fallback: null, key: 'pageApi' },
+];
   
   return safeLoadModules(modules);
 }
@@ -176,14 +146,19 @@ function loadMiddlewareModules() {
   console.log('Loading middleware modules with error isolation...');
   
   const modules = [
+    { 
+      path: '../middleware/csrfLite',
+      name: 'CSRF Middleware',
+      fallback: { addCSRFToken: () => {}, validateCSRF: () => (req,res,next)=>next() },
+      key: 'csrf' },
     {
-      path: './middleware/security',
+      path: '../middleware/security',
       name: 'Security Middleware',
       fallback: { getClientIP: () => 'unknown' },
       key: 'security'
     },
     {
-      path: './middleware/requireAuth',
+      path: '../middleware/requireAuth',
       name: 'Auth Middleware',
       fallback: () => (req, res, next) => next(),
       key: 'requireAuth'

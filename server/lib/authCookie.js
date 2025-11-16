@@ -94,78 +94,37 @@ function buildCookieOpts({ secure, ttlMs }) {
  * - Always set a host-only plain cookie.
  * - If public HTTPS, also set a __Host- twin (requires secure + no Domain).
  */
-function setAuthCookie(res, req, token, ttlMs) {
+// Choose the one canonical name for this request
+function canonicalCookieName(req) {
   const publicHost = isPublicHost(req);
   const https = isHttps(req);
-  
-  // Determine secure flag: respect config.auth.cookieSecure, or use publicHost && https
-  const forceSecure = config.auth.cookieSecure === true;
-  const forceInsecure = config.auth.cookieSecure === false;
-  const shouldBeSecure = forceSecure || (!forceInsecure && publicHost && https);
+  const forceSecure = (config.auth.cookieSecure === true);
+  // Use __Host- only when browser sees HTTPS on a public host (or forced secure)
+  const useHost = (publicHost && https) || forceSecure;
+  return useHost ? hostPrefixedName() : plainCookieName();
+}
 
-  // Debug logging for cookie set detection (only when config.auth.debug=true)
+function setAuthCookie(res, req, token, ttlMs) {
+  const name = canonicalCookieName(req);
+  const publicHost = isPublicHost(req);
+  const https = isHttps(req);
+  const forceSecure = (config.auth.cookieSecure === true);
+  const secure = forceSecure || (publicHost && https);
+  const opts = buildCookieOpts({ secure, ttlMs });
+  // IMPORTANT: never set "domain" here; host-only cookie (required for __Host-)
+  res.cookie(name, token, opts);
   if (config.auth.debug) {
-    logger.debug({
-      event: 'auth.cookie.set.detection',
-      publicHost,
-      https,
-      reqSecure: !!req.secure,
-      xForwardedProto: req.get('x-forwarded-proto'),
-      hostname: req.hostname || req.get('host'),
-      willSetPlain: true,
-      willSetHost: publicHost && https,
-      plainSecure: shouldBeSecure,
-      cookieSecureConfig: config.auth.cookieSecure !== undefined ? String(config.auth.cookieSecure) : '(auto-detect)'
-    }, 'Cookie set detection');
+    logger.debug({ event: 'auth.cookie.set.one', name, secure: !!opts.secure, path: opts.path, sameSite: opts.sameSite, maxAge: opts.maxAge }, 'Set auth cookie');
   }
+}
 
-  // Always write the plain host-only cookie (works in dev & prod).
-  const plainName = plainCookieName();
-  const plainOpts = buildCookieOpts({ secure: shouldBeSecure, ttlMs });
-  res.cookie(plainName, token, plainOpts);
-  
-  // Log cookie set details for debugging (only when config.auth.debug=true)
-  if (config.auth.debug) {
-    logger.debug({
-      event: 'auth.cookie.set.plain',
-      cookieName: plainName,
-      secure: plainOpts.secure,
-      publicHost,
-      https,
-      reqSecure: !!req.secure,
-      xForwardedProto: req.get('x-forwarded-proto'),
-      cfVisitor: req.get('cf-visitor') || req.get('CF-Visitor') || null,
-      hostname: req.hostname || req.get('host'),
-      path: plainOpts.path,
-      sameSite: plainOpts.sameSite,
-      httpOnly: plainOpts.httpOnly,
-      maxAge: plainOpts.maxAge,
-      hasDomain: !!plainOpts.domain,
-      domain: plainOpts.domain || '(none)'
-    }, 'Setting plain auth cookie');
-  }
-
-  // On public HTTPS, ALSO write the __Host- cookie (hardened).
-  // On localhost, only set __Host- if explicitly forced secure (for testing)
-  const shouldSetHostCookie = (publicHost && https) || (forceSecure && !publicHost);
-  if (shouldSetHostCookie) {
-    const hostName = hostPrefixedName();
-    const hostOpts = buildCookieOpts({ secure: true, ttlMs });
-    res.cookie(hostName, token, hostOpts);
-  }
-
-  if (config.auth.debug) {
-    logger.debug({
-      event: 'auth.cookie.set',
-      plainName,
-      plainSecure: Boolean(plainOpts.secure),
-      hostName: (publicHost && https) ? hostPrefixedName() : null,
-      httpOnly: true,
-      sameSite: plainOpts.sameSite,
-      path: '/',
-      maxAge: ttlMs || null
-    }, 'Auth cookie(s) set');
-  }
+// Read whichever name is present (__Host-* or plain)
+function readAuthCookieJwt(req) {
+  return (
+    req.cookies?.[hostPrefixedName()] ||
+    req.cookies?.[plainCookieName()] ||
+    null
+  );
 }
 
 /**
@@ -264,9 +223,12 @@ function clearAuthCookie(res, req, clearAll = false) {
 
 module.exports = {
   // Export the *base* name so other code can derive both variants.
+  // Keep base for legacy clears; actual set/read is decided at runtime.
   AUTH_COOKIE_NAME: AUTH_COOKIE_BASENAME,
   AUTH_COOKIE_ALIASES,
   setAuthCookie,
   clearAuthCookie,
-  isHttps  // Export for canonical host middleware and tests
+  isHttps,
+  canonicalCookieName,
+  readAuthCookieJwt
 };

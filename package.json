@@ -13,6 +13,7 @@
     "docker:up": "docker-compose up",
     "docker:down": "docker-compose down",
     "docker:logs": "docker-compose logs -f",
+    "lint": "npm run lint --workspace=server",
     "test": "npm run test --workspace=server"
   },
   "keywords": [],

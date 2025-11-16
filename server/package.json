@@ -9,7 +9,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:ci": "vitest run --reporter=dot",
-    "lint": "eslint .",
+    "lint": "eslint --max-warnings=0 .",
     "lint:fix": "eslint . --fix",
     "maint:on": "node scripts/maintenance-toggle.js on",
     "maint:off": "node scripts/maintenance-toggle.js off",

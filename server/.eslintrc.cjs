@@ -25,7 +25,9 @@ module.exports = {
         vi: 'readonly'
       },
       rules: {
-        'no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }]
+        'no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
+        'no-restricted-properties': 'off',
+        'no-restricted-imports': 'off'
       }
     },
     // Browser bundles
@@ -54,10 +56,22 @@ module.exports = {
       ],
       rules: { 'no-console': 'off' }
     },
-    // CLI scripts need console output
+    // CLI scripts need console output and can use process.env
     {
       files: ['scripts/**/*.js'],
-      rules: { 'no-console': 'off' }
+      rules: { 
+        'no-console': 'off',
+        'no-restricted-properties': 'off',
+        'no-restricted-imports': 'off'
+      }
+    },
+    // Config module is allowed to use process.env and dotenv
+    {
+      files: ['config/index.js'],
+      rules: {
+        'no-restricted-properties': 'off',
+        'no-restricted-imports': 'off'
+      }
     },
     // TEMP: presenters has a deliberate constant condition guard
     {
@@ -89,6 +103,25 @@ module.exports = {
       {
         'selector': 'MemberExpression[object.name="req"][property.name="user"]',
         'message': 'Do not use req.user directly. Use assertUser(req), hasUser(req), getUserId(req), or getUserEmail(req) from utils/authz.js'
+      }
+    ],
+    'no-restricted-properties': [
+      'error',
+      {
+        'object': 'process',
+        'property': 'env',
+        'message': 'Use { config } from server/config/index.js instead of process.env.'
+      }
+    ],
+    'no-restricted-imports': [
+      'error',
+      {
+        'paths': [
+          {
+            'name': 'dotenv',
+            'message': 'Load dotenv only in server/config/index.js.'
+          }
+        ]
       }
     ]
   }

@@ -23,7 +23,7 @@ const {
 } = require('../middleware/lockout');
 const logger = require('../utils/logger');
 const { config } = require('../config');
-const { setAuthCookie, clearAuthCookie, AUTH_COOKIE_NAME } = require('../lib/authCookie');
+const { setAuthCookie, clearAuthCookie, readAuthCookieJwt } = require('../lib/authCookie');
 // =======================
 // Redis client (optional)
 // =======================
@@ -201,6 +201,24 @@ router.post('/set-cookie', async (req, res) => {
     // Success path: token is valid and not stale -> clear failures, set cookie
     await clearFailedAttempts(emailFromBody || 'ip-only', ip);
 
+    // Kill any legacy sb_session BEFORE setting the new cookie
+    const hostForDomain = (req.hostname || (req.headers.host || '')).split(':')[0];
+    const baseFromHost = (() => {
+      const parts = (hostForDomain || '').split('.').filter(Boolean);
+      return parts.length >= 2 ? parts.slice(-2).join('.') : hostForDomain || null;
+    })();
+    // Host-only legacy
+    res.clearCookie('sb_session', { path: '/' });
+    // Domain-scoped legacy (e.g., ".detechify.com")
+    if (LEGACY_DOMAIN) {
+      res.clearCookie('sb_session', { path: '/', domain: LEGACY_DOMAIN });
+      res.clearCookie('sb-access-token', { path: '/', domain: LEGACY_DOMAIN });
+    }
+    if (baseFromHost) {
+      res.clearCookie('sb_session', { path: '/', domain: '.' + baseFromHost });
+      res.clearCookie('sb-access-token', { path: '/', domain: '.' + baseFromHost });
+    }
+
     // Use centralized cookie helper (ensures consistent attributes)
     setAuthCookie(res, req, token, COOKIE_TTL_MS);
 
@@ -250,7 +268,7 @@ router.post('/clear-cookie', async (req, res) => {
     // Try to capture uid from the existing auth cookie BEFORE clearing it
     let uidFromCookie = null;
     try {
-      const raw = req.cookies?.[COOKIE_NAME];
+      const raw = readAuthCookieJwt(req);
       if (raw) {
         const payload = await verifyToken(raw).catch(() => null);
         uidFromCookie = payload?.sub || null;

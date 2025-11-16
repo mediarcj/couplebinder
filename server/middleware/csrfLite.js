@@ -27,7 +27,8 @@ const { config } = require('../config');
 // ============================================================
 const CSRF_COOKIE_NAME = config.csrf.cookieName;
 const CSRF_HEADER_NAME = config.csrf.headerName;
-const AUTH_COOKIE_DOMAIN = config.auth.cookieDomain; // leave undefined if you ever switch to __Host- cookies
+const AUTH_COOKIE_DOMAIN = config.auth.cookieDomain; // keep undefined when using __Host- cookies
+const IS_PROD = config.server?.nodeEnv === 'production';
 
 // ============================================================
 // Helper Functions
@@ -56,10 +57,16 @@ function getCsrfFromCookie(req) {
 }
 
 function getProvidedToken(req) {
-  // Header first (case-insensitive)
-  const hdr = req.headers[CSRF_HEADER_NAME];
-  if (hdr) return String(hdr);
-  // Classic HTML forms (URL-encoded)
+  const name = String(CSRF_HEADER_NAME || '');
+  const hdr =
+    req.get?.(name) ||
+    req.get?.(name.toLowerCase()) ||
+    req.get?.('x-csrf-token') ||
+    req.get?.('csrf-token') ||
+    req.get?.('x-xsrf-token') ||
+    req.headers?.[name] ||
+    req.headers?.[name.toLowerCase()];
+  if (hdr) return String(hdr).trim();
   const b = req.body || {};
   return b._csrf || b.csrf || b.csrf_token || null;
 }
@@ -122,15 +129,15 @@ module.exports = function csrfLite(req, res, next) {
       let csrfToken = getCsrfFromCookie(req);
       if (!csrfToken) {
         csrfToken = crypto.randomBytes(32).toString('base64url');
-        // Not HttpOnly so JS can read and echo it
-        res.cookie(CSRF_COOKIE_NAME, csrfToken, {
-          domain: AUTH_COOKIE_DOMAIN, // omit this if you ever switch to __Host- cookies
+        const opts = {
           path: '/',
           sameSite: 'Strict',
-          secure: true,
+          secure: IS_PROD,
           httpOnly: false,
-          maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
-        });
+          maxAge: 7 * 24 * 60 * 60 * 1000
+        };
+        if (AUTH_COOKIE_DOMAIN) opts.domain = AUTH_COOKIE_DOMAIN; // omit for __Host- style
+        res.cookie(CSRF_COOKIE_NAME, csrfToken, opts);
       }
       res.locals.csrfToken = csrfToken;
       return next();
@@ -171,7 +178,9 @@ module.exports = function csrfLite(req, res, next) {
         }, 'CSRF token missing (no cookies, but unsafe method)');
         return res.status(403).json({ ok: false, error: 'Missing or invalid CSRF token' });
       }
-      // If token provided, continue (will be validated below)
+      // No ambient cookies → nothing to forge. Header is enough here.
+      res.locals.csrfToken = headerVal;
+      return next();
     }
 
     // ============================================================

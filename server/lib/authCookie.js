@@ -52,7 +52,8 @@ function isHttps(req) {
 // Consider the host “public” when it’s not a localhost address.
 function isPublicHost(req) {
   const h = req.hostname || req.get('host') || '';
-  return !isLocalhostHost(h);
+  const hostOnly = String(h).split(':')[0];   // drop :port if present
+  return !isLocalhostHost(hostOnly);
 }
 
 // Build the name we prefer for host-only cookies (no prefix).
@@ -158,9 +159,9 @@ function setAuthCookie(res, req, token, ttlMs) {
       event: 'auth.cookie.set',
       plainName,
       plainSecure: Boolean(plainOpts.secure),
-      hostName: publicHost && https ? hostPrefixedName() : null,
+      hostName: (publicHost && https) ? hostPrefixedName() : null,
       httpOnly: true,
-      sameSite: 'Lax',
+      sameSite: plainOpts.sameSite,
       path: '/',
       maxAge: ttlMs || null
     }, 'Auth cookie(s) set');
@@ -220,7 +221,9 @@ function clearAuthCookie(res, req, clearAll = false) {
   // If you formerly set a Domain, also clear those variants.
   if (LEGACY_COOKIE_DOMAIN) {
     for (const n of names) {
-      res.clearCookie(n, { path: '/', domain: LEGACY_COOKIE_DOMAIN, secure: shouldBeSecure });
+      res.clearCookie(n, { path: '/', domain: LEGACY_COOKIE_DOMAIN, secure: true });
+      res.clearCookie(n, { path: '/', domain: LEGACY_COOKIE_DOMAIN, secure: false });
+      res.clearCookie(n, { path: '/', domain: LEGACY_COOKIE_DOMAIN });
     }
   }
 

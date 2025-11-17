@@ -23,7 +23,7 @@ const {
 } = require('../middleware/lockout');
 const logger = require('../utils/logger');
 const { config } = require('../config');
-const { setAuthCookie, clearAuthCookie, readAuthCookieJwt } = require('../lib/authCookie');
+const { setAuthCookie, clearAuthCookie, AUTH_COOKIE_NAME } = require('../lib/authCookie');
 // =======================
 // Redis client (optional)
 // =======================

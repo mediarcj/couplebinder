@@ -70,12 +70,13 @@ function securityHeaders() {
         // Base URI restricted to same origin
         baseUri: ["'self'"],
         
-        // Scripts: self-hosted + nonce + strict-dynamic for modern browsers
+        // Scripts: self-hosted + nonce (no strict-dynamic to allow external script src tags)
         // Self-hosted assets only - no external CDN dependencies
+        // Note: strict-dynamic ignores 'self', which blocks external script src tags.
+        // We use 'self' + nonce instead, which is still secure (nonces for inline, self for external).
         scriptSrc: [
           "'self'",
-          (req, res) => `'nonce-${res.locals.cspNonce}'`,
-          "'strict-dynamic'"
+          (req, res) => `'nonce-${res.locals.cspNonce}'`
         ],
         
         // Styles: self-hosted + nonce (no unsafe-inline)

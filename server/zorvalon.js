@@ -787,6 +787,20 @@ try {
   console.error('Failed to load general API routes:', error.message);
 }
 
+try {
+  app.use('/account', requireAuth, require('./routes/account'));
+  console.log('Account routes loaded successfully');
+} catch (error) {
+  console.error('Failed to load account routes:', error.message);
+}
+
+try {
+  app.use('/', require('./routes/passwordRecovery'));
+  console.log('Password recovery routes loaded successfully');
+} catch (error) {
+  console.error('Failed to load password recovery routes:', error.message);
+}
+
 // Debug routes (toggle-based, off by default)
 /**
  * WHAT:

@@ -24,16 +24,7 @@ const {
 const logger = require('../utils/logger');
 const { config } = require('../config');
 const { setAuthCookie, clearAuthCookie, AUTH_COOKIE_NAME } = require('../lib/authCookie');
-// =======================
-// Redis client (optional)
-// =======================
-let redis = null;
-try {
-  const { client } = require('../utils/redisClient');
-  redis = client;
-} catch {
-  // No Redis available -> watermark will be unavailable; sentinel fallback will be used.
-}
+const { getLastLogoutAt, setLastLogoutNow } = require('../lib/logoutWatermark');
 
 // =======================
 // Configuration
@@ -41,10 +32,6 @@ try {
 const COOKIE_NAME = AUTH_COOKIE_NAME; // Use centralized name
 const COOKIE_TTL_MS = 1000 * 60 * 60 * 24 * 7; // 7 days
 const LEGACY_DOMAIN = config.branding?.legacyCookieDomain || null; // used only to clear old cookies
-
-// Watermark storage (seconds precision, per-user)
-const LAST_LOGOUT_KEY = (uid) => `auth:last_logout_at:${uid}`;
-const LAST_LOGOUT_TTL_SEC = 60 * 60 * 24 * 14; // 14 days
 
 // Sentinel (fallback only). If 0 or falsy => disabled.
 // Priority: ENV > config.auth.sentinelMs > default(0)
@@ -66,34 +53,6 @@ const FRESH_LOGIN_GRACE_SEC = Number(
 // =======================
 // Helpers
 // =======================
-
-/**
- * Return the user logout watermark (seconds since epoch).
- * Returns 0 if watermark not found or Redis unavailable.
- */
-async function getLastLogoutAt(uid) {
-  if (!uid || !redis) return 0;
-  try {
-    const s = await redis.get(LAST_LOGOUT_KEY(uid));
-    return s ? Number(s) || 0 : 0;
-  } catch {
-    return 0;
-  }
-}
-
-/**
- * Set the user logout watermark to "now" (seconds) with TTL.
- * No-op if Redis unavailable.
- */
-async function setLastLogoutNow(uid) {
-  if (!uid || !redis) return;
-  try {
-    const nowSec = Math.floor(Date.now() / 1000);
-    await redis.set(LAST_LOGOUT_KEY(uid), String(nowSec), { EX: LAST_LOGOUT_TTL_SEC });
-  } catch (err) {
-    logger.warn({ event: 'auth.set_last_logout.failed', error: err.message }, 'Failed to set logout watermark');
-  }
-}
 
 /**
  * Determine if the sentinel (fallback) should block this request.

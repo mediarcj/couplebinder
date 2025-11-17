@@ -322,8 +322,8 @@ async function performLogout() {
     }
 
     // 3) Clear JS cookies & storage (keep HOLD in localStorage)
-    document.cookie = 'sb-access-token=; Path=/; Max-Age=0; SameSite=Lax';
-    document.cookie = 'sb_access_token=; Path=/; Max-Age=0; SameSite=Lax';
+    // Note: Server already clears sb-access-token and sb_session via /auth/clear-cookie
+    // Only clear client-side refresh token if needed
     document.cookie = 'sb-refresh-token=; Path=/; Max-Age=0; SameSite=Lax';
     logoutLogger.info('JS cookies cleared');
 

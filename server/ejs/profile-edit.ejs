@@ -91,6 +91,32 @@
                                 <span class="field-note">Email cannot be changed</span>
                             </div>
                         </div>
+
+                        <div class="form-group password-manager">
+                            <label>Password</label>
+                            <div class="password-action">
+                                <button type="button" id="passwordToggleBtn" class="btn btn-small btn-secondary">Update Password</button>
+                            </div>
+                            <div id="passwordFields" class="password-fields hidden">
+                                <div class="password-field-row">
+                                    <label for="currentPassword">Current Password</label>
+                                    <input type="password" id="currentPassword" autocomplete="current-password" placeholder="Enter your current password">
+                                </div>
+                                <div class="password-field-row">
+                                    <label for="newPassword">New Password</label>
+                                    <input type="password" id="newPassword" autocomplete="new-password" placeholder="Minimum 8 characters">
+                                </div>
+                                <div class="password-field-row">
+                                    <label for="confirmPassword">Re-enter New Password</label>
+                                    <input type="password" id="confirmPassword" autocomplete="new-password" placeholder="Re-enter new password">
+                                </div>
+                                <div id="passwordError" class="error-message hidden"></div>
+                                <div class="password-actions">
+                                    <button type="button" id="passwordCancelBtn" class="btn btn-secondary btn-small">Cancel</button>
+                                    <button type="button" id="passwordSaveBtn" class="btn btn-primary btn-small">Save</button>
+                                </div>
+                            </div>
+                        </div>
                     </div>
 
                     <!-- Contact Information Section -->
@@ -285,6 +311,12 @@
                     <div class="form-actions">
                         <a href="/dashboard" class="btn btn-secondary">Back to Dashboard</a>
                     </div>
+
+                    <div class="danger-zone">
+                        <h3>Delete Account</h3>
+                        <p>Deleting your account is permanent. You will lose access to your profile, history, and any saved preferences.</p>
+                        <button type="button" class="btn btn-danger" id="deleteAccountBtn">Delete Account</button>
+                    </div>
                     
                     <div id="profileGeneralError" class="error-message hidden"></div>
                 </form>
@@ -297,6 +329,39 @@
             <p>&copy; 2024 <%= app_info?.name || 'Application' %>. <%= app_info?.description || 'A modern web application' %>.</p>
         </div>
     </footer>
+
+    <div id="deleteAccountModal" class="modal delete-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Delete Account</h2>
+                <span class="close" data-delete-close>&times;</span>
+            </div>
+            <div class="modal-body">
+                <div class="delete-step" data-delete-step="confirm">
+                    <p>Are you sure you want to delete your account? This action is permanent and cannot be undone.</p>
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-secondary" data-delete-cancel>Cancel</button>
+                        <button type="button" class="btn btn-primary" data-delete-continue>Continue</button>
+                    </div>
+                </div>
+                <div class="delete-step hidden" data-delete-step="final">
+                    <p>We are sad to see you go, but you are welcome back anytime.</p>
+                    <p>Deleting your account will remove your profile data immediately.</p>
+                    <div id="deleteAccountError" class="error-message hidden"></div>
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-secondary" data-delete-back>Cancel</button>
+                        <button type="button" class="btn btn-danger" id="deleteAccountConfirmBtn">Delete Account</button>
+                    </div>
+                </div>
+                <div class="delete-step hidden" data-delete-step="cancelled">
+                    <p>Your request to delete the account was canceled. No changes were made.</p>
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-primary" data-delete-close>OK</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <!-- Centralized Modals (login, signup, notifications) -->
     <%- include('partials/modals') %>

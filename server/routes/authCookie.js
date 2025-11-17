@@ -40,8 +40,7 @@ try {
 // =======================
 const COOKIE_NAME = AUTH_COOKIE_NAME; // Use centralized name
 const COOKIE_TTL_MS = 1000 * 60 * 60 * 24 * 7; // 7 days
-const LEGACY_DOMAIN = config.branding.legacyCookieDomain; // used only to clear old cookies
-
+const LEGACY_DOMAIN = config.branding?.legacyCookieDomain || null; // used only to clear old cookies
 
 // Watermark storage (seconds precision, per-user)
 const LAST_LOGOUT_KEY = (uid) => `auth:last_logout_at:${uid}`;
@@ -119,6 +118,18 @@ function sentinelBlocks(req, tokenIatSec) {
   } catch {
     return false;
   }
+}
+
+// Decide if cookies should be marked Secure for this request
+function shouldUseSecureCookies(req) {
+  // Explicit override wins if set
+  if (typeof config.auth?.cookieSecure === 'boolean') {
+    return !!config.auth.cookieSecure;
+  }
+  const xfProto = String(req.headers['x-forwarded-proto'] || '');
+  return (config.server?.nodeEnv === 'production') ||
+         req.secure === true ||
+         xfProto.toLowerCase().startsWith('https');
 }
 
 // Cookie helpers now use centralized module (setAuthCookie, clearAuthCookie)
@@ -214,6 +225,18 @@ router.post('/set-cookie', async (req, res) => {
     // Success path: token is valid and not stale -> clear failures, set cookie
     await clearFailedAttempts(emailFromBody || 'ip-only', ip);
 
+    // Optional: aggressively clear legacy domain-scoped Supabase cookies before setting the new one
+    try {
+      const hostForDomain = (req.hostname || (req.headers.host || '')).split(':')[0];
+      const parts = (hostForDomain || '').split('.').filter(Boolean);
+      const baseFromHost = parts.length >= 2 ? parts.slice(-2).join('.') : null;
+      if (baseFromHost) {
+        ['sb_session', 'sb-access-token'].forEach((n) => {
+          res.clearCookie(n, { path: '/', domain: '.' + baseFromHost });
+        });
+      }
+    } catch (_) {}
+
     // Use centralized cookie helper (ensures consistent attributes)
     setAuthCookie(res, req, token, COOKIE_TTL_MS);
 
@@ -221,11 +244,11 @@ router.post('/set-cookie', async (req, res) => {
     try {
       const name = config.csrf.cookieName;
       const fresh = require('crypto').randomBytes(32).toString('base64url');
-      const isProd = config.server?.nodeEnv === 'production';
+      const secureFlag = shouldUseSecureCookies(req);
       res.cookie(name, fresh, {
         path: '/',
         sameSite: 'Strict',
-        secure: isProd,
+        secure: secureFlag,
         httpOnly: false,
         maxAge: 7 * 24 * 60 * 60 * 1000
       });
@@ -240,7 +263,7 @@ router.post('/set-cookie', async (req, res) => {
       res.clearCookie(n, { path: '/' });
     });
 
-    audit('auth.set_cookie.ok', { ttl_ms: COOKIE_TTL_MS }, req);
+    audit('auth.set_cookie.ok', { uid, ttl_ms: COOKIE_TTL_MS }, req);
     return res.json({ ok: true, userId: uid });
   } catch (error) {
     logger.error({ event: 'auth.set_cookie.exception', error: error.message, requestId: req.requestId }, 'Set-cookie route exception');
@@ -260,6 +283,7 @@ router.post('/set-cookie', async (req, res) => {
 router.post('/clear-cookie', async (req, res) => {
   try {
     res.set('Cache-Control', 'no-store');
+    res.vary('Origin'); res.vary('Cookie'); res.vary('Accept'); res.vary('X-Requested-With');
     // Try to capture uid from the existing auth cookie BEFORE clearing it
     let uidFromCookie = null;
     try {
@@ -290,17 +314,11 @@ router.post('/clear-cookie', async (req, res) => {
       const sentinelActive = (req.cookies && String(req.cookies[SENTINEL_COOKIE_NAME] || '') === '1');
       res.set('X-Auth-Sentinel', sentinelActive ? 'active' : 'inactive');
 
-    // Match auth cookie secure logic: explicit config wins; otherwise prod heuristic
-    const secureForSentinel =
-      (config.auth && config.auth.cookieSecure === true)
-        ? true
-        : ((config.server && config.server.nodeEnv === 'production') ||
-           process.env.NODE_ENV === 'production');
-
+      const secureFlag = shouldUseSecureCookies(req);
       res.cookie(SENTINEL_COOKIE_NAME, '1', {
         httpOnly: false, // must be readable by client JS (fallback behavior)
         sameSite: 'lax',
-        secure: secureForSentinel, // Must match auth cookie secure flag logic
+        secure: secureFlag,
         path: '/',
         maxAge: SENTINEL_MS
       });
@@ -310,7 +328,9 @@ router.post('/clear-cookie', async (req, res) => {
     const accept = String(req.headers.accept || '');
     const isXHR = (req.xhr === true) || (String(req.headers['x-requested-with'] || '').toLowerCase() === 'xmlhttprequest');
     const isJSONy = accept.includes('application/json') || accept.includes('text/json');
-    res.set('Vary', 'Accept, X-Requested-With');
+    // res.set('Vary', 'Accept, X-Requested-With');
+    // Already added above with res.vary(...); don't overwrite the header here.
+    // (Keep the earlier: res.vary('Origin'); res.vary('Cookie'); res.vary('Accept'); res.vary('X-Requested-With');)
 
     if (!isXHR && !isJSONy && accept.includes('text/html')) {
       return res.redirect(303, '/?logged_out=1');

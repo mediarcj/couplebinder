@@ -182,6 +182,8 @@ const derivedOpsIps = csv(process.env.OPS_HEALTH_IPS);
 const effectiveAllowlist = derivedOpsIps.length ? derivedOpsIps : DEFAULT_LOCAL_ALLOWLIST;
 const devPublicHealth = isDev && !derivedOpsToken; // public only in dev when no token is set
 
+const derivedPublicOrigin = process.env.PUBLIC_ORIGIN || (isDev ? `http://localhost:${int(process.env.PORT, 3000)}` : '');
+
 const config = {
   // Server
   server: {
@@ -301,7 +303,7 @@ const config = {
 
   // Public origin (for redirects and client-side URLs)
   // Default to localhost in development if not set (required for Stripe checkout URLs)
-  publicOrigin: process.env.PUBLIC_ORIGIN || (isDev ? `http://localhost:${int(process.env.PORT, 3000)}` : ''),
+  publicOrigin: derivedPublicOrigin,
 
   // Auth cookie configuration
   auth: {
@@ -311,7 +313,9 @@ const config = {
     cookieSameSite: (process.env.COOKIE_SAMESITE || 'Lax').toLowerCase() === 'strict' ? 'Strict' : 'Lax',
     cookieSecure: process.env.COOKIE_SECURE ? (process.env.COOKIE_SECURE === 'true') : undefined,
     allowLegacyLogin: bool(process.env.ALLOW_LEGACY_LOGIN, false),
-    debug: bool(process.env.AUTH_DEBUG, false)
+    debug: bool(process.env.AUTH_DEBUG, false),
+    passwordResetRedirect: process.env.PASSWORD_RESET_REDIRECT_URL ||
+      (derivedPublicOrigin ? `${derivedPublicOrigin}/auth/forgot-password` : '/auth/forgot-password')
   },
 
   // Ops health DB probe configuration

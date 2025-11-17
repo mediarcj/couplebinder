@@ -47,13 +47,22 @@ const LEGACY_DOMAIN = config.branding.legacyCookieDomain; // used only to clear 
 const LAST_LOGOUT_KEY = (uid) => `auth:last_logout_at:${uid}`;
 const LAST_LOGOUT_TTL_SEC = 60 * 60 * 24 * 14; // 14 days
 
-// Sentinel (fallback only). Keep small to reduce friction if used.
+// Sentinel (fallback only). If 0 or falsy => disabled.
+// Priority: ENV > config.auth.sentinelMs > default(0)
 const SENTINEL_COOKIE_NAME = 'auth_logout';
-const SENTINEL_MS = 10000; // 10s fallback, capped logic removed (no env)
+const SENTINEL_MS = Number(
+  process.env.AUTH_SENTINEL_MS ??
+  (config.auth && config.auth.sentinelMs) ??
+  0
+);
 
-// If Redis watermark missing, allow *fresh* tokens to pass immediately, even if sentinel present.
-// A newly issued token will usually have iat within a few seconds of "now".
-const FRESH_LOGIN_GRACE_SEC = 20;
+// Fresh-token grace when watermark is unavailable. If unset, default 20s.
+// Priority: ENV > config.auth.freshLoginGraceSec > default(20)
+const FRESH_LOGIN_GRACE_SEC = Number(
+  process.env.AUTH_FRESH_GRACE_SEC ??
+  (config.auth && config.auth.freshLoginGraceSec) ??
+  20
+);
 
 // =======================
 // Helpers
@@ -132,11 +141,13 @@ function sentinelBlocks(req, tokenIatSec) {
 router.post('/set-cookie', async (req, res) => {
   res.vary('Origin'); res.vary('Cookie'); res.vary('Authorization'); res.vary('Accept');
   res.set('Cache-Control', 'no-store');
-  // For debugging in DevTools; safe meta only
-  try {
-    const sentinelActive = (req.cookies && String(req.cookies[SENTINEL_COOKIE_NAME] || '') === '1');
-    res.set('X-Auth-Sentinel', sentinelActive ? 'active' : 'inactive');
-  } catch (_) {}
+  // For debugging in DevTools; only emit when the sentinel feature is enabled
+  if (SENTINEL_MS > 0) {
+    try {
+      const sentinelActive = req.cookies && String(req.cookies[SENTINEL_COOKIE_NAME] || '') === '1';
+      res.set('X-Auth-Sentinel', sentinelActive ? 'active' : 'inactive');
+    } catch (_) {}
+  }
 
   try {
     // Extract Bearer token
@@ -173,7 +184,9 @@ router.post('/set-cookie', async (req, res) => {
 
     // User logout watermark
     const lastLogoutSec = await getLastLogoutAt(uid);
-    res.set('X-Auth-Watermark', String(lastLogoutSec || 0));
+    if (config.auth?.debug) {
+      res.set('X-Auth-Watermark', String(lastLogoutSec || 0));
+    }
 
     // Primary rule: reject stale tokens (token issued at or before last logout)
     if (lastLogoutSec && tokenIatSec && tokenIatSec <= lastLogoutSec) {
@@ -193,31 +206,13 @@ router.post('/set-cookie', async (req, res) => {
         { event: 'auth.set_cookie.hydrate_denied_by_sentinel', requestId: req.requestId },
         'Hydration blocked by sentinel fallback'
       );
-      res.set('X-Auth-Sentinel', 'active');
+      if (SENTINEL_MS > 0) res.set('X-Auth-Sentinel', 'active');
       // 204 so client backoff can retry quietly; interactive flows should not hit this due to fresh iat
       return res.status(204).end();
     }
 
     // Success path: token is valid and not stale -> clear failures, set cookie
     await clearFailedAttempts(emailFromBody || 'ip-only', ip);
-
-    // Kill any legacy sb_session BEFORE setting the new cookie
-    const hostForDomain = (req.hostname || (req.headers.host || '')).split(':')[0];
-    const baseFromHost = (() => {
-      const parts = (hostForDomain || '').split('.').filter(Boolean);
-      return parts.length >= 2 ? parts.slice(-2).join('.') : hostForDomain || null;
-    })();
-    // Host-only legacy
-    res.clearCookie('sb_session', { path: '/' });
-    // Domain-scoped legacy (e.g., ".detechify.com")
-    if (LEGACY_DOMAIN) {
-      res.clearCookie('sb_session', { path: '/', domain: LEGACY_DOMAIN });
-      res.clearCookie('sb-access-token', { path: '/', domain: LEGACY_DOMAIN });
-    }
-    if (baseFromHost) {
-      res.clearCookie('sb_session', { path: '/', domain: '.' + baseFromHost });
-      res.clearCookie('sb-access-token', { path: '/', domain: '.' + baseFromHost });
-    }
 
     // Use centralized cookie helper (ensures consistent attributes)
     setAuthCookie(res, req, token, COOKIE_TTL_MS);
@@ -268,7 +263,7 @@ router.post('/clear-cookie', async (req, res) => {
     // Try to capture uid from the existing auth cookie BEFORE clearing it
     let uidFromCookie = null;
     try {
-      const raw = readAuthCookieJwt(req);
+      const raw = req.cookies?.[AUTH_COOKIE_NAME] || null; // read the one canonical name
       if (raw) {
         const payload = await verifyToken(raw).catch(() => null);
         uidFromCookie = payload?.sub || null;
@@ -292,12 +287,20 @@ router.post('/clear-cookie', async (req, res) => {
     // Optional: tiny client sentinel as a fallback if Redis is down somewhere later.
     // This does NOT block fresh tokens (see set-cookie logic).
     if (SENTINEL_MS > 0) {
-      const isProd = config.server.nodeEnv === 'production';
-      // Use same secure logic as auth cookie (false in dev over http)
+      const sentinelActive = (req.cookies && String(req.cookies[SENTINEL_COOKIE_NAME] || '') === '1');
+      res.set('X-Auth-Sentinel', sentinelActive ? 'active' : 'inactive');
+
+    // Match auth cookie secure logic: explicit config wins; otherwise prod heuristic
+    const secureForSentinel =
+      (config.auth && config.auth.cookieSecure === true)
+        ? true
+        : ((config.server && config.server.nodeEnv === 'production') ||
+           process.env.NODE_ENV === 'production');
+
       res.cookie(SENTINEL_COOKIE_NAME, '1', {
         httpOnly: false, // must be readable by client JS (fallback behavior)
         sameSite: 'lax',
-        secure: isProd, // Must match auth cookie secure flag logic
+        secure: secureForSentinel, // Must match auth cookie secure flag logic
         path: '/',
         maxAge: SENTINEL_MS
       });

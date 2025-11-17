@@ -440,10 +440,89 @@ function buildErrorPageModel(req, res, statusCode, errorMessage) {
   };
 }
 
+function baseAppInfo() {
+  return {
+    name: config.branding.appName,
+    description: config.branding.appDescription,
+    version: config.branding.appVersion,
+    environment: config.server.nodeEnv
+  };
+}
+
+const DEFAULT_AUTH_LIMITS = {
+  email_max: 40,
+  password_min: 8,
+  password_max: 40
+};
+
+async function buildForgotPasswordRequestModel(req, res, options = {}) {
+  const state = options.state || 'form';
+  return {
+    page: {
+      title: `Forgot Password - ${config.branding.appName}`,
+      description: 'Send a password reset link',
+      type: 'forgot_password_request',
+      nonce: res.locals.nonce || '',
+      assetVersion: ASSET_VERSION,
+      nav: navManager.compose(req, res)
+    },
+    user: {
+      isAuthenticated: Boolean(req.user?.id),
+      email: req.user?.email || null,
+      id: req.user?.id || null
+    },
+    ui: {
+      csrfToken: res.locals.csrfToken || '',
+      state
+    },
+    ui_instructions: {
+      input_limits: DEFAULT_AUTH_LIMITS
+    },
+    reset: {
+      state,
+      email: options.email || ''
+    },
+    app_info: baseAppInfo()
+  };
+}
+
+async function buildForgotPasswordResetModel(req, res, options = {}) {
+  const ready = Boolean(options.ready);
+  return {
+    page: {
+      title: `Reset Password - ${config.branding.appName}`,
+      description: 'Create a new password',
+      type: 'forgot_password_reset',
+      nonce: res.locals.nonce || '',
+      assetVersion: ASSET_VERSION,
+      nav: navManager.compose(req, res)
+    },
+    user: {
+      isAuthenticated: Boolean(req.user?.id),
+      email: req.user?.email || null,
+      id: req.user?.id || null
+    },
+    ui: {
+      csrfToken: res.locals.csrfToken || '',
+      ready
+    },
+    ui_instructions: {
+      input_limits: DEFAULT_AUTH_LIMITS
+    },
+    reset: {
+      ready,
+      error: options.error || null
+    },
+    app_info: baseAppInfo()
+  };
+}
+
 module.exports = {
   buildHomePageModel,
   buildDashboardPageModel,
   buildUserProfilePageModel,
   buildSettingsPageModel,
-  buildErrorPageModel
+  buildErrorPageModel,
+  buildForgotPasswordRequestModel,
+  buildForgotPasswordResetModel
 };

@@ -167,8 +167,18 @@ document.addEventListener('DOMContentLoaded', () => {
   logger.info('Profile edit page loaded');
   loadUserProfile().then(() => attachEventHandlers());
   logger.info('Profile edit page initialized - logout handled by logout.js module');
-  initPasswordManager();
-  initDeleteAccountFlow();
+  
+  // Initialize password and delete account features
+  try {
+    console.log('[Profile Edit] Initializing password manager...');
+    initPasswordManager();
+    console.log('[Profile Edit] Initializing delete account flow...');
+    initDeleteAccountFlow();
+    console.log('[Profile Edit] All features initialized');
+  } catch (error) {
+    console.error('[Profile Edit] Failed to initialize features:', error);
+    logger.error('Failed to initialize profile edit features', error);
+  }
 });
 
 /* ============================================================
@@ -702,18 +712,42 @@ function initPasswordManager() {
   const cancelBtn = document.getElementById('passwordCancelBtn');
   const saveBtn = document.getElementById('passwordSaveBtn');
 
-  if (!toggleBtn || !fields || !cancelBtn || !saveBtn) return;
+  if (!toggleBtn) {
+    console.warn('[Profile Edit] Password toggle button not found');
+    logger.warn('Password toggle button not found');
+    return;
+  }
+  if (!fields) {
+    console.warn('[Profile Edit] Password fields container not found');
+    logger.warn('Password fields container not found');
+    return;
+  }
+  if (!cancelBtn) {
+    console.warn('[Profile Edit] Password cancel button not found');
+    logger.warn('Password cancel button not found');
+    return;
+  }
+  if (!saveBtn) {
+    console.warn('[Profile Edit] Password save button not found');
+    logger.warn('Password save button not found');
+    return;
+  }
 
-  toggleBtn.addEventListener('click', () => {
-    toggleBtn.classList.add('hidden');
-    fields.classList.remove('hidden');
-  });
+  try {
+    toggleBtn.addEventListener('click', () => {
+      toggleBtn.classList.add('hidden');
+      fields.classList.remove('hidden');
+    });
 
-  cancelBtn.addEventListener('click', () => {
-    resetPasswordFields(fields, toggleBtn);
-  });
+    cancelBtn.addEventListener('click', () => {
+      resetPasswordFields(fields, toggleBtn);
+    });
 
-  saveBtn.addEventListener('click', () => submitPasswordChange(saveBtn, toggleBtn, fields));
+    saveBtn.addEventListener('click', () => submitPasswordChange(saveBtn, toggleBtn, fields));
+    logger.info('Password manager initialized successfully');
+  } catch (error) {
+    logger.error('Failed to initialize password manager', error);
+  }
 }
 
 function resetPasswordFields(container, toggleBtn) {
@@ -815,36 +849,55 @@ function initDeleteAccountFlow() {
   const modal = document.getElementById('deleteAccountModal');
   const confirmBtn = document.getElementById('deleteAccountConfirmBtn');
 
-  if (!trigger || !modal || !confirmBtn) return;
-
-  trigger.addEventListener('click', () => openDeleteModal(modal));
-
-  modal.querySelectorAll('[data-delete-close]').forEach((btn) => {
-    btn.addEventListener('click', () => closeDeleteModal(modal));
-  });
-
-  const cancelButtons = modal.querySelectorAll('[data-delete-cancel]');
-  cancelButtons.forEach((btn) => {
-    btn.addEventListener('click', () => closeDeleteModal(modal));
-  });
-
-  const continueBtn = modal.querySelector('[data-delete-continue]');
-  if (continueBtn) {
-    continueBtn.addEventListener('click', () => changeDeleteStep(modal, 'final'));
+  if (!trigger) {
+    console.warn('[Profile Edit] Delete account trigger button not found');
+    logger.warn('Delete account trigger button not found');
+    return;
+  }
+  if (!modal) {
+    console.warn('[Profile Edit] Delete account modal not found');
+    logger.warn('Delete account modal not found');
+    return;
+  }
+  if (!confirmBtn) {
+    console.warn('[Profile Edit] Delete account confirm button not found');
+    logger.warn('Delete account confirm button not found');
+    return;
   }
 
-  const backBtn = modal.querySelector('[data-delete-back]');
-  if (backBtn) {
-    backBtn.addEventListener('click', () => changeDeleteStep(modal, 'cancelled'));
-  }
+  try {
+    trigger.addEventListener('click', () => openDeleteModal(modal));
 
-  confirmBtn.addEventListener('click', () => submitDeleteAccount(confirmBtn, modal));
+    modal.querySelectorAll('[data-delete-close]').forEach((btn) => {
+      btn.addEventListener('click', () => closeDeleteModal(modal));
+    });
 
-  modal.addEventListener('click', (event) => {
-    if (event.target === modal) {
-      closeDeleteModal(modal);
+    const cancelButtons = modal.querySelectorAll('[data-delete-cancel]');
+    cancelButtons.forEach((btn) => {
+      btn.addEventListener('click', () => closeDeleteModal(modal));
+    });
+
+    const continueBtn = modal.querySelector('[data-delete-continue]');
+    if (continueBtn) {
+      continueBtn.addEventListener('click', () => changeDeleteStep(modal, 'final'));
     }
-  });
+
+    const backBtn = modal.querySelector('[data-delete-back]');
+    if (backBtn) {
+      backBtn.addEventListener('click', () => changeDeleteStep(modal, 'cancelled'));
+    }
+
+    confirmBtn.addEventListener('click', () => submitDeleteAccount(confirmBtn, modal));
+
+    modal.addEventListener('click', (event) => {
+      if (event.target === modal) {
+        closeDeleteModal(modal);
+      }
+    });
+    logger.info('Delete account flow initialized successfully');
+  } catch (error) {
+    logger.error('Failed to initialize delete account flow', error);
+  }
 }
 
 function openDeleteModal(modal) {

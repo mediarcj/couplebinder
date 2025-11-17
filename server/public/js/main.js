@@ -738,6 +738,34 @@ async function handleLoginSubmit(e) {
                         
                         logger.info('Authentication cookie set by server');
                         
+                        // Sync CSRF cookie to meta tag after successful login
+                        // Server rotates CSRF token on /auth/set-cookie, so we update the meta tag
+                        // to ensure subsequent XHR/fetch calls use the new token
+                        try {
+                            const cookies = document.cookie.split('; ').reduce((acc, pair) => {
+                                const [key, val] = pair.split('=');
+                                if (key && val) acc[key] = val;
+                                return acc;
+                            }, {});
+                            // Try common CSRF cookie names (csrf_token is default)
+                            const csrfValue = cookies['csrf_token'] || cookies['csrf-token'] || cookies['_csrf'];
+                            if (csrfValue) {
+                                let meta = document.querySelector('meta[name="csrf-token"]');
+                                if (!meta) {
+                                    meta = document.createElement('meta');
+                                    meta.name = 'csrf-token';
+                                    document.head.appendChild(meta);
+                                }
+                                meta.content = csrfValue;
+                                // Also update global if used elsewhere
+                                if (typeof window !== 'undefined') {
+                                    window.__csrfToken = csrfValue;
+                                }
+                            }
+                        } catch (_) {
+                            // Non-fatal; CSRF will work on next page load
+                        }
+                        
                         /**
                          * WHAT:
                          * Show success state within login modal, user clicks OK to proceed.

@@ -71,6 +71,13 @@ const FIELD_ORDER = [
   'relationshipStatus','job','accountPrivacy'
 ];
 
+function getCsrfTokenValue() {
+  const formToken = document.querySelector('input[name="_csrf"]');
+  if (formToken && formToken.value) return formToken.value;
+  const metaToken = document.querySelector('meta[name="csrf-token"]');
+  return metaToken ? metaToken.getAttribute('content') : '';
+}
+
 /* ============================================================
    Field mapping helpers (single source of truth)
    ============================================================ */
@@ -160,6 +167,8 @@ document.addEventListener('DOMContentLoaded', () => {
   logger.info('Profile edit page loaded');
   loadUserProfile().then(() => attachEventHandlers());
   logger.info('Profile edit page initialized - logout handled by logout.js module');
+  initPasswordManager();
+  initDeleteAccountFlow();
 });
 
 /* ============================================================
@@ -347,7 +356,7 @@ async function saveIndividualField(fieldName) {
     logger.info(`Field mapping: ${fieldName} -> ${field}`);
 
     // CSRF token (required)
-    const csrfToken = document.querySelector('input[name="_csrf"]')?.value;
+    const csrfToken = getCsrfTokenValue();
     logger.info('CSRF token check', { found: !!csrfToken });
     if (!csrfToken) throw new Error('CSRF token not found');
 
@@ -682,6 +691,234 @@ function showInfo(message) {
     el.classList.remove('is-visible');
     setTimeout(() => el.remove(), 300);
   }, 3000);
+}
+
+/* ============================================================
+   Password Manager
+   ============================================================ */
+function initPasswordManager() {
+  const toggleBtn = document.getElementById('passwordToggleBtn');
+  const fields = document.getElementById('passwordFields');
+  const cancelBtn = document.getElementById('passwordCancelBtn');
+  const saveBtn = document.getElementById('passwordSaveBtn');
+
+  if (!toggleBtn || !fields || !cancelBtn || !saveBtn) return;
+
+  toggleBtn.addEventListener('click', () => {
+    toggleBtn.classList.add('hidden');
+    fields.classList.remove('hidden');
+  });
+
+  cancelBtn.addEventListener('click', () => {
+    resetPasswordFields(fields, toggleBtn);
+  });
+
+  saveBtn.addEventListener('click', () => submitPasswordChange(saveBtn, toggleBtn, fields));
+}
+
+function resetPasswordFields(container, toggleBtn) {
+  ['currentPassword', 'newPassword', 'confirmPassword'].forEach((id) => {
+    const input = document.getElementById(id);
+    if (input) input.value = '';
+  });
+  showPasswordError('', true);
+  container.classList.add('hidden');
+  if (toggleBtn) toggleBtn.classList.remove('hidden');
+}
+
+function showPasswordError(message, hideOnly = false) {
+  const errorEl = document.getElementById('passwordError');
+  if (!errorEl) return;
+  if (hideOnly || !message) {
+    errorEl.textContent = '';
+    errorEl.classList.add('hidden');
+    return;
+  }
+  errorEl.textContent = message;
+  errorEl.classList.remove('hidden');
+}
+
+async function submitPasswordChange(saveBtn, toggleBtn, container) {
+  const currentPassword = document.getElementById('currentPassword')?.value || '';
+  const newPassword = document.getElementById('newPassword')?.value || '';
+  const confirmPassword = document.getElementById('confirmPassword')?.value || '';
+
+  if (!currentPassword || !newPassword || !confirmPassword) {
+    showPasswordError('All password fields are required');
+    return;
+  }
+
+  if (newPassword.length < 8) {
+    showPasswordError('New password must be at least 8 characters');
+    return;
+  }
+
+  if (newPassword !== confirmPassword) {
+    showPasswordError('New passwords do not match');
+    return;
+  }
+
+  const csrfToken = getCsrfTokenValue();
+  if (!csrfToken) {
+    showPasswordError('Missing security token. Please refresh and try again.');
+    return;
+  }
+
+  saveBtn.disabled = true;
+  showPasswordError('', true);
+
+  try {
+    const response = await fetch('/account/password', {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'X-CSRF-Token': csrfToken
+      },
+      body: JSON.stringify({
+        current_password: currentPassword,
+        new_password: newPassword,
+        confirm_password: confirmPassword
+      })
+    });
+
+    if (response.redirected) {
+      window.location.replace(response.url);
+      return;
+    }
+
+    const payload = await response.json().catch(() => null);
+    if (!response.ok) {
+      throw new Error(payload?.error || 'Password update failed');
+    }
+
+    window.location.replace('/?password_changed=1');
+  } catch (error) {
+    logger.error('Password update failed', error);
+    showPasswordError(error.message || 'Password update failed');
+  } finally {
+    saveBtn.disabled = false;
+    if (toggleBtn && container) {
+      // Keep fields visible for retry
+      toggleBtn.classList.add('hidden');
+      container.classList.remove('hidden');
+    }
+  }
+}
+
+/* ============================================================
+   Delete Account Modal
+   ============================================================ */
+function initDeleteAccountFlow() {
+  const trigger = document.getElementById('deleteAccountBtn');
+  const modal = document.getElementById('deleteAccountModal');
+  const confirmBtn = document.getElementById('deleteAccountConfirmBtn');
+
+  if (!trigger || !modal || !confirmBtn) return;
+
+  trigger.addEventListener('click', () => openDeleteModal(modal));
+
+  modal.querySelectorAll('[data-delete-close]').forEach((btn) => {
+    btn.addEventListener('click', () => closeDeleteModal(modal));
+  });
+
+  const cancelButtons = modal.querySelectorAll('[data-delete-cancel]');
+  cancelButtons.forEach((btn) => {
+    btn.addEventListener('click', () => closeDeleteModal(modal));
+  });
+
+  const continueBtn = modal.querySelector('[data-delete-continue]');
+  if (continueBtn) {
+    continueBtn.addEventListener('click', () => changeDeleteStep(modal, 'final'));
+  }
+
+  const backBtn = modal.querySelector('[data-delete-back]');
+  if (backBtn) {
+    backBtn.addEventListener('click', () => changeDeleteStep(modal, 'cancelled'));
+  }
+
+  confirmBtn.addEventListener('click', () => submitDeleteAccount(confirmBtn, modal));
+
+  modal.addEventListener('click', (event) => {
+    if (event.target === modal) {
+      closeDeleteModal(modal);
+    }
+  });
+}
+
+function openDeleteModal(modal) {
+  changeDeleteStep(modal, 'confirm');
+  clearDeleteAccountError();
+  modal.classList.add('show');
+}
+
+function closeDeleteModal(modal) {
+  modal.classList.remove('show');
+  changeDeleteStep(modal, 'confirm');
+  clearDeleteAccountError();
+}
+
+function changeDeleteStep(modal, step) {
+  modal.querySelectorAll('.delete-step').forEach((section) => {
+    const desired = section.getAttribute('data-delete-step');
+    section.classList.toggle('hidden', desired !== step);
+  });
+}
+
+function clearDeleteAccountError() {
+  const errorEl = document.getElementById('deleteAccountError');
+  if (errorEl) {
+    errorEl.textContent = '';
+    errorEl.classList.add('hidden');
+  }
+}
+
+function showDeleteAccountError(message) {
+  const errorEl = document.getElementById('deleteAccountError');
+  if (!errorEl) return;
+  errorEl.textContent = message;
+  errorEl.classList.remove('hidden');
+}
+
+async function submitDeleteAccount(button, modal) {
+  const csrfToken = getCsrfTokenValue();
+  if (!csrfToken) {
+    showDeleteAccountError('Missing security token. Please refresh and try again.');
+    return;
+  }
+
+  button.disabled = true;
+  clearDeleteAccountError();
+
+  try {
+    const response = await fetch('/account/delete', {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Accept': 'application/json',
+        'X-CSRF-Token': csrfToken
+      }
+    });
+
+    if (response.redirected) {
+      window.location.replace(response.url);
+      return;
+    }
+
+    const payload = await response.json().catch(() => null);
+    if (!response.ok) {
+      throw new Error(payload?.error || 'Account deletion failed');
+    }
+
+    window.location.replace('/?account_deleted=1');
+  } catch (error) {
+    logger.error('Account deletion failed', error);
+    showDeleteAccountError(error.message || 'Account deletion failed');
+  } finally {
+    button.disabled = false;
+    modal.classList.add('show');
+  }
 }
 
 // Logout functionality is handled by the modular logout.js system

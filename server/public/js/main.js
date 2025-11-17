@@ -490,6 +490,14 @@ function displaySubmissions(submissions) {
     }
 }
 
+function whenModalManagerReady(cb, tries = 20) {
+    if (window.modalManager && typeof cb === 'function') {
+        return cb(window.modalManager);
+    }
+    if (tries <= 0) return;
+    setTimeout(() => whenModalManagerReady(cb, tries - 1), 50);
+}
+
 /**
  * Idempotent login modal initialization
  * 
@@ -506,9 +514,31 @@ function displaySubmissions(submissions) {
  * Attach link handler if link exists (optional).
  */
 let _loginModalInit = false;
+let _modalLinkInit = false;
+
+function initModalCrossLinks() {
+    if (_modalLinkInit) return;
+    _modalLinkInit = true;
+    document.querySelectorAll('.modal-forgot').forEach((link) => {
+        link.addEventListener('click', (e) => {
+            e.preventDefault();
+            if (window.modalManager?.closeLogin) window.modalManager.closeLogin();
+            if (window.modalManager?.closeSignup) window.modalManager.closeSignup();
+            window.location.href = '/forgot-password';
+        });
+    });
+    document.querySelectorAll('.modal-switch-login').forEach((btn) => {
+        btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            if (window.modalManager?.closeSignup) window.modalManager.closeSignup();
+            if (window.modalManager?.showLogin) window.modalManager.showLogin();
+        });
+    });
+}
 
 function initializeLoginModal() {
     // Guard: prevent double-attachment if this runs twice
+    initModalCrossLinks();
     if (_loginModalInit) return;
     _loginModalInit = true;
     
@@ -1530,4 +1560,65 @@ function handleSignup() {
       clearLogoutHold();
     }
   }, 1500);
+})();
+
+(function showAccountDeletionFlash() {
+  if (typeof window === 'undefined') return;
+  let params;
+  let state = null;
+  try {
+    params = new URLSearchParams(window.location.search);
+    state = params.get('account_deleted');
+    if (state) {
+      params.delete('account_deleted');
+      const query = params.toString();
+      if (history && history.replaceState) {
+        history.replaceState({}, '', `${window.location.pathname}${query ? `?${query}` : ''}${window.location.hash || ''}`);
+      }
+    }
+  } catch {
+    return;
+  }
+
+  if (!state) return;
+
+  const message = state === '1'
+    ? 'Your account has been deleted successfully.'
+    : 'We could not delete your account. Please try again.';
+
+  whenModalManagerReady((mm) => {
+    mm.showNotification('Account update', message);
+  });
+})();
+
+(function showPasswordChangedFlash() {
+  if (typeof window === 'undefined') return;
+  let params;
+  let state = null;
+  try {
+    params = new URLSearchParams(window.location.search);
+    state = params.get('password_changed');
+    if (state) {
+      params.delete('password_changed');
+      const query = params.toString();
+      if (history && history.replaceState) {
+        history.replaceState({}, '', `${window.location.pathname}${query ? `?${query}` : ''}${window.location.hash || ''}`);
+      }
+    }
+  } catch {
+    return;
+  }
+
+  if (!state) return;
+
+  whenModalManagerReady((mm) => {
+    if (state === '1') {
+      mm.showNotification('Password updated', 'Please sign in again with your new password.');
+      if (typeof mm.showLogin === 'function') {
+        setTimeout(() => mm.showLogin(), 400);
+      }
+    } else {
+      mm.showNotification('Password update', 'We could not change your password. Please try again.');
+    }
+  });
 })();

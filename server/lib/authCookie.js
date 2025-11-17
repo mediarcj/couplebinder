@@ -4,43 +4,84 @@
 // Public HTTPS: ALSO set __Host- cookie (secure=true, no Domain).
 // Always avoid Domain on set (host-only) to dodge subdomain pitfalls.
 
+/**
+ *
+ * Purpose
+ * =======
+ * Single-cookie auth helper with strict __Host- rules in production.
+ * - In production: sets ONLY "__Host-sb_session" (Secure; Path=/; NO Domain).
+ * - In non-prod   : sets ONLY "sb_session" (host-only; secure may be false).
+ *
+ * Why single-cookie?
+ * ------------------
+ * Multiple parallel names (plain + __Host-) caused confusion and cleanup pain.
+ * This module makes the name deterministic and exports it for other modules.
+ *
+ * Invariants we enforce
+ * ---------------------
+ * 1) Never set "domain" when writing the cookie (host-only).
+ * 2) In production, cookie must be Secure and named "__Host-<basename>".
+ * 3) Clear legacy names on logout (__Host-sb_session, sb_session, sb-access-token, plus aliases).
+ *
+ * Public API
+ * ----------
+ *   AUTH_COOKIE_NAME : string   // the one canonical name for this process
+ *   setAuthCookie(res, req, token, ttlMs)
+ *   clearAuthCookie(res, req, clearAll = false)
+ *   isHttps(req) : boolean      // exported for callers that need scheme checks elsewhere
+ */
+
 const logger = require('../utils/logger');
 const { config } = require('../config');
 
-// Base name from config (already normalized, no __Host- prefix)
-const AUTH_COOKIE_BASENAME = config.auth.cookieName;
+// ───────────────────────────────────────────────────────────────────────────────
+// Environment & naming
+// ───────────────────────────────────────────────────────────────────────────────
 
-// Optional, comma-separated extra legacy names you want cleared on logout.
-const AUTH_COOKIE_ALIASES = config.auth.cookieAliases || [];
+const IS_PROD =
+  (config.server && config.server.nodeEnv === 'production') ||
+  process.env.NODE_ENV === 'production';
 
-// Legacy domains you might need to clear from old deployments.
-const LEGACY_COOKIE_DOMAIN = config.branding.legacyCookieDomain || config.auth.cookieDomain || undefined;
+// Allow apps to override the base cookie name via config.auth.cookieName.
+// If someone misconfigures this with a "__Host-" prefix, strip it so we can
+// add the prefix ourselves in prod without getting "__Host-__Host-...".
+const RAW_BASENAME = (config.auth && config.auth.cookieName) || 'sb_session';
+const BASENAME = RAW_BASENAME.replace(/^__Host-/, '');
 
-function isLocalhostHost(h) {
-  if (!h) return false;
-  const host = String(h).toLowerCase();
-  return (
-    host === 'localhost' ||
-    host.endsWith('.localhost') ||
-    host === '127.0.0.1' ||
-    host.startsWith('127.') ||
-    host === '::1'
-  );
-}
+// The ONLY name we will use in this process.
+const AUTH_COOKIE_NAME = IS_PROD ? `__Host-${BASENAME}` : BASENAME;
 
-// Detect if request is effectively HTTPS from the client's POV.
+// Optional aliases to clear on logout (legacy clean-up).
+const COOKIE_ALIASES = Array.isArray(config.auth?.cookieAliases)
+  ? config.auth.cookieAliases
+  : [];
+
+// If you used to set Domain cookies, we try to clear them too.
+const LEGACY_COOKIE_DOMAIN =
+  config.branding?.legacyCookieDomain ||
+  config.auth?.cookieDomain || // legacy field if it ever existed
+  undefined;
+
+// ───────────────────────────────────────────────────────────────────────────────
+// Utilities
+// ───────────────────────────────────────────────────────────────────────────────
+
+/**
+ * True if the request effectively arrived over HTTPS from the user's point of view.
+ * Keeps logic in one place for callers that need this check elsewhere.
+ */
 function isHttps(req) {
   try {
-    // 1) Honor X-Forwarded-Proto from the edge/proxy chain (highest priority)
+    // Highest priority hint from proxy chain
     const xf = (req.get('x-forwarded-proto') || '').split(',')[0].trim().toLowerCase();
     if (xf === 'https') return true;
-    if (xf === 'http') return false; // Explicitly http means not https
+    if (xf === 'http') return false;
 
-    // 2) Cloudflare header (JSON-ish), e.g. {"scheme":"https"}
+    // Cloudflare hint: {"scheme":"https"}
     const cfv = req.get('cf-visitor') || req.get('CF-Visitor') || '';
     if (cfv && cfv.toLowerCase().includes('"https"')) return true;
 
-    // 3) Express hint (works when trust proxy is set correctly)
+    // Express flag (requires trust proxy set correctly)
     if (req.secure) return true;
 
     return false;
@@ -49,186 +90,172 @@ function isHttps(req) {
   }
 }
 
-// Consider the host “public” when it’s not a localhost address.
-function isPublicHost(req) {
-  const h = req.hostname || req.get('host') || '';
-  const hostOnly = String(h).split(':')[0];   // drop :port if present
-  return !isLocalhostHost(hostOnly);
-}
+/**
+ * Build cookie options for writing the canonical cookie.
+ * We never put a Domain attribute here; host-only is required for __Host-.
+ */
+function buildWriteOpts(ttlMs) {
+  const sameSite = (config.auth && config.auth.cookieSameSite) || 'lax';
 
-// Build the name we prefer for host-only cookies (no prefix).
-function plainCookieName() {
-  return AUTH_COOKIE_BASENAME;
-}
+  // In prod we force Secure, even if the caller forgets.
+  // In non-prod, allow config override to force Secure for testing if desired.
+  const secureFromConfig = config.auth && typeof config.auth.cookieSecure === 'boolean'
+    ? config.auth.cookieSecure
+    : undefined;
 
-// Build the __Host- variant name.
-function hostPrefixedName() {
-  return `__Host-${AUTH_COOKIE_BASENAME}`;
-}
+  const secure =
+    IS_PROD ? true :
+    secureFromConfig !== undefined ? secureFromConfig :
+    false;
 
-// Options for a host-only cookie (never set Domain on set).
-function buildCookieOpts({ secure, ttlMs }) {
   const opts = {
     path: '/',
     httpOnly: true,
-    sameSite: config.auth.cookieSameSite,
+    sameSite,
+    secure
+    // IMPORTANT: no "domain" on purpose
   };
+
   if (typeof ttlMs === 'number' && Number.isFinite(ttlMs)) {
     opts.maxAge = Math.max(0, Math.floor(ttlMs));
-  }
-  // Respect config.auth.cookieSecure if set, otherwise use secure parameter
-  if (config.auth.cookieSecure === true) {
-    opts.secure = true;
-  } else if (config.auth.cookieSecure === false) {
-    opts.secure = false;
-  } else if (secure) {
-    opts.secure = true;
-  } else {
-    // When not secure, omit .secure; default is false.
   }
   return opts;
 }
 
 /**
- * Set auth cookie(s).
- * - Always set a host-only plain cookie.
- * - If public HTTPS, also set a __Host- twin (requires secure + no Domain).
+ * Defensive check before writing: if someone added "domain" by accident,
+ * strip it and warn. Also, ensure Secure in production.
  */
-// Choose the one canonical name for this request
-function canonicalCookieName(req) {
-  const publicHost = isPublicHost(req);
-  const https = isHttps(req);
-  const forceSecure = (config.auth.cookieSecure === true);
-  // Use __Host- only when browser sees HTTPS on a public host (or forced secure)
-  const useHost = (publicHost && https) || forceSecure;
-  return useHost ? hostPrefixedName() : plainCookieName();
-}
-
-function setAuthCookie(res, req, token, ttlMs) {
-  const name = canonicalCookieName(req);
-  const publicHost = isPublicHost(req);
-  const https = isHttps(req);
-  const forceSecure = (config.auth.cookieSecure === true);
-  const secure = forceSecure || (publicHost && https);
-  const opts = buildCookieOpts({ secure, ttlMs });
-  // IMPORTANT: never set "domain" here; host-only cookie (required for __Host-)
-  res.cookie(name, token, opts);
-  if (config.auth.debug) {
-    logger.debug({ event: 'auth.cookie.set.one', name, secure: !!opts.secure, path: opts.path, sameSite: opts.sameSite, maxAge: opts.maxAge }, 'Set auth cookie');
+function hardenWriteOpts(opts) {
+  if (!opts || typeof opts !== 'object') return;
+  if ('domain' in opts) {
+    const bad = opts.domain;
+    delete opts.domain;
+    logger.warn({ event: 'auth.cookie.write.domain_stripped', bad }, 'Removed domain from auth cookie options');
+  }
+  if (IS_PROD && opts.secure !== true) {
+    logger.warn({ event: 'auth.cookie.write.secure_forced' }, 'Forced secure=true for auth cookie in production');
+    opts.secure = true;
   }
 }
 
-// Read whichever name is present (__Host-* or plain)
-function readAuthCookieJwt(req) {
-  return (
-    req.cookies?.[hostPrefixedName()] ||
-    req.cookies?.[plainCookieName()] ||
-    null
-  );
+// ───────────────────────────────────────────────────────────────────────────────
+// Public functions
+// ───────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Set the authentication cookie.
+ * @param {import('express').Response} res
+ * @param {import('express').Request} _req
+ * @param {string} token - JWT or session token value
+ * @param {number} ttlMs - Max-Age in milliseconds
+ */
+function setAuthCookie(res, _req, token, ttlMs) {
+  const opts = buildWriteOpts(ttlMs);
+  hardenWriteOpts(opts);
+
+  res.cookie(AUTH_COOKIE_NAME, token, opts);
+
+  if (config.auth?.debug) {
+    logger.debug({
+      event: 'auth.cookie.set',
+      name: AUTH_COOKIE_NAME,
+      secure: opts.secure,
+      sameSite: opts.sameSite,
+      path: opts.path,
+      maxAge: opts.maxAge
+    }, 'Set auth cookie');
+  }
 }
 
 /**
- * Clear auth cookie(s).
- * - Clears both the plain and __Host- names.
- * - Clears common legacy names and Domain variants if configured.
- * - If clearAll=true, tries extra variations for safety.
- * 
- * CRITICAL: Express clearCookie requires exact same options as setCookie.
- * For __Host- cookies, must include secure: true and no domain.
+ * Clear the authentication cookie and common legacy names.
+ * Note: Express clearCookie must match important write options (path, domain, secure).
+ * For __Host- cookies: use secure:true and NO domain.
+ *
+ * @param {import('express').Response} res
+ * @param {import('express').Request} req
+ * @param {boolean} clearAll - when true, tries even more historical variants
  */
 function clearAuthCookie(res, req, clearAll = false) {
-  const names = new Set([
-    plainCookieName(),
-    hostPrefixedName(),
-    // legacy fallbacks
-    'sb-access-token',
+  // Clear the current canonical cookie first.
+  const secureFlag = IS_PROD ? true : !!(config.auth && config.auth.cookieSecure === true);
+  res.clearCookie(AUTH_COOKIE_NAME, { path: '/', secure: secureFlag }); // no domain
+
+  // Build the set of legacy names to clear.
+  const legacyNames = new Set([
     'sb_session',
-    ...AUTH_COOKIE_ALIASES
+    '__Host-sb_session',
+    'sb-access-token',
+    ...COOKIE_ALIASES
   ]);
 
-  // Determine secure flag to match how cookies were set
-  const publicHost = isPublicHost(req);
-  const https = isHttps(req);
-  const forceSecure = config.auth.cookieSecure === true;
-  const forceInsecure = config.auth.cookieSecure === false;
-  const shouldBeSecure = forceSecure || (!forceInsecure && publicHost && https);
-
-  // Express clearCookie only requires matching: path, domain, secure
-  // Clear plain cookies (may be secure or not, depending on context)
-  for (const n of names) {
-    // Try both secure and non-secure variants to ensure we clear it
-    if (shouldBeSecure || forceSecure) {
-      res.clearCookie(n, { path: '/', secure: true });
-    }
-    if (!forceSecure) {
-      res.clearCookie(n, { path: '/', secure: false });
-    }
-    // Also try without secure specified (Express default)
+  // Host-only clears (no domain)
+  for (const n of legacyNames) {
     res.clearCookie(n, { path: '/' });
-  }
-
-  // Clear __Host- prefixed cookies (always secure, no domain)
-  const hostNames = names.has(hostPrefixedName()) ? [hostPrefixedName()] : [];
-  if (clearAll) {
-    hostNames.push(`__Host-${AUTH_COOKIE_BASENAME}`);
-  }
-  for (const n of hostNames) {
-    // __Host- cookies MUST have secure: true and NO domain
+    // Also try secure:true for any former __Host- style names
     res.clearCookie(n, { path: '/', secure: true });
   }
 
-  // If you formerly set a Domain, also clear those variants.
-  if (LEGACY_COOKIE_DOMAIN) {
-    for (const n of names) {
-      res.clearCookie(n, { path: '/', domain: LEGACY_COOKIE_DOMAIN, secure: true });
-      res.clearCookie(n, { path: '/', domain: LEGACY_COOKIE_DOMAIN, secure: false });
-      res.clearCookie(n, { path: '/', domain: LEGACY_COOKIE_DOMAIN });
+  // Best-effort domain variant (e.g., ".example.com") in case old deployments used it
+  const host = (req.hostname || (req.headers.host || '')).split(':')[0];
+  const parts = host.split('.').filter(Boolean);
+  const base = parts.length >= 2 ? '.' + parts.slice(-2).join('.') : null;
+  if (base) {
+    for (const n of legacyNames) {
+      res.clearCookie(n, { path: '/', domain: base });
+      res.clearCookie(n, { path: '/', domain: base, secure: true });
     }
   }
 
-  // Extra belt-and-suspenders when requested.
+  // Configured legacy domain (stronger belt-and-suspenders)
+  if (LEGACY_COOKIE_DOMAIN) {
+    for (const n of legacyNames) {
+      res.clearCookie(n, { path: '/', domain: LEGACY_COOKIE_DOMAIN });
+      res.clearCookie(n, { path: '/', domain: LEGACY_COOKIE_DOMAIN, secure: true });
+    }
+  }
+
+  // Optional extra variants
   if (clearAll) {
-    // Try removing some common typos/variants.
     const extras = [
-      `${AUTH_COOKIE_BASENAME}`,
-      `__Host-${AUTH_COOKIE_BASENAME}`,
+      BASENAME,
+      `__Host-${BASENAME}`,
       'sb_access_token',
       'sb-refresh-token',
       'sb_refresh_token'
     ];
     for (const n of extras) {
-      // Try both secure variants
-      res.clearCookie(n, { path: '/', secure: true });
-      res.clearCookie(n, { path: '/', secure: false });
       res.clearCookie(n, { path: '/' });
-      
+      res.clearCookie(n, { path: '/', secure: true });
+      if (base) {
+        res.clearCookie(n, { path: '/', domain: base });
+        res.clearCookie(n, { path: '/', domain: base, secure: true });
+      }
       if (LEGACY_COOKIE_DOMAIN) {
-        res.clearCookie(n, { path: '/', domain: LEGACY_COOKIE_DOMAIN, secure: shouldBeSecure });
+        res.clearCookie(n, { path: '/', domain: LEGACY_COOKIE_DOMAIN });
+        res.clearCookie(n, { path: '/', domain: LEGACY_COOKIE_DOMAIN, secure: true });
       }
     }
   }
 
-  if (config.auth.debug) {
+  if (config.auth?.debug) {
     logger.debug({
       event: 'auth.cookie.cleared',
-      names: Array.from(names),
-      clearAll,
-      legacyDomain: LEGACY_COOKIE_DOMAIN || null,
-      secure: shouldBeSecure,
-      publicHost,
-      https
-    }, 'Auth cookie(s) cleared');
+      current: AUTH_COOKIE_NAME,
+      legacy: Array.from(legacyNames),
+      legacyDomain: LEGACY_COOKIE_DOMAIN || null
+    }, 'Cleared auth cookie(s)');
   }
 }
 
+// ───────────────────────────────────────────────────────────────────────────────
+// Exports
+// ───────────────────────────────────────────────────────────────────────────────
+
 module.exports = {
-  // Export the *base* name so other code can derive both variants.
-  // Keep base for legacy clears; actual set/read is decided at runtime.
-  AUTH_COOKIE_NAME: AUTH_COOKIE_BASENAME,
-  AUTH_COOKIE_ALIASES,
+  AUTH_COOKIE_NAME,
   setAuthCookie,
   clearAuthCookie,
-  isHttps,
-  canonicalCookieName,
-  readAuthCookieJwt
+  isHttps
 };

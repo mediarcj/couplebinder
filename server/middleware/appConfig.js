@@ -3,25 +3,34 @@
 // Purpose: Ensure config is always available to views in dev and production
 // Notes: Safe for CSP (no inline script), config via data attributes
 
+const { ASSET_VERSION } = require('../config');
+
 /**
  * WHAT:
  * Inject app configuration into res.locals for use in templates.
  *
  * WHY:
- * Production and dev need consistent access to Supabase config.
- * This ensures the config element is always rendered on every page.
+ * Production and dev need consistent access to Supabase config and asset versioning.
+ * This ensures the config element and asset version are always rendered on every page.
  *
  * HOW:
- * Read from process.env and attach to res.locals.APP_CONFIG.
+ * Read from config and attach to res.locals.APP_CONFIG and res.locals.assetVersion.
  * Templates can then render <meta id="app-config" data-*="<%= APP_CONFIG.* %>">
+ * and use <%= assetVersion %> for cache-busting.
  */
 
 function appConfig(req, res, next) {
+  const { config } = require('../config');
+  
   res.locals.APP_CONFIG = {
-    SUPABASE_URL: process.env.SUPABASE_URL || '',
-    SUPABASE_ANON_KEY: process.env.SUPABASE_ANON_KEY || '',
-    NODE_ENV: process.env.NODE_ENV || 'production'
+    SUPABASE_URL: config.supabase.url || '',
+    SUPABASE_ANON_KEY: config.supabase.anonKey || '',
+    NODE_ENV: config.server.nodeEnv || 'production'
   };
+  
+  // Set asset version for cache-busting (used by all templates)
+  res.locals.assetVersion = ASSET_VERSION;
+  
   next();
 }
 

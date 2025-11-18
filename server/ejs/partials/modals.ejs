@@ -205,6 +205,36 @@
 </div>
 
 <!-- ============================================================ -->
+<!-- Password Change Confirmation Modal -->
+<!-- ============================================================ -->
+<div id="passwordChangeConfirmModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2 id="passwordChangeConfirmTitle">Confirm Password Change</h2>
+            <span class="close" data-modal-close="passwordChangeConfirmModal">&times;</span>
+        </div>
+        <div class="modal-body">
+            <!-- Confirmation State -->
+            <div id="passwordChangeConfirmState" class="modal-state">
+                <p id="passwordChangeConfirmMessage">You will be logged out once your new password is set.</p>
+                <div class="form-actions">
+                    <button type="button" class="btn btn-secondary" id="passwordChangeCancelBtn">Cancel</button>
+                    <button type="button" class="btn btn-primary" id="passwordChangeResetBtn">Reset Password</button>
+                </div>
+            </div>
+            
+            <!-- Cancelled State -->
+            <div id="passwordChangeCancelledState" class="modal-state hidden">
+                <p id="passwordChangeCancelledMessage">Your request to update password was cancelled. No changes were made.</p>
+                <div class="form-actions">
+                    <button type="button" class="btn btn-primary" id="passwordChangeCancelledOkBtn">OK</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ============================================================ -->
 <!-- Notification Modal (Generic) -->
 <!-- ============================================================ -->
 <div id="notificationModal" class="modal">

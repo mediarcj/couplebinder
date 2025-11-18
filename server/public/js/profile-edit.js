@@ -749,7 +749,44 @@ function initPasswordManager() {
       logger.warn('Password save in progress; click ignored');
       return;
     }
-    submitPasswordChange(saveBtn, toggleBtn, fields);
+    
+    // Validate fields first
+    const currentPassword = document.getElementById('currentPassword')?.value || '';
+    const newPassword = document.getElementById('newPassword')?.value || '';
+    const confirmPassword = document.getElementById('confirmPassword')?.value || '';
+
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      showPasswordError('All password fields are required');
+      return;
+    }
+
+    if (newPassword.length < 8) {
+      showPasswordError('New password must be at least 8 characters');
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      showPasswordError('New passwords do not match');
+      return;
+    }
+    
+    // Show confirmation modal instead of directly submitting
+    if (window.modalManager && typeof window.modalManager.showPasswordChangeConfirm === 'function') {
+      window.modalManager.showPasswordChangeConfirm(
+        () => {
+          // On cancel - just close modal, fields remain
+          logger.info('Password change cancelled by user');
+        },
+        () => {
+          // On confirm - proceed with password change
+          submitPasswordChange(saveBtn, toggleBtn, fields);
+        }
+      );
+    } else {
+      // Fallback if modalManager not available
+      logger.warn('modalManager not available, proceeding with password change');
+      submitPasswordChange(saveBtn, toggleBtn, fields);
+    }
   });
 
   logger.info('Password manager initialized successfully');
@@ -784,21 +821,6 @@ async function submitPasswordChange(saveBtn, toggleBtn, container) {
   const currentPassword = document.getElementById('currentPassword')?.value || '';
   const newPassword = document.getElementById('newPassword')?.value || '';
   const confirmPassword = document.getElementById('confirmPassword')?.value || '';
-
-  if (!currentPassword || !newPassword || !confirmPassword) {
-    showPasswordError('All password fields are required');
-    return;
-  }
-
-  if (newPassword.length < 8) {
-    showPasswordError('New password must be at least 8 characters');
-    return;
-  }
-
-  if (newPassword !== confirmPassword) {
-    showPasswordError('New passwords do not match');
-    return;
-  }
 
   const csrfToken = getCsrfTokenValue();
   if (!csrfToken) {
@@ -837,12 +859,11 @@ async function submitPasswordChange(saveBtn, toggleBtn, container) {
       throw new Error(payload?.error || 'Password update failed');
     }
 
-    window.location.replace('/?password_changed=1');
+    // Password change successful - now logout and redirect
+    await performLogoutAndRedirect();
   } catch (error) {
     logger.error('Password update failed', error);
     showPasswordError(error.message || 'Password update failed');
-  } finally {
-    // Always clear in-flight guard and re-enable button (consistent with saveIndividualField pattern)
     passwordSaving.delete('password');
     saveBtn.disabled = false;
     if (toggleBtn && container) {
@@ -850,6 +871,87 @@ async function submitPasswordChange(saveBtn, toggleBtn, container) {
       toggleBtn.classList.add('hidden');
       container.classList.remove('hidden');
     }
+  }
+}
+
+/**
+ * WHAT:
+ * Perform complete logout (clear cookies, sessions, tokens) and redirect to homepage,
+ * then show login modal with success message.
+ * 
+ * WHY:
+ * After password change, user must be logged out and redirected to homepage
+ * with login modal showing success message.
+ * 
+ * HOW:
+ * 1. Clear server cookies
+ * 2. Clear Supabase session
+ * 3. Clear localStorage/sessionStorage
+ * 4. Wait for logout to complete
+ * 5. Redirect to homepage
+ * 6. Wait for homepage to load
+ * 7. Show login modal with success message
+ */
+async function performLogoutAndRedirect() {
+  try {
+    const csrfToken = getCsrfTokenValue();
+    
+    // 1. Clear server cookies
+    try {
+      await fetch('/auth/clear-cookie', {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Accept': 'application/json',
+          ...(csrfToken ? { 'X-CSRF-Token': csrfToken } : {})
+        }
+      });
+      logger.info('Server cookie cleared');
+    } catch (e) {
+      logger.warn('Server cookie clear failed; proceeding', e);
+    }
+
+    // 2. Clear Supabase session
+    try {
+      if (window.SB?.auth?.signOut) {
+        await window.SB.auth.signOut();
+        logger.info('Supabase session cleared');
+      } else if (window.supabase?.auth?.signOut) {
+        await window.supabase.auth.signOut();
+        logger.info('Supabase session cleared (legacy ref)');
+      }
+    } catch (e) {
+      logger.warn('Supabase signOut exception (non-fatal)', e);
+    }
+
+    // 3. Clear localStorage/sessionStorage (except logout hold)
+    try {
+      const keysToRemove = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && (key.startsWith('sb-') || key.includes('supabase'))) {
+          keysToRemove.push(key);
+        }
+      }
+      keysToRemove.forEach(key => {
+        try {
+          localStorage.removeItem(key);
+        } catch {}
+      });
+      sessionStorage.clear();
+    } catch (e) {
+      logger.warn('Failed to clear storage (non-fatal)', e);
+    }
+
+    // 4. Wait a bit for logout to complete
+    await new Promise(resolve => setTimeout(resolve, 300));
+
+    // 5. Redirect to homepage with flag for login modal
+    window.location.replace('/?password_changed_success=1');
+  } catch (error) {
+    logger.error('Logout and redirect failed', error);
+    // Fallback: just redirect
+    window.location.replace('/?password_changed_success=1');
   }
 }
 

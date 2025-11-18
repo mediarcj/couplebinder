@@ -99,6 +99,27 @@ const modalManager = {
     if (errorEl) {
       errorEl.textContent = message;
       errorEl.classList.remove('hidden');
+      errorEl.classList.remove('success-message');
+      errorEl.classList.add('error-message');
+    }
+  },
+  
+  showLoginSuccess(message) {
+    const errorEl = document.getElementById('loginGeneralError');
+    if (errorEl) {
+      errorEl.textContent = message;
+      errorEl.classList.remove('hidden');
+      errorEl.classList.remove('error-message');
+      errorEl.classList.add('success-message');
+    }
+  },
+  
+  clearLoginMessage() {
+    const errorEl = document.getElementById('loginGeneralError');
+    if (errorEl) {
+      errorEl.textContent = '';
+      errorEl.classList.add('hidden');
+      errorEl.classList.remove('error-message', 'success-message');
     }
   },
   
@@ -214,6 +235,51 @@ const modalManager = {
         setTimeout(() => successState.classList.remove('showing'), 10);
       }, 300);
     }
+  },
+  
+  // ============================================================
+  // Password Change Confirmation Modal
+  // ============================================================
+  
+  showPasswordChangeConfirm(onCancel, onConfirm) {
+    const modal = document.getElementById('passwordChangeConfirmModal');
+    const confirmState = document.getElementById('passwordChangeConfirmState');
+    const cancelledState = document.getElementById('passwordChangeCancelledState');
+    const cancelBtn = document.getElementById('passwordChangeCancelBtn');
+    const resetBtn = document.getElementById('passwordChangeResetBtn');
+    const cancelledOkBtn = document.getElementById('passwordChangeCancelledOkBtn');
+    
+    if (!modal) return;
+    
+    // Reset to confirmation state
+    if (confirmState) confirmState.classList.remove('hidden');
+    if (cancelledState) cancelledState.classList.add('hidden');
+    
+    // Set up cancel handler
+    if (cancelBtn) {
+      cancelBtn.onclick = () => {
+        if (confirmState) confirmState.classList.add('hidden');
+        if (cancelledState) cancelledState.classList.remove('hidden');
+      };
+    }
+    
+    // Set up cancelled OK handler
+    if (cancelledOkBtn) {
+      cancelledOkBtn.onclick = () => {
+        this.close('passwordChangeConfirmModal');
+        if (onCancel) onCancel();
+      };
+    }
+    
+    // Set up reset password handler
+    if (resetBtn) {
+      resetBtn.onclick = () => {
+        this.close('passwordChangeConfirmModal');
+        if (onConfirm) onConfirm();
+      };
+    }
+    
+    this.show('passwordChangeConfirmModal');
   },
   
   // ============================================================

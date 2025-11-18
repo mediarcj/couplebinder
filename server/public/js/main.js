@@ -1651,9 +1651,9 @@ function handleSignup() {
     let state = null;
     try {
       params = new URLSearchParams(window.location.search);
-      state = params.get('password_changed');
+      state = params.get('password_changed_success');
       if (state) {
-        params.delete('password_changed');
+        params.delete('password_changed_success');
         const query = params.toString();
         if (history && history.replaceState) {
           history.replaceState({}, '', `${window.location.pathname}${query ? `?${query}` : ''}${window.location.hash || ''}`);
@@ -1663,30 +1663,29 @@ function handleSignup() {
       return;
     }
 
-    if (!state) return;
+    if (!state || state !== '1') return;
 
-    // Increase retry count and wait longer for modalManager to be ready
+    // Wait for modalManager and show login modal with success message
     whenModalManagerReady((mm) => {
       try {
-        if (state === '1') {
-          mm.showNotification('Password updated', 'Please sign in again with your new password.');
-          // Add delay to ensure notification is visible before login modal
-          setTimeout(() => {
-            try {
-              if (typeof mm.showLogin === 'function') {
-                mm.showLogin();
-              } else {
-                logger.warn('[Main] modalManager.showLogin not available');
+        // Wait a bit more to ensure page is fully loaded
+        setTimeout(() => {
+          try {
+            if (typeof mm.showLogin === 'function') {
+              mm.showLogin();
+              // Show success message in green
+              if (typeof mm.showLoginSuccess === 'function') {
+                mm.showLoginSuccess('Your password has been changed successfully, please use your new password to log in.');
               }
-            } catch (loginErr) {
-              logger.error('[Main] Failed to show login modal:', loginErr);
+            } else {
+              logger.warn('[Main] modalManager.showLogin not available');
             }
-          }, 600); // Increased from 400ms for better UX
-        } else {
-          mm.showNotification('Password update', 'We could not change your password. Please try again.');
-        }
+          } catch (loginErr) {
+            logger.error('[Main] Failed to show login modal:', loginErr);
+          }
+        }, 500); // Wait for page to fully load
       } catch (error) {
-        logger.error('[Main] Failed to show password changed modal:', error);
+        logger.error('[Main] Failed to show password changed login modal:', error);
       }
     }, 50); // Increased from 20 to 50 retries (2.5 seconds total)
   }

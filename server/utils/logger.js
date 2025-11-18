@@ -70,6 +70,27 @@ function safe(message = '') {
 }
 
 /**
+ * Check if a key name indicates sensitive data
+ * @param {string} key - Key name to check
+ * @returns {boolean} True if key indicates sensitive data
+ */
+function isSensitiveKey(key) {
+  const keyLower = String(key).toLowerCase();
+  return (
+    keyLower.includes('password') ||
+    keyLower.includes('token') ||
+    keyLower.includes('secret') ||
+    keyLower.includes('key') ||
+    keyLower.includes('auth') ||
+    keyLower.includes('session') ||
+    keyLower.includes('cookie') ||
+    keyLower.includes('bearer') ||
+    keyLower.includes('authorization') ||
+    keyLower.includes('csrf')
+  );
+}
+
+/**
  * Redact sensitive information from log data
  * @param {any} data - Data to redact
  * @returns {any} Redacted data
@@ -79,29 +100,16 @@ function redactSensitiveData(data) {
     return safe(data);
   }
   
-  if (typeof data === 'string') {
-    // Strip control characters to prevent log injection
-    let redacted = data.replace(CONTROL_CHARS, '');
-    
-    // Check if string contains sensitive patterns
-    for (const pattern of SENSITIVE_PATTERNS) {
-      if (pattern.test(redacted)) {
-        redacted = '[REDACTED]';
-        break;
-      }
-    }
-    
-    return redacted;
+  if (Array.isArray(data)) {
+    return data.map((item) => redactSensitiveData(item));
   }
   
   if (typeof data === 'object' && data !== null) {
     const redacted = {};
     
     for (const [key, value] of Object.entries(data)) {
-      // Check if key contains sensitive patterns
-      const keyRedacted = redactSensitiveData(key);
-      
-      if (keyRedacted === '[REDACTED]') {
+      // Keep key names intact for debugging, but redact values if key is sensitive
+      if (isSensitiveKey(key)) {
         redacted[key] = '[REDACTED]';
       } else {
         redacted[key] = redactSensitiveData(value);

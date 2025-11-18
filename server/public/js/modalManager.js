@@ -101,7 +101,6 @@ const modalManager = {
       errorEl.textContent = message;
       errorEl.classList.remove('hidden');
       errorEl.classList.remove('success-message');
-      errorEl.classList.add('error-message');
     }
   },
   
@@ -127,7 +126,7 @@ const modalManager = {
     if (errorEl) {
       errorEl.textContent = '';
       errorEl.classList.add('hidden');
-      errorEl.classList.remove('error-message', 'success-message');
+      errorEl.classList.remove('success-message');
     }
   },
   

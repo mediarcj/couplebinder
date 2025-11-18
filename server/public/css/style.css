@@ -1169,14 +1169,14 @@ nav ul li a.active {
 }
 
 /* General error message styling */
-#loginGeneralError {
+.login-message {
     margin-top: 0.75rem;
     font-size: 0.95rem;
     line-height: 1.4;
     color: #e74c3c;
 }
 
-#loginGeneralError.success-message {
+.login-message.success-message {
     color: #1d6b34;
 }
 

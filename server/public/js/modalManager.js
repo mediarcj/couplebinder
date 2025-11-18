@@ -64,12 +64,8 @@ const modalManager = {
   
   showLogin() {
     this.show('loginModal');
-    // Clear any previous messages after modal is shown
-    // This allows success messages to be set after showLogin() is called
-    setTimeout(() => {
-      // Only clear if no success message is being set
-      // (success message will be set immediately after showLogin)
-    }, 0);
+    // Note: Success messages can be set after showLogin() is called
+    // The success message will override any previous messages
   },
   
   closeLogin() {

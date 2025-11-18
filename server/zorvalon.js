@@ -280,7 +280,15 @@ app.use(ipFirewall());
 console.log('Security: IP firewall enabled (Redis-backed auto-ban)');
 
 console.log(`${config.branding.appName} server starting...`);
-logConfigSummary();
+try {
+  if (typeof logConfigSummary === 'function') {
+    logConfigSummary();
+  } else {
+    console.log('[detechify] logConfigSummary is not a function; skipping config summary log');
+  }
+} catch (err) {
+  console.error('[detechify] Failed to log config summary:', err.message);
+}
 
 // ============================================================
 // STEP 2: Database Connection and Testing

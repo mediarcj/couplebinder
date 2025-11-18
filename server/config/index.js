@@ -23,7 +23,7 @@
 
 const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '../../.env') }); // load early
-const { formatConfigSummary } = require('../utils/consoleLogger');
+// Note: consoleLogger is loaded lazily in logConfigSummary() to avoid circular dependencies
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Env audit (optional, off by default)
@@ -535,10 +535,31 @@ if (validationErrors.length > 0) {
  * Operators need a quick read on posture without digging through code.
  *
  * HOW:
- * Delegate to consoleLogger to keep the visual style consistent app-wide.
+ * Lazy-load consoleLogger to avoid circular dependencies, with fallback for safety.
  */
 function logConfigSummary() {
-  formatConfigSummary(config);
+  try {
+    // Lazy require to avoid circular dependency issues
+    const consoleLogger = require('../utils/consoleLogger');
+    if (consoleLogger && typeof consoleLogger.formatConfigSummary === 'function') {
+      consoleLogger.formatConfigSummary(config);
+      return;
+    }
+  } catch (err) {
+    // Fall through to simple summary if consoleLogger fails to load
+  }
+  
+  // Fallback: simple console summary so we never crash
+  const dbSummary = config.database?.name 
+    ? `${config.database.host}:${config.database.port}/${config.database.name}`
+    : 'unknown';
+  console.log('\nCONFIGURATION LOADED');
+  console.log(`   Server: ${config.server?.host}:${config.server?.port} (${config.server?.nodeEnv})`);
+  console.log(`   Database: ${dbSummary}`);
+  console.log(`   Auth: Stateless (Supabase RS256 + JWKS)`);
+  console.log(`   Rate Limiting: handled at Cloudflare edge (PRIMARY) + Redis app limiters (SECONDARY)`);
+  console.log(`   Text Limits: ${config.limits?.textMinLength || 'unknown'}-${config.limits?.textMaxLength || 'unknown'} chars`);
+  console.log(`   Max Submissions: ${config.limits?.maxSubmissions || 'unknown'}`);
 }
 
 // ──────────────────────────────────────────────────────────────────────────────

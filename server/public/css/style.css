@@ -774,6 +774,13 @@ footer p {
     min-height: 16px;
 }
 
+.success-message {
+    color: #27ae60;
+    font-size: 12px;
+    margin-top: 5px;
+    min-height: 16px;
+}
+
 .form-help {
     color: #6c757d;
     font-size: 12px;

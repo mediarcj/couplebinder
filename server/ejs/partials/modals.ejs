@@ -32,6 +32,10 @@
                 <form id="loginForm" method="post" action="/auth/login">
                     <input type="hidden" name="_csrf" value="<%= ui?.csrfToken || '' %>">
 
+                    <div class="form-group login-message-row">
+                        <div id="loginGeneralError" class="login-message hidden" role="alert"></div>
+                    </div>
+
                     <div class="form-group">
                         <label for="loginEmail">Email Address</label>
                         <input 
@@ -67,9 +71,7 @@
                         <button type="submit" class="btn btn-primary">Login</button>
                     </div>
 
-                    <div class="form-group login-message-row">
-                        <div id="loginGeneralMessage" class="login-message hidden" role="alert"></div>
-                    </div>
+                    
                 </form>
             </div>
             

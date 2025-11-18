@@ -280,7 +280,7 @@ app.use(ipFirewall());
 console.log('Security: IP firewall enabled (Redis-backed auto-ban)');
 
 console.log(`${config.branding.appName} server starting...`);
-consoleLogger.formatConfigSummary(config);
+logConfigSummary();
 
 // ============================================================
 // STEP 2: Database Connection and Testing
@@ -833,7 +833,7 @@ try {
 }
 
 try {
-  app.use('/dashboard/billing', require('./routes/dashboard-billing'));
+  app.use('/dashboard/billing', requireAuth, require('./routes/dashboard-billing'));
   console.log('Billing dashboard route loaded');
 } catch (e) {
   console.error('Failed to load /dashboard/billing:', e.message);

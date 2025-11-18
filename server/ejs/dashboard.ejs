@@ -14,7 +14,7 @@
           data-supabase-anon-key="<%= APP_CONFIG.SUPABASE_ANON_KEY %>">
     <title><%= page.title %></title>
     <link rel="icon" href="/images/favicon.ico">
-    <link rel="stylesheet" href="/css/style.css?v=<%= page.assetVersion || Date.now() %>">
+    <link rel="stylesheet" href="/css/style.css?v=<%= page.assetVersion || assetVersion || '' %>">
     
     <!-- Cross-tab logout synchronization -->
     <script nonce="<%= page.nonce %>">
@@ -157,6 +157,6 @@
     <script src="/js/logout.js" nonce="<%= page.nonce %>"></script>
     <script src="/js/modalManager.js" nonce="<%= page.nonce %>"></script>
     <!-- Supabase client is initialized by sbClient.js (shared singleton) -->
-    <script src="/js/dashboard.js?v=<%= page.assetVersion || Date.now() %>" nonce="<%= page.nonce %>"></script>
+    <script src="/js/dashboard.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= page.nonce %>"></script>
 </body>
 </html>

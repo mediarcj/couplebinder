@@ -14,7 +14,7 @@
           data-supabase-anon-key="<%= APP_CONFIG.SUPABASE_ANON_KEY %>">
     <title><%= page.title %></title>
     <link rel="icon" href="/images/favicon.ico">
-    <link rel="stylesheet" href="/css/style.css?v=<%= page.assetVersion || Date.now() %>">
+    <link rel="stylesheet" href="/css/style.css?v=<%= page.assetVersion || assetVersion || '' %>">
     <script src="/js/supabase-client.js" nonce="<%= page.nonce %>"></script>
     <script src="/js/sbClient.js" nonce="<%= page.nonce %>"></script>
     
@@ -369,6 +369,6 @@
     <script src="/js/nav-client.js" nonce="<%= page.nonce %>"></script>
     <script src="/js/logout.js" nonce="<%= page.nonce %>"></script>
     <script src="/js/modalManager.js" nonce="<%= page.nonce %>"></script>
-    <script src="/js/profile-edit.js?v=<%= page.assetVersion || Date.now() %>" nonce="<%= page.nonce %>"></script>
+    <script src="/js/profile-edit.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= page.nonce %>"></script>
 </body>
 </html>

@@ -28,7 +28,7 @@ Usage: Copy this file, rename it, and connect to a matching route and presenter.
         data-supabase-anon-key="<%= APP_CONFIG.SUPABASE_ANON_KEY %>">
   <title><%= page.title || 'Untitled Page' %></title>
   <link rel="icon" href="/images/favicon.ico">
-  <link rel="stylesheet" href="/css/style.css?v=<%= page.assetVersion || Date.now() %>">
+  <link rel="stylesheet" href="/css/style.css?v=<%= page.assetVersion || assetVersion || '' %>">
 
   <!-- Scripts (nonce-based) -->
   <script src="/js/supabase-client.js" nonce="<%= page.nonce %>"></script>

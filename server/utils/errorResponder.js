@@ -115,7 +115,7 @@ function respondError(req, res, { status = 500, message, code, extra = {} }) {
       page: { 
         title: payload.message, 
         nonce: res.locals.nonce || '',
-        assetVersion: res.locals.assetVersion || Date.now()
+        assetVersion: res.locals.assetVersion || ''
       },
       app_info: { name: config.branding.appName },
       ui: res.locals.ui || {},

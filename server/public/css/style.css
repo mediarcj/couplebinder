@@ -634,12 +634,13 @@ footer p {
     display: none;
 }
 
+/* Submission item styling (used in submissions list and dashboard) */
 .submission-item {
     background: #f8f9fa;
     border: 1px solid #e9ecef;
     border-radius: 6px;
     padding: 1rem;
-    margin-bottom: 0.5rem;
+    margin-bottom: 0.75rem; /* Use larger margin for consistency */
 }
 
 .submission-header {
@@ -1006,13 +1007,7 @@ nav ul li a.active {
     margin: 0;
 }
 
-.submission-item {
-    background: #f8f9fa;
-    padding: 1rem;
-    border-radius: 6px;
-    border: 1px solid #e9ecef;
-    margin-bottom: 0.75rem;
-}
+/* Note: .submission-item is defined earlier in the file (line 637) */
 
 .submission-meta {
     display: flex;
@@ -1597,29 +1592,8 @@ nav ul li a.active {
     border-top: 1px solid #e9ecef;
 }
 
-.success-message {
-    position: fixed;
-    top: 20px;
-    right: 20px;
-    background: #28a745;
-    color: white;
-    padding: 15px 20px;
-    border-radius: 5px;
-    z-index: 1000;
-    box-shadow: 0 2px 10px rgba(0,0,0,0.2);
-    animation: slideIn 0.3s ease-out;
-}
-
-@keyframes slideIn {
-    from {
-        transform: translateX(100%);
-        opacity: 0;
-    }
-    to {
-        transform: translateX(0);
-        opacity: 1;
-    }
-}
+/* Note: Toast-style success messages should use .success-toast class (defined above) */
+/* This .success-message class is for inline form field messages only */
 
 /* Responsive Profile Edit */
 @media (max-width: 768px) {
@@ -1675,10 +1649,7 @@ nav ul li a.active {
 }
 
 /* Print Styles for Receipt */
-.print-hide {
-    display: initial;
-}
-
+/* Note: .print-hide is defined earlier in the file (line 459) */
 @media print {
     @page {
         margin: 16mm;

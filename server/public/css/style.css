@@ -1169,14 +1169,20 @@ nav ul li a.active {
 }
 
 /* General error message styling */
+.login-message-row {
+    margin-top: 0.5rem;
+}
+
 .login-message {
-    margin-top: 0.75rem;
+    display: block;
+    width: 100%;
     font-size: 0.95rem;
     line-height: 1.4;
+    text-align: left;
     color: #e74c3c;
 }
 
-.login-message.success-message {
+.login-message.login-message--success {
     color: #1d6b34;
 }
 

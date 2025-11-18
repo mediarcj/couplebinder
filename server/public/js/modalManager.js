@@ -85,7 +85,7 @@ const modalManager = {
     const form = document.getElementById('loginForm');
     if (form) form.reset();
     
-    const errors = ['emailError', 'passwordError', 'loginGeneralError'];
+    const errors = ['emailError', 'passwordError'];
     errors.forEach(id => {
       const el = document.getElementById(id);
       if (el) {
@@ -93,40 +93,46 @@ const modalManager = {
         el.classList.add('hidden');
       }
     });
+
+    this.clearLoginMessage();
   },
   
   showLoginError(message) {
-    const errorEl = document.getElementById('loginGeneralError');
-    if (errorEl) {
-      errorEl.textContent = message;
-      errorEl.classList.remove('hidden');
-      errorEl.classList.remove('success-message');
-    }
+    this.setLoginMessage(message, 'error');
   },
   
   showLoginSuccess(message) {
-    const errorEl = document.getElementById('loginGeneralError');
-    if (errorEl) {
-      errorEl.textContent = message;
-      errorEl.classList.remove('hidden');
-      errorEl.classList.remove('error-message');
-      errorEl.classList.add('success-message');
-      // Ensure login form state is visible (not success state)
-      const formState = document.getElementById('loginFormState');
-      const successState = document.getElementById('loginSuccessState');
-      if (formState && successState) {
-        formState.classList.remove('hidden');
-        successState.classList.add('hidden');
-      }
+    // Ensure login form state is visible (not success state)
+    const formState = document.getElementById('loginFormState');
+    const successState = document.getElementById('loginSuccessState');
+    if (formState && successState) {
+      formState.classList.remove('hidden');
+      successState.classList.add('hidden');
     }
+
+    this.setLoginMessage(message, 'success');
   },
   
   clearLoginMessage() {
-    const errorEl = document.getElementById('loginGeneralError');
-    if (errorEl) {
-      errorEl.textContent = '';
-      errorEl.classList.add('hidden');
-      errorEl.classList.remove('success-message');
+    const messageEl = document.getElementById('loginGeneralMessage');
+    if (messageEl) {
+      messageEl.textContent = '';
+      messageEl.classList.add('hidden');
+      messageEl.classList.remove('login-message--success');
+    }
+  },
+
+  setLoginMessage(message, variant = 'error') {
+    const messageEl = document.getElementById('loginGeneralMessage');
+    if (!messageEl) return;
+
+    messageEl.textContent = message;
+    messageEl.classList.remove('hidden');
+
+    if (variant === 'success') {
+      messageEl.classList.add('login-message--success');
+    } else {
+      messageEl.classList.remove('login-message--success');
     }
   },
   

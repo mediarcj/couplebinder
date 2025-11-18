@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Too many requests - <%= app_info?.name || 'Application' %></title>
-  <link rel="stylesheet" href="/css/style.css?v=<%= page.assetVersion || Date.now() %>">
+  <link rel="stylesheet" href="/css/style.css?v=<%= page.assetVersion || assetVersion || '' %>">
 </head>
 <body>
   <header>

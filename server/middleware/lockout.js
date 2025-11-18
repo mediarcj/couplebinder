@@ -230,7 +230,38 @@ async function clearFailedAttempts(email, ip) {
     kIpLock(ip)
   ];
   
-  const deleted = await redis.del(keys);
+  // Also try to clear IPv6-mapped IPv4 format if IP looks like IPv4
+  // Cloudflare sometimes normalizes IPv4 to ::ffff:x.x.x.x format
+  // Also handle case where IP might be stored in different formats
+  const additionalKeys = [];
+  if (ip && ip.includes('.')) {
+    // IPv4 address - also try IPv6-mapped format
+    const ipv6Mapped = `::ffff:${ip}`;
+    additionalKeys.push(kIpCount(ipv6Mapped), kIpLock(ipv6Mapped));
+  } else if (ip && ip.startsWith('::ffff:')) {
+    // IPv6-mapped IPv4 - also try pure IPv4
+    const ipv4 = ip.replace(/^::ffff:/, '');
+    if (ipv4.includes('.')) {
+      additionalKeys.push(kIpCount(ipv4), kIpLock(ipv4));
+    }
+  }
+  
+  // Normalize IPv6 addresses (remove leading zeros, lowercase)
+  // This helps catch cases where the same IP might be stored in different formats
+  if (ip && ip.includes(':')) {
+    try {
+      // Try to normalize IPv6 (basic normalization)
+      const normalized = ip.toLowerCase().replace(/(^|:)0+([0-9a-f])/g, '$1$2');
+      if (normalized !== ip) {
+        additionalKeys.push(kIpCount(normalized), kIpLock(normalized));
+      }
+    } catch {
+      // Ignore normalization errors
+    }
+  }
+  
+  const allKeys = [...keys, ...additionalKeys];
+  const deleted = await redis.del(allKeys);
   
   // Log lockout clearing for debugging (only if keys were actually deleted)
   if (deleted > 0) {
@@ -239,8 +270,9 @@ async function clearFailedAttempts(email, ip) {
       event: 'lockout.cleared',
       email: email ? 'present' : 'missing',
       ip: ip || 'unknown',
-      keysDeleted: deleted
-    }, 'Cleared account lockouts after successful authentication');
+      keysDeleted: deleted,
+      keysAttempted: allKeys.length
+    }, 'Cleared account and IP lockouts after successful authentication');
   }
 }
 

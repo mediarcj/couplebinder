@@ -151,6 +151,7 @@ router.post('/password', generalLimiter(), async (req, res) => {
     // Clear lockouts after successful password verification
     // WHY: User proved they know their password (similar to successful login)
     // This prevents lockout from blocking login after password change
+    // IMPORTANT: Use same IP extraction as authCookie.js for consistency
     const ip = req.clientIp || req.ip || 'unknown';
     try {
       await clearFailedAttempts(user.email, ip);
@@ -158,13 +159,18 @@ router.post('/password', generalLimiter(), async (req, res) => {
         event: 'account.password.lockouts_cleared',
         userId: user.id,
         email: user.email,
+        ip: ip,
+        clientIp: req.clientIp || 'not-set',
+        reqIp: req.ip || 'not-set',
         requestId: req.requestId
-      }, 'Cleared account lockouts after successful password verification');
+      }, 'Cleared account and IP lockouts after successful password verification');
     } catch (lockoutErr) {
       // Non-fatal: log but continue with password update
       logger.warn({
         event: 'account.password.lockout_clear_failed',
         userId: user.id,
+        email: user.email,
+        ip: ip,
         error: lockoutErr.message,
         requestId: req.requestId
       }, 'Failed to clear lockouts after password verification (non-fatal)');

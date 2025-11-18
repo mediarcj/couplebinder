@@ -165,7 +165,8 @@ router.post('/set-cookie', async (req, res) => {
         'Re-auth blocked: token predates last logout'
       );
       audit('auth.set_cookie.stale', { uid }, req);
-      await recordFailedAttempt(emailFromBody || 'ip-only', ip); // count as failure for lockout
+      // DO NOT record as failed attempt: stale tokens are expected after logout/password change
+      // They are not authentication failures, just expired sessions
       return res.status(401).json({ ok: false, error: 'Stale token (logged out)' });
     }
 

@@ -63,9 +63,8 @@ const modalManager = {
   // ============================================================
   
   showLogin() {
+    this.clearLoginMessage();
     this.show('loginModal');
-    // Note: Success messages can be set after showLogin() is called
-    // The success message will override any previous messages
   },
   
   closeLogin() {

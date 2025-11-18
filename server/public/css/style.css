@@ -1170,17 +1170,13 @@ nav ul li a.active {
 
 /* General error message styling */
 #loginGeneralError {
-    text-align: center;
-    margin-top: 1rem;
-    padding: 0.75rem;
-    background-color: #fee;
-    border: 1px solid #fcc;
-    border-radius: 4px;
+    margin-top: 0.75rem;
+    font-size: 0.95rem;
+    line-height: 1.4;
+    color: #e74c3c;
 }
 
 #loginGeneralError.success-message {
-    background-color: #e6ffed;
-    border-color: #27ae60;
     color: #1d6b34;
 }
 

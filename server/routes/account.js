@@ -13,6 +13,7 @@ const { setLastLogoutNow } = require('../lib/logoutWatermark');
 const { storeEvent } = require('../services/outboxService');
 const { generalLimiter } = require('../middleware/rateLimiter');
 const { validatePasswordServerSide } = require('../middleware/security');
+const { clearFailedAttempts } = require('../middleware/lockout');
 
 function wantsHtml(req) {
   const accept = String(req.headers.accept || '');
@@ -145,6 +146,28 @@ router.post('/password', generalLimiter(), async (req, res) => {
 
     if (error || !data?.session) {
       throw new Error('Current password is incorrect');
+    }
+
+    // Clear lockouts after successful password verification
+    // WHY: User proved they know their password (similar to successful login)
+    // This prevents lockout from blocking login after password change
+    const ip = req.clientIp || req.ip || 'unknown';
+    try {
+      await clearFailedAttempts(user.email, ip);
+      logger.info({
+        event: 'account.password.lockouts_cleared',
+        userId: user.id,
+        email: user.email,
+        requestId: req.requestId
+      }, 'Cleared account lockouts after successful password verification');
+    } catch (lockoutErr) {
+      // Non-fatal: log but continue with password update
+      logger.warn({
+        event: 'account.password.lockout_clear_failed',
+        userId: user.id,
+        error: lockoutErr.message,
+        requestId: req.requestId
+      }, 'Failed to clear lockouts after password verification (non-fatal)');
     }
 
     const { error: updateError } = await adminClient.auth.admin.updateUserById(user.id, {

@@ -89,6 +89,7 @@ function onSBReady(callback) {
  * - error: always log (critical issues need visibility)
  * - Check for DEBUG via URL param (?debug=1) or localStorage
  */
+
 const logger = {
     _isDebug: () => {
         // Check URL parameter first
@@ -206,8 +207,56 @@ function getCSRFToken() {
     return '';
 }
 
+/**
+ * WHAT:
+ * Check if CSS stylesheet is loaded and applied correctly.
+ * 
+ * WHY:
+ * Diagnose styling issues in production (CSP blocking, cache issues, etc.).
+ * 
+ * HOW:
+ * Check if stylesheet link exists and if computed styles are available.
+ * Log diagnostic info when DEBUG is enabled.
+ */
+function checkCssLoading() {
+  if (!logger._isDebug()) return; // Only run in debug mode
+  
+  try {
+    const stylesheet = document.querySelector('link[rel="stylesheet"][href*="style.css"]');
+    if (!stylesheet) {
+      logger.warn('CSS diagnostic: stylesheet link not found in DOM');
+      return;
+    }
+    
+    const href = stylesheet.getAttribute('href');
+    logger.info('CSS diagnostic: stylesheet link found', { href });
+    
+    // Check if styles are actually applied by testing a known class
+    const testEl = document.createElement('div');
+    testEl.className = 'btn btn-primary';
+    testEl.style.display = 'none';
+    document.body.appendChild(testEl);
+    
+    const computedStyle = window.getComputedStyle(testEl);
+    const hasStyles = computedStyle.display !== '' || computedStyle.color !== '';
+    
+    if (hasStyles) {
+      logger.info('CSS diagnostic: styles are being applied correctly');
+    } else {
+      logger.warn('CSS diagnostic: styles may not be applied (check CSP or cache)');
+    }
+    
+    document.body.removeChild(testEl);
+  } catch (err) {
+    logger.error('CSS diagnostic: error checking stylesheet', err);
+  }
+}
+
 document.addEventListener('DOMContentLoaded', function() {
     logger.info('Frontend loaded');
+    
+    // Check CSS loading in debug mode
+    checkCssLoading();
     
     // Extract feature config from data attributes
     const featureConfigEl = document.getElementById('feature-config');
@@ -1612,13 +1661,26 @@ function handleSignup() {
   if (!state) return;
 
   whenModalManagerReady((mm) => {
-    if (state === '1') {
-      mm.showNotification('Password updated', 'Please sign in again with your new password.');
-      if (typeof mm.showLogin === 'function') {
-        setTimeout(() => mm.showLogin(), 400);
+    try {
+      if (state === '1') {
+        mm.showNotification('Password updated', 'Please sign in again with your new password.');
+        // Add delay to ensure notification is visible before login modal
+        setTimeout(() => {
+          try {
+            if (typeof mm.showLogin === 'function') {
+              mm.showLogin();
+            } else {
+              console.warn('[Main] modalManager.showLogin not available');
+            }
+          } catch (loginErr) {
+            console.error('[Main] Failed to show login modal:', loginErr);
+          }
+        }, 600); // Increased from 400ms for better UX
+      } else {
+        mm.showNotification('Password update', 'We could not change your password. Please try again.');
       }
-    } else {
-      mm.showNotification('Password update', 'We could not change your password. Please try again.');
+    } catch (error) {
+      console.error('[Main] Failed to show password changed modal:', error);
     }
   });
 })();

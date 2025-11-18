@@ -15,6 +15,19 @@
  * Track failed attempts in Redis with progressive backoff.
  * Hash email addresses to avoid storing PII in Redis keys.
  * Use atomic Redis operations for consistency.
+ *
+ * IMPORTANT: Lockouts are ONLY triggered by failed authentication attempts
+ * in the /auth/set-cookie route (server/routes/authCookie.js). Other routes
+ * such as password change, account deletion, and profile updates do NOT
+ * trigger lockouts because they require authentication (user is already logged in).
+ *
+ * Lockout triggers:
+ * - Invalid token verification in /auth/set-cookie
+ * - Stale token (predates last logout) in /auth/set-cookie
+ *
+ * Lockout clearing:
+ * - Successful authentication in /auth/set-cookie
+ * - Successful password verification in /account/password (after password change)
  */
 
 const crypto = require('node:crypto');
@@ -186,7 +199,7 @@ async function recordFailedAttempt(email, ip) {
 
 /**
  * WHAT:
- * Clear all failure counts and locks after successful login.
+ * Clear all failure counts and locks after successful authentication.
  * 
  * WHY:
  * Successful authentication should reset lockout state.
@@ -195,6 +208,10 @@ async function recordFailedAttempt(email, ip) {
  * HOW:
  * Delete all count and lock keys for user and IP.
  * Use single DEL command for efficiency.
+ * 
+ * NOTE: Lockouts are ONLY triggered by failed authentication attempts
+ * in /auth/set-cookie route. Other routes (password change, account deletion,
+ * profile updates) do NOT trigger lockouts as they require authentication.
  * 
  * @param {string} email - User email address
  * @param {string} ip - Client IP address
@@ -213,7 +230,18 @@ async function clearFailedAttempts(email, ip) {
     kIpLock(ip)
   ];
   
-  await redis.del(keys);
+  const deleted = await redis.del(keys);
+  
+  // Log lockout clearing for debugging (only if keys were actually deleted)
+  if (deleted > 0) {
+    const logger = require('../utils/logger');
+    logger.info({
+      event: 'lockout.cleared',
+      email: email ? 'present' : 'missing',
+      ip: ip || 'unknown',
+      keysDeleted: deleted
+    }, 'Cleared account lockouts after successful authentication');
+  }
 }
 
 module.exports = {

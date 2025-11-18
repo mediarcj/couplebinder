@@ -1673,10 +1673,13 @@ function handleSignup() {
           try {
             if (typeof mm.showLogin === 'function') {
               mm.showLogin();
-              // Show success message in green
-              if (typeof mm.showLoginSuccess === 'function') {
-                mm.showLoginSuccess('Your password has been changed successfully, please use your new password to log in.');
-              }
+              // Show success message in green after modal is shown
+              // Use a small delay to ensure modal is fully rendered
+              setTimeout(() => {
+                if (typeof mm.showLoginSuccess === 'function') {
+                  mm.showLoginSuccess('Your password has been changed successfully. Please use your new password to log in.');
+                }
+              }, 100);
             } else {
               logger.warn('[Main] modalManager.showLogin not available');
             }

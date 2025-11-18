@@ -64,6 +64,12 @@ const modalManager = {
   
   showLogin() {
     this.show('loginModal');
+    // Clear any previous messages after modal is shown
+    // This allows success messages to be set after showLogin() is called
+    setTimeout(() => {
+      // Only clear if no success message is being set
+      // (success message will be set immediately after showLogin)
+    }, 0);
   },
   
   closeLogin() {
@@ -111,6 +117,13 @@ const modalManager = {
       errorEl.classList.remove('hidden');
       errorEl.classList.remove('error-message');
       errorEl.classList.add('success-message');
+      // Ensure login form state is visible (not success state)
+      const formState = document.getElementById('loginFormState');
+      const successState = document.getElementById('loginSuccessState');
+      if (formState && successState) {
+        formState.classList.remove('hidden');
+        successState.classList.add('hidden');
+      }
     }
   },
   

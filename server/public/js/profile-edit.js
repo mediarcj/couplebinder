@@ -859,8 +859,14 @@ async function submitPasswordChange(saveBtn, toggleBtn, container) {
       throw new Error(payload?.error || 'Password update failed');
     }
 
-    // Password change successful - now logout and redirect
-    await performLogoutAndRedirect();
+    // Server already logged out and set redirect URL
+    // Follow server redirect (no client-side logout needed)
+    if (payload?.redirect) {
+      window.location.replace(payload.redirect);
+    } else {
+      // Fallback: redirect to homepage with success flag
+      window.location.replace('/?password_changed_success=1');
+    }
   } catch (error) {
     logger.error('Password update failed', error);
     showPasswordError(error.message || 'Password update failed');
@@ -874,86 +880,6 @@ async function submitPasswordChange(saveBtn, toggleBtn, container) {
   }
 }
 
-/**
- * WHAT:
- * Perform complete logout (clear cookies, sessions, tokens) and redirect to homepage,
- * then show login modal with success message.
- * 
- * WHY:
- * After password change, user must be logged out and redirected to homepage
- * with login modal showing success message.
- * 
- * HOW:
- * 1. Clear server cookies
- * 2. Clear Supabase session
- * 3. Clear localStorage/sessionStorage
- * 4. Wait for logout to complete
- * 5. Redirect to homepage
- * 6. Wait for homepage to load
- * 7. Show login modal with success message
- */
-async function performLogoutAndRedirect() {
-  try {
-    const csrfToken = getCsrfTokenValue();
-    
-    // 1. Clear server cookies
-    try {
-      await fetch('/auth/clear-cookie', {
-        method: 'POST',
-        credentials: 'include',
-        headers: {
-          'Accept': 'application/json',
-          ...(csrfToken ? { 'X-CSRF-Token': csrfToken } : {})
-        }
-      });
-      logger.info('Server cookie cleared');
-    } catch (e) {
-      logger.warn('Server cookie clear failed; proceeding', e);
-    }
-
-    // 2. Clear Supabase session
-    try {
-      if (window.SB?.auth?.signOut) {
-        await window.SB.auth.signOut();
-        logger.info('Supabase session cleared');
-      } else if (window.supabase?.auth?.signOut) {
-        await window.supabase.auth.signOut();
-        logger.info('Supabase session cleared (legacy ref)');
-      }
-    } catch (e) {
-      logger.warn('Supabase signOut exception (non-fatal)', e);
-    }
-
-    // 3. Clear localStorage/sessionStorage (except logout hold)
-    try {
-      const keysToRemove = [];
-      for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        if (key && (key.startsWith('sb-') || key.includes('supabase'))) {
-          keysToRemove.push(key);
-        }
-      }
-      keysToRemove.forEach(key => {
-        try {
-          localStorage.removeItem(key);
-        } catch {}
-      });
-      sessionStorage.clear();
-    } catch (e) {
-      logger.warn('Failed to clear storage (non-fatal)', e);
-    }
-
-    // 4. Wait a bit for logout to complete
-    await new Promise(resolve => setTimeout(resolve, 300));
-
-    // 5. Redirect to homepage with flag for login modal
-    window.location.replace('/?password_changed_success=1');
-  } catch (error) {
-    logger.error('Logout and redirect failed', error);
-    // Fallback: just redirect
-    window.location.replace('/?password_changed_success=1');
-  }
-}
 
 /* ============================================================
    Delete Account Modal

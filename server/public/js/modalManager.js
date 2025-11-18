@@ -114,7 +114,7 @@ const modalManager = {
   },
   
   clearLoginMessage() {
-    const messageEl = document.getElementById('loginGeneralError');
+    const messageEl = document.getElementById('loginGeneralMessage') || document.getElementById('loginGeneralError');
     if (messageEl) {
       messageEl.textContent = '';
       messageEl.classList.add('hidden');
@@ -123,7 +123,7 @@ const modalManager = {
   },
 
   setLoginMessage(message, variant = 'error') {
-    const messageEl = document.getElementById('loginGeneralError');
+    const messageEl = document.getElementById('loginGeneralMessage') || document.getElementById('loginGeneralError');
     if (!messageEl) return;
 
     messageEl.textContent = message;

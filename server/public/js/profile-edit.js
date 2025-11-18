@@ -678,7 +678,7 @@ function showError(message) {
 
 function showSuccess(message) {
   const el = document.createElement('div');
-  el.className = 'success-message success-toast is-visible';
+  el.className = 'success-toast is-visible';
   el.textContent = message;
   document.body.appendChild(el);
   setTimeout(() => {

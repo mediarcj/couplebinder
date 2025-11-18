@@ -38,9 +38,9 @@ const { config } = require('../config');
 // Environment & naming
 // ───────────────────────────────────────────────────────────────────────────────
 
-const IS_PROD =
-  (config.server && config.server.nodeEnv === 'production') ||
-  process.env.NODE_ENV === 'production';
+// Determine production mode from config (prefer config, fallback to env for early boot)
+const IS_PROD = (config.server && config.server.nodeEnv === 'production') ||
+  (process.env.NODE_ENV === 'production');
 
 // Allow apps to override the base cookie name via config.auth.cookieName.
 // If someone misconfigures this with a "__Host-" prefix, strip it so we can

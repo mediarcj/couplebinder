@@ -24,34 +24,33 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const logger = require('../utils/logger');
+const { config } = require('../config');
 
 // ──────────────────────────────────────────────────────────────────────────────
-// Configuration (env-driven with safe defaults)
+// Configuration (from centralized config module)
 // ──────────────────────────────────────────────────────────────────────────────
 const MAINTENANCE_CONFIG = {
   // Redis key controlling ON/OFF
-  key: process.env.MAINTENANCE_KEY || 'maintenance:mode',
+  key: config.maintenance.key,
 
   // Fallback if Redis unavailable
-  default: process.env.MAINTENANCE_DEFAULT || 'off',
+  default: config.maintenance.default,
 
   // CSV allowlist of IPs that can pass during maintenance (e.g., ops)
-  allowlist: process.env.MAINTENANCE_ALLOWLIST
-    ? process.env.MAINTENANCE_ALLOWLIST.split(',').map(s => s.trim()).filter(Boolean)
-    : ['127.0.0.1', '::1'],
+  allowlist: config.maintenance.allowlist,
 
   // Retry-After seconds (hint for clients/loaders)
-  retryAfter: Number.parseInt(process.env.MAINTENANCE_RETRY_AFTER, 10) || 120,
+  retryAfter: config.maintenance.retryAfter,
 
   // Absolute path inside the container for a dedicated HTML page
   // NOTE: default points to /app/server/public which exists in your image
-  pagePath: process.env.MAINTENANCE_PAGE || '/app/server/public/maintenance.html',
+  pagePath: config.maintenance.pagePath,
 
   // Simple message if page file is missing (we escape this before injecting)
-  message: process.env.MAINTENANCE_MESSAGE || 'We will be back soon.',
+  message: config.maintenance.message,
 
   // Optional owner bypass token (header: x-maintenance-bypass). If unset, bypass is disabled.
-  bypassToken: process.env.MAINTENANCE_BYPASS_TOKEN ? String(process.env.MAINTENANCE_BYPASS_TOKEN) : null,
+  bypassToken: config.maintenance.bypassToken || null,
 
   // Paths that should always work (strict, prefix match)
   allowedPaths: [

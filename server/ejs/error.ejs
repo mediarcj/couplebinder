@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><%= title %> - <%= app_info?.name || 'Application' %></title>
     <link rel="icon" href="/images/favicon.ico">
-    <link rel="stylesheet" href="/css/style.css?v=<%= page.assetVersion || Date.now() %>">
+    <link rel="stylesheet" href="/css/style.css?v=<%= page.assetVersion || assetVersion || '' %>">
     <style nonce="<%= page.nonce %>">
         .error-container {
             max-width: 600px;

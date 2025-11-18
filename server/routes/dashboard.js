@@ -141,7 +141,7 @@ router.get('/purchase/confirmation', async (req, res, next) => {
         // Build dashboard-aligned page model so shared partials get expected keys
         const pageModel = await buildDashboardPageModel(req, res);
         pageModel.page.nonce = res.locals.nonce;
-        pageModel.page.assetVersion = Date.now();
+        pageModel.page.assetVersion = res.locals.assetVersion || '';
         pageModel.page.title = `Purchase Confirmation - ${config.branding.appName}`;
         pageModel.ui = pageModel.ui || {};
         pageModel.ui.csrfToken = res.locals.csrfToken || '';
@@ -296,7 +296,7 @@ router.get('/checkout/review', async (req, res, next) => {
         const pageModel = await buildDashboardPageModel(req, res);
         pageModel.page.title = 'Review Purchase - ' + config.branding.appName;
         pageModel.page.nonce = res.locals.nonce;
-        pageModel.page.assetVersion = Date.now();
+        pageModel.page.assetVersion = res.locals.assetVersion || '';
         pageModel.ui = pageModel.ui || {};
         pageModel.ui.csrfToken = res.locals.csrfToken || '';
         pageModel.ui.supabaseUrl = config.supabase.url;

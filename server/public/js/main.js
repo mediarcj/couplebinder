@@ -543,7 +543,10 @@ function whenModalManagerReady(cb, tries = 20) {
     if (window.modalManager && typeof cb === 'function') {
         return cb(window.modalManager);
     }
-    if (tries <= 0) return;
+    if (tries <= 0) {
+        logger.warn('[Main] modalManager not available after retries');
+        return;
+    }
     setTimeout(() => whenModalManagerReady(cb, tries - 1), 50);
 }
 
@@ -1641,46 +1644,58 @@ function handleSignup() {
 })();
 
 (function showPasswordChangedFlash() {
-  if (typeof window === 'undefined') return;
-  let params;
-  let state = null;
-  try {
-    params = new URLSearchParams(window.location.search);
-    state = params.get('password_changed');
-    if (state) {
-      params.delete('password_changed');
-      const query = params.toString();
-      if (history && history.replaceState) {
-        history.replaceState({}, '', `${window.location.pathname}${query ? `?${query}` : ''}${window.location.hash || ''}`);
+  // Wait for DOM to be ready before checking URL params
+  function init() {
+    if (typeof window === 'undefined') return;
+    let params;
+    let state = null;
+    try {
+      params = new URLSearchParams(window.location.search);
+      state = params.get('password_changed');
+      if (state) {
+        params.delete('password_changed');
+        const query = params.toString();
+        if (history && history.replaceState) {
+          history.replaceState({}, '', `${window.location.pathname}${query ? `?${query}` : ''}${window.location.hash || ''}`);
+        }
       }
+    } catch {
+      return;
     }
-  } catch {
-    return;
+
+    if (!state) return;
+
+    // Increase retry count and wait longer for modalManager to be ready
+    whenModalManagerReady((mm) => {
+      try {
+        if (state === '1') {
+          mm.showNotification('Password updated', 'Please sign in again with your new password.');
+          // Add delay to ensure notification is visible before login modal
+          setTimeout(() => {
+            try {
+              if (typeof mm.showLogin === 'function') {
+                mm.showLogin();
+              } else {
+                logger.warn('[Main] modalManager.showLogin not available');
+              }
+            } catch (loginErr) {
+              logger.error('[Main] Failed to show login modal:', loginErr);
+            }
+          }, 600); // Increased from 400ms for better UX
+        } else {
+          mm.showNotification('Password update', 'We could not change your password. Please try again.');
+        }
+      } catch (error) {
+        logger.error('[Main] Failed to show password changed modal:', error);
+      }
+    }, 50); // Increased from 20 to 50 retries (2.5 seconds total)
   }
 
-  if (!state) return;
-
-  whenModalManagerReady((mm) => {
-    try {
-      if (state === '1') {
-        mm.showNotification('Password updated', 'Please sign in again with your new password.');
-        // Add delay to ensure notification is visible before login modal
-        setTimeout(() => {
-          try {
-            if (typeof mm.showLogin === 'function') {
-              mm.showLogin();
-            } else {
-              console.warn('[Main] modalManager.showLogin not available');
-            }
-          } catch (loginErr) {
-            console.error('[Main] Failed to show login modal:', loginErr);
-          }
-        }, 600); // Increased from 400ms for better UX
-      } else {
-        mm.showNotification('Password update', 'We could not change your password. Please try again.');
-      }
-    } catch (error) {
-      console.error('[Main] Failed to show password changed modal:', error);
-    }
-  });
+  // Run after DOM is ready
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    // DOM already ready, but wait a bit for scripts to load
+    setTimeout(init, 100);
+  }
 })();

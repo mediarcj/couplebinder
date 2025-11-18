@@ -1178,6 +1178,12 @@ nav ul li a.active {
     border-radius: 4px;
 }
 
+#loginGeneralError.success-message {
+    background-color: #e6ffed;
+    border-color: #27ae60;
+    color: #1d6b34;
+}
+
 /* Modal State Transitions */
 .modal-state {
     transition: opacity 0.3s ease-in-out, transform 0.3s ease-in-out;

@@ -23,16 +23,14 @@ Usage: Copy this file, rename it, and connect to a matching route and presenter.
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="csrf-token" content="<%= ui.csrfToken || '' %>">
-  <meta id="app-config"
-        data-supabase-url="<%= APP_CONFIG.SUPABASE_URL %>"
-        data-supabase-anon-key="<%= APP_CONFIG.SUPABASE_ANON_KEY %>">
-  <title><%= page.title || 'Untitled Page' %></title>
+  <% if (typeof APP_CONFIG !== 'undefined') { %>
+    <meta id="app-config"
+          data-supabase-url="<%= APP_CONFIG.SUPABASE_URL %>"
+          data-supabase-anon-key="<%= APP_CONFIG.SUPABASE_ANON_KEY %>">
+  <% } %>
+  <title><%= page?.title || 'Untitled Page' %></title>
   <link rel="icon" href="/images/favicon.ico">
   <link rel="stylesheet" href="/css/style.css?v=<%= page.assetVersion || assetVersion || '' %>">
-
-  <!-- Scripts (nonce-based) -->
-  <script src="/js/supabase-client.js" nonce="<%= page.nonce %>"></script>
-  <script src="/js/_template-protected.js" nonce="<%= page.nonce %>"></script>
 
   <!-- Inline nonce-safe boot -->
   <script nonce="<%= page.nonce %>">
@@ -186,5 +184,16 @@ Usage: Copy this file, rename it, and connect to a matching route and presenter.
 
   <!-- Centralized Modals (login, signup, notifications) -->
   <%- include('partials/modals') %>
+
+  <!-- Shared core scripts -->
+  <script src="/js/supabase-client.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= page.nonce %>"></script>
+  <script src="/js/sbClient.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= page.nonce %>"></script>
+  <script src="/js/logout.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= page.nonce %>"></script>
+  <script src="/js/modalManager.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= page.nonce %>"></script>
+  <script src="/js/nav-client.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= page.nonce %>"></script>
+  
+  <!-- Page-specific scripts -->
+  <script src="/js/_template-protected.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= page.nonce %>"></script>
+  <script src="/js/main.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= page.nonce %>"></script>
 </body>
 </html>

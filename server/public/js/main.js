@@ -539,7 +539,7 @@ function displaySubmissions(submissions) {
     }
 }
 
-function whenModalManagerReady(cb, tries = 20) {
+function whenModalManagerReady(cb, tries = 100) {
     if (window.modalManager && typeof cb === 'function') {
         return cb(window.modalManager);
     }
@@ -1690,7 +1690,7 @@ function handleSignup() {
       } catch (error) {
         logger.error('[Main] Failed to show password changed login modal:', error);
       }
-    }, 50); // Increased from 20 to 50 retries (2.5 seconds total)
+    }, 100); // 100 retries (5 seconds total) for better reliability across browsers
   }
 
   // Run after DOM is ready

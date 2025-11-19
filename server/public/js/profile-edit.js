@@ -770,23 +770,26 @@ function initPasswordManager() {
       return;
     }
     
-    ensureModalManagerCapabilities()
-      .then(() => {
-        window.modalManager.showPasswordChangeConfirm(
-          () => {
-            // On cancel - just close modal, fields remain
-            logger.info('Password change cancelled by user');
-          },
-          () => {
-            // On confirm - proceed with password change
-            submitPasswordChange(saveBtn, toggleBtn, fields);
-          }
-        );
-      })
-      .catch((err) => {
-        logger.warn('Modal manager unavailable, proceeding without confirmation', err?.message || err);
+    // Wait for modalManager to be ready (loaded statically in template)
+    whenModalManagerReady((modalManager) => {
+      if (!modalManager || typeof modalManager.showPasswordChangeConfirm !== 'function') {
+        logger.warn('modalManager.showPasswordChangeConfirm not available, proceeding without confirmation');
         submitPasswordChange(saveBtn, toggleBtn, fields);
-      });
+        return;
+      }
+      
+      logger.info('Showing password change confirmation modal');
+      modalManager.showPasswordChangeConfirm(
+        () => {
+          // On cancel - just close modal, fields remain
+          logger.info('Password change cancelled by user');
+        },
+        () => {
+          // On confirm - proceed with password change
+          submitPasswordChange(saveBtn, toggleBtn, fields);
+        }
+      );
+    });
   });
 
   logger.info('Password manager initialized successfully');
@@ -882,46 +885,29 @@ async function submitPasswordChange(saveBtn, toggleBtn, container) {
 
 /**
  * WHAT:
- * Ensure modalManager has the latest capabilities (handles browser caching).
+ * Wait for modalManager to be ready before using it.
  *
  * WHY:
- * Some browsers aggressively cache modalManager.js. When new methods are added,
- * older cached versions may not include them, causing Chrome to skip the new flow.
+ * modalManager.js is loaded statically in the template, but there may be a brief
+ * delay before it's fully initialized. This helper ensures we wait for it.
  *
  * HOW:
- * - If modalManager already exposes showPasswordChangeConfirm, resolve immediately.
- * - Otherwise, dynamically load modalManager.js with a cache-busting query string.
- * - Cache the promise to avoid duplicate loads.
+ * - Polls for window.modalManager with exponential backoff.
+ * - Calls the callback once modalManager is available.
+ * - Falls back gracefully if modalManager never becomes available.
  */
-let modalManagerCapabilityPromise = null;
-function ensureModalManagerCapabilities() {
-  if (window.modalManager && typeof window.modalManager.showPasswordChangeConfirm === 'function') {
-    return Promise.resolve();
+function whenModalManagerReady(cb, tries = 40) {
+  if (window.modalManager && typeof cb === 'function') {
+    return cb(window.modalManager);
   }
-
-  if (modalManagerCapabilityPromise) {
-    return modalManagerCapabilityPromise;
+  if (tries <= 0) {
+    logger.warn('[profile-edit] modalManager not available after retries');
+    if (typeof cb === 'function') {
+      cb(null); // Call with null to allow fallback handling
+    }
+    return;
   }
-
-  modalManagerCapabilityPromise = new Promise((resolve, reject) => {
-    const script = document.createElement('script');
-    script.src = `/js/modalManager.js?v=${Date.now()}`;
-    script.async = true;
-    script.onload = () => {
-      if (window.modalManager && typeof window.modalManager.showPasswordChangeConfirm === 'function') {
-        resolve();
-      } else {
-        reject(new Error('Modal manager still missing confirmation capability'));
-      }
-    };
-    script.onerror = () => reject(new Error('Failed to reload modalManager.js'));
-    document.body.appendChild(script);
-  }).catch((err) => {
-    modalManagerCapabilityPromise = null;
-    throw err;
-  });
-
-  return modalManagerCapabilityPromise;
+  setTimeout(() => whenModalManagerReady(cb, tries - 1), 50);
 }
 
 

@@ -368,7 +368,7 @@
 
     <script src="/js/nav-client.js" nonce="<%= page.nonce %>"></script>
     <script src="/js/logout.js" nonce="<%= page.nonce %>"></script>
-    <script src="/js/modalManager.js" nonce="<%= page.nonce %>"></script>
+    <script src="/js/modalManager.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= page.nonce %>"></script>
     <script src="/js/profile-edit.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= page.nonce %>"></script>
 </body>
 </html>

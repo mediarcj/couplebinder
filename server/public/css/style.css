@@ -652,12 +652,6 @@ footer p {
     color: #6c757d;
 }
 
-.submission-preview {
-    color: #495057;
-    font-size: 14px;
-    line-height: 1.4;
-}
-
 .submission-id {
     font-family: monospace;
     font-size: 11px;
@@ -814,19 +808,6 @@ footer p {
     font-size: 12px !important;
     padding: 4px 8px !important;
     min-width: auto !important;
-}
-
-.form-actions {
-    display: flex;
-    gap: 1rem;
-    justify-content: flex-end;
-    margin-top: 2rem;
-}
-
-.form-actions .btn {
-    padding: 0.75rem 1.5rem;
-    font-size: 14px;
-    min-width: 80px;
 }
 
 /* Responsive modal */
@@ -1021,6 +1002,7 @@ nav ul li a.active {
     color: #2c3e50;
     margin-bottom: 0.5rem;
     line-height: 1.4;
+    font-size: 14px;
 }
 
 .submission-stats {
@@ -1590,6 +1572,12 @@ nav ul li a.active {
     margin-top: 2rem;
     padding-top: 1.5rem;
     border-top: 1px solid #e9ecef;
+}
+
+.form-actions .btn {
+    padding: 0.75rem 1.5rem;
+    font-size: 14px;
+    min-width: 80px;
 }
 
 /* Note: Toast-style success messages should use .success-toast class (defined above) */

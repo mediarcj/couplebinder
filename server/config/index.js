@@ -573,9 +573,17 @@ function logConfigSummary() {
  * Browsers cache aggressively; this forces a fresh fetch post-deploy.
  *
  * HOW:
- * Timestamp or APP_VERSION provides a `?v=` suffix you can append to asset URLs.
+ * - If ASSET_VERSION is set in env, use it (for CI/advanced control).
+ * - Else if IMAGE_TAG exists (from Docker/CI), use that.
+ * - Else fall back to a timestamp at boot.
+ *
+ * NOTE:
+ * APP_VERSION is kept for UI/branding only; it no longer affects asset URLs.
  */
-const ASSET_VERSION = String(process.env.ASSET_VERSION || process.env.APP_VERSION || Date.now());
+const rawAssetVersion = (process.env.ASSET_VERSION || '').trim();
+const rawImageTag = (process.env.IMAGE_TAG || '').trim();
+
+const ASSET_VERSION = rawAssetVersion || rawImageTag || String(Date.now());
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Exports

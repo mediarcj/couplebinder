@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="<%= ui?.csrfToken || '' %>">
     <title><%= title %> - <%= app_info?.name || 'Application' %></title>
     <link rel="icon" href="/images/favicon.ico">
     <link rel="stylesheet" href="/css/style.css?v=<%= page.assetVersion || assetVersion || '' %>">
@@ -107,6 +108,9 @@
 
     <!-- Centralized Modals (for consistent UX across all pages) -->
     <%- include('partials/modals') %>
-    <script src="/js/modalManager.js" nonce="<%= page.nonce %>"></script>
+
+    <!-- Shared core scripts -->
+    <script src="/js/modalManager.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= page.nonce %>"></script>
+    <script src="/js/main.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= page.nonce %>"></script>
 </body>
 </html>

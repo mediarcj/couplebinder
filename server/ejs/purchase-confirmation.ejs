@@ -14,7 +14,7 @@
     <meta name="robots" content="noindex" />
     <title><%= (page && page.title) || 'Purchase Confirmation' %></title>
     <link rel="icon" href="/images/favicon.ico">
-    <link rel="stylesheet" href="/css/style.css?v=<%= (page && page.assetVersion) || '' %>">
+    <link rel="stylesheet" href="/css/style.css?v=<%= page.assetVersion || assetVersion || '' %>">
 </head>
 <body data-auth-hydrate="true">
     <%- include('partials/nav', { nav: page.nav, app_info: app_info }) %>
@@ -91,8 +91,9 @@
 
     <%- include('partials/modals') %>
 
-    <!-- load the centralized modal behavior -->
-    <script src="/js/modalManager.js" nonce="<%= (page && page.nonce) || '' %>"></script>
+    <!-- Shared core scripts -->
+    <script src="/js/modalManager.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= (page && page.nonce) || '' %>"></script>
+    <script src="/js/main.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= (page && page.nonce) || '' %>"></script>
 
     <!-- Local styles (CSP-safe with nonce); no inline style attributes -->
     <style nonce="<%= (page && page.nonce) || '' %>">
@@ -174,7 +175,7 @@
         }
 
         // Amount formatting (handles zero-decimal currencies)
-        const amountMinor = <%- JSON.stringify(((confirmation && confirmation.amountMinor) != null ? confirmation.amountMinor : null)) %>;
+        const amountMinor = "<%= JSON.stringify(((confirmation && confirmation.amountMinor) != null ? confirmation.amountMinor : null)) %>";
         const currency = "<%= ((confirmation && confirmation.currency) || 'USD') %>";
         const $amount = document.querySelector('[data-amount]');
         const zeroDecimal = new Set(['BIF','CLP','DJF','GNF','JPY','KMF','KRW','MGA','PYG','RWF','UGX','VND','VUV','XAF','XOF','XPF']);

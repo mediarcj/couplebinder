@@ -6,13 +6,12 @@
  */
 
 /* ============================================================
-   Quiet console logger with dev toggle and PII-safe redaction
+   Use logger from main.js (exposed as window.logger)
+   Note: profile-edit.js loads BEFORE main.js, so we use a fallback
    ============================================================ */
-const logger = {
-  // Check if debug mode is enabled via localStorage
+// Use 'log' instead of 'logger' to avoid conflicts
+const log = (typeof window !== 'undefined' && window.logger) ? window.logger : {
   isDebugEnabled: () => localStorage.getItem('debugProfile') === '1',
-
-  // Redact PII from objects and strings
   redact: (obj) => {
     if (typeof obj === 'string') {
       return obj
@@ -26,7 +25,7 @@ const logger = {
         if (['email', 'phone', 'token', 'password', 'auth'].some(pii => key.toLowerCase().includes(pii))) {
           redacted[key] = '[REDACTED]';
         } else if (typeof value === 'string') {
-          redacted[key] = logger.redact(value);
+          redacted[key] = log.redact(value);
         } else {
           redacted[key] = value;
         }
@@ -35,23 +34,19 @@ const logger = {
     }
     return obj;
   },
-
-  // Gated logging functions
   info: (message, data = {}) => {
-    if (logger.isDebugEnabled()) {
-      try { console.log(`[DEBUG] ${message}`, logger.redact(data)); }
+    if (log.isDebugEnabled()) {
+      try { console.log(`[DEBUG] ${message}`, log.redact(data)); }
       catch { console.log(`[DEBUG] ${message}`, '[Logger error - data not logged]'); }
     }
   },
-
   error: (message, data = {}) => {
-    try { console.error(`[ERROR] ${message}`, logger.redact(data)); }
+    try { console.error(`[ERROR] ${message}`, log.redact(data)); }
     catch { console.error(`[ERROR] ${message}`, '[Logger error - data not logged]'); }
   },
-
   warn: (message, data = {}) => {
-    if (logger.isDebugEnabled()) {
-      try { console.warn(`[WARN] ${message}`, logger.redact(data)); }
+    if (log.isDebugEnabled()) {
+      try { console.warn(`[WARN] ${message}`, log.redact(data)); }
       catch { console.warn(`[WARN] ${message}`, '[Logger error - data not logged]'); }
     }
   }
@@ -166,14 +161,14 @@ function backendFieldFor(fieldName, rawValue) {
  * the Supabase browser client; it talks to your server API.
  */
 document.addEventListener('DOMContentLoaded', () => {
-  logger.info('Profile edit page loaded');
+  log.info('Profile edit page loaded');
   loadUserProfile().then(() => {
     attachEventHandlers();
     // Initialize password and delete account features AFTER profile loads (consistent with Edit buttons)
     initPasswordManager();
     initDeleteAccountFlow();
   });
-  logger.info('Profile edit page initialized - logout handled by logout.js module');
+  log.info('Profile edit page initialized - logout handled by logout.js module');
 });
 
 /* ============================================================
@@ -200,11 +195,11 @@ async function loadUserProfile() {
     if (!result.success) throw new Error(result.message || 'Failed to load profile');
 
     userProfile = result.profile;
-    logger.info('Profile data loaded', { user_id: userProfile?.id });
+    log.info('Profile data loaded', { user_id: userProfile?.id });
 
     displayProfileData();
   } catch (error) {
-    logger.error('Failed to load user profile:', error);
+    log.error('Failed to load user profile:', error);
     showError('Failed to load profile data. Please refresh the page.');
   }
 }
@@ -214,10 +209,10 @@ async function loadUserProfile() {
  */
 function displayProfileData() {
   if (!userProfile) {
-    logger.warn('No user profile data available');
+    log.warn('No user profile data available');
     return;
   }
-  logger.info('Displaying profile data', { user_id: userProfile.id });
+  log.info('Displaying profile data', { user_id: userProfile.id });
   FIELD_ORDER.forEach((fn) => displayField(fn, profileValueFor(fn, userProfile)));
 }
 
@@ -228,7 +223,7 @@ function displayField(fieldName, value) {
   const displayElement = document.getElementById(`${fieldName}Display`);
   const inputElement   = document.getElementById(fieldName);
 
-  logger.info(`Displaying field: ${fieldName}`);
+  log.info(`Displaying field: ${fieldName}`);
 
   // Normalize account privacy string if needed
   if (fieldName === 'accountPrivacy') {
@@ -243,7 +238,7 @@ function displayField(fieldName, value) {
     if (Array.isArray(value)) displayValue = value.length > 0 ? value.join(', ') : null;
     displayElement.textContent = (displayValue && `${displayValue}`.trim()) || 'Not provided';
   } else {
-    logger.warn(`Display element not found: ${fieldName}`);
+    log.warn(`Display element not found: ${fieldName}`);
   }
 
   if (inputElement) {
@@ -255,7 +250,7 @@ function displayField(fieldName, value) {
       inputElement.value = inputValue || '';
     }
   } else {
-    logger.warn(`Input element not found: ${fieldName}`);
+    log.warn(`Input element not found: ${fieldName}`);
   }
 }
 
@@ -276,16 +271,16 @@ function attachEventHandlers() {
 
   editButtons.forEach((buttonId) => {
     const button = document.getElementById(buttonId);
-    if (!button) return logger.warn(`Button not found: ${buttonId}`);
+    if (!button) return log.warn(`Button not found: ${buttonId}`);
 
     button.addEventListener('click', () => {
       const fieldName = buttonId.replace('edit', '');
       const camelCaseFieldName = fieldName.charAt(0).toLowerCase() + fieldName.slice(1);
-      logger.info(`Edit button clicked: ${camelCaseFieldName}`);
+      log.info(`Edit button clicked: ${camelCaseFieldName}`);
 
       // If saving is in progress for this field, ignore clicks
       if (savingFields.has(camelCaseFieldName)) {
-        logger.warn('Save in progress; click ignored', { field: camelCaseFieldName });
+        log.warn('Save in progress; click ignored', { field: camelCaseFieldName });
         return;
       }
 
@@ -358,11 +353,11 @@ async function saveIndividualField(fieldName) {
 
     // Map to backend field/value
     const { field, value } = backendFieldFor(fieldName, rawValue);
-    logger.info(`Field mapping: ${fieldName} -> ${field}`);
+    log.info(`Field mapping: ${fieldName} -> ${field}`);
 
     // CSRF token (required)
     const csrfToken = getCsrfTokenValue();
-    logger.info('CSRF token check', { found: !!csrfToken });
+    log.info('CSRF token check', { found: !!csrfToken });
     if (!csrfToken) throw new Error('CSRF token not found');
 
     // In-flight guard + button disable
@@ -424,7 +419,7 @@ async function saveIndividualField(fieldName) {
       showSuccess(`${getFieldDisplayName(fieldName)} updated successfully!`);
     }
   } catch (error) {
-    logger.error(`Failed to save ${fieldName}:`, error);
+    log.error(`Failed to save ${fieldName}:`, error);
     showFieldError(`${fieldName}Error`, `Failed to save: ${error.message}`);
   } finally {
     // Always clear in-flight guard and re-enable button
@@ -708,26 +703,26 @@ function initPasswordManager() {
   const saveBtn = document.getElementById('passwordSaveBtn');
 
   if (!toggleBtn) {
-    logger.warn('Password toggle button not found');
+    log.warn('Password toggle button not found');
     return;
   }
   if (!fields) {
-    logger.warn('Password fields container not found');
+    log.warn('Password fields container not found');
     return;
   }
   if (!cancelBtn) {
-    logger.warn('Password cancel button not found');
+    log.warn('Password cancel button not found');
     return;
   }
   if (!saveBtn) {
-    logger.warn('Password save button not found');
+    log.warn('Password save button not found');
     return;
   }
 
   toggleBtn.addEventListener('click', () => {
     // If saving is in progress, ignore clicks (consistent with Edit buttons)
     if (passwordSaving.has('password')) {
-      logger.warn('Password save in progress; click ignored');
+      log.warn('Password save in progress; click ignored');
       return;
     }
     toggleBtn.classList.add('hidden');
@@ -737,7 +732,7 @@ function initPasswordManager() {
   cancelBtn.addEventListener('click', () => {
     // If saving is in progress, ignore clicks (consistent with Edit buttons)
     if (passwordSaving.has('password')) {
-      logger.warn('Password save in progress; cancel ignored');
+      log.warn('Password save in progress; cancel ignored');
       return;
     }
     resetPasswordFields(fields, toggleBtn);
@@ -746,7 +741,7 @@ function initPasswordManager() {
   saveBtn.addEventListener('click', () => {
     // If saving is in progress, ignore clicks (consistent with Edit buttons)
     if (passwordSaving.has('password')) {
-      logger.warn('Password save in progress; click ignored');
+      log.warn('Password save in progress; click ignored');
       return;
     }
     
@@ -773,16 +768,16 @@ function initPasswordManager() {
     // Wait for modalManager to be ready (loaded statically in template)
     whenModalManagerReady((modalManager) => {
       if (!modalManager || typeof modalManager.showPasswordChangeConfirm !== 'function') {
-        logger.warn('modalManager.showPasswordChangeConfirm not available, proceeding without confirmation');
+        log.warn('modalManager.showPasswordChangeConfirm not available, proceeding without confirmation');
         submitPasswordChange(saveBtn, toggleBtn, fields);
         return;
       }
       
-      logger.info('Showing password change confirmation modal');
+      log.info('Showing password change confirmation modal');
       modalManager.showPasswordChangeConfirm(
         () => {
           // On cancel - just close modal, fields remain
-          logger.info('Password change cancelled by user');
+          log.info('Password change cancelled by user');
         },
         () => {
           // On confirm - proceed with password change
@@ -792,7 +787,7 @@ function initPasswordManager() {
     });
   });
 
-  logger.info('Password manager initialized successfully');
+  log.info('Password manager initialized successfully');
 }
 
 function resetPasswordFields(container, toggleBtn) {
@@ -867,11 +862,11 @@ async function submitPasswordChange(saveBtn, toggleBtn, container) {
     if (payload?.redirect) {
       window.location.replace(payload.redirect);
     } else {
-      // Fallback: redirect to homepage with success flag
-      window.location.replace('/?password_changed_success=1');
+      // Fallback: redirect to login page with success flag
+      window.location.replace('/login?password_changed_success=1');
     }
   } catch (error) {
-    logger.error('Password update failed', error);
+    log.error('Password update failed', error);
     showPasswordError(error.message || 'Password update failed');
     passwordSaving.delete('password');
     saveBtn.disabled = false;
@@ -901,7 +896,7 @@ function whenModalManagerReady(cb, tries = 40) {
     return cb(window.modalManager);
   }
   if (tries <= 0) {
-    logger.warn('[profile-edit] modalManager not available after retries');
+    log.warn('[profile-edit] modalManager not available after retries');
     if (typeof cb === 'function') {
       cb(null); // Call with null to allow fallback handling
     }
@@ -920,22 +915,22 @@ function initDeleteAccountFlow() {
   const confirmBtn = document.getElementById('deleteAccountConfirmBtn');
 
   if (!trigger) {
-    logger.warn('Delete account trigger button not found');
+    log.warn('Delete account trigger button not found');
     return;
   }
   if (!modal) {
-    logger.warn('Delete account modal not found');
+    log.warn('Delete account modal not found');
     return;
   }
   if (!confirmBtn) {
-    logger.warn('Delete account confirm button not found');
+    log.warn('Delete account confirm button not found');
     return;
   }
 
   trigger.addEventListener('click', () => {
     // If deletion is in progress, ignore clicks (consistent with Edit buttons)
     if (deleteAccountSaving.has('delete')) {
-      logger.warn('Delete account in progress; click ignored');
+      log.warn('Delete account in progress; click ignored');
       return;
     }
     openDeleteModal(modal);
@@ -945,7 +940,7 @@ function initDeleteAccountFlow() {
     btn.addEventListener('click', () => {
       // If deletion is in progress, ignore clicks (consistent with Edit buttons)
       if (deleteAccountSaving.has('delete')) {
-        logger.warn('Delete account in progress; close ignored');
+        log.warn('Delete account in progress; close ignored');
         return;
       }
       closeDeleteModal(modal);
@@ -957,7 +952,7 @@ function initDeleteAccountFlow() {
     btn.addEventListener('click', () => {
       // If deletion is in progress, ignore clicks (consistent with Edit buttons)
       if (deleteAccountSaving.has('delete')) {
-        logger.warn('Delete account in progress; cancel ignored');
+        log.warn('Delete account in progress; cancel ignored');
         return;
       }
       closeDeleteModal(modal);
@@ -969,7 +964,7 @@ function initDeleteAccountFlow() {
     continueBtn.addEventListener('click', () => {
       // If deletion is in progress, ignore clicks (consistent with Edit buttons)
       if (deleteAccountSaving.has('delete')) {
-        logger.warn('Delete account in progress; continue ignored');
+        log.warn('Delete account in progress; continue ignored');
         return;
       }
       changeDeleteStep(modal, 'final');
@@ -981,7 +976,7 @@ function initDeleteAccountFlow() {
     backBtn.addEventListener('click', () => {
       // If deletion is in progress, ignore clicks (consistent with Edit buttons)
       if (deleteAccountSaving.has('delete')) {
-        logger.warn('Delete account in progress; back ignored');
+        log.warn('Delete account in progress; back ignored');
         return;
       }
       changeDeleteStep(modal, 'cancelled');
@@ -991,7 +986,7 @@ function initDeleteAccountFlow() {
   confirmBtn.addEventListener('click', () => {
     // If deletion is in progress, ignore clicks (consistent with Edit buttons)
     if (deleteAccountSaving.has('delete')) {
-      logger.warn('Delete account in progress; click ignored');
+      log.warn('Delete account in progress; click ignored');
       return;
     }
     submitDeleteAccount(confirmBtn, modal);
@@ -1001,14 +996,14 @@ function initDeleteAccountFlow() {
     if (event.target === modal) {
       // If deletion is in progress, ignore clicks (consistent with Edit buttons)
       if (deleteAccountSaving.has('delete')) {
-        logger.warn('Delete account in progress; modal close ignored');
+        log.warn('Delete account in progress; modal close ignored');
         return;
       }
       closeDeleteModal(modal);
     }
   });
 
-  logger.info('Delete account flow initialized successfully');
+  log.info('Delete account flow initialized successfully');
 }
 
 function openDeleteModal(modal) {
@@ -1082,7 +1077,7 @@ async function submitDeleteAccount(button, modal) {
 
     window.location.replace('/?account_deleted=1');
   } catch (error) {
-    logger.error('Account deletion failed', error);
+    log.error('Account deletion failed', error);
     showDeleteAccountError(error.message || 'Account deletion failed');
   } finally {
     // Always clear in-flight guard and re-enable button (consistent with saveIndividualField pattern)

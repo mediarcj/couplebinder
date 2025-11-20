@@ -35,74 +35,107 @@
  * Intercept auth link clicks to prevent URL flash and handle deep-links.
  * 
  * WHY:
- * Prevents /?login=true and /?signup=true from appearing in URL bar.
+ * Prevents /?signup=true from appearing in URL bar.
+ * Login now redirects to /login page (no modal).
  * Links still work with JS disabled (they navigate to query params).
- * Deep-links from other pages still open modals correctly.
+ * Deep-links from other pages still open signup modal correctly.
  * 
  * HOW:
- * Intercept clicks on links with auth query params before navigation.
- * Open modal immediately and prevent default navigation.
+ * Intercept clicks on links with signup query params before navigation.
+ * Open signup modal immediately and prevent default navigation.
+ * Redirect login links to /login page.
  * Also check for query params on page load for deep-link support.
- * Clean params from URL after opening modal.
+ * Clean params from URL after opening modal or redirecting.
  */
 (function interceptAuthLinks() {
   function getAnchor(el) {
     return el && el.closest ? el.closest('a') : null;
   }
 
-  function isAuthQueryHref(href) {
+  function isSignupQueryHref(href) {
     if (!href) return false;
     try {
       const u = new URL(href, location.origin);
       const p = u.searchParams;
-      return (p.get('login') === 'true' || p.get('signup') === 'true');
+      return p.get('signup') === 'true';
     } catch (_) {
       return false;
     }
   }
 
-  function openAuth(kind) {
-    if (window.modalManager && typeof window.modalManager.open === 'function') {
-      window.modalManager.open(kind);
+  function openSignupModal() {
+    if (window.modalManager && typeof window.modalManager.showSignup === 'function') {
+      window.modalManager.showSignup();
+    } else if (window.modalManager && typeof window.modalManager.open === 'function') {
+      window.modalManager.open('signup');
     } else if (window.modalManager && typeof window.modalManager.openModal === 'function') {
-      window.modalManager.openModal(kind);
+      window.modalManager.openModal('signup');
     } else if (typeof window.openModal === 'function') {
-      window.openModal(kind);
+      window.openModal('signup');
     }
   }
 
-  // Intercept clicks on auth links before navigation
+  // Intercept clicks on signup links before navigation
   document.addEventListener('click', function (e) {
     const a = getAnchor(e.target);
     if (!a) return;
 
     const href = a.getAttribute('href');
-    if (!isAuthQueryHref(href)) return;
-
-    e.preventDefault();
-
-    const u = new URL(href, location.origin);
-    const kind = u.searchParams.get('login') === 'true' ? 'login' : 'signup';
-    openAuth(kind);
+    
+    // Handle signup modal
+    if (isSignupQueryHref(href)) {
+      e.preventDefault();
+      openSignupModal();
+      
+      // Clean params from URL
+      try {
+        const u = new URL(href, location.origin);
+        u.searchParams.delete('signup');
+        if (history && history.replaceState) {
+          history.replaceState({}, '', u.pathname + (u.search || ''));
+        }
+      } catch (_) {}
+      return;
+    }
+    
+    // Handle login - redirect to /login page
+    try {
+      const u = new URL(href, location.origin);
+      if (u.searchParams.get('login') === 'true') {
+        e.preventDefault();
+        window.location.href = '/login';
+        return;
+      }
+    } catch (_) {}
   }, true);
 
-  // Back-compat: if user lands on /?login=true or /?signup=true, open and clean the URL
+  // Back-compat: if user lands on /?login=true or /?signup=true, handle appropriately
   function maybeOpenFromQuery() {
     try {
       const params = new URLSearchParams(location.search);
-      const kind = params.get('login') === 'true' ? 'login'
-                 : params.get('signup') === 'true' ? 'signup'
-                 : null;
-      if (!kind) return;
-
-      openAuth(kind);
-
-      // Clean params from URL
-      params.delete('login');
-      params.delete('signup');
-      if (history && history.replaceState) {
-        const query = params.toString();
-        history.replaceState({}, '', query ? ('/?' + query) : '/');
+      
+      // Redirect login to dedicated page
+      if (params.get('login') === 'true') {
+        params.delete('login');
+        if (history && history.replaceState) {
+          const query = params.toString();
+          history.replaceState({}, '', query ? ('/?' + query) : '/');
+        }
+        window.location.href = '/login';
+        return;
+      }
+      
+      // Open signup modal
+      if (params.get('signup') === 'true') {
+        openSignupModal();
+        
+        // Clean params from URL
+        params.delete('signup');
+        if (history && history.replaceState) {
+          const query = params.toString();
+          history.replaceState({}, '', query ? ('/?' + query) : '/');
+        }
+        return;
       }
     } catch (_) {}
   }

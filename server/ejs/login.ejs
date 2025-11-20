@@ -53,8 +53,19 @@
                     <div id="passwordError" class="error-message"></div>
                 </div>
                 
-                <div id="loginMessageContainer" class="form-group login-message-row hidden">
-                    <div id="loginGeneralMessage" class="login-message hidden" role="alert"></div>
+                <div
+                  id="loginMessageContainer"
+                  class="form-group login-message-row <%= (page.passwordChangedSuccess || page.signupSuccess) ? '' : 'hidden' %>">
+                  <div
+                    id="loginGeneralMessage"
+                    class="login-message <%= (page.passwordChangedSuccess || page.signupSuccess) ? 'login-message--success' : 'hidden' %>"
+                    role="alert">
+                    <% if (page.passwordChangedSuccess) { %>
+                      Your password has been changed successfully. Please use your new password to log in.
+                    <% } else if (page.signupSuccess) { %>
+                      Your account has been created. Please log in to continue.
+                    <% } %>
+                  </div>
                 </div>
 
                 <div class="form-actions login-actions">
@@ -63,7 +74,7 @@
 
                 <div class="login-footer">
                     <p class="login-register-text">
-                        Don't have an account? <a href="/?signup=true" class="login-register-link">Register</a>
+                        Don't have an account? <a href="/signup" class="login-register-link">Register</a>
                     </p>
                     <a href="/forgot-password" class="login-forgot-link">Forgot Password?</a>
                 </div>

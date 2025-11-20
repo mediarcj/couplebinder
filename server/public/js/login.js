@@ -188,7 +188,7 @@ async function handleLoginSubmit(e) {
           try {
             // Interactive login should NOT be blocked by HOLD.
             if (window.logoutHoldActive && window.logoutHoldActive()) {
-              logger.info('HOLD active during interactive login – overriding/clearing HOLD');
+              log.info('HOLD active during interactive login – overriding/clearing HOLD');
               if (window.clearLogoutHold) {
                 try { window.clearLogoutHold(); } catch {}
               }
@@ -392,37 +392,48 @@ async function postAuthCookieWithBackoffLocal(payload, opts) {
     return;
   }
   
-  // Ensure message container starts hidden
-  const container = document.getElementById('loginMessageContainer');
-  if (container) {
-    container.classList.add('hidden');
-  }
-  clearLoginMessage();
-  
-  // Check for password change success flag (from query param or sessionStorage)
+  // If SSR pre-rendered a success message, don't clear it.
+  // Otherwise, handle URL flags to show banners client-side.
   try {
     const urlParams = new URLSearchParams(window.location.search);
     const passwordChanged = urlParams.get('password_changed_success') === '1';
-    
-    // Also check sessionStorage as fallback (for the current flow)
+    const signupSuccess = urlParams.get('signup_success') === '1';
     const sessionFlag = sessionStorage.getItem('passwordChangeSuccess') === '1';
-    
-    if (passwordChanged || sessionFlag) {
-      // Clean up URL param
-      if (passwordChanged) {
-        urlParams.delete('password_changed_success');
+
+    const messageEl = document.getElementById('loginGeneralMessage');
+    const containerEl = document.getElementById('loginMessageContainer');
+    const ssrAlreadyVisible =
+      !!messageEl &&
+      messageEl.classList.contains('login-message--success') &&
+      containerEl && !containerEl.classList.contains('hidden');
+
+    if (!ssrAlreadyVisible) {
+      if (passwordChanged || sessionFlag) {
+        // Clean up URL param
+        if (passwordChanged) {
+          urlParams.delete('password_changed_success');
+          const query = urlParams.toString();
+          if (history && history.replaceState) {
+            history.replaceState({}, '', query ? `/login?${query}` : '/login');
+          }
+        }
+        // Clean up sessionStorage
+        if (sessionFlag) {
+          sessionStorage.removeItem('passwordChangeSuccess');
+        }
+        showLoginSuccess('Your password has been changed successfully. Please use your new password to log in.');
+      } else if (signupSuccess) {
+        // Clean up URL param
+        urlParams.delete('signup_success');
         const query = urlParams.toString();
         if (history && history.replaceState) {
           history.replaceState({}, '', query ? `/login?${query}` : '/login');
         }
+        showLoginSuccess('Your account has been created. Please log in to continue.');
+      } else {
+        // No SSR banner and no flags: keep the container hidden/empty
+        // (Do nothing – avoid flicker)
       }
-      
-      // Clean up sessionStorage
-      if (sessionFlag) {
-        sessionStorage.removeItem('passwordChangeSuccess');
-      }
-      
-      showLoginSuccess('Your password has been changed successfully. Please use your new password to log in.');
     }
   } catch (_) {
     // Ignore errors

@@ -855,20 +855,15 @@ app.get('/login', (req, res) => {
       return res.redirect('/dashboard');
     }
     
-    // Build page model for login page
-    const pageModel = buildHomePageModel(req, res);
+    // Build page model for login page using dedicated presenter
+    const { buildLoginPageModel } = require('./ui_contract/presenters');
+    const pageModel = buildLoginPageModel(req, res);
     
-    // Add nonce for EJS template
-    pageModel.page.nonce = res.locals.nonce;
+    // Add nonce for EJS template (already set by presenter, but ensure it's there)
+    pageModel.page.nonce = res.locals.nonce || pageModel.page.nonce;
     
-    // Add Supabase credentials for client initialization
-    pageModel.ui = {
-      supabaseUrl: config.supabase.url,
-      supabaseAnonKey: config.supabase.anonKey
-    };
-    
-    // Render login page (reuse index.ejs which has login modal)
-    res.render('index', pageModel);
+    // Render dedicated login page
+    res.render('login', pageModel);
   } catch (error) {
     console.error('Login page error:', error);
     res.status(500).render('error', {

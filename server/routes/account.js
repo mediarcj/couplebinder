@@ -188,17 +188,17 @@ router.post('/password', generalLimiter(), async (req, res) => {
     const clearCookie = req.app?.locals?.clearAuthOverride || clearAuthCookie;
     clearCookie(res, req, true);
 
-    // Always redirect to homepage with success flag (server handles logout)
+    // Always redirect to login page with success flag (server handles logout)
     // Client should follow redirect, not perform its own logout
     if (wantsHtml(req)) {
-      return res.redirect(303, '/?password_changed_success=1');
+      return res.redirect(303, '/login?password_changed_success=1');
     }
 
     // For JSON requests, return redirect URL so client can follow it
     return res.status(200).json({ 
       ok: true, 
       message: 'Password updated. Please log in again.',
-      redirect: '/?password_changed_success=1'
+      redirect: '/login?password_changed_success=1'
     });
   } catch (error) {
     logger.warn({

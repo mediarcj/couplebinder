@@ -850,25 +850,38 @@ try {
 // Login page route (public)
 app.get('/login', (req, res) => {
   try {
-    // If user is already authenticated, redirect to dashboard
     if (req.user?.id) {
       return res.redirect('/dashboard');
     }
-    
-    // Build page model for login page using dedicated presenter
     const { buildLoginPageModel } = require('./ui_contract/presenters');
     const pageModel = buildLoginPageModel(req, res);
-    
-    // Add nonce for EJS template (already set by presenter, but ensure it's there)
     pageModel.page.nonce = res.locals.nonce || pageModel.page.nonce;
-    
-    // Render dedicated login page
     res.render('login', pageModel);
   } catch (error) {
     console.error('Login page error:', error);
     res.status(500).render('error', {
       title: 'Login Error',
       message: 'Unable to load login page',
+      page: { nonce: res.locals.nonce }
+    });
+  }
+});
+
+// Signup page route (public)
+app.get('/signup', (req, res) => {
+  try {
+    if (req.user?.id) {
+      return res.redirect('/dashboard');
+    }
+    const { buildSignupPageModel } = require('./ui_contract/presenters');
+    const pageModel = buildSignupPageModel(req, res);
+    pageModel.page.nonce = res.locals.nonce || pageModel.page.nonce;
+    res.render('signup', pageModel);
+  } catch (error) {
+    console.error('Signup page error:', error);
+    res.status(500).render('error', {
+      title: 'Signup Error',
+      message: 'Unable to load signup page',
       page: { nonce: res.locals.nonce }
     });
   }

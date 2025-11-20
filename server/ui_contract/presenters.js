@@ -452,7 +452,8 @@ function baseAppInfo() {
 const DEFAULT_AUTH_LIMITS = {
   email_max: 40,
   password_min: 8,
-  password_max: 40
+  password_max: 40,
+  name_max: 40
 };
 
 async function buildForgotPasswordRequestModel(req, res, options = {}) {
@@ -524,11 +525,43 @@ async function buildForgotPasswordResetModel(req, res, options = {}) {
  * @returns {Object} Page model for login page
  */
 function buildLoginPageModel(req, res) {
+  const url = new URL(req.originalUrl, `${req.protocol}://${req.get('host')}`);
+  const passwordChangedSuccess = url.searchParams.get('password_changed_success') === '1';
+  const signupSuccess = url.searchParams.get('signup_success') === '1';  
   return {
     page: {
       title: `Log in - ${config.branding.appName}`,
       description: 'Log in to your account',
       type: 'login',
+      nonce: res.locals.nonce || '',
+      assetVersion: ASSET_VERSION,
+      nav: navManager.compose(req, res),
+      passwordChangedSuccess,
+      signupSuccess      
+    },
+    user: {
+      isAuthenticated: Boolean(req.user?.id),
+      email: req.user?.email || null,
+      id: req.user?.id || null
+    },
+    ui: {
+      csrfToken: res.locals.csrfToken || '',
+      supabaseUrl: config.supabase.url,
+      supabaseAnonKey: config.supabase.anonKey
+    },
+    ui_instructions: {
+      input_limits: DEFAULT_AUTH_LIMITS
+    },
+    app_info: baseAppInfo()
+  };
+}
+
+function buildSignupPageModel(req, res) {
+  return {
+    page: {
+      title: `Sign up - ${config.branding.appName}`,
+      description: 'Create a new account',
+      type: 'signup',
       nonce: res.locals.nonce || '',
       assetVersion: ASSET_VERSION,
       nav: navManager.compose(req, res)
@@ -558,5 +591,6 @@ module.exports = {
   buildErrorPageModel,
   buildForgotPasswordRequestModel,
   buildForgotPasswordResetModel,
-  buildLoginPageModel
+  buildLoginPageModel,
+  buildSignupPageModel
 };

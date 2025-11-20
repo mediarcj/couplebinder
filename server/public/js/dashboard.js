@@ -3,8 +3,10 @@
 // Purpose: Handles logout, submissions viewing, and dashboard interactions
 // Notes: Maintains consistency with main.js functionality
 
-// Quiet console logger with dev toggle and PII-safe redaction
-const logger = {
+// Use logger from main.js (exposed as window.logger)
+// Note: dashboard.js loads BEFORE main.js, so we use a fallback
+// Use 'log' instead of 'logger' to avoid conflicts
+const log = (typeof window !== 'undefined' && window.logger) ? window.logger : {
     isDebugEnabled: () => localStorage.getItem('debugProfile') === '1',
     redact: (obj) => {
         if (typeof obj === 'string') {
@@ -15,9 +17,9 @@ const logger = {
         return obj;
     },
     info: (message, data = {}) => {
-        if (logger.isDebugEnabled()) {
+        if (log.isDebugEnabled()) {
             try {
-                console.log(`[DEBUG] ${message}`, logger.redact(data));
+                console.log(`[DEBUG] ${message}`, log.redact(data));
             } catch (e) {
                 console.log(`[DEBUG] ${message}`, '[Logger error - data not logged]');
             }
@@ -25,15 +27,15 @@ const logger = {
     },
     error: (message, data = {}) => {
         try {
-            console.error(`[ERROR] ${message}`, logger.redact(data));
+            console.error(`[ERROR] ${message}`, log.redact(data));
         } catch (e) {
             console.error(`[ERROR] ${message}`, '[Logger error - data not logged]');
         }
     },
     warn: (message, data = {}) => {
-        if (logger.isDebugEnabled()) {
+        if (log.isDebugEnabled()) {
             try {
-                console.warn(`[WARN] ${message}`, logger.redact(data));
+                console.warn(`[WARN] ${message}`, log.redact(data));
             } catch (e) {
                 console.warn(`[WARN] ${message}`, '[Logger error - data not logged]');
             }
@@ -98,7 +100,7 @@ document.addEventListener('DOMContentLoaded', function() {
     initializeSubmissions();
     
     // Logout functionality is handled by logout.js module
-    logger.info('Dashboard page initialized - logout handled by logout.js module');
+    log.info('Dashboard page initialized - logout handled by logout.js module');
 });
 
 /**
@@ -117,7 +119,7 @@ document.addEventListener('DOMContentLoaded', function() {
  */
 function initializeDashboard() {
     // Dashboard-specific initialization (no logout handling needed)
-    logger.info('Dashboard functionality initialized');
+    log.info('Dashboard functionality initialized');
 }
 
 /**

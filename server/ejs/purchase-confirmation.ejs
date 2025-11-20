@@ -123,7 +123,7 @@
         // Button -> official receipt
         const official = document.getElementById('open-official');
         const sess = "<%= (confirmation && confirmation.sessionId) || '' %>";
-        const pre = <%- JSON.stringify(((confirmation && confirmation.officialReceiptUrl) || null)) %>;
+        const pre = "<%= JSON.stringify(((confirmation && confirmation.officialReceiptUrl) || null)) %>";
         
         function openUrl(url) {
             if (!url) return;

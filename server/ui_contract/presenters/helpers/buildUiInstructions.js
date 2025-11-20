@@ -6,6 +6,9 @@
 
 function buildUiInstructions({ isAuthenticated = false, csrfToken = '', nonce = '' } = {}) {
   return {
+    // Top-level alias so EJS can use ui.csrfToken
+    csrfToken,
+
     allowed_actions: isAuthenticated ? ['view_page', 'logout'] : ['login'],
     input_limits: {
       text_min: 20,

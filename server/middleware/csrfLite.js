@@ -47,16 +47,24 @@ function usesCookies(req) {
 function getCsrfFromCookie(req) {
   // Prefer cookie-parser if present
   if (req.cookies && Object.prototype.hasOwnProperty.call(req.cookies, CSRF_COOKIE_NAME)) {
-    return req.cookies[CSRF_COOKIE_NAME];
+    const val = req.cookies[CSRF_COOKIE_NAME];
+    // Ensure we return a trimmed string (cookie-parser should handle this, but be defensive)
+    return val ? String(val).trim() : null;
   }
   // Fallback: parse header manually
   const cookie = req.headers.cookie || '';
   const escapedName = CSRF_COOKIE_NAME.replace(/[-.$?*|{}()[\]\\/+^]/g, '\\$&');
   const m = cookie.match(new RegExp('(?:^|;\\s*)' + escapedName + '=([^;]+)'));
-  return m ? decodeURIComponent(m[1]) : null;
+  if (!m) return null;
+  // Decode and trim the cookie value
+  const decoded = decodeURIComponent(m[1]);
+  return decoded ? String(decoded).trim() : null;
 }
 
 function getProvidedToken(req) {
+  // For JSON requests (like PUT /api/profile/me and POST /account/password),
+  // the token is sent in the X-CSRF-Token header. For form-encoded requests,
+  // it may be in req.body._csrf. We check header first, then body as fallback.
   const name = String(CSRF_HEADER_NAME || '');
   const hdr =
     req.get?.(name) ||
@@ -66,7 +74,12 @@ function getProvidedToken(req) {
     req.get?.('x-xsrf-token') ||
     req.headers?.[name] ||
     req.headers?.[name.toLowerCase()];
-  if (hdr) return String(hdr).trim();
+  if (hdr) {
+    const trimmed = String(hdr).trim();
+    // Header found - use it (this is the standard for JSON API requests)
+    return trimmed;
+  }
+  // Fallback: check body for form-encoded requests
   const b = req.body || {};
   return b._csrf || b.csrf || b.csrf_token || null;
 }
@@ -186,26 +199,40 @@ module.exports = function csrfLite(req, res, next) {
     // ============================================================
     // 4) Enforce double-submit match with timing-safe compare
     // ============================================================
+    // For JSON requests (PUT /api/profile/me, POST /account/password):
+    // - Token is sent in X-CSRF-Token header
+    // - getProvidedToken() reads header first, then falls back to req.body._csrf
+    // - Both cookie and header/body token must match (double-submit pattern)
     const cookieVal  = getCsrfFromCookie(req);
-    const headerVal  = getProvidedToken(req);
+    const providedVal = getProvidedToken(req);
 
-    if (!cookieVal || !headerVal) {
+    if (!cookieVal || !providedVal) {
       logger.warn({
         event: 'csrf.token_missing',
         method: req.method,
         path: req.path,
         hasCookie: Boolean(cookieVal),
-        hasHeader: Boolean(headerVal),
+        hasProvided: Boolean(providedVal),
+        contentType: req.get('content-type'),
         requestId: req.requestId
       }, 'CSRF token missing');
       return res.status(403).json({ ok: false, error: 'Missing or invalid CSRF token' });
     }
 
-    if (!timingSafeEqual(cookieVal, headerVal)) {
+    if (!timingSafeEqual(cookieVal, providedVal)) {
+      // Debug: Log first/last few chars to help diagnose without exposing full token
+      const cookiePreview = cookieVal ? `${cookieVal.substring(0, 4)}...${cookieVal.substring(cookieVal.length - 4)}` : 'null';
+      const providedPreview = providedVal ? `${providedVal.substring(0, 4)}...${providedVal.substring(providedVal.length - 4)}` : 'null';
       logger.warn({
         event: 'csrf.token_mismatch',
         method: req.method,
         path: req.path,
+        contentType: req.get('content-type'),
+        cookieLength: cookieVal?.length || 0,
+        providedLength: providedVal?.length || 0,
+        cookiePreview,
+        providedPreview,
+        cookieName: CSRF_COOKIE_NAME,
         requestId: req.requestId
       }, 'CSRF token mismatch');
       return res.status(403).json({ ok: false, error: 'Missing or invalid CSRF token' });

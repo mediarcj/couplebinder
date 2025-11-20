@@ -68,12 +68,53 @@ const FIELD_ORDER = [
   'relationshipStatus','job','accountPrivacy'
 ];
 
-function getCsrfTokenValue() {
-  const formToken = document.querySelector('input[name="_csrf"]');
-  if (formToken && formToken.value) return formToken.value;
-  const metaToken = document.querySelector('meta[name="csrf-token"]');
-  return metaToken ? metaToken.getAttribute('content') : '';
-}
+ // Read CSRF token in a way that always matches what csrfLite expects
+ // NOTE: 'csrf_token' MUST match config.csrf.cookieName on the server.
+ function readCsrfCookie() {
+   const name = 'csrf_token=';
+   const parts = document.cookie.split(';');
+   for (const part of parts) {
+     const trimmed = part.trim();
+     if (trimmed.startsWith(name)) {
+       const rawValue = trimmed.substring(name.length);
+       try {
+         return decodeURIComponent(rawValue).trim();
+       } catch {
+         return rawValue.trim();
+       }
+     }
+   }
+   return '';
+ }
+
+ function getCsrfTokenValue() {
+   // 1) Prefer the csrf_token cookie – this is exactly what the server validates
+   try {
+     const m = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]+)/);
+     if (m && m[1]) {
+       // Decode + trim for a clean, exact match with what csrfLite reads
+       return decodeURIComponent(m[1]).trim();
+     }
+   } catch (e) {
+     log.warn('Failed to read csrf_token cookie', { error: e.message });
+   }
+
+   // 2) Fallback to hidden form field wired from EJS (ui.csrfToken)
+   const formToken = document.querySelector('input[name="_csrf"]');
+   if (formToken && formToken.value) {
+     return String(formToken.value).trim();
+   }
+
+   // 3) Final fallback: meta tag
+   const metaToken = document.querySelector('meta[name="csrf-token"]');
+   if (metaToken) {
+     const content = metaToken.getAttribute('content');
+     return content ? String(content).trim() : '';
+   }
+
+   // If all else fails, return empty string – server will reject with 403
+   return '';
+ }
 
 /* ============================================================
    Field mapping helpers (single source of truth)
@@ -832,6 +873,9 @@ async function submitPasswordChange(saveBtn, toggleBtn, container) {
   showPasswordError('', true);
 
   try {
+    // POST /account/password uses same CSRF pattern as PUT /api/profile/me:
+    // - Send token in X-CSRF-Token header (required for JSON requests)
+    // - Body _csrf is optional fallback, but header takes precedence
     const response = await fetch('/account/password', {
       method: 'POST',
       credentials: 'include',

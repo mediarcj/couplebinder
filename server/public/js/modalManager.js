@@ -15,7 +15,7 @@
  * Maintenance: Fix once, applies everywhere.
  * 
  * HOW:
- * Provides simple API (modalManager.showSignup(), etc.) that handles all state.
+ * Provides simple API (modalManager.showPasswordChangeConfirm(), modalManager.showNotification(), etc.) that handles all state.
  * Uses CSS classes (not inline styles) for CSP compliance.
  * Integrates with Supabase auth and backend API endpoints.
  */

@@ -228,7 +228,6 @@ function buildHomePageModel(req, res) {
       },
       
       display_rules: {
-        show_login_modal: req.query.login === 'true',
         show_user_menu: Boolean(req.user && req.user.id),
         show_submission_form: false, // Removed from homepage
         show_public_submissions: false // Removed from homepage

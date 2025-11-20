@@ -18,77 +18,6 @@
 -->
 
 <!-- ============================================================ -->
-<!-- Login Modal -->
-<!-- ============================================================ -->
-<div id="loginModal" class="modal">
-    <div class="modal-content">
-        <div class="modal-header">
-            <h2>Login to <%= app_info?.name || 'Application' %></h2>
-            <span class="close" data-modal-close="loginModal">&times;</span>
-        </div>
-        <div class="modal-body">
-            <!-- Login Form State -->
-            <div id="loginFormState" class="modal-state">
-                <form id="loginForm" method="post" action="/auth/login">
-                    <input type="hidden" name="_csrf" value="<%= ui?.csrfToken || '' %>">
-
-                    <div class="form-group">
-                        <label for="loginEmail">Email Address</label>
-                        <input 
-                            type="email" 
-                            id="loginEmail" 
-                            name="email" 
-                            placeholder="Enter your email address"
-                            maxlength="<%= ui_instructions?.input_limits?.email_max || 100 %>"
-                            autocomplete="email"
-                            required
-                        >
-                        <div id="emailError" class="error-message"></div>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="loginPassword">Password</label>
-                        <input 
-                            type="password" 
-                            id="loginPassword" 
-                            name="password" 
-                            placeholder="Enter your password"
-                            autocomplete="current-password"
-                            required
-                        >
-                        <div id="passwordError" class="error-message"></div>
-                    </div>
-                    <div class="form-helper">
-                        <a href="/forgot-password" class="modal-forgot">Forgot password?</a>
-                    </div>
-                    
-                    <div class="form-actions">
-                        <button type="button" class="btn btn-secondary" data-modal-close="loginModal">Cancel</button>
-                        <button type="submit" class="btn btn-primary">Login</button>
-                    </div>
-
-                    <div class="form-group login-message-row">
-                        <div id="loginGeneralMessage" class="login-message hidden" role="alert"></div>
-                    </div>
-                </form>
-            </div>
-            
-            <!-- Login Success State -->
-            <div id="loginSuccessState" class="modal-state hidden">
-                <div class="success-content">
-                    <div class="success-icon">OK</div>
-                    <h3 id="successTitle">Login Successful!</h3>
-                    <p id="successMessage">Welcome back!</p>
-                    <div class="form-actions">
-                        <button type="button" class="btn btn-primary" id="successOkBtn">OK</button>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- ============================================================ -->
 <!-- Sign Up Modal -->
 <!-- ============================================================ -->
 <div id="signupModal" class="modal">
@@ -182,7 +111,7 @@
                     </div>
                     <div class="form-helper">
                         <button type="button" class="modal-switch-login">Have an account? Login here.</button>
-                    </div>
+                    </div> 
                     
                     <div id="signupGeneralError" class="error-message hidden"></div>
                 </form>

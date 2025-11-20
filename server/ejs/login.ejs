@@ -1,0 +1,94 @@
+<!-- File: server/ejs/login.ejs
+     Description: Dedicated login page -->
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="<%= ui.csrfToken || '' %>">
+    <% if (typeof APP_CONFIG !== 'undefined') { %>
+      <meta id="app-config" 
+            data-supabase-url="<%= APP_CONFIG.SUPABASE_URL %>" 
+            data-supabase-anon-key="<%= APP_CONFIG.SUPABASE_ANON_KEY %>">
+    <% } %>
+    <title>Log in - <%= app_info?.name || 'Application' %></title>
+    <link rel="icon" href="/images/favicon.ico">
+    <link rel="stylesheet" href="/css/style.css?v=<%= page.assetVersion || assetVersion || '' %>">
+</head>
+<body data-auth-hydrate="false">
+    <%- include('partials/nav', { nav: page.nav, app_info: app_info }) %>
+    
+    <main class="auth-page">
+        <div class="auth-card login-card">
+            <h1 class="login-title">Log in</h1>
+
+            <form id="loginForm" method="post" action="/auth/login" class="login-form">
+                <input type="hidden" name="_csrf" value="<%= ui.csrfToken || '' %>">
+
+                <div class="form-group">
+                    <input 
+                        type="email" 
+                        id="loginEmail" 
+                        name="email" 
+                        placeholder="Email"
+                        maxlength="<%= ui_instructions?.input_limits?.email_max || 100 %>"
+                        autocomplete="email"
+                        required
+                        class="login-input"
+                    >
+                    <div id="emailError" class="error-message"></div>
+                </div>
+                
+                <div class="form-group">
+                    <input 
+                        type="password" 
+                        id="loginPassword" 
+                        name="password" 
+                        placeholder="Password"
+                        autocomplete="current-password"
+                        required
+                        class="login-input"
+                    >
+                    <div id="passwordError" class="error-message"></div>
+                </div>
+                
+                <div id="loginMessageContainer" class="form-group login-message-row hidden">
+                    <div id="loginGeneralMessage" class="login-message hidden" role="alert"></div>
+                </div>
+
+                <div class="form-actions login-actions">
+                    <button type="submit" class="btn btn-primary btn-login">Log in</button>
+                </div>
+
+                <div class="login-footer">
+                    <p class="login-register-text">
+                        Don't have an account? <a href="/?signup=true" class="login-register-link">Register</a>
+                    </p>
+                    <a href="/forgot-password" class="login-forgot-link">Forgot Password?</a>
+                </div>
+            </form>
+        </div>
+    </main>
+
+    <footer>
+        <div class="container">
+            <p>&copy; 2024 <%= app_info?.name || 'Application' %>. <%= app_info?.description || 'A modern web application' %>.</p>
+        </div>
+    </footer>
+
+    <%- include('partials/modals') %>
+
+    <!-- Shared core scripts -->
+    <script src="/js/supabase-client.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= page.nonce %>"></script>
+    <script src="/js/sbClient.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= page.nonce %>"></script>
+    <script src="/js/logout.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= page.nonce %>"></script>
+    <script src="/js/modalManager.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= page.nonce %>"></script>
+    <script src="/js/nav-client.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= page.nonce %>"></script>
+    
+    <!-- Page-specific scripts -->
+    <script src="/js/login.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= page.nonce %>"></script>
+    <script src="/js/main.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= page.nonce %>"></script>
+</body>
+</html>
+

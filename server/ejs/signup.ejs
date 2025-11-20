@@ -1,0 +1,144 @@
+<!-- File: server/ejs/signup.ejs
+     Description: Dedicated signup page -->
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="<%= ui.csrfToken || '' %>">
+    <% if (typeof APP_CONFIG !== 'undefined') { %>
+      <meta id="app-config" 
+            data-supabase-url="<%= APP_CONFIG.SUPABASE_URL %>" 
+            data-supabase-anon-key="<%= APP_CONFIG.SUPABASE_ANON_KEY %>">
+    <% } %>
+    <title>Sign up - <%= app_info?.name || 'Application' %></title>
+    <link rel="icon" href="/images/favicon.ico">
+    <link rel="stylesheet" href="/css/style.css?v=<%= page.assetVersion || assetVersion || '' %>">
+</head>
+<body data-auth-hydrate="false">
+    <%- include('partials/nav', { nav: page.nav, app_info: app_info }) %>
+    
+    <main class="auth-page">
+        <div class="auth-card signup-card">
+            <h1 class="signup-title">Create your account</h1>
+
+            <form id="signupForm" method="post" class="signup-form">
+                <input type="hidden" name="_csrf" value="<%= ui.csrfToken || '' %>">
+
+                <div class="form-group">
+                    <label for="signupDisplayName">Full name</label>
+                    <input 
+                        type="text" 
+                        id="signupDisplayName" 
+                        name="display_name" 
+                        placeholder="Enter your full name"
+                        maxlength="<%= ui_instructions?.input_limits?.name_max || 40 %>"
+                        autocomplete="name"
+                        required
+                        class="signup-input"
+                    >
+                    <div id="signupDisplayNameError" class="error-message"></div>
+                </div>
+                
+                <div class="form-group">
+                    <label for="signupEmail">Email address</label>
+                    <input 
+                        type="email" 
+                        id="signupEmail" 
+                        name="email" 
+                        placeholder="Enter your email address"
+                        maxlength="<%= ui_instructions?.input_limits?.email_max || 40 %>"
+                        autocomplete="email"
+                        required
+                        class="signup-input"
+                    >
+                    <div id="signupEmailError" class="error-message"></div>
+                </div>
+
+                <div class="form-group">
+                    <label for="signupPhone">Phone number (optional)</label>
+                    <input 
+                        type="tel" 
+                        id="signupPhone" 
+                        name="phone" 
+                        placeholder="Enter your phone number"
+                        minlength="8"
+                        maxlength="15"
+                        pattern="[0-9]+"
+                        autocomplete="tel"
+                        class="signup-input"
+                    >
+                    <div id="signupPhoneError" class="error-message"></div>
+                </div>
+                
+                <div class="form-group">
+                    <label for="signupPassword">Password</label>
+                    <input 
+                        type="password" 
+                        id="signupPassword" 
+                        name="password" 
+                        placeholder="Min 8 characters"
+                        minlength="<%= ui_instructions?.input_limits?.password_min || 8 %>"
+                        maxlength="<%= ui_instructions?.input_limits?.password_max || 40 %>"
+                        autocomplete="new-password"
+                        required
+                        class="signup-input"
+                    >
+                    <div id="signupPasswordError" class="error-message"></div>
+                </div>
+                
+                <div class="form-group">
+                    <label for="signupConfirmPassword">Confirm password</label>
+                    <input 
+                        type="password" 
+                        id="signupConfirmPassword" 
+                        name="confirm_password" 
+                        placeholder="Re-enter your password"
+                        minlength="<%= ui_instructions?.input_limits?.password_min || 8 %>"
+                        maxlength="<%= ui_instructions?.input_limits?.password_max || 40 %>"
+                        autocomplete="new-password"
+                        required
+                        class="signup-input"
+                    >
+                    <div id="confirmPasswordError" class="error-message"></div>
+                </div>
+
+                <div id="signupMessageContainer" class="form-group signup-message-row hidden">
+                    <div id="signupGeneralMessage" class="signup-message hidden" role="alert"></div>
+                </div>
+
+                <div class="form-actions signup-actions">
+                    <button type="submit" class="btn btn-primary btn-signup">Create account</button>
+                </div>
+
+                <div class="signup-footer">
+                    <p class="signup-login-text">
+                        Already have an account? <a href="/login" class="signup-login-link">Log in</a>
+                    </p>
+                </div>
+            </form>
+        </div>
+    </main>
+
+    <footer>
+        <div class="container">
+            <p>&copy; 2024 <%= app_info?.name || 'Application' %>. <%= app_info?.description || 'A modern web application' %>.</p>
+        </div>
+    </footer>
+
+    <%- include('partials/modals') %>
+
+    <!-- Shared core scripts -->
+    <script src="/js/supabase-client.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= page.nonce %>"></script>
+    <script src="/js/sbClient.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= page.nonce %>"></script>
+    <script src="/js/logout.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= page.nonce %>"></script>
+    <script src="/js/modalManager.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= page.nonce %>"></script>
+    <script src="/js/nav-client.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= page.nonce %>"></script>
+    
+    <!-- Page-specific scripts -->
+    <script src="/js/signup.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= page.nonce %>"></script>
+    <script src="/js/main.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= page.nonce %>"></script>
+</body>
+</html>
+

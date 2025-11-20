@@ -7,7 +7,7 @@
 
 /**
  * WHAT:
- * Centralized modal controller for login, signup, and notifications.
+ * Centralized modal controller for signup, password change, and notifications.
  * 
  * WHY:
  * Security: One place to enforce CSRF, input validation, CSP compliance.
@@ -15,7 +15,7 @@
  * Maintenance: Fix once, applies everywhere.
  * 
  * HOW:
- * Provides simple API (modalManager.showLogin(), etc.) that handles all state.
+ * Provides simple API (modalManager.showSignup(), etc.) that handles all state.
  * Uses CSS classes (not inline styles) for CSP compliance.
  * Integrates with Supabase auth and backend API endpoints.
  */
@@ -51,114 +51,8 @@ const modalManager = {
    * Reset modal to initial form state
    */
   resetModalState(modalId) {
-    if (modalId === 'loginModal') {
-      this.resetLoginModal();
-    } else if (modalId === 'signupModal') {
+    if (modalId === 'signupModal') {
       this.resetSignupModal();
-    }
-  },
-  
-  // ============================================================
-  // Login Modal
-  // ============================================================
-  
-  showLogin() {
-    this.clearLoginMessage();
-    this.show('loginModal');
-  },
-  
-  closeLogin() {
-    this.close('loginModal');
-  },
-  
-  resetLoginModal() {
-    const formState = document.getElementById('loginFormState');
-    const successState = document.getElementById('loginSuccessState');
-    
-    if (formState) formState.classList.remove('hidden');
-    if (successState) successState.classList.add('hidden');
-    
-    this.clearLoginForm();
-  },
-  
-  clearLoginForm() {
-    const form = document.getElementById('loginForm');
-    if (form) form.reset();
-    
-    const errors = ['emailError', 'passwordError'];
-    errors.forEach(id => {
-      const el = document.getElementById(id);
-      if (el) {
-        el.textContent = '';
-        el.classList.add('hidden');
-      }
-    });
-
-    this.clearLoginMessage();
-  },
-  
-  showLoginError(message) {
-    this.setLoginMessage(message, 'error');
-  },
-  
-  showLoginSuccess(message) {
-    // Ensure login form state is visible (not success state)
-    const formState = document.getElementById('loginFormState');
-    const successState = document.getElementById('loginSuccessState');
-    if (formState && successState) {
-      formState.classList.remove('hidden');
-      successState.classList.add('hidden');
-    }
-
-    this.setLoginMessage(message, 'success');
-  },
-  
-  clearLoginMessage() {
-    const messageEl = document.getElementById('loginGeneralMessage');
-    if (messageEl) {
-      messageEl.textContent = '';
-      messageEl.classList.add('hidden');
-      messageEl.classList.remove('login-message--success');
-    }
-  },
-
-  setLoginMessage(message, variant = 'error') {
-    const messageEl = document.getElementById('loginGeneralMessage');
-    if (!messageEl) return;
-
-    messageEl.textContent = message;
-    messageEl.classList.remove('hidden');
-
-    if (variant === 'success') {
-      messageEl.classList.add('login-message--success');
-    } else {
-      messageEl.classList.remove('login-message--success');
-    }
-  },
-  
-  switchToLoginSuccess(title, message, onComplete = null) {
-    const formState = document.getElementById('loginFormState');
-    const successState = document.getElementById('loginSuccessState');
-    const successTitle = document.getElementById('successTitle');
-    const successMessage = document.getElementById('successMessage');
-    const successOkBtn = document.getElementById('successOkBtn');
-    
-    if (successTitle) successTitle.textContent = title;
-    if (successMessage) successMessage.textContent = message;
-    
-    if (successOkBtn) {
-      successOkBtn.onclick = () => {
-        if (onComplete) onComplete();
-      };
-    }
-    
-    if (formState && successState) {
-      formState.classList.add('hidden');
-      setTimeout(() => {
-        successState.classList.remove('hidden');
-        successState.classList.add('showing');
-        setTimeout(() => successState.classList.remove('showing'), 10);
-      }, 300);
     }
   },
   
@@ -492,16 +386,14 @@ window.showLogoutSuccessCanonical = showLogoutSuccessCanonical;
  * Provides compatibility for code that calls window.openModal().
  * 
  * WHY:
- * Some scripts may expect window.openModal('login') instead of window.modalManager.showLogin().
+ * Login is now handled by dedicated /login page (no modal).
  * This provides backward compatibility while using the centralized manager.
  * 
  * HOW:
  * Map generic open calls to the specific modalManager methods.
  */
 window.openModal = function (modalId) {
-  if (modalId === 'login' || modalId === 'loginModal') {
-    modalManager.showLogin();
-  } else if (modalId === 'signup' || modalId === 'signupModal') {
+  if (modalId === 'signup' || modalId === 'signupModal') {
     modalManager.showSignup();
   } else {
     // Generic fallback for any other modal ID
@@ -540,17 +432,15 @@ window.openModal = function (modalId) {
     }
   }, { capture: true });
 
-  // Open modals from query params (?login=true, ?signup=true)
+  // Open modals from query params (?signup=true)
   function openFromQuery() {
     try {
       const params = new URLSearchParams(window.location.search || '');
-      ['login', 'signup'].forEach(function (key) {
-        if (params.get(key) === 'true') {
-          if (typeof window.openModal === 'function') {
-            window.openModal(key);
-          }
+      if (params.get('signup') === 'true') {
+        if (typeof window.openModal === 'function') {
+          window.openModal('signup');
         }
-      });
+      }
     } catch (_) {
       // Ignore query param parsing errors
     }

@@ -68,25 +68,6 @@ const FIELD_ORDER = [
   'relationshipStatus','job','accountPrivacy'
 ];
 
- // Read CSRF token in a way that always matches what csrfLite expects
- // NOTE: 'csrf_token' MUST match config.csrf.cookieName on the server.
- function readCsrfCookie() {
-   const name = 'csrf_token=';
-   const parts = document.cookie.split(';');
-   for (const part of parts) {
-     const trimmed = part.trim();
-     if (trimmed.startsWith(name)) {
-       const rawValue = trimmed.substring(name.length);
-       try {
-         return decodeURIComponent(rawValue).trim();
-       } catch {
-         return rawValue.trim();
-       }
-     }
-   }
-   return '';
- }
-
  function getCsrfTokenValue() {
    // 1) Prefer the csrf_token cookie – this is exactly what the server validates
    try {

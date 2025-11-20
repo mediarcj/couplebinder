@@ -546,93 +546,6 @@ function whenModalManagerReady(cb, tries = 100) {
     setTimeout(() => whenModalManagerReady(cb, tries - 1), 50);
 }
 
-/**
- * Idempotent login modal initialization
- * 
- * WHAT:
- * Initialize login modal with form submission handler and link click handler.
- * 
- * WHY:
- * Prevents double-attachment if this function runs multiple times.
- * Works even if login link is missing (form can still be used).
- * 
- * HOW:
- * Use guard flag to ensure handlers attach only once.
- * Attach form handler first (always needed).
- * Attach link handler if link exists (optional).
- */
-let _modalLinkInit = false;
-
-function initModalCrossLinks() {
-    if (_modalLinkInit) return;
-    _modalLinkInit = true;
-    document.querySelectorAll('.modal-forgot').forEach((link) => {
-        link.addEventListener('click', (e) => {
-            e.preventDefault();
-            // Login is now handled by dedicated /login page
-            if (window.modalManager?.closeSignup) window.modalManager.closeSignup();
-            window.location.href = '/forgot-password';
-        });
-    });
-    document.querySelectorAll('.modal-switch-login').forEach((btn) => {
-        btn.addEventListener('click', (e) => {
-            e.preventDefault();
-            if (window.modalManager?.closeSignup) window.modalManager.closeSignup();
-            // Login is now handled by dedicated /login page - redirect instead
-            window.location.href = '/login';
-        });
-    });
-}
-
-
-function validateEmail(email) {
-    if (!email) {
-        return 'Email address is required';
-    }
-    if (email.length > 40) {
-        return 'Email address must be 40 characters or less';
-    }
-    if (email.includes(' ')) {
-        return 'Email address cannot contain spaces';
-    }
-    if (!email.includes('@')) {
-        return 'Email address must contain @ symbol';
-    }
-    if (!email.includes('.')) {
-        return 'Email address must contain a dot (.)';
-    }
-    if (email.indexOf('@') !== email.lastIndexOf('@')) {
-        return 'Email address can only contain one @ symbol';
-    }
-    if (email.indexOf('@') === 0 || email.indexOf('@') === email.length - 1) {
-        return 'Email address cannot start or end with @ symbol';
-    }
-    if (email.indexOf('.') === 0 || email.indexOf('.') === email.length - 1) {
-        return 'Email address cannot start or end with a dot';
-    }
-    if (email.indexOf('@') > email.lastIndexOf('.')) {
-        return 'Dot must come after @ symbol in email address';
-    }
-    // Check for valid characters only (letters, numbers, @, ., -, _)
-    const validEmailRegex = /^[a-zA-Z0-9@._-]+$/;
-    if (!validEmailRegex.test(email)) {
-        return 'Email address can only contain letters, numbers, @, ., -, and _';
-    }
-    return '';
-}
-
-function validatePassword(password) {
-    if (!password) {
-        return 'Password is required';
-    }
-    // Check for valid characters only (letters and numbers)
-    const validPasswordRegex = /^[a-zA-Z0-9]+$/;
-    if (!validPasswordRegex.test(password)) {
-        return 'Password can only contain uppercase letters, lowercase letters, and numbers';
-    }
-    return '';
-}
-
 // Login form handling moved to login.js for dedicated login page
 
 /**
@@ -887,26 +800,6 @@ function updateUIForLoggedOutUser() {
 }
 
 // Logout functionality is now handled by the modular logout.js system
-
-
-/**
- * Initialize sign up modal functionality
- * 
- * WHAT:
- * We set up the sign up modal with form validation and Supabase integration.
- * 
- * WHY:
- * Users need a way to create new accounts with comprehensive profile information.
- * 
- * HOW:
- * We handle modal display, form validation, and Supabase user creation.
- */
-/**
- * WHAT:
- * Signup modal helpers removed (signup now uses dedicated page).
- */
-
-// Sign up validation functions
 
 // Failsafe: clear HOLD if there is no live session
 (function holdJanitor() {

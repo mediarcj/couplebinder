@@ -31,8 +31,7 @@ const clearLogoutHold = () => {
   } catch {}
 };
 
-// Serialize auth actions to avoid double submits
-let AUTH_IN_PROGRESS = false;
+// AUTH_IN_PROGRESS moved to login.js (login page specific)
 
 async function waitUntil(pred, { tries = 15, intervalMs = 100 } = {}) {
   for (let i = 0; i < tries; i++) {
@@ -156,6 +155,9 @@ const logger = {
         }
     }
 };
+
+// Expose logger globally for use in other scripts (e.g., login.js)
+window.logger = logger;
 
 /**
  * XSS Protection: HTML Escape Function
@@ -355,9 +357,6 @@ document.addEventListener('DOMContentLoaded', function() {
     // Text submission form functionality
     initializeTextForm();
     initializeSubmissions();
-    
-    // Login modal functionality
-    initializeLoginModal();
     
     // Sign up modal functionality
     initializeSignupModal();
@@ -565,7 +564,6 @@ function whenModalManagerReady(cb, tries = 100) {
  * Attach form handler first (always needed).
  * Attach link handler if link exists (optional).
  */
-let _loginModalInit = false;
 let _modalLinkInit = false;
 
 function initModalCrossLinks() {
@@ -574,7 +572,7 @@ function initModalCrossLinks() {
     document.querySelectorAll('.modal-forgot').forEach((link) => {
         link.addEventListener('click', (e) => {
             e.preventDefault();
-            if (window.modalManager?.closeLogin) window.modalManager.closeLogin();
+            // Login is now handled by dedicated /login page
             if (window.modalManager?.closeSignup) window.modalManager.closeSignup();
             window.location.href = '/forgot-password';
         });
@@ -583,48 +581,12 @@ function initModalCrossLinks() {
         btn.addEventListener('click', (e) => {
             e.preventDefault();
             if (window.modalManager?.closeSignup) window.modalManager.closeSignup();
-            if (window.modalManager?.showLogin) window.modalManager.showLogin();
+            // Login is now handled by dedicated /login page - redirect instead
+            window.location.href = '/login';
         });
     });
 }
 
-function initializeLoginModal() {
-    // Guard: prevent double-attachment if this runs twice
-    initModalCrossLinks();
-    if (_loginModalInit) return;
-    _loginModalInit = true;
-    
-    const loginForm = document.getElementById('loginForm');
-    if (loginForm) {
-        // Attach submit handler (don't use { once: true } - need for subsequent submits)
-        loginForm.addEventListener('submit', handleLoginSubmit);
-        logger.info('Login form event listener attached');
-    }
-    
-    const loginLink = document.querySelector('.login-link');
-    if (loginLink) {
-        loginLink.addEventListener('click', (e) => {
-            e.preventDefault();
-            handleLogin();
-        });
-    }
-    
-    // Closing is handled centrally by data-modal-close + modalManager
-}
-
-/**
- * WHAT:
- * All login modal helper functions removed - delegated to modalManager.
- * 
- * WHY:
- * Centralized modal management eliminates redundancy and ensures consistency.
- * Single source of truth in modalManager.js for all modal operations.
- * 
- * HOW:
- * All modal operations now use modalManager methods:
- * - modalManager.showLogin(), modalManager.closeLogin()
- * - modalManager.showLoginError(), modalManager.switchToLoginSuccess()
- */
 
 function validateEmail(email) {
     if (!email) {
@@ -674,248 +636,7 @@ function validatePassword(password) {
     return '';
 }
 
-async function handleLoginSubmit(e) {
-    logger.info('handleLoginSubmit called');
-    e.preventDefault();
-
-    if (AUTH_IN_PROGRESS) {
-      logger.info('Auth already in progress – ignoring duplicate submit');
-      return;
-    }
-    AUTH_IN_PROGRESS = true;
-
-    const form = e.target;
-    const submitBtn = form.querySelector('button[type="submit"]');
-    const originalText = submitBtn?.textContent;
-    if (submitBtn) {
-      submitBtn.disabled = true;
-      submitBtn.textContent = 'Signing in…';
-    }
-
-    try {
-        const email = document.getElementById('loginEmail').value;
-        const password = document.getElementById('loginPassword').value;
-        
-        // Clear previous errors
-        const emailError = document.getElementById('emailError');
-        const passwordError = document.getElementById('passwordError');
-        
-        if (emailError) emailError.textContent = '';
-        if (passwordError) passwordError.textContent = '';
-        
-        let hasErrors = false;
-        
-        // Validate email
-        const emailErrorMsg = validateEmail(email);
-        if (emailErrorMsg && emailError) {
-            emailError.textContent = emailErrorMsg;
-            hasErrors = true;
-        }
-        
-        // Validate password
-        const passwordErrorMsg = validatePassword(password);
-        if (passwordErrorMsg && passwordError) {
-            passwordError.textContent = passwordErrorMsg;
-            hasErrors = true;
-        }
-        
-        if (!hasErrors) {
-            // Use Supabase Auth for login (shared client)
-            try {
-                const client = window.SB || window.supabase;
-                if (!client) {
-                    modalManager.showLoginError('Authentication system not initialized. Please refresh the page.');
-                    AUTH_IN_PROGRESS = false;
-                    return;
-                }
-                
-                logger.info('Attempting login with Supabase');
-                logger.info('Supabase client available:', !!client);
-                
-                // Check if there's any existing session before attempting login
-                const { data: { session: existingSession } } = await client.auth.getSession();
-                logger.info('Existing session found before login:', !!existingSession);
-                
-                // Clear any existing session to ensure clean login
-                if (existingSession) {
-                    logger.info('Clearing existing session before login');
-                    await client.auth.signOut();
-                    // We initiated this sign-out here, so clear the HOLD ourselves
-                    try { clearLogoutHold(); } catch {}
-                    // Wait briefly until session is truly gone to avoid races
-                    await waitUntil(async () => {
-                      const s = await getSessionSafe();
-                      return !s;
-                    }, { tries: 15, intervalMs: 100 });
-                }
-                
-                const { data, error } = await client.auth.signInWithPassword({
-                    email: email,
-                    password: password
-                });
-                
-                logger.info('Login response received');
-                
-                if (error) {
-                    logger.error('Login failed:', error.message);
-                    modalManager.showLoginError(`Login failed: ${error.message}`);
-                    AUTH_IN_PROGRESS = false;
-                } else {
-                    logger.info('Login successful');
-                    
-                    /**
-                     * WHAT:
-                     * We have a valid session with an access token.
-                     * 
-                     * WHY:
-                     * The token needs to be stored securely for future requests.
-                     * 
-                     * HOW:
-                     * 1. Extract access token from session
-                     * 2. Call /auth/set-cookie endpoint with Bearer token
-                     * 3. Server sets secure cookie with proper security flags
-                     * 4. Clear any old cookies
-                     * 5. Redirect to dashboard
-                     */
-                    
-                    // Verify we have a proper access token
-                    const access = data.session?.access_token;
-                    if (!access || access.split('.').length !== 3) {
-                        logger.error('No access token received from authentication');
-                        modalManager.showLoginError('Login failed: no access token');
-                        AUTH_IN_PROGRESS = false;
-                        return;
-                    }
-                    
-                    try {
-                        // Interactive login should NOT be blocked by HOLD.
-                        // If HOLD remains, clear it now (we control the flow).
-                        if (logoutHoldActive()) {
-                          logger.info('HOLD active during interactive login – overriding/clearing HOLD');
-                          try { clearLogoutHold(); } catch {}
-                        }
-                        
-                        // Call server endpoint to set secure cookie with backoff
-                        const cookieResult = await postAuthCookieWithBackoff({
-                            headers: { 'Authorization': `Bearer ${access}` },
-                            body: {}
-                        });
-                        
-                        if (!cookieResult.ok) {
-                            if (cookieResult.delayed) {
-                                // Recently logged out; ask user to retry
-                                modalManager.showLoginError('Please wait a moment and try logging in again.');
-                                AUTH_IN_PROGRESS = false;
-                                return;
-                            }
-                            logger.error('Failed to set authentication cookie', cookieResult.error);
-                            modalManager.showLoginError('Login failed: ' + (cookieResult.error || 'could not set session'));
-                            AUTH_IN_PROGRESS = false;
-                            return;
-                        }
-                        
-                        // Clear any old JS-readable cookies (security cleanup)
-                        document.cookie = 'access-token=; Path=/; Max-Age=0';
-                        document.cookie = 'refresh-token=; Path=/; Max-Age=0';
-                        
-                        logger.info('Authentication cookie set by server');
-                        
-                        // Sync CSRF cookie to meta tag after successful login
-                        // Server rotates CSRF token on /auth/set-cookie, so we update the meta tag
-                        // to ensure subsequent XHR/fetch calls use the new token
-                        try {
-                            const cookies = document.cookie.split('; ').reduce((acc, pair) => {
-                                const [key, val] = pair.split('=');
-                                if (key && val) acc[key] = val;
-                                return acc;
-                            }, {});
-                            // Try common CSRF cookie names (csrf_token is default)
-                            const csrfValue = cookies['csrf_token'] || cookies['csrf-token'] || cookies['_csrf'];
-                            if (csrfValue) {
-                                let meta = document.querySelector('meta[name="csrf-token"]');
-                                if (!meta) {
-                                    meta = document.createElement('meta');
-                                    meta.name = 'csrf-token';
-                                    document.head.appendChild(meta);
-                                }
-                                meta.content = csrfValue;
-                                // Also update global if used elsewhere
-                                if (typeof window !== 'undefined') {
-                                    window.__csrfToken = csrfValue;
-                                }
-                            }
-                        } catch (_) {
-                            // Non-fatal; CSRF will work on next page load
-                        }
-                        
-                        /**
-                         * WHAT:
-                         * Show success state within login modal, user clicks OK to proceed.
-                         * 
-                         * WHY:
-                         * Users need confirmation that login succeeded before redirect.
-                         * Modal stays open until user acknowledges success.
-                         * 
-                         * HOW:
-                         * 1. Ensure modal is open (defensive check)
-                         * 2. Switch login modal to success state (uses centralized modalManager)
-                         * 3. User sees success message with OK button
-                         * 4. User clicks OK to close and redirect
-                         * 5. Redirect to dashboard or next URL
-                         */
-                        
-                        // Defensive: ensure modal is open before switching to success state
-                        const loginModalEl = document.getElementById('loginModal');
-                        if (!loginModalEl || !loginModalEl.classList.contains('show')) {
-                            modalManager.showLogin();
-                        }
-                        
-                        // Use centralized modal manager to switch to success state
-                        modalManager.switchToLoginSuccess(
-                            'Login Successful!',
-                            'Welcome back!',
-                            () => {
-                                // User clicked OK - now redirect
-                                modalManager.closeLogin();
-                                const urlParams = new URLSearchParams(window.location.search);
-                                const nextUrl = urlParams.get('next');
-                                const redirectUrl = nextUrl ? decodeURIComponent(nextUrl) : '/dashboard';
-                                window.location.replace(redirectUrl);
-                            }
-                        );
-                        // Let the redirect take over; if it doesn't (e.g., tests), unlock button
-                        AUTH_IN_PROGRESS = false;
-                    } catch (cookieError) {
-                        logger.error('Cookie setup failed:', cookieError.message);
-                        modalManager.showLoginError('Login failed: session setup error');
-                        AUTH_IN_PROGRESS = false;
-                    }
-                }
-            } catch (error) {
-                logger.error('Login error:', error);
-                let errorMessage = 'Network error. Please try again.';
-                
-                if (error.name === 'TypeError' && error.message.includes('fetch')) {
-                    errorMessage = 'Unable to connect to authentication server. Please check your internet connection.';
-                } else if (error.name === 'SyntaxError') {
-                    errorMessage = 'Server response error. Please try again.';
-                } else if (error.message) {
-                    errorMessage = error.message;
-                }
-                
-                modalManager.showLoginError(errorMessage);
-                AUTH_IN_PROGRESS = false;
-            }
-        } else {
-            AUTH_IN_PROGRESS = false;
-        }
-    } finally {
-        if (submitBtn) {
-            submitBtn.disabled = false;
-            submitBtn.textContent = originalText;
-        }
-    }
-}
+// Login form handling moved to login.js for dedicated login page
 
 /**
  * Helper: POST /auth/set-cookie with backoff if logout sentinel is active (204)
@@ -1166,12 +887,12 @@ function updateUIForLoggedOutUser() {
             <a href="#" class="signup-link">Sign Up</a>
         `;
         
-        // Attach login handler
+        // Attach login handler - redirect to login page
         const loginLink = authSection.querySelector('.login-link');
         if (loginLink) {
             loginLink.onclick = (e) => {
                 e.preventDefault();
-                handleLogin();
+                window.location.href = '/login';
             };
         }
         
@@ -1188,12 +909,6 @@ function updateUIForLoggedOutUser() {
 
 // Logout functionality is now handled by the modular logout.js system
 
-/**
- * Show login modal (delegates to centralized modalManager)
- */
-function handleLogin() {
-    modalManager.showLogin();
-}
 
 /**
  * Initialize sign up modal functionality
@@ -1552,7 +1267,7 @@ async function handleSignupSubmit(e) {
         () => {
           modalManager.closeSignup();
           setTimeout(() => {
-            handleLogin();
+            window.location.href = '/login';
           }, 300);
         }
       );
@@ -1647,50 +1362,21 @@ function handleSignup() {
   // Wait for DOM to be ready before checking URL params
   function init() {
     if (typeof window === 'undefined') return;
-    let params;
-    let state = null;
+    
+    // Check if we're on the homepage with password_changed_success param
+    // If so, redirect to login page (which will handle showing the message)
     try {
-      params = new URLSearchParams(window.location.search);
-      state = params.get('password_changed_success');
-      if (state) {
-        params.delete('password_changed_success');
-        const query = params.toString();
-        if (history && history.replaceState) {
-          history.replaceState({}, '', `${window.location.pathname}${query ? `?${query}` : ''}${window.location.hash || ''}`);
-        }
+      const params = new URLSearchParams(window.location.search);
+      const state = params.get('password_changed_success');
+      
+      if (state === '1' && window.location.pathname === '/') {
+        // Redirect to login page with the success flag
+        window.location.href = '/login?password_changed_success=1';
+        return;
       }
-    } catch {
-      return;
+    } catch (error) {
+      logger.error('[Main] Failed to check password changed success param:', error);
     }
-
-    if (!state || state !== '1') return;
-
-    // Wait for modalManager and show login modal with success message
-    whenModalManagerReady((mm) => {
-      try {
-        // Wait a bit more to ensure page is fully loaded
-        setTimeout(() => {
-          try {
-            if (typeof mm.showLogin === 'function') {
-              mm.showLogin();
-              // Show success message in green after modal is shown
-              // Use a small delay to ensure modal is fully rendered
-              setTimeout(() => {
-                if (typeof mm.showLoginSuccess === 'function') {
-                  mm.showLoginSuccess('Your password has been changed successfully. Please use your new password to log in.');
-                }
-              }, 100);
-            } else {
-              logger.warn('[Main] modalManager.showLogin not available');
-            }
-          } catch (loginErr) {
-            logger.error('[Main] Failed to show login modal:', loginErr);
-          }
-        }, 500); // Wait for page to fully load
-      } catch (error) {
-        logger.error('[Main] Failed to show password changed login modal:', error);
-      }
-    }, 100); // 100 retries (5 seconds total) for better reliability across browsers
   }
 
   // Run after DOM is ready

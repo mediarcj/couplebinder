@@ -7,7 +7,7 @@
 
 /**
  * WHAT:
- * Centralized modal controller for signup, password change, and notifications.
+ * Centralized modal controller for password change and notifications.
  * 
  * WHY:
  * Security: One place to enforce CSRF, input validation, CSP compliance.
@@ -50,99 +50,7 @@ const modalManager = {
   /**
    * Reset modal to initial form state
    */
-  resetModalState(modalId) {
-    if (modalId === 'signupModal') {
-      this.resetSignupModal();
-    }
-  },
-  
-  // ============================================================
-  // Sign Up Modal
-  // ============================================================
-  
-  showSignup() {
-    this.show('signupModal');
-  },
-  
-  closeSignup() {
-    this.close('signupModal');
-  },
-  
-  resetSignupModal() {
-    const formState = document.getElementById('signupFormState');
-    const successState = document.getElementById('signupSuccessState');
-
-    if (formState) formState.classList.remove('hidden');
-    if (successState) successState.classList.add('hidden');
-
-    this.clearSignupForm(); // full reset when the modal is re-opened
-  },
-
-  clearSignupForm() {
-    const form = document.getElementById('signupForm');
-    if (form) form.reset();
-    this.clearSignupErrors();
-  },
-
-  clearSignupErrors() {
-    const errorIds = [
-      'signupDisplayNameError',
-      'signupEmailError',
-      'signupPhoneError',
-      'signupPasswordError',
-      'confirmPasswordError',
-      'signupGeneralError'
-    ];
-    errorIds.forEach(id => {
-      const el = document.getElementById(id);
-      if (el) {
-        el.textContent = '';
-        el.classList.add('hidden');
-      }
-    });
-  },
-  
-  showSignupError(message) {
-    const errorEl = document.getElementById('signupGeneralError');
-    if (errorEl) {
-      errorEl.textContent = message;
-      errorEl.classList.remove('hidden');
-    }
-  },
-  
-  showSignupFieldError(fieldId, message) {
-    const errorEl = document.getElementById(fieldId);
-    if (errorEl) {
-      errorEl.textContent = message;
-      errorEl.classList.remove('hidden');
-    }
-  },
-  
-  switchToSignupSuccess(title, message, onComplete = null) {
-    const formState = document.getElementById('signupFormState');
-    const successState = document.getElementById('signupSuccessState');
-    const successTitle = document.getElementById('signupSuccessTitle');
-    const successMessage = document.getElementById('signupSuccessMessage');
-    const successOkBtn = document.getElementById('signupSuccessOkBtn');
-    
-    if (successTitle) successTitle.textContent = title;
-    if (successMessage) successMessage.textContent = message;
-    
-    if (successOkBtn) {
-      successOkBtn.onclick = () => {
-        if (onComplete) onComplete();
-      };
-    }
-    
-    if (formState && successState) {
-      formState.classList.add('hidden');
-      setTimeout(() => {
-        successState.classList.remove('hidden');
-        successState.classList.add('showing');
-        setTimeout(() => successState.classList.remove('showing'), 10);
-      }, 300);
-    }
-  },
+  resetModalState() {},
   
   // ============================================================
   // Password Change Confirmation Modal
@@ -393,12 +301,7 @@ window.showLogoutSuccessCanonical = showLogoutSuccessCanonical;
  * Map generic open calls to the specific modalManager methods.
  */
 window.openModal = function (modalId) {
-  if (modalId === 'signup' || modalId === 'signupModal') {
-    modalManager.showSignup();
-  } else {
-    // Generic fallback for any other modal ID
-    modalManager.show(modalId);
-  }
+  modalManager.show(modalId);
 };
 
 /**
@@ -432,24 +335,4 @@ window.openModal = function (modalId) {
     }
   }, { capture: true });
 
-  // Open modals from query params (?signup=true)
-  function openFromQuery() {
-    try {
-      const params = new URLSearchParams(window.location.search || '');
-      if (params.get('signup') === 'true') {
-        if (typeof window.openModal === 'function') {
-          window.openModal('signup');
-        }
-      }
-    } catch (_) {
-      // Ignore query param parsing errors
-    }
-  }
-
-  // Run query param check on DOM ready
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', openFromQuery);
-  } else {
-    openFromQuery();
-  }
 })();

@@ -1,6 +1,6 @@
 <!-- File: server/ejs/partials/modals.ejs -->
 <!-- Description: Centralized modal templates for all pages -->
-<!-- Purpose: Single source of truth for login, signup, and notification modals -->
+<!-- Purpose: Single source of truth for password change confirmation and notification modals -->
 <!-- Notes: Enforces consistent CSRF, input limits, and CSP-compliant styling -->
 
 <!-- 
@@ -16,121 +16,6 @@
   Include this partial in any page that needs modals.
   Use the centralized modalManager.js to control behavior.
 -->
-
-<!-- ============================================================ -->
-<!-- Sign Up Modal -->
-<!-- ============================================================ -->
-<div id="signupModal" class="modal">
-    <div class="modal-content signup-modal">
-        <div class="modal-header">
-            <h2>Create Account</h2>
-            <span class="close" data-modal-close="signupModal">&times;</span>
-        </div>
-        <div class="modal-body">
-            <!-- Sign Up Form State -->
-            <div id="signupFormState" class="modal-state">
-                <form id="signupForm" method="post">
-                    <input type="hidden" name="_csrf" value="<%= ui?.csrfToken || '' %>">
-                    
-                    <div class="form-group">
-                        <label for="signupDisplayName">Full Name *</label>
-                        <input 
-                            type="text" 
-                            id="signupDisplayName" 
-                            name="display_name" 
-                            placeholder="Enter your full name"
-                            maxlength="40"
-                            autocomplete="name"
-                            required
-                        >
-                        <div id="signupDisplayNameError" class="error-message"></div>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="signupEmail">Email Address *</label>
-                        <input 
-                            type="email" 
-                            id="signupEmail" 
-                            name="email" 
-                            placeholder="Enter your email address"
-                            maxlength="<%= ui_instructions?.input_limits?.email_max || 40 %>"
-                            autocomplete="email"
-                            required
-                        >
-                        <div id="signupEmailError" class="error-message"></div>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="signupPhone">Phone Number (Optional)</label>
-                        <input 
-                            type="tel" 
-                            id="signupPhone" 
-                            name="phone" 
-                            placeholder="Enter your phone number"
-                            minlength="8"
-                            maxlength="15"
-                            pattern="[0-9]+"
-                            autocomplete="tel"
-                        >
-                        <div id="signupPhoneError" class="error-message"></div>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="signupPassword">Password *</label>
-                        <input 
-                            type="password" 
-                            id="signupPassword" 
-                            name="password" 
-                            placeholder="Min 8 characters"
-                            minlength="8"
-                            maxlength="40"
-                            autocomplete="new-password"
-                            required
-                        >
-                        <div id="signupPasswordError" class="error-message"></div>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="signupConfirmPassword">Confirm Password *</label>
-                        <input 
-                            type="password" 
-                            id="signupConfirmPassword" 
-                            name="confirm_password" 
-                            placeholder="Confirm your password"
-                            minlength="8"
-                            maxlength="40"
-                            autocomplete="new-password"
-                            required
-                        >
-                        <div id="confirmPasswordError" class="error-message"></div>
-                    </div>
-                    
-                    <div class="form-actions">
-                        <button type="button" class="btn btn-secondary" data-modal-close="signupModal">Cancel</button>
-                        <button type="submit" class="btn btn-primary">Create Account</button>
-                    </div>
-                    <div class="form-helper">
-                        <button type="button" class="modal-switch-login">Have an account? Login here.</button>
-                    </div> 
-                    
-                    <div id="signupGeneralError" class="error-message hidden"></div>
-                </form>
-            </div>
-            
-            <!-- Sign Up Success State -->
-            <div id="signupSuccessState" class="modal-state hidden">
-                <div class="success-content">
-                    <div class="success-icon">OK</div>
-                    <h3 id="signupSuccessTitle">Account Created!</h3>
-                    <p id="signupSuccessMessage">Welcome! Please login to continue.</p>
-                    <div class="form-actions">
-                        <button type="button" class="btn btn-primary" id="signupSuccessOkBtn">OK</button>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
 
 <!-- ============================================================ -->
 <!-- Password Change Confirmation Modal -->

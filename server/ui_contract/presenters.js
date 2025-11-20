@@ -243,7 +243,7 @@ function buildHomePageModel(req, res) {
       maxSubmissions: 10
     },
     ui: {
-      showLoginModal: req.query.login === 'true',
+      // Login is now handled by dedicated /login page (no modal)
       csrfToken: res.locals.csrfToken || ''
     },
     app_info: {
@@ -517,6 +517,39 @@ async function buildForgotPasswordResetModel(req, res, options = {}) {
   };
 }
 
+/**
+ * Build page model for login page
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @returns {Object} Page model for login page
+ */
+function buildLoginPageModel(req, res) {
+  return {
+    page: {
+      title: `Log in - ${config.branding.appName}`,
+      description: 'Log in to your account',
+      type: 'login',
+      nonce: res.locals.nonce || '',
+      assetVersion: ASSET_VERSION,
+      nav: navManager.compose(req, res)
+    },
+    user: {
+      isAuthenticated: Boolean(req.user?.id),
+      email: req.user?.email || null,
+      id: req.user?.id || null
+    },
+    ui: {
+      csrfToken: res.locals.csrfToken || '',
+      supabaseUrl: config.supabase.url,
+      supabaseAnonKey: config.supabase.anonKey
+    },
+    ui_instructions: {
+      input_limits: DEFAULT_AUTH_LIMITS
+    },
+    app_info: baseAppInfo()
+  };
+}
+
 module.exports = {
   buildHomePageModel,
   buildDashboardPageModel,
@@ -524,5 +557,6 @@ module.exports = {
   buildSettingsPageModel,
   buildErrorPageModel,
   buildForgotPasswordRequestModel,
-  buildForgotPasswordResetModel
+  buildForgotPasswordResetModel,
+  buildLoginPageModel
 };

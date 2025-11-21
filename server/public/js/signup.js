@@ -77,11 +77,11 @@ function sanitizeSignupData(form) {
   data.confirm_password = (data.confirm_password || '').slice(0, SIGNUP_LIMITS.PASS_MAX);
   data.phone = (data.phone || '').replace(/\D+/g, '').slice(0, SIGNUP_LIMITS.PHONE_MAX);
 
-  form.signupDisplayName.value = data.display_name;
-  form.signupEmail.value = data.email;
-  form.signupPassword.value = data.password;
-  form.signupConfirmPassword.value = data.confirm_password;
-  form.signupPhone.value = data.phone;
+  if (form.signupDisplayName) form.signupDisplayName.value = data.display_name;
+  if (form.signupEmail) form.signupEmail.value = data.email;
+  if (form.signupPassword) form.signupPassword.value = data.password;
+  if (form.signupConfirmPassword) form.signupConfirmPassword.value = data.confirm_password;
+  if (form.signupPhone) form.signupPhone.value = data.phone;
 
   return data;
 }
@@ -131,6 +131,57 @@ function validatePhone(phone) {
   if (phone.length < 8) return 'Phone must be at least 8 digits';
   if (phone.length > SIGNUP_LIMITS.PHONE_MAX) return `Phone must be ${SIGNUP_LIMITS.PHONE_MAX} digits or less`;
   return '';
+}
+
+/**
+ * Map Supabase auth errors to user-friendly messages and targets.
+ * Returns { target: 'general'|'email'|'password', uiMessage: string }.
+ */
+function mapSupabaseSignupError(err) {
+  const status = err?.status;
+  const code = (err?.code || '').toLowerCase();
+  const msg = (err?.message || '').toLowerCase();
+
+  // True "signups disabled" signal (instance setting)
+  if (
+    status === 422 &&
+    (msg.includes('signups not allowed') || code === 'signup_disabled' || code === 'signup_disabled_for_instance')
+  ) {
+    return { target: 'general', uiMessage: 'Sign up is currently disabled. Please try again later or contact support.' };
+  }
+
+  // Duplicate email / already registered (varies by backend)
+  if (
+    status === 409 ||
+    msg.includes('already registered') ||
+    msg.includes('already exists') ||
+    msg.includes('duplicate') ||
+    code === 'user_already_exists' ||
+    code === 'email_exists'
+  ) {
+    return { target: 'email', uiMessage: 'An account with this email already exists. Try signing in or reset your password.' };
+  }
+
+  // Password policy errors often come as 422 or message mentioning password rules
+  if (
+    status === 422 &&
+    (msg.includes('password') || code === 'password_validation_failed' || msg.includes('at least'))
+  ) {
+    return { target: 'password', uiMessage: 'Password does not meet the requirements.' };
+  }
+
+  // Invalid email format from backend
+  if (msg.includes('invalid email')) {
+    return { target: 'email', uiMessage: 'Please enter a valid email address.' };
+  }
+
+  // Rate limiting
+  if (status === 429 || msg.includes('rate limit')) {
+    return { target: 'general', uiMessage: 'Too many attempts. Please wait a bit and try again.' };
+  }
+
+  // Generic fallback
+  return { target: 'general', uiMessage: `Sign up failed: ${err?.message || 'Unknown error'}` };
 }
 
 async function handleSignupSubmit(e) {
@@ -207,6 +258,9 @@ async function handleSignupSubmit(e) {
       family_name = nameParts.slice(1).join(' ');
     }
 
+    // Start telemetry
+    signupLog.info('signup.start', { event: 'signup.start', email: data.email });
+
     const { data: authData, error: authError } = await client.auth.signUp({
       email: data.email,
       password: data.password,
@@ -217,61 +271,61 @@ async function handleSignupSubmit(e) {
           given_name,
           family_name
         }
+        // You can also set emailRedirectTo here if you use magic links/confirm pages.
       }
     });
 
     if (authError) {
-     let message = 'Sign up failed: ' + (authError.message || 'Unknown error');
-     // Structured client→server log for failed signup
-     signupLog.error('signup.failed', {
-       event: 'signup.failed',
-       error: authError.message || 'Unknown error',
-       status: authError.status || null,
-       code: authError.code || null
-     });
-      if (authError.message?.toLowerCase().includes('signups not allowed') || authError.status === 422) {
-        message = 'Sign up is currently disabled. Please try again later or contact support.';
+      const mapped = mapSupabaseSignupError(authError);
+
+      // Structured client log
+      signupLog.error('signup.failed', {
+        event: 'signup.failed',
+        status: authError.status || null,
+        code: authError.code || null,
+        rawMessage: authError.message || null,
+        mappedTarget: mapped.target
+      });
+
+      if (mapped.target === 'email') {
+        showFieldError('signupEmailError', mapped.uiMessage);
+      } else if (mapped.target === 'password') {
+        showFieldError('signupPasswordError', mapped.uiMessage);
+      } else {
+        showSignupMessage(mapped.uiMessage);
       }
-      showSignupMessage(message);
       return;
     }
 
     if (!authData?.user) {
-     signupLog.error('signup.failed.no_user', {
-       event: 'signup.failed.no_user',
-       email: data.email
-     });      
+      signupLog.error('signup.failed.no_user', {
+        event: 'signup.failed.no_user',
+        email: data.email
+      });
       showSignupMessage('Sign up failed: please try again.');
       return;
     }
 
-   // Structured success log – this is what you’ll now see in terminal
-   signupLog.info('signup.success', {
-     event: 'signup.success',
-     userId: authData.user.id,
-     email: data.email
-   });    
+    // Success telemetry
+    signupLog.info('signup.success', {
+      event: 'signup.success',
+      userId: authData.user.id,
+      email: data.email
+    });
 
-    await client.auth.signOut();
+    // Many projects require email confirmation: user exists but no session.
     clearFieldErrors();
     showSignupMessage(`Welcome ${data.display_name}! Your account has been created. Redirecting to login…`, true);
 
     setTimeout(() => {
-      window.location.replace('/login');
+      window.location.replace('/login?signup_success=1');
     }, 1200);
-   await client.auth.signOut();
-   clearFieldErrors();
-   // We’ll handle the success message on the login page – just redirect immediately
-   window.location.replace('/login?signup_success=1');    
   } catch (error) {
-   signupLog.error('signup.error', {
-     event: 'signup.error',
-     message: error?.message || String(error)
-   });
-    let message = 'Network error. Please try again.';
-    if (error?.message) {
-      message = error.message;
-    }
+    signupLog.error('signup.error', {
+      event: 'signup.error',
+      message: error?.message || String(error)
+    });
+    const message = error?.message ? `Sign up failed: ${error.message}` : 'Network error. Please try again.';
     showSignupMessage(message);
   } finally {
     SIGNUP_IN_PROGRESS = false;
@@ -294,4 +348,3 @@ if (document.readyState === 'loading') {
 } else {
   initSignupPage();
 }
-

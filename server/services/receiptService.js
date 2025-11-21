@@ -25,6 +25,15 @@ const logger = require('../utils/logger');
 
 const stripe = config.stripe.secretKey ? new Stripe(config.stripe.secretKey, { apiVersion: '2023-10-16' }) : null;
 
+function sanitizeReceiptUrl(input) {
+  if (!input) return null;
+  // Strip leading/trailing quotes (single or double) and whitespace
+  let s = String(input).trim().replace(/^["']+|["']+$/g, '');
+  // Very light validation: only allow http(s) schemes
+  if (!/^https?:\/\//i.test(s)) return null;
+  return s;
+}
+
 /**
  * Fetch receipt data for a checkout session
  * @param {string} sessionId - Stripe checkout session ID
@@ -36,7 +45,7 @@ async function getReceiptVM({ sessionId, userId }) {
   if (!stripe || !config.stripe.secretKey) {
     const err = new Error('Stripe configuration missing');
     err.status = 500;
-    logger.error({ event: 'receipt.stripe_config_missing' }, 'Stripe secret key not configured');
+    logger.stripe('config.missing', { reason: 'secret_key_missing' });
     throw err;
   }
 
@@ -96,7 +105,7 @@ async function getReceiptVM({ sessionId, userId }) {
     }
   } catch (err) {
     // Best-effort; don't fail the page if Stripe omits them in rare cases
-    logger.warn({ event: 'receipt.line_items_fetch_failed', sessionId, error: err.message });
+    logger.stripe('line_items.fetch_failed', { session_id: sessionId, error: err.message });
   }
 
   // Prefer names from the fetched line items; fall back to metadata
@@ -119,8 +128,16 @@ async function getReceiptVM({ sessionId, userId }) {
                      session.created;
   const paidAtIso = new Date((paidAtUnix || Math.floor(Date.now()/1000)) * 1000).toISOString();
 
-  // Extract receipt URL
-  const receiptUrl = latestCharge?.receipt_url || firstCharge?.receipt_url || null;
+  // Extract receipt URL and sanitize
+  const rawUrl = latestCharge?.receipt_url || firstCharge?.receipt_url || null;
+  const receiptUrl = sanitizeReceiptUrl(rawUrl);
+  if (rawUrl && rawUrl !== receiptUrl) {
+    logger.stripe('receipt.url.sanitized', {
+      session_id: sessionId,
+      hadQuotes: /^["']|["']$/.test(String(rawUrl)),
+      receipt_url: rawUrl
+    });
+  }
 
   const base = {
     session_id: session.id,
@@ -149,7 +166,7 @@ async function getReceiptVM({ sessionId, userId }) {
       type: 'invoice',
       invoice_number: invoice?.number || null,
       hosted_invoice_url: hosted_url,
-      stripe_receipt_url: charge?.receipt_url || hosted_url || null,
+      stripe_receipt_url: sanitizeReceiptUrl(charge?.receipt_url || hosted_url || null),
       card_brand: pm?.brand || null,
       card_last4: pm?.last4 || null,
     };
@@ -164,7 +181,7 @@ async function getReceiptVM({ sessionId, userId }) {
   return {
     ...base,
     type: 'payment',
-    stripe_receipt_url: charge?.receipt_url || null,
+    stripe_receipt_url: sanitizeReceiptUrl(charge?.receipt_url || null),
     card_brand: pm?.brand || null,
     card_last4: pm?.last4 || null,
   };

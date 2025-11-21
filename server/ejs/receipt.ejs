@@ -101,8 +101,13 @@
 
       <div class="dashboard-actions">
         <div class="action-grid">
-          <% if (receipt.stripe_receipt_url) { %>
-            <a href="<%= receipt.stripe_receipt_url %>" class="btn btn-primary" rel="noopener" target="_blank">View official Stripe receipt</a>
+          <%
+            const _rawUrl = (receipt.stripe_receipt_url || receipt.official_receipt_url || '').trim();
+            const _cleanUrl = _rawUrl.replace(/^["']+|["']+$/g, '');
+            const _ok = /^https?:\/\//i.test(_cleanUrl);
+          %>
+          <% if (_ok) { %>
+            <a href="<%= _cleanUrl %>" class="btn btn-primary" rel="noopener noreferrer" target="_blank">View official Stripe receipt</a>
           <% } %>
           <a href="/dashboard/billing" class="btn btn-secondary">Back to Billing</a>
           <a href="/dashboard" class="btn btn-secondary">Home</a>

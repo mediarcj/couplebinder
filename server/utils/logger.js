@@ -40,7 +40,11 @@ const REDACT_PATTERNS = [
   /authorization/i,
   /x-csrf-token/i,
   /_csrf/i,
-  /csrf-token/i
+  /csrf-token/i,
+  // Stripe secrets (defense-in-depth for message strings)
+  /(sk_(live|test)_[A-Za-z0-9]+)/gi,
+  /(pk_(live|test)_[A-Za-z0-9]+)/gi,
+  /(whsec_[A-Za-z0-9]+)/gi
 ];
 
 // Legacy patterns for backward compatibility
@@ -86,7 +90,9 @@ function isSensitiveKey(key) {
     keyLower.includes('cookie') ||
     keyLower.includes('bearer') ||
     keyLower.includes('authorization') ||
-    keyLower.includes('csrf')
+    keyLower.includes('csrf') ||
+    // Redact plain emails that appear as meta fields
+    keyLower === 'email' || keyLower.endsWith('_email')
   );
 }
 
@@ -169,7 +175,63 @@ class SecureLogger {
     this.isDevelopment = config.server.nodeEnv === 'development';
     this.logLevel = process.env.LOG_LEVEL || 'info';
   }
-  
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // Stripe helpers (masking + meta scrubbing)
+  // ──────────────────────────────────────────────────────────────────────────
+  #maskStripeId(value) {
+    if (!value || typeof value !== 'string') return value;
+    // Keep the object prefix (pi_, cs_, seti_, ch_, in_, cus_, si_, sub_) and last 6 chars
+    // Example: pi_3OzYbY...abcd12  -> pi_…abcd12
+    const m = value.match(/^([a-z]{1,4}_[A-Za-z0-9]+)/i);
+    if (!m) return value.length > 10 ? value.slice(0, 4) + '…' + value.slice(-6) : value;
+    const prefix = value.split('_')[0] + '_';
+    return `${prefix}…${value.slice(-6)}`;
+  }
+
+  #maskStripeReceiptUrl(url) {
+    if (!url || typeof url !== 'string') return url;
+    try {
+      const u = new URL(url);
+      // Only expose host + fixed path; mask the tokenized tail
+      if (u.hostname.endsWith('stripe.com')) {
+        // e.g. https://pay.stripe.com/receipts/payment/<token>
+        const parts = u.pathname.split('/').filter(Boolean);
+        const last = parts.pop() || '';
+        const maskedLast = last ? `…${last.slice(-6)}` : '';
+        return `${u.origin}/${parts.join('/')}/${maskedLast}`;
+      }
+    } catch { /* ignore */ }
+    // Not a URL or non-Stripe URL: return placeholder to avoid leaking tokens
+    return '[REDACTED_URL]';
+  }
+
+  #scrubStripeMeta(meta = {}) {
+    if (!meta || typeof meta !== 'object') return {};
+    const out = {};
+    for (const [k, v] of Object.entries(meta)) {
+      const key = String(k).toLowerCase();
+      if (v == null) { out[k] = v; continue; }
+      // Mask common Stripe identifiers
+      if (/(^|_)(session|checkout_session|payment_intent|invoice|charge|customer|subscription|setup_intent|price|product|payout|refund)(_id)?$/.test(key)) {
+        out[k] = this.#maskStripeId(String(v));
+        continue;
+      }
+      // Receipt / session URLs
+      if (/(^|_)(receipt_url|session_url|hosted_invoice_url|official_receipt_url|stripe_receipt_url)$/.test(key)) {
+        out[k] = this.#maskStripeReceiptUrl(String(v));
+        continue;
+      }
+      // Emails and names (PII)
+      if (key === 'email' || key.endsWith('_email') || key.endsWith('_name')) {
+        out[k] = '[REDACTED]';
+        continue;
+      }
+      // Amount/currency/mode/status are safe
+      out[k] = redactSensitiveData(v);
+    }
+    return out;
+  }  
   /**
    * Log info message with optional metadata (PII-safe)
    * @param {Object|string} msgOrData - Message string or data object
@@ -239,6 +301,18 @@ class SecureLogger {
     consoleLogger.formatWarning(message, meta);
   }
   
+  /**
+   * Stripe domain events (checkout, receipt, webhook, invoice, etc.)
+   * Always call this instead of raw info() when the event is Stripe-related.
+   * @param {string} event - e.g. 'checkout.created', 'receipt.fetched', 'webhook.verified'
+   * @param {Object} meta  - metadata (will be scrubbed/masked)
+   */
+  stripe(event, meta = {}) {
+    const safeMeta = this.#scrubStripeMeta(meta);
+    // Leverage the special "event" field so dev pretty logger uses JSON-event formatting
+    this.info({ event: `stripe.${event}`, ...safeMeta });
+  }
+
   /**
    * Log error message
    * @param {string} message - Log message

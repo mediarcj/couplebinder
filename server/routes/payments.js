@@ -65,14 +65,12 @@ router.post('/checkout', idem, async (req, res) => {
     const priceId = PRICES[skuOrKey];
     const mode = skuOrKey === 'resume_expert' ? 'subscription' : 'payment'; // flip mode by product
     if (!priceId) {
-      logger.warn({
-        event: 'checkout.sku.invalid',
-        skuOrKey,
+      logger.stripe('checkout.sku.invalid', {
+        sku_or_key: skuOrKey,
         allowed: Object.keys(PRICES),
         userId: user.id
-      }, 'Invalid SKU/productKey provided');
-      return res.status(400).json({ 
-        ok: false, 
+      });      return res.status(400).json({ 
+        ok: false,
         error: 'Unknown product SKU' 
       });
     }
@@ -87,25 +85,22 @@ router.post('/checkout', idem, async (req, res) => {
     });
 
     const isLive = config.stripe.secretKey?.startsWith('sk_live_');
-    logger.info({ 
-      event: 'checkout.created',
-      sessionId: session.id,
+    logger.stripe('checkout.created', {
+      session_id: session.id,
       mode: isLive ? 'live' : 'test',
       userId: user.id
     });
-    
+
     res.set('Cache-Control', 'no-store');
     return res.status(201).json({ 
       ok: true, 
       url: session.url 
     });
   } catch (e) {
-    logger.error({ 
-      event: 'checkout.session.error', 
-      error: e.message, 
-      requestId: req.requestId 
-    });
-    
+    logger.stripe('checkout.session.error', {
+      error: e.message,
+      requestId: req.requestId
+    }); 
     return res.status(e.status || 500).json({ 
       ok: false, 
       error: 'Unable to start checkout' 
@@ -146,13 +141,11 @@ router.get('/receipt', async (req, res) => {
     const ownerId = session?.metadata?.user_id || session?.client_reference_id || null;
     
     if (!ownerId || ownerId !== user.id) {
-      logger.warn({ 
-        event: 'receipt.ownership_mismatch', 
-        sessionId, 
-        userId: user.id, 
-        ownerId 
-      }, 'Receipt fetch denied');
-      
+      logger.stripe('receipt.ownership_mismatch', {
+        session_id: sessionId,
+        userId: user.id,
+        ownerId
+      });  
       // Return 404 to avoid information leak
       return res.status(404).json({ ok: false, error: 'not_found' });
     }
@@ -161,29 +154,32 @@ router.get('/receipt', async (req, res) => {
     const pi = session?.payment_intent;
     const latestCharge = (pi && typeof pi.latest_charge !== 'string') ? pi.latest_charge : null;
     const firstCharge = pi?.charges?.data?.[0] || null;
-    const receiptUrl = latestCharge?.receipt_url || firstCharge?.receipt_url || null;
+    const sanitize = (s) => {
+      if (!s) return null;
+      const t = String(s).trim().replace(/^["']+|["']+$/g, '');
+      return /^https?:\/\//i.test(t) ? t : null;
+    };
+    const receiptUrl = sanitize(latestCharge?.receipt_url || firstCharge?.receipt_url || null);
 
     if (!receiptUrl) {
       // No receipt URL yet (rare timing issue)
       return res.status(204).end();
     }
 
-    logger.info({ 
-      event: 'receipt.fetched', 
-      sessionId, 
-      userId: user.id 
-    }, 'Receipt URL returned');
-    
+    logger.stripe('receipt.fetched', {
+      session_id: sessionId,
+      userId: user.id,
+      receipt_url: receiptUrl
+    });
+
     res.set('Cache-Control', 'no-store');
     res.set('Pragma', 'no-cache');
     return res.json({ ok: true, receipt_url: receiptUrl });
   } catch (err) {
-    logger.error({ 
-      event: 'receipt.error', 
+    logger.stripe('receipt.error', {
       error: err.message,
-      requestId: req.requestId 
-    }, 'Failed to fetch receipt');
-    
+      requestId: req.requestId
+    });    
     return res.status(500).json({ ok: false, error: 'internal_error' });
   }
 });

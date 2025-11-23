@@ -24,19 +24,18 @@
       </div>
 
       <div class="action-grid">
-        <% 
-          const pOne = (billing?.pricing || []).find(p => p.priceId === env?.STRIPE_PRICE_RESUME_ONE_TIME);
-          const pTwo = (billing?.pricing || []).find(p => p.priceId === env?.STRIPE_PRICE_RESUME_EXPERT);
+        <%
+          // Prefer LIVE then TEST then legacy; match whichever exists in billing.pricing
+          const candOne = [env?.STRIPE_PRICE_RESUME_ONE_TIME_LIVE, env?.STRIPE_PRICE_RESUME_ONE_TIME_TEST, env?.STRIPE_PRICE_RESUME_ONE_TIME].filter(Boolean);
+          const candTwo = [env?.STRIPE_PRICE_RESUME_EXPERT_LIVE,  env?.STRIPE_PRICE_RESUME_EXPERT_TEST,  env?.STRIPE_PRICE_RESUME_EXPERT].filter(Boolean);
+          const pOne = (billing?.pricing || []).find(p => candOne.includes(p.priceId));
+          const pTwo = (billing?.pricing || []).find(p => candTwo.includes(p.priceId));
         %>
+
         <% if (pOne) { %>
         <div class="action-card">
           <% if (pOne.image) { %>
-            <img
-              class="product-img"
-              src="<%= pOne.image %>"
-              alt="<%= pOne.name || '' %>"
-              loading="lazy"
-              decoding="async">
+            <img class="product-img" src="<%= pOne.image %>" alt="<%= pOne.name || '' %>" loading="lazy" decoding="async">
           <% } %>
           <% if (pOne.name) { %><h3><%= pOne.name %></h3><% } %>
           <% if (pOne.description) { %><p><%= pOne.description %></p><% } %>
@@ -46,8 +45,7 @@
             <%= pOne.isRecurring ? `/${pOne.interval}` : ' one-time' %>
           </p>
           <% } %>
-          <a class="btn btn-primary btn-block" 
-             id="buyResumeBasic"
+          <a class="btn btn-primary btn-block" id="buyResumeBasic"
              href="/dashboard/checkout/review?product=resume_one_time&qty=1">
             Buy<%= pOne.name ? ` ${pOne.name}` : '' %>
           </a>
@@ -57,12 +55,7 @@
         <% if (pTwo) { %>
         <div class="action-card">
           <% if (pTwo.image) { %>
-            <img
-              class="product-img"
-              src="<%= pTwo.image %>"
-              alt="<%= pTwo.name || '' %>"
-              loading="lazy"
-              decoding="async">
+            <img class="product-img" src="<%= pTwo.image %>" alt="<%= pTwo.name || '' %>" loading="lazy" decoding="async">
           <% } %>
           <% if (pTwo.name) { %><h3><%= pTwo.name %></h3><% } %>
           <% if (pTwo.description) { %><p><%= pTwo.description %></p><% } %>
@@ -72,8 +65,7 @@
             <%= pTwo.isRecurring ? `/${pTwo.interval}` : ' one-time' %>
           </p>
           <% } %>
-          <a class="btn btn-primary btn-block" 
-             id="buyResumeExpert"
+          <a class="btn btn-primary btn-block" id="buyResumeExpert"
              href="/dashboard/checkout/review?product=resume_expert&qty=1">
             Buy<%= pTwo.name ? ` ${pTwo.name}` : '' %>
           </a>
@@ -81,7 +73,7 @@
         <% } %>
       </div>
 
-             <!-- Purchase History removed by request -->
+      <!-- Purchase History removed by request -->
     </div>
   </main>
 
@@ -94,33 +86,14 @@
   <%- include('partials/modals') %>
 
   <!-- Shared core scripts -->
-  <script src="/js/supabase-client.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= page.nonce %>"></script>
-  <script src="/js/sbClient.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= page.nonce %>"></script>
-  <script src="/js/logout.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= page.nonce %>"></script>
-  <script src="/js/modalManager.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= page.nonce %>"></script>
-  <script src="/js/nav-client.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= page.nonce %>"></script>
+  <script src="/js/supabase-client.js?v=<%= page.assetVersion || assetVersion || '' %>"></script>
+  <script src="/js/sbClient.js?v=<%= page.assetVersion || assetVersion || '' %>"></script>
+  <script src="/js/logout.js?v=<%= page.assetVersion || assetVersion || '' %>"></script>
+  <script src="/js/modalManager.js?v=<%= page.assetVersion || assetVersion || '' %>"></script>
+  <script src="/js/nav-client.js?v=<%= page.assetVersion || assetVersion || '' %>"></script>
   
   <!-- Page-specific scripts -->
-  <script src="/js/pay.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= page.nonce %>"></script>
-  <script src="/js/main.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= page.nonce %>"></script>
-  <script nonce="<%= page.nonce %>">
-    // Handle canceled payments and clean URL
-    (function(){
-      const url = new URL(window.location.href);
-      const isCanceled = url.searchParams.get('canceled') === '1';
-      
-      if (isCanceled) {
-        // Show cancellation notification
-        window.modalManager?.showNotification('Payment canceled', 'No charge was made.');
-        
-        // Clean URL to prevent nav from seeing query params
-        const cleanUrl = url.pathname + (url.hash || '');
-        history.replaceState({}, document.title, cleanUrl);
-        
-        // Signal any client-side nav to refresh
-        window.dispatchEvent(new Event('ui:navigation:refresh'));
-      }
-    })();
-  </script>
+  <script src="/js/pay.js?v=<%= page.assetVersion || assetVersion || '' %>"></script>
+  <script src="/js/main.js?v=<%= page.assetVersion || assetVersion || '' %>"></script>
 </body>
 </html>

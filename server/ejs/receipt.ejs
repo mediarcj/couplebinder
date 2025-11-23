@@ -124,9 +124,7 @@
 
   <%- include('partials/modals') %>
 
-  <!-- Shared core scripts -->
   <script src="/js/modalManager.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= page.nonce %>"></script>
-  
   <script nonce="<%= page.nonce %>">
     (function () {
       const btn = document.querySelector('[data-action="print"]');
@@ -157,8 +155,6 @@
       }
     })();
   </script>
-  
-  <!-- Page-specific scripts -->
-  <script src="/js/main.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= page.nonce %>"></script>
+  <script src="/js/main.js?v="<%= page.assetVersion || assetVersion || '' %>" nonce="<%= page.nonce %>"></script>
 </body>
 </html>

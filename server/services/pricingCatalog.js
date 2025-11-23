@@ -1,65 +1,131 @@
 // File: server/services/pricingCatalog.js
 // Description: Pricing catalog service for Stripe price data
 // Purpose: Fetch and cache Stripe price information for display
-// Notes: Backend is source of truth - prices come from Stripe
+// Notes: Prefer config.stripe.active/live/test. Adds top-level product_key for stable matching.
 
-/**
- * WHAT:
- * Pricing catalog that fetches Stripe price information for allowed price IDs.
- * 
- * WHY:
- * UI needs to display accurate pricing from Stripe without hard-coding.
- * Ensures consistency between Stripe and displayed prices.
- * 
- * HOW:
- * 1. Fetch price and product data from Stripe for allowed price IDs with expanded products
- * 2. Include product name, description, and images from Stripe Product object
- * 3. Cache results in memory after first fetch
- * 4. Return formatted pricing data with names, amounts, descriptions, images, and recurrence info
- */
+'use strict';
 
 const Stripe = require('stripe');
 const logger = require('../utils/logger');
 const { config } = require('../config');
 
-const stripe = config.stripe.secretKey ? new Stripe(config.stripe.secretKey, {
-  apiVersion: '2025-09-30.clover'
-}) : null;
+function pickStripeSecret() {
+  return String(
+    config?.stripe?.active?.secretKey ||
+    config?.stripe?.secretKey || // legacy fallback if ever present
+    ''
+  ).trim();
+}
 
-// In-memory cache for pricing data
+const SECRET_KEY = pickStripeSecret();
+const stripe = SECRET_KEY ? new Stripe(SECRET_KEY, { apiVersion: '2025-09-30.clover' }) : null;
+
+// Build a map of priceId -> product_key from all known slots (active/live/test + legacy envs)
+function buildPriceIdToKeyMap() {
+  const map = new Map();
+
+  const add = (id, key) => {
+    const v = String(id || '').trim();
+    if (v) map.set(v, key);
+  };
+
+  // Active (current mode)
+  add(config?.stripe?.active?.priceResumeOneTime, 'resume_one_time');
+  add(config?.stripe?.active?.priceResumeExpert,  'resume_expert');
+
+  // Live/Test explicitly
+  add(config?.stripe?.live?.priceResumeOneTime, 'resume_one_time');
+  add(config?.stripe?.live?.priceResumeExpert,  'resume_expert');
+  add(config?.stripe?.test?.priceResumeOneTime, 'resume_one_time');
+  add(config?.stripe?.test?.priceResumeExpert,  'resume_expert');
+
+  // Legacy env fallbacks (if still present)
+  add(process.env.STRIPE_PRICE_RESUME_ONE_TIME_LIVE, 'resume_one_time');
+  add(process.env.STRIPE_PRICE_RESUME_EXPERT_LIVE,  'resume_expert');
+  add(process.env.STRIPE_PRICE_RESUME_ONE_TIME_TEST, 'resume_one_time');
+  add(process.env.STRIPE_PRICE_RESUME_EXPERT_TEST,  'resume_expert');
+  add(process.env.STRIPE_PRICE_RESUME_ONE_TIME,      'resume_one_time');
+  add(process.env.STRIPE_PRICE_RESUME_EXPERT,        'resume_expert');
+
+  return map;
+}
+
+const priceIdToKeyMap = buildPriceIdToKeyMap();
+
+// In-memory cache
 let catalogCache = null;
+let cacheKey = null;
+
+function currentPriceIdsFromConfig() {
+  // Prefer active; fall back to live/test; ignore empties
+  const ids = [
+    config?.stripe?.active?.priceResumeOneTime,
+    config?.stripe?.active?.priceResumeExpert,
+    config?.stripe?.live?.priceResumeOneTime,
+    config?.stripe?.live?.priceResumeExpert,
+    config?.stripe?.test?.priceResumeOneTime,
+    config?.stripe?.test?.priceResumeExpert
+  ]
+    .map(v => String(v || '').trim())
+    .filter(Boolean);
+
+  // As a last resort, include legacy envs the billing page might still reference
+  const legacy = [
+    process.env.STRIPE_PRICE_RESUME_ONE_TIME_LIVE,
+    process.env.STRIPE_PRICE_RESUME_EXPERT_LIVE,
+    process.env.STRIPE_PRICE_RESUME_ONE_TIME_TEST,
+    process.env.STRIPE_PRICE_RESUME_EXPERT_TEST,
+    process.env.STRIPE_PRICE_RESUME_ONE_TIME,
+    process.env.STRIPE_PRICE_RESUME_EXPERT
+  ]
+    .map(v => String(v || '').trim())
+    .filter(Boolean);
+
+  return Array.from(new Set([...ids, ...legacy]));
+}
+
+function buildCacheKey(ids) {
+  return ids.slice().sort().join('|') || 'none';
+}
 
 /**
- * WHAT:
- * Fetch pricing catalog from Stripe for allowlisted price IDs.
- * 
- * WHY:
- * Need product names, descriptions, images, prices, and recurrence info from Stripe.
- * Cache after first fetch to avoid repeated API calls.
- * 
- * HOW:
- * 1. Retrieve price IDs from environment variables
- * 2. Fetch each price with expanded product data
- * 3. Extract product.description and product.images from expanded product
- * 4. Format and return array of price information
- * 
- * Returns array of price objects with: priceId, unit_amount, currency, isRecurring, interval, 
- * product_id, name, description, images, image, and product_metadata
+ * Returns an array of:
+ * {
+ *   priceId, unit_amount, currency, isRecurring, interval,
+ *   product_id, name, description, images, image,
+ *   product_metadata, product_key
+ * }
  */
 async function getPricingCatalog() {
-  // Return cached data if available
-  if (catalogCache) {
+  const priceIds = currentPriceIdsFromConfig();
+  const keyNow = buildCacheKey(priceIds);
+  if (catalogCache && cacheKey === keyNow) return catalogCache;
+
+  if (priceIds.length === 0) {
+    logger.warn({ event: 'pricing.catalog.empty_config' }, 'No price IDs configured');
+    catalogCache = [];
+    cacheKey = keyNow;
     return catalogCache;
   }
 
-  const priceIds = [
-    config.stripe.priceResumeOneTime,
-    config.stripe.priceResumeExpert
-  ].filter(Boolean);
-
-  if (priceIds.length === 0) {
-    logger.warn({ event: 'pricing.catalog.empty' }, 'No price IDs configured');
-    catalogCache = [];
+  // If Stripe isn’t configured, return lightweight rows so the UI still renders
+  if (!stripe) {
+    catalogCache = priceIds.map((priceId) => ({
+      priceId,
+      unit_amount: null,
+      currency: 'usd',
+      isRecurring: false,
+      interval: null,
+      product_id: null,
+      name: priceId,
+      description: null,
+      images: [],
+      image: null,
+      product_metadata: {},
+      product_key: priceIdToKeyMap.get(priceId) || null
+    }));
+    cacheKey = keyNow;
+    logger.warn({ event: 'pricing.catalog.no_stripe' }, 'Stripe not configured; returning fallback catalog');
     return catalogCache;
   }
 
@@ -67,21 +133,19 @@ async function getPricingCatalog() {
     const catalog = await Promise.all(
       priceIds.map(async (priceId) => {
         try {
-          const price = await stripe.prices.retrieve(priceId, {
-            expand: ['product']
-          });
-
+          const price = await stripe.prices.retrieve(priceId, { expand: ['product'] });
           const product = (price.product && typeof price.product !== 'string') ? price.product : null;
-          
-          // Extract name from product name (source of truth)
-          const name = product?.name || null;
-          
-          // Extract description from product description (source of truth)
+
+          const name = product?.name || price.nickname || null;
           const description = product?.description || null;
-          
-          // Extract images from product images (source of truth)
           const images = Array.isArray(product?.images) ? product.images : [];
           const image = images.length > 0 ? images[0] : null;
+
+          // Prefer metadata.product_key; else infer from known price IDs
+          const product_key =
+            (product?.metadata && product.metadata.product_key) ||
+            priceIdToKeyMap.get(priceId) ||
+            null;
 
           return {
             priceId,
@@ -94,56 +158,47 @@ async function getPricingCatalog() {
             description,
             images,
             image,
-            product_metadata: product?.metadata || {}
+            product_metadata: product?.metadata || {},
+            product_key
           };
         } catch (err) {
-          logger.error({
-            event: 'pricing.catalog.error',
+          logger.warn(
+            { event: 'pricing.catalog.lookup_failed', priceId, error: err.message },
+            'Stripe price lookup failed; using fallback'
+          );
+          return {
             priceId,
-            error: err.message
-          }, `Failed to fetch price ${priceId}`);
-          return null;
+            unit_amount: null,
+            currency: 'usd',
+            isRecurring: false,
+            interval: null,
+            product_id: null,
+            name: priceId,
+            description: null,
+            images: [],
+            image: null,
+            product_metadata: {},
+            product_key: priceIdToKeyMap.get(priceId) || null
+          };
         }
       })
     );
 
-    // Filter out any failed fetches
-    catalogCache = catalog.filter(item => item !== null);
-    
-    logger.info({
-      event: 'pricing.catalog.fetched',
-      count: catalogCache.length
-    }, 'Pricing catalog cached successfully');
+    catalogCache = catalog.filter(Boolean);
+    cacheKey = keyNow;
 
+    logger.info({ event: 'pricing.catalog.cached', count: catalogCache.length }, 'Pricing catalog cached');
     return catalogCache;
   } catch (err) {
-    logger.error({
-      event: 'pricing.catalog.fetch_error',
-      error: err.message
-    }, 'Failed to fetch pricing catalog');
+    logger.error({ event: 'pricing.catalog.fetch_error', error: err.message }, 'Failed to fetch pricing catalog');
     catalogCache = [];
+    cacheKey = keyNow;
     return catalogCache;
   }
 }
 
-/**
- * WHAT:
- * Get pricing summary for a specific price ID.
- * 
- * WHY:
- * Allows lookup of individual price information without fetching entire catalog.
- * 
- * HOW:
- * 1. Fetch catalog if not cached
- * 2. Find matching price by priceId
- * 3. Return price object or null if not found
- * 
- * @param {string} priceId - Stripe price ID to look up
- * @returns {Object|null} Price object or null
- */
 function getPriceSummary(priceId) {
   if (!priceId) return null;
-  
   return catalogCache?.find(p => p.priceId === priceId) || null;
 }
 

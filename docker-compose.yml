@@ -4,18 +4,31 @@ services:
     volumes:
       - redis_data:/data
     restart: unless-stopped
+    # REDIS_PASSWORD will be injected via env_file in env-specific overrides
     command: >
-      redis-server --appendonly yes
-                   --maxmemory 256mb
-                   --maxmemory-policy allkeys-lru
-                   --requirepass ${REDIS_PASSWORD}
+      sh -c '
+      AUTH="";
+      if [ -n "$REDIS_PASSWORD" ]; then
+        AUTH="--requirepass $REDIS_PASSWORD";
+      fi;
+      exec redis-server --appendonly yes \
+                        --maxmemory 256mb \
+                        --maxmemory-policy allkeys-lru \
+                        $AUTH'
     logging:
       driver: json-file
       options:
         max-size: "10m"
         max-file: "3"
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      test:
+        - CMD-SHELL
+        - >
+          if [ -n "$REDIS_PASSWORD" ]; then
+            redis-cli -a "$REDIS_PASSWORD" ping;
+          else
+            redis-cli ping;
+          fi
       interval: 10s
       timeout: 5s
       retries: 5
@@ -29,15 +42,13 @@ services:
       dockerfile: server/Dockerfile
       args:
         NODE_VERSION: "20"
-    env_file:
-      - ./.env
+    # Env values are injected via env_file in env-specific overrides.
+    # Here we only set container-specific overrides.
     environment:
-      - NODE_ENV=${NODE_ENV}
-      - HOST=${HOST}
-      - PORT=${PORT}
-      - REDIS_HOST=${REDIS_HOST}
-      - REDIS_PORT=${REDIS_PORT}
-      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      HOST: 0.0.0.0
+      PORT: 3000
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
     depends_on:
       redis:
         condition: service_healthy
@@ -49,7 +60,13 @@ services:
         max-size: "10m"
         max-file: "3"
     healthcheck:
-      test: ["CMD", "node", "-e", "const net = require('net'); const port = process.env.PORT || 3000; const s = net.connect(port, '127.0.0.1', () => { s.end(); process.exit(0); }).on('error', () => process.exit(1));"]
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "const net=require('net');const port=process.env.PORT||3000;const s=net.connect(port,'127.0.0.1',()=>{s.end();process.exit(0);}).on('error',()=>process.exit(1));"
+        ]
       interval: 30s
       timeout: 10s
       retries: 3

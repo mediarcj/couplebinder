@@ -5,42 +5,41 @@
 
 'use strict';
 
-/**
- * WHAT:
- * A single source of truth for runtime configuration.
- *
- * WHY:
- * Scattered `process.env.*` reads lead to brittle logic, noisy logs, and boot surprises.
- * A typed, validated config + one boot summary keeps the server predictable.
- *
- * HOW:
- * - Load .env early (dev/compose). On prod, systemd/container env takes precedence.
- * - Parse primitives (int/bool/csv) with safe defaults.
- * - Derive DB “pretty” fields for stable logs.
- * - Validate required keys per provider and fail fast on bad boots.
- * - Print a compact, human-readable boot summary (via consoleLogger).
- */
-
 const path = require('path');
-require('dotenv').config({ path: path.join(__dirname, '../../.env') }); // load early
-// Note: consoleLogger is loaded lazily in logConfigSummary() to avoid circular dependencies
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Env file loading (dotenv)
+// ──────────────────────────────────────────────────────────────────────────────
+// Goal:
+//   - In development: read .env.development.local at repo root
+//   - In production (EC2/SSM/Docker): read .env.production.full at repo root
+//   - Never read the legacy .env file anymore.
+//
+// Note:
+//   - Values already present in process.env (from Docker / systemd / shell)
+//     always win; dotenv only fills in missing keys.
+const NODE_ENV = process.env.NODE_ENV || 'development';
+const ROOT_DIR = path.join(__dirname, '..', '..'); // repo root
+
+if (NODE_ENV === 'development') {
+  const devEnvPath = path.join(ROOT_DIR, '.env.development.local');
+  require('dotenv').config({ path: devEnvPath });
+  console.log(`[config] Loaded development env from ${devEnvPath}`);
+} else if (NODE_ENV === 'production') {
+  const prodEnvPath = path.join(ROOT_DIR, '.env.production.full');
+  require('dotenv').config({ path: prodEnvPath });
+  console.log(`[config] Loaded production env from ${prodEnvPath}`);
+} else {
+  // For test/other NODE_ENV values we rely entirely on the existing process.env.
+  console.log(`[config] NODE_ENV=${NODE_ENV} – no dotenv file loaded (process.env only).`);
+}
+
+// Note: consoleLogger is loaded lazily in logConfigSummary() to avoid circular requires
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Env audit (optional, off by default)
 // ──────────────────────────────────────────────────────────────────────────────
 
-/**
- * WHAT:
- * Optional guardrail that warns when unknown app env keys are present.
- *
- * WHY:
- * Drift between .env and the codebase causes “it worked on my machine” bugs.
- * This audit helps you spot leftover or misspelled env vars.
- *
- * HOW:
- * Keep KNOWN_ENV aligned to your real .env files. Only warn if explicitly enabled.
- * (No auto-enable in dev to avoid noise.)
- */
 const KNOWN_ENV = new Set([
   'ALLOWED_ORIGINS','APP_DESCRIPTION','APP_LIMITERS_ENABLED','APP_NAME','APP_VERSION',
   'AUTH_COOKIE_NAME','AUTH_COOKIE_ALIASES','AUTH_COOKIE_BASENAME','AUTH_COOKIE_DOMAIN','AUTH_DEBUG','BASE_DOMAIN','APP_SUBDOMAIN','LEGACY_COOKIE_DOMAIN','X_CLIENT_INFO',
@@ -54,11 +53,18 @@ const KNOWN_ENV = new Set([
   'SUPABASE_EXPECTED_AUD','SUPABASE_ISSUER','SUPABASE_JWKS_URL','SUPABASE_JWT_SECRET',
   'SUPABASE_SERVICE_ROLE_KEY','SUPABASE_URL','TEXT_MAX_LENGTH','TEXT_MIN_LENGTH','MAINTENANCE_DEFAULT',
   'MAINTENANCE_ALLOWLIST','MAINTENANCE_RETRY_AFTER','MAINTENANCE_PAGE','MAINTENANCE_MESSAGE',
-  'MAINTENANCE_KEY','MAINTENANCE_BYPASS_TOKEN','OPS_HEALTH_TOKEN','OPS_HEALTH_IPS','OPS_DB_PROBE_TABLE','OPS_DB_PROBE_RPC','HEALTH_PUBLIC',
-  'FIREWALL_FAIL_CLOSED','STRIPE_SECRET_KEY','STRIPE_PUBLISHABLE_KEY','STRIPE_WEBHOOK_SECRET',
-  'STRIPE_PRICE_RESUME_ONE_TIME','STRIPE_PRICE_RESUME_EXPERT','STRIPE_SUCCESS_PATH','STRIPE_CANCEL_PATH',
-  'FEATURE_ARCHIVE_RECEIPTS','FEATURE_ARCHIVE_RECEIPTS_TABLE','NGINX_USE_SSL','SHUTDOWN_GRACE_MS',
-  'TRUST_PROXY_HOPS','CANONICAL_HOST','ALLOW_LEGACY_LOGIN','ASSET_VERSION',
+  'MAINTENANCE_KEY','MAINTENANCE_BYPASS_TOKEN','MAINTENANCE_ALLOWED_PATHS','OPS_HEALTH_TOKEN','OPS_HEALTH_IPS','OPS_DB_PROBE_TABLE','OPS_DB_PROBE_RPC','HEALTH_PUBLIC',
+  'FIREWALL_FAIL_CLOSED',
+  // Legacy single-set Stripe (kept for back-compat reads only)
+  'STRIPE_SECRET_KEY','STRIPE_PUBLISHABLE_KEY','STRIPE_WEBHOOK_SECRET',
+  'STRIPE_PRICE_RESUME_ONE_TIME','STRIPE_PRICE_RESUME_EXPERT',
+  // Shared success/cancel paths
+  'STRIPE_SUCCESS_PATH','STRIPE_CANCEL_PATH',
+  // Dual-set Stripe (LIVE/TEST)
+  'STRIPE_SECRET_KEY_LIVE','STRIPE_PUBLISHABLE_KEY_LIVE','STRIPE_WEBHOOK_SECRET_LIVE',
+  'STRIPE_SECRET_KEY_TEST','STRIPE_PUBLISHABLE_KEY_TEST','STRIPE_WEBHOOK_SECRET_TEST',
+  'STRIPE_PRICE_RESUME_ONE_TIME_LIVE','STRIPE_PRICE_RESUME_EXPERT_LIVE',
+  'STRIPE_PRICE_RESUME_ONE_TIME_TEST','STRIPE_PRICE_RESUME_EXPERT_TEST',
   // audit toggle
   'CONFIG_ENV_AUDIT'
 ]);
@@ -110,17 +116,6 @@ function csv(v) {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-/**
- * WHAT:
- * Derive DB host/port/name so boot logs are always sane.
- *
- * WHY:
- * When envs are half-set, we still want a clear, non-crashing “Database:” line.
- *
- * HOW:
- * - For Supabase HTTP: parse SUPABASE_URL and pull the project ref as “name”.
- * - For Postgres: parse SUPABASE_DB_URL. If missing, use safe “unknown” fallbacks.
- */
 function deriveDbParts(provider, env) {
   try {
     if (provider === 'supabase-http') {
@@ -131,7 +126,7 @@ function deriveDbParts(provider, env) {
       return { host, port, name };
     }
 
-    // provider === 'postgres' (supported via SUPABASE_DB_URL)
+    // provider === 'postgres'
     const url = env.SUPABASE_DB_URL;
     if (url) {
       const u = new URL(url);
@@ -154,19 +149,11 @@ const DB_PROVIDER = (process.env.DB_PROVIDER || 'supabase-http').toLowerCase();
 const derivedDb = deriveDbParts(DB_PROVIDER, process.env);
 
 // ──────────────────────────────────────────────────────────────────────────────
-/**
- * WHAT:
- * Typed configuration object (non-secret values only).
- *
- * WHY:
- * Centralized, typed config avoids “undefined/NaN” cascades and accidental PII logs.
- *
- * HOW:
- * Read from env once, cast to primitives, and export. Modules import from here
- * instead of reading process.env directly. Secrets stay in env; we don’t echo them.
- */
-const isDev = (process.env.NODE_ENV || 'development') === 'development';
-const isTest = (process.env.NODE_ENV || 'development') === 'test';
+// Typed configuration object
+// ──────────────────────────────────────────────────────────────────────────────
+const nodeEnv = (process.env.NODE_ENV || 'development');
+const isDev = nodeEnv === 'development';
+const isTest = nodeEnv === 'test';
 
 const rateLimitEnabled        = bool(process.env.RATE_LIMIT_ENABLED, true);
 const localLimitersEnabled    = bool(process.env.LOCAL_LIMITERS_ENABLED, true);
@@ -175,7 +162,7 @@ const skipRateLimitInDev      = bool(process.env.SKIP_RATE_LIMIT_IN_DEV, false);
 const skipRateLimitInTest     = bool(process.env.SKIP_RATE_LIMIT_IN_TEST, false);
 const rateLimitActiveThisBoot = rateLimitEnabled && !(isDev && skipRateLimitInDev) && !(isTest && skipRateLimitInTest);
 
-// Derive ops/health posture once so routes are simple and predictable.
+// Ops / health posture
 const DEFAULT_LOCAL_ALLOWLIST = ['127.0.0.1', '::1', '192.168.65.1']; // Docker Desktop host
 const derivedOpsToken = (process.env.OPS_HEALTH_TOKEN || '').trim();
 const derivedOpsIps = csv(process.env.OPS_HEALTH_IPS);
@@ -184,11 +171,35 @@ const devPublicHealth = isDev && !derivedOpsToken; // public only in dev when no
 
 const derivedPublicOrigin = process.env.PUBLIC_ORIGIN || (isDev ? `http://localhost:${int(process.env.PORT, 3000)}` : '');
 
+// ──────────────────────────────────────────────────────────────────────────────
+// Stripe configuration (dual-set) — active mode is derived from NODE_ENV
+// ──────────────────────────────────────────────────────────────────────────────
+const stripeLive = {
+  secretKey:          (process.env.STRIPE_SECRET_KEY_LIVE || process.env.STRIPE_SECRET_KEY || '').trim(),
+  publishableKey:     (process.env.STRIPE_PUBLISHABLE_KEY_LIVE || process.env.STRIPE_PUBLISHABLE_KEY || '').trim(),
+  webhookSecret:      (process.env.STRIPE_WEBHOOK_SECRET_LIVE || process.env.STRIPE_WEBHOOK_SECRET || '').trim(),
+  priceResumeOneTime: (process.env.STRIPE_PRICE_RESUME_ONE_TIME_LIVE || process.env.STRIPE_PRICE_RESUME_ONE_TIME || '').trim(),
+  priceResumeExpert:  (process.env.STRIPE_PRICE_RESUME_EXPERT_LIVE || process.env.STRIPE_PRICE_RESUME_EXPERT || '').trim()
+};
+
+const stripeTest = {
+  secretKey:          (process.env.STRIPE_SECRET_KEY_TEST || '').trim(),
+  publishableKey:     (process.env.STRIPE_PUBLISHABLE_KEY_TEST || '').trim(),
+  webhookSecret:      (process.env.STRIPE_WEBHOOK_SECRET_TEST || '').trim(),
+  priceResumeOneTime: (process.env.STRIPE_PRICE_RESUME_ONE_TIME_TEST || '').trim(),
+  priceResumeExpert:  (process.env.STRIPE_PRICE_RESUME_EXPERT_TEST || '').trim()
+};
+
+const stripeMode = (nodeEnv === 'production') ? 'live' : 'test';
+const stripeActive = stripeMode === 'live' ? stripeLive : stripeTest;
+
+// ──────────────────────────────────────────────────────────────────────────────
+
 const config = {
   // Server
   server: {
     port: int(process.env.PORT, 3000),
-    nodeEnv: process.env.NODE_ENV || 'development',
+    nodeEnv,
     host: process.env.HOST || '0.0.0.0',
     trustProxy: true,                  // we're behind a proxy in prod
     trustProxyHops: int(process.env.TRUST_PROXY_HOPS, 2),
@@ -196,7 +207,7 @@ const config = {
     requestIdHeader: 'x-request-id'
   },
 
-  // Database (Supabase HTTP by default; Postgres if you switch provider)
+  // Database
   database: {
     provider: DB_PROVIDER,             // 'supabase-http' | 'postgres'
     url: DB_PROVIDER === 'supabase-http'
@@ -207,7 +218,7 @@ const config = {
     name: derivedDb.name
   },
 
-  // Auth / JWT verification (RS256 via Supabase, HS256 fallback)
+  // Auth / JWT verification
   jwt: {
     jwksUrl: process.env.SUPABASE_JWKS_URL,
     issuer: process.env.SUPABASE_ISSUER,
@@ -226,30 +237,29 @@ const config = {
     allowedOrigins: csv(process.env.ALLOWED_ORIGINS)
   },
 
-  // CSRF protection configuration
+  // CSRF protection
   csrf: {
     cookieName: process.env.CSRF_COOKIE_NAME || 'csrf_token',
     headerName: (process.env.CSRF_HEADER_NAME || 'x-csrf-token').toLowerCase(),
     secret: process.env.CSRF_SECRET
   },
 
-  // Redis (sessions, lockouts, banlists, secondary rate-limiters)
+  // Redis
   redis: {
-    // Only these are read by redisClient.js via config.redis
     url: process.env.REDIS_URL,
     host: process.env.REDIS_HOST || 'localhost',
     port: int(process.env.REDIS_PORT, 6379),
     password: process.env.REDIS_PASSWORD
   },
 
-  // User input limits (defense-in-depth)
+  // User input limits
   limits: {
     textMaxLength: int(process.env.TEXT_MAX_LENGTH, 5000),
     textMinLength: int(process.env.TEXT_MIN_LENGTH, 20),
     maxSubmissions: int(process.env.MAX_SUBMISSIONS, 10)
   },
 
-  // Maintenance mode (kept in sync with middleware)
+  // Maintenance mode
   maintenance: {
     key: process.env.MAINTENANCE_KEY || 'maintenance:mode',
     default: process.env.MAINTENANCE_DEFAULT || 'off',
@@ -257,19 +267,26 @@ const config = {
     retryAfter: int(process.env.MAINTENANCE_RETRY_AFTER, 120),
     pagePath: process.env.MAINTENANCE_PAGE || '/app/server/public/maintenance.html',
     message: process.env.MAINTENANCE_MESSAGE || 'We will be back soon.',
-    bypassToken: process.env.MAINTENANCE_BYPASS_TOKEN || ''
+    bypassToken: process.env.MAINTENANCE_BYPASS_TOKEN || '',
+    allowedPaths: [
+      '/health/liveness',
+      '/health/readiness',
+      '/health',
+      '/.well-known/acme-challenge/',
+      '/api/stripe/webhook',
+      ...csv(process.env.MAINTENANCE_ALLOWED_PATHS)
+    ]
   },
 
   // Ops access to private health endpoints
   ops: {
     token: derivedOpsToken,
     ips: effectiveAllowlist,
-    // optional: expose canonical header names so routes can accept any of these
     headerNames: ['X-Ops-Health-Token','X-Ops-Token','X-Health-Token']
   },
   health: {
-    public: devPublicHealth,                 // public only in dev if no token is set
-    token: derivedOpsToken,                  // same token as ops
+    public: devPublicHealth,
+    token: derivedOpsToken,
     allowlist: effectiveAllowlist
   },
 
@@ -284,7 +301,7 @@ const config = {
     xClientInfo: process.env.X_CLIENT_INFO || 'app-server/1.0.0'
   },
 
-  // Supabase client keys (for client-side initialization only; secrets stay in env)
+  // Supabase client keys (for client-side init only)
   supabase: {
     url: process.env.SUPABASE_URL,
     anonKey: process.env.SUPABASE_ANON_KEY,
@@ -293,16 +310,13 @@ const config = {
 
   // Stripe configuration
   stripe: {
-    secretKey: process.env.STRIPE_SECRET_KEY,
-    webhookSecret: process.env.STRIPE_WEBHOOK_SECRET,
-    priceResumeOneTime: process.env.STRIPE_PRICE_RESUME_ONE_TIME || '',
-    priceResumeExpert: process.env.STRIPE_PRICE_RESUME_EXPERT || '',
-    successPath: process.env.STRIPE_SUCCESS_PATH || '/dashboard/purchase/confirmation',
-    cancelPath: process.env.STRIPE_CANCEL_PATH || '/dashboard/billing'
+    mode: stripeMode, // 'live' | 'test', derived from NODE_ENV
+    live: stripeLive,
+    test: stripeTest,
+    active: stripeActive
   },
 
   // Public origin (for redirects and client-side URLs)
-  // Default to localhost in development if not set (required for Stripe checkout URLs)
   publicOrigin: derivedPublicOrigin,
 
   // Auth cookie configuration
@@ -335,7 +349,7 @@ const config = {
     graceMs: int(process.env.SHUTDOWN_GRACE_MS, 15000)
   },
 
-  // Rate-limit posture (used by boot summary; business logic can also read this)
+  // Rate-limit posture
   rateLimit: {
     enabled: rateLimitEnabled,
     skipInDev: skipRateLimitInDev,
@@ -376,23 +390,8 @@ const config = {
 };
 
 // ──────────────────────────────────────────────────────────────────────────────
-// Alignment shims: ensure single source of truth (idempotent, safe to re-run)
+// Alignment shims
 // ──────────────────────────────────────────────────────────────────────────────
-/**
- * WHAT:
- * Align config.supabase and config.database for supabase-http provider.
- * Ensure publicOrigin and health.public are always present.
- *
- * WHY:
- * When DB_PROVIDER === 'supabase-http', database.url and supabase.url should
- * be the same value. This shim ensures consistency.
- *
- * HOW:
- * - If provider is supabase-http, mirror database.url to supabase.url if missing
- * - Ensure publicOrigin exists as a string
- * - Map HEALTH_PUBLIC env to config.health.public if not already set
- */
-// Supabase <-> Database alignment (provider aware)
 if (config.database?.provider === 'supabase-http') {
   const dbUrl = config.database.url || process.env.SUPABASE_URL || '';
   config.supabase = config.supabase || {};
@@ -401,8 +400,7 @@ if (config.database?.provider === 'supabase-http') {
   if (!config.supabase.serviceRoleKey) config.supabase.serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 }
 
-// publicOrigin always present (string)
-// Default to localhost in development if not set (required for Stripe checkout URLs)
+// publicOrigin always present
 if (!('publicOrigin' in config) || !config.publicOrigin) {
   config.publicOrigin = process.env.PUBLIC_ORIGIN || (isDev ? `http://localhost:${int(process.env.PORT, 3000)}` : '');
 }
@@ -413,7 +411,7 @@ if (typeof config.health?.public !== 'boolean') {
   config.health.public = on(process.env.HEALTH_PUBLIC);
 }
 
-// Optional: freeze to prevent accidental runtime mutation (shallow + nested)
+// Deep-freeze config
 (function deepFreeze(o) {
   Object.freeze(o);
   Object.getOwnPropertyNames(o).forEach((p) => {
@@ -423,19 +421,8 @@ if (typeof config.health?.public !== 'boolean') {
 })(config);
 
 // ──────────────────────────────────────────────────────────────────────────────
-// Validation (provider-aware, fast-fail on fatal misconfig)
+// Validation (provider-aware, fast-fail)
 // ──────────────────────────────────────────────────────────────────────────────
-/**
- * WHAT:
- * Validate required env and basic numeric ranges.
- *
- * WHY:
- * Failing fast at boot is better than mysterious 500s later.
- *
- * HOW:
- * - Common required set (ports, lengths, Supabase JWT verification inputs).
- * - Provider-specific connection requirements.
- */
 function validateConfig() {
   const errors = [];
 
@@ -461,24 +448,32 @@ function validateConfig() {
     if (!process.env[varName]) errors.push(`${varName} environment variable is required`);
   }
 
-  // Conditional Stripe validation (only in production when prices are configured)
-  const usingStripePrices = !!(config.stripe.priceResumeOneTime || config.stripe.priceResumeExpert);
+  // Only consider Stripe validation when prices are configured
+  const hasStripe =
+    config.stripe &&
+    config.stripe.active &&
+    (config.stripe.active.priceResumeOneTime || config.stripe.active.priceResumeExpert);
+
+  const usingStripePrices = !!hasStripe;
   const isProd = (config.server.nodeEnv || '').toLowerCase() === 'production';
+
   if (usingStripePrices && isProd) {
-    if (!config.stripe.secretKey) {
-      errors.push('STRIPE_SECRET_KEY is required in production when Stripe prices are configured');
+    if (!config.stripe.active.secretKey) {
+      errors.push('STRIPE_SECRET_KEY_LIVE (or legacy STRIPE_SECRET_KEY) is required in production when Stripe prices are configured');
     }
-    if (!config.stripe.webhookSecret) {
-      errors.push('STRIPE_WEBHOOK_SECRET is required in production when Stripe prices are configured');
+    if (!config.stripe.live.webhookSecret) {
+      errors.push('STRIPE_WEBHOOK_SECRET_LIVE (or legacy STRIPE_WEBHOOK_SECRET) is required in production when Stripe prices are configured');
+    }
+    if (!config.stripe.test.webhookSecret) {
+      errors.push('STRIPE_WEBHOOK_SECRET_TEST should also be set for test endpoint verification');
     }
   }
-  
-  // Validate publicOrigin when Stripe is configured (required for checkout URLs)
+
+  // Validate publicOrigin when Stripe is configured
   if (usingStripePrices) {
     if (!config.publicOrigin || !config.publicOrigin.trim()) {
       errors.push('PUBLIC_ORIGIN is required when Stripe prices are configured (needed for checkout redirect URLs)');
     } else {
-      // Validate it's a valid URL format
       try {
         const testUrl = config.publicOrigin.replace(/\/+$/, '') + '/test';
         new URL(testUrl);
@@ -487,8 +482,6 @@ function validateConfig() {
       }
     }
   }
-
-  // opsHealth probe selectors remain optional by design (no validation needed)
 
   if (config.server.port < 1 || config.server.port > 65535) {
     errors.push('PORT must be between 1 and 65535');
@@ -511,13 +504,13 @@ function validateConfig() {
   return errors;
 }
 
-// Run validation immediately on load to fail fast in bad boots
+// Run validation immediately
 const validationErrors = validateConfig();
 if (validationErrors.length > 0) {
   console.error('Configuration validation failed:');
   validationErrors.forEach((error) => console.error(`  - ${error}`));
-  const isTest = process.env.NODE_ENV === 'test';
-  if (isTest) {
+  const isTestEnv = process.env.NODE_ENV === 'test';
+  if (isTestEnv) {
     throw new Error(`Configuration validation failed: ${validationErrors.join('; ')}`);
   } else {
     process.exit(1);
@@ -525,32 +518,20 @@ if (validationErrors.length > 0) {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// Pretty boot summary (kept small and stable; no secrets)
+// Boot summary
 // ──────────────────────────────────────────────────────────────────────────────
-/**
- * WHAT:
- * Print concise, stable boot info once per start.
- *
- * WHY:
- * Operators need a quick read on posture without digging through code.
- *
- * HOW:
- * Lazy-load consoleLogger to avoid circular dependencies, with fallback for safety.
- */
 function logConfigSummary() {
   try {
-    // Lazy require to avoid circular dependency issues
     const consoleLogger = require('../utils/consoleLogger');
     if (consoleLogger && typeof consoleLogger.formatConfigSummary === 'function') {
       consoleLogger.formatConfigSummary(config);
       return;
     }
-  } catch (err) {
-    // Fall through to simple summary if consoleLogger fails to load
+  } catch {
+    // ignore and fall back
   }
-  
-  // Fallback: simple console summary so we never crash
-  const dbSummary = config.database?.name 
+
+  const dbSummary = config.database?.name
     ? `${config.database.host}:${config.database.port}/${config.database.name}`
     : 'unknown';
   console.log('\nCONFIGURATION LOADED');
@@ -563,30 +544,10 @@ function logConfigSummary() {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// Static asset cache-buster
-// ──────────────────────────────────────────────────────────────────────────────
-/**
- * WHAT:
- * Cache-busting version for static assets (JS/CSS).
- *
- * WHY:
- * Browsers cache aggressively; this forces a fresh fetch post-deploy.
- *
- * HOW:
- * - If ASSET_VERSION is set in env, use it (for CI/advanced control).
- * - Else if IMAGE_TAG exists (from Docker/CI), use that.
- * - Else fall back to a timestamp at boot.
- *
- * NOTE:
- * APP_VERSION is kept for UI/branding only; it no longer affects asset URLs.
- */
 const rawAssetVersion = (process.env.ASSET_VERSION || '').trim();
 const rawImageTag = (process.env.IMAGE_TAG || '').trim();
-
 const ASSET_VERSION = rawAssetVersion || rawImageTag || String(Date.now());
 
-// ──────────────────────────────────────────────────────────────────────────────
-// Exports
 // ──────────────────────────────────────────────────────────────────────────────
 module.exports = {
   config,

@@ -1,3 +1,10 @@
 # File: docker-compose.ops.yml
-# Purpose: optional production overrides; safe no-op by default.
-services: {}
+# Purpose: optional production overrides; now used to inject prod env file.
+services:
+  app:
+    env_file:
+      - ./.env.production.full
+
+  redis:
+    env_file:
+      - ./.env.production.full

@@ -93,6 +93,15 @@ describe('Maintenance Guard', () => {
 
     it('blocks requests when maintenance mode is on', async () => {
       mockRedisClient.get.mockResolvedValue('on');
+      // ensure mock config provides allowedPaths that include the webhook
+      const { config } = require('../config');
+      config.maintenance.allowedPaths = [
+        '/health/liveness',
+        '/health/readiness',
+        '/health',
+        '/.well-known/acme-challenge/',
+        '/api/stripe/webhook'
+      ];      
       
       app.use(createMaintenanceGuard(mockRedisClient));
       app.get('/test', (req, res) => res.json({ success: true }));
@@ -130,6 +139,7 @@ describe('Maintenance Guard', () => {
       app.get('/health/liveness', (req, res) => res.json({ status: 'ok' }));
       app.get('/health/readiness', (req, res) => res.json({ status: 'ready' }));
       app.get('/.well-known/acme-challenge/test', (req, res) => res.text('challenge'));
+      app.post('/api/stripe/webhook', (req, res) => res.status(200).end());
     });
 
     it('allows health check paths during maintenance', async () => {
@@ -146,6 +156,10 @@ describe('Maintenance Guard', () => {
       await request(app)
         .get('/.well-known/acme-challenge/test')
         .expect(200);
+    });
+    
+    it('allows Stripe webhook during maintenance', async () => {
+      await request(app).post('/api/stripe/webhook').send('{}').expect(200);
     });
   });
 

@@ -1,77 +1,66 @@
 // File: server/routes/dashboard-billing.js
-// Description: Billing dashboard route with purchase history
-// Purpose: Display billing page with purchase options and history
-// Notes: Follows Building Laws: backend is source of truth, UI instructions from server
+// Description: Billing dashboard route with purchase options
+// Purpose: Display billing page with purchase options (history intentionally removed)
+// Notes: Uses ACTIVE Stripe config (live in prod, test otherwise). Supplies APP_CONFIG for sbClient.js.
 
-/**
- * WHAT:
- * Billing dashboard route that displays purchase options and history.
- * 
- * WHY:
- * Users need interface to purchase products and view payment history.
- * Backend provides UI instructions and purchase data.
- * 
- * HOW:
- * 1. Build dashboard page model with user context
- * 2. Fetch user's purchase history from database
- * 3. Render billing page with purchase options
- * 4. Include CSP-safe nonce for client scripts
- */
+'use strict';
 
 const express = require('express');
 const router = express.Router();
+
 const { buildDashboardPageModel } = require('../ui_contract/presenters');
-const { supabaseAdmin } = require('../utils/supabaseClient');
 const { getPricingCatalog } = require('../services/pricingCatalog');
 const { config } = require('../config');
 
-/**
- * WHAT:
- * Display billing dashboard with purchase options and history.
- * 
- * WHY:
- * Users need centralized billing interface for payments and history.
- * 
- * HOW:
- * 1. Build page model with user context
- * 2. Fetch purchase history from database
- * 3. Render billing page with purchase buttons
- * 4. Include nonce for CSP-safe client scripts
- */
 router.get('/', async (req, res) => {
-  // Safety net: If Stripe redirected back with ?paid=1&session_id=, redirect to confirmation page
+  // If Stripe ever bounces here with ?paid=1, bounce on to confirmation like before
   if (req.query.paid === '1' && req.query.session_id) {
-    return res.redirect(302, `/dashboard/purchase/confirmation?session_id=${encodeURIComponent(req.query.session_id)}`);
+    return res.redirect(
+      302,
+      `/dashboard/purchase/confirmation?session_id=${encodeURIComponent(req.query.session_id)}`
+    );
   }
 
+  // Base page model (nav, app_info, assetVersion, etc.)
   const pageModel = await buildDashboardPageModel(req, res);
+
+  // Title + nonce + CSRF token
+  pageModel.page = pageModel.page || {};
   pageModel.page.nonce = res.locals.nonce;
   const effectiveAppName =
-    (pageModel && pageModel.app_info && pageModel.app_info.name) ||
-    config.branding.appName;
+    (pageModel.app_info && pageModel.app_info.name) || config.branding.appName;
   pageModel.page.title = `Billing – ${effectiveAppName}`;
   pageModel.ui = pageModel.ui || {};
   pageModel.ui.csrfToken = res.locals.csrfToken || '';
-  pageModel.ui.supabaseUrl = config.supabase.url || '';
-  pageModel.ui.supabaseAnonKey = config.supabase.anonKey || '';
 
-  // Fetch pricing catalog from Stripe
-  let pricing = [];
-  try {
-    pricing = await getPricingCatalog();
-  } catch (err) {
-    // Silently fail - pricing is optional, fallback to defaults in template
-  }
-
-  // Purchase history removed by request
-  pageModel.billing = { pricing };
-  
-  // Pass price IDs for lookups in template
-  pageModel.env = {
-    STRIPE_PRICE_RESUME_ONE_TIME: config.stripe.priceResumeOneTime,
-    STRIPE_PRICE_RESUME_EXPERT: config.stripe.priceResumeExpert
+  // Ensure APP_CONFIG is present so <meta id="app-config"> is rendered
+  // This is what server/public/js/sbClient.js reads.
+  pageModel.APP_CONFIG = {
+    SUPABASE_URL: config.supabase.url || '',
+    SUPABASE_ANON_KEY: config.supabase.anonKey || ''
   };
 
+  // Pricing pulled from Stripe using the ACTIVE key (service handles that)
+  let pricing = [];
+  try {
+    pricing = await getPricingCatalog(); // should already key off config.stripe.active
+  } catch {
+    // Pricing is optional; template will still render CTAs with copy
+    pricing = [];
+  }
+
+  // Expose price IDs to the template for simple lookups
+  // IMPORTANT: use ACTIVE prices so test/dev uses test IDs and prod uses live IDs
+  pageModel.env = {
+    STRIPE_PRICE_RESUME_ONE_TIME: (config.stripe.active.priceResumeOneTime || '').trim(),
+    STRIPE_PRICE_RESUME_EXPERT:   (config.stripe.active.priceResumeExpert   || '').trim()
+  };
+
+  // Keep purchase history removed (your request)
+  pageModel.billing = { pricing };
+
+  // Hard no-store for safety (avoids caching CSRF/meta)
+  res.set('Cache-Control', 'no-store');
   res.render('billing', pageModel);
 });
 

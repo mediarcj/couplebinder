@@ -1,302 +1,249 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="csrf-token" content="<%= ui.csrfToken || '' %>">
-    <!-- Let server pass a custom mount base (fallback to /api/pay) -->
-    <meta id="api-pay-base" data-base="<%= (page && page.payBase) || '/api/pay' %>">
-    <% if (typeof APP_CONFIG !== 'undefined') { %>
-      <meta id="app-config"
-        data-supabase-url="<%= APP_CONFIG.SUPABASE_URL %>"
-        data-supabase-anon-key="<%= APP_CONFIG.SUPABASE_ANON_KEY %>">
-    <% } %>
-    <meta http-equiv="Cache-Control" content="no-store" />
-    <meta http-equiv="Pragma" content="no-cache" />
-    <meta name="robots" content="noindex" />
-    <title><%= (page && page.title) || 'Purchase Confirmation' %></title>
-    <link rel="icon" href="/images/favicon.ico">
-    <link rel="stylesheet" href="/css/style.css?v=<%= page.assetVersion || assetVersion || '' %>">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="csrf-token" content="<%= ui.csrfToken || '' %>">
+  <meta id="api-pay-base" data-base="<%= (page && page.payBase) || '/api/pay' %>">
+  <% if (typeof APP_CONFIG !== 'undefined') { %>
+    <meta id="app-config"
+      data-supabase-url="<%= APP_CONFIG.SUPABASE_URL %>"
+      data-supabase-anon-key="<%= APP_CONFIG.SUPABASE_ANON_KEY %>">
+  <% } %>
+  <meta http-equiv="Cache-Control" content="no-store" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta name="robots" content="noindex" />
+  <title><%= (page && page.title) || 'Purchase Confirmation' %></title>
+  <link rel="icon" href="/images/favicon.ico">
+  <link rel="stylesheet" href="/css/style.css?v=<%= page.assetVersion || assetVersion || '' %>">
 </head>
 <body data-auth-hydrate="true">
-    <%- include('partials/nav', { nav: page.nav, app_info: app_info }) %>
+  <%- include('partials/nav', { nav: page.nav, app_info: app_info }) %>
 
-    <main>
-        <div class="container">
-            <div class="hero">
-                <h1>Thanks for your purchase</h1>
-                <p class="subtitle">Your payment has been confirmed successfully</p>
-            </div>
+  <main>
+    <div class="container">
+      <div class="hero">
+        <h1>Thanks for your purchase</h1>
+        <p class="subtitle">Your payment has been confirmed successfully</p>
+      </div>
 
-            <!-- Prominent Receipt CTA (top) -->
-            <section class="receipt-cta card">
-              <div class="receipt-cta__icon" aria-hidden="true">
-                <!-- Inline SVG icon to avoid external loads / CSP issues -->
-                <svg width="36" height="36" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" role="img">
-                  <rect x="4" y="3" width="12" height="18" rx="2" stroke="currentColor" stroke-width="1.5"/>
-                  <path d="M9 8h5M9 12h5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-                  <circle cx="18" cy="18" r="5" fill="currentColor" opacity="0.12"/>
-                  <path d="M16.5 18.5l1.5 1.5 3-3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
-              </div>
-              <div class="receipt-cta__body">
-                <h3 class="receipt-cta__title">Your official receipt is ready</h3>
-                <p class="receipt-cta__copy">View or download the receipt hosted by our payment processor.</p>
-              </div>
-              <div class="receipt-cta__action">
-                <% 
-                  const __raw = (confirmation && confirmation.officialReceiptUrl) || '';
-                  const __clean = String(__raw).trim().replace(/^["']+|["']+$/g, '');
-                  const __href  = /^https?:\/\//i.test(__clean) ? __clean : '#';
-                %>
-                <a id="open-official" class="btn btn-primary btn-lg btn-block receipt-cta__btn"
-                   rel="noopener noreferrer" target="_blank" href="<%= __href %>">
-                  View official receipt
-                </a>
-              </div>
-            </section>
-
-            <div class="user-profile">
-                <h2>Purchase Confirmation</h2>
-                <div class="profile-card">
-                    <div class="profile-info">
-                        <div class="info-item">
-                            <span class="info-label">Item:</span>
-                            <span class="info-value"><%= confirmation?.productLabel || 'Your purchase' %></span>
-                        </div>
-                        <div class="info-item">
-                            <span class="info-label">Total paid:</span>
-                            <span class="info-value" data-amount></span>
-                        </div>
-                        <div class="info-item">
-                            <span class="info-label">Paid at:</span>
-                            <span class="info-value" data-paidat></span>
-                        </div>
-                        <div class="info-item">
-                            <span class="info-label">Confirmation ID:</span>
-                            <span class="info-value idwrap">
-                                <code id="conf-id"><%= confirmation?.sessionId || '' %></code>
-                                <button id="copy-id" class="btn btn-secondary btn-sm" type="button" aria-label="Copy confirmation ID">Copy</button>
-                            </span>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Removed the old button block and "Back to billing" per request -->
-
-            <p class="muted note-blurb">
-                This page is a purchase confirmation for your records. For your <strong>official receipt</strong>, use the button above to access the receipt hosted by our payment processor. We don't show card details on this page. Keep the confirmation ID for support inquiries.
-            </p>
+      <section class="receipt-cta card">
+        <div class="receipt-cta__icon" aria-hidden="true">
+          <svg width="36" height="36" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" role="img">
+            <rect x="4" y="3" width="12" height="18" rx="2" stroke="currentColor" stroke-width="1.5"/>
+            <path d="M9 8h5M9 12h5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            <circle cx="18" cy="18" r="5" fill="currentColor" opacity="0.12"/>
+            <path d="M16.5 18.5l1.5 1.5 3-3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
         </div>
-    </main>
-
-    <footer>
-        <div class="container">
-            <p>&copy; 2024 <%= app_info?.name || 'Application' %>. <%= app_info?.description || 'A modern web application' %>.</p>
+        <div class="receipt-cta__body">
+          <h3 class="receipt-cta__title">Your official receipt is ready</h3>
+          <p class="receipt-cta__copy">View or download the receipt hosted by our payment processor.</p>
         </div>
-    </footer>
+        <div class="receipt-cta__action">
+          <%
+            const __raw = (confirmation && confirmation.officialReceiptUrl) || '';
+            const __clean = String(__raw).trim().replace(/^["']+|["']+$/g, '');
+            const __href  = /^https?:\/\//i.test(__clean) ? __clean : '#';
+          %>
+          <a id="open-official" class="btn btn-primary btn-lg btn-block receipt-cta__btn"
+             rel="noopener noreferrer" target="_blank" href="<%= __href %>">
+            View official receipt
+          </a>
+        </div>
+      </section>
 
-    <%- include('partials/modals') %>
+      <div class="user-profile">
+        <h2>Purchase Confirmation</h2>
+        <div class="profile-card">
+          <div class="profile-info">
+            <div class="info-item">
+              <span class="info-label">Item:</span>
+              <span class="info-value"><%= confirmation?.productLabel || 'Your purchase' %></span>
+            </div>
+            <div class="info-item">
+              <span class="info-label">Total paid:</span>
+              <span class="info-value" data-amount></span>
+            </div>
+            <div class="info-item">
+              <span class="info-label">Paid at:</span>
+              <span class="info-value" data-paidat></span>
+            </div>
+            <div class="info-item">
+              <span class="info-label">Confirmation ID:</span>
+              <span class="info-value idwrap">
+                <code id="conf-id"><%= confirmation?.sessionId || '' %></code>
+                <button id="copy-id" class="btn btn-secondary btn-sm" type="button" aria-label="Copy confirmation ID">Copy</button>
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
 
-    <!-- Shared core scripts -->
-    <script src="/js/modalManager.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= (page && page.nonce) || '' %>"></script>
-    <script src="/js/main.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= (page && page.nonce) || '' %>"></script>
+      <p class="muted note-blurb">
+        This page is a purchase confirmation for your records. For your <strong>official receipt</strong>, use the button above to access the receipt hosted by our payment processor. We don't show card details on this page. Keep the confirmation ID for support inquiries.
+      </p>
+    </div>
+  </main>
 
-    <!-- Local styles (CSP-safe with nonce); no inline style attributes -->
-    <style nonce="<%= (page && page.nonce) || '' %>">
-        .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 0.875rem; }
-        .break { word-break: break-all; overflow-wrap: anywhere; }
-        .idwrap { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
-        .idwrap code { padding: 0.25rem 0.5rem; background: #f3f4f6; border: 1px solid #e5e7eb; border-radius: 4px; }
-        .btn-sm { padding: 0.25rem 0.75rem; font-size: 0.875rem; }
-        .muted { color: #6b7280; }
-        .note-blurb { margin-top: 1rem; padding: 1rem; background: #f9fafb; border-radius: 6px; font-size: 0.9rem; }
-        .card { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 1rem; }
-        .receipt-cta { display: grid; grid-template-columns: auto 1fr; gap: 1rem; align-items: center; margin: 1rem 0 1.25rem; }
-        .receipt-cta__icon { color: #10b981; display: flex; align-items: center; justify-content: center; }
-        .receipt-cta__title { margin: 0 0 0.25rem; font-size: 1.1rem; }
-        .receipt-cta__copy { margin: 0; color: #6b7280; }
-        .receipt-cta__action { grid-column: 1 / -1; }
-        @media (min-width: 720px) {
-            .receipt-cta { grid-template-columns: auto 1fr auto; }
-            .receipt-cta__action { grid-column: auto; }
-        }
-        .btn-lg { font-size: 1rem; padding: 0.85rem 1.25rem; }
-        .btn-block { display: inline-flex; width: 100%; justify-content: center; }
-        /* Make the receipt button clearly disabled until we have a URL */
-        .receipt-cta__btn[aria-disabled="true"] {
-            pointer-events: none;
-            opacity: 0.6;
-            cursor: not-allowed;
-        }
-    </style>
+  <footer>
+    <div class="container">
+      <p>&copy; 2024 <%= app_info?.name || 'Application' %>. <%= app_info?.description || 'A modern web application' %>.</p>
+    </div>
+  </footer>
 
-    <script nonce="<%= (page && page.nonce) || '' %>">
+  <%- include('partials/modals') %>
+
+  <script src="/js/modalManager.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= (page && page.nonce) || '' %>"></script>
+  <script src="/js/main.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= (page && page.nonce) || '' %>"></script>
+
+  <style nonce="<%= (page && page.nonce) || '' %>">
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 0.875rem; }
+    .break { word-break: break-all; overflow-wrap: anywhere; }
+    .idwrap { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+    .idwrap code { padding: 0.25rem 0.5rem; background: #f3f4f6; border: 1px solid #e5e7eb; border-radius: 4px; }
+    .btn-sm { padding: 0.25rem 0.75rem; font-size: 0.875rem; }
+    .muted { color: #6b7280; }
+    .note-blurb { margin-top: 1rem; padding: 1rem; background: #f9fafb; border-radius: 6px; font-size: 0.9rem; }
+    .card { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 1rem; }
+    .receipt-cta { display: grid; grid-template-columns: auto 1fr; gap: 1rem; align-items: center; margin: 1rem 0 1.25rem; }
+    .receipt-cta__icon { color: #10b981; display: flex; align-items: center; justify-content: center; }
+    .receipt-cta__title { margin: 0 0 0.25rem; font-size: 1.1rem; }
+    .receipt-cta__copy { margin: 0; color: #6b7280; }
+    .receipt-cta__action { grid-column: 1 / -1; }
+    @media (min-width: 720px) {
+      .receipt-cta { grid-template-columns: auto 1fr auto; }
+      .receipt-cta__action { grid-column: auto; }
+    }
+    .btn-lg { font-size: 1rem; padding: 0.85rem 1.25rem; }
+    .btn-block { display: inline-flex; width: 100%; justify-content: center; }
+    .receipt-cta__btn[aria-disabled="true"] { pointer-events: none; opacity: 0.6; cursor: not-allowed; }
+  </style>
+
+  <script nonce="<%= (page && page.nonce) || '' %>">
     (async function(){
-        // define helper before first use (readability; function hoisting already makes it work)
-        function sanitizeUrl(u) {
-            if (!u) return '';
-            const t = String(u).trim().replace(/^["']+|["']+$/g, '');
-            return /^https?:\/\//i.test(t) ? t : '';
-        }
-        // Button -> official receipt
-        const official = document.getElementById('open-official');
-        const sess = <%- JSON.stringify((confirmation && confirmation.sessionId) || '') %>;
-        const rawBase = document.getElementById('api-pay-base')?.dataset.base || '/api/pay';
-        const payBase = String(rawBase || '/api/pay').replace(/\/+$/, '') || '/api/pay';
-        // Inject a proper JS string/null literal (no HTML-escaping, no extra quotes)
-        const pre  = <%- JSON.stringify((confirmation && confirmation.officialReceiptUrl) || null) %>;
-        if (official) {
-            const hrefPre = sanitizeUrl(pre);
-            if (hrefPre) {
-                official.setAttribute('href', hrefPre);
-                official.removeAttribute('aria-disabled');
+      function sanitizeUrl(u) {
+        if (!u) return '';
+        const t = String(u).trim().replace(/^["']+|["']+$/g, '');
+        return /^https?:\/\//i.test(t) ? t : '';
+      }
+      const official = document.getElementById('open-official');
+      const sess = <%- JSON.stringify((confirmation && confirmation.sessionId) || '') %>;
+      const rawBase = document.getElementById('api-pay-base')?.dataset.base || '/api/pay';
+      const payBase = String(rawBase || '/api/pay').replace(/\/+$/, '') || '/api/pay';
+      const pre = <%- JSON.stringify((confirmation && confirmation.officialReceiptUrl) || null) %>;
+
+      if (official) {
+        const hrefPre = sanitizeUrl(pre);
+        if (hrefPre) { official.setAttribute('href', hrefPre); official.removeAttribute('aria-disabled'); }
+        else { official.setAttribute('aria-disabled', 'true'); }
+      }
+
+      if (official && !pre && sess) {
+        try {
+          const r0 = await fetch(`${payBase}/receipt?session_id=${encodeURIComponent(sess)}`, {
+            credentials: 'same-origin',
+            headers: { 'Accept': 'application/json' }
+          });
+          if (r0.ok) {
+            const d0 = await r0.json().catch(() => ({}));
+            const href0 = d0 && d0.receipt_url ? sanitizeUrl(d0.receipt_url) : '';
+            if (href0) { official.setAttribute('href', href0); official.removeAttribute('aria-disabled'); }
+          }
+        } catch {}
+      }
+
+      function openUrl(url) {
+        const href = sanitizeUrl(url);
+        if (!href) return;
+        try {
+          official?.setAttribute('href', href);
+          official?.removeAttribute('aria-disabled');
+          window.open(href, '_blank', 'noopener,noreferrer');
+        } catch { location.href = href; }
+      }
+
+      if (official) {
+        official.addEventListener('click', async function(e) {
+          e.preventDefault();
+          if (official.getAttribute('aria-disabled') === 'true' && (!official.getAttribute('href') || official.getAttribute('href') === '#')) {
+            window.modalManager?.showNotification?.('Receipt not ready', 'We’re still fetching your receipt. Please try again in a moment.');
+            return;
+          }
+          if (!sess) {
+            window.modalManager?.showNotification?.('Missing info', 'We couldn’t find your session ID to fetch the receipt.');
+            return;
+          }
+          official.disabled = true;
+          official.setAttribute('aria-busy','true');
+          try {
+            if (pre) { openUrl(pre); return; }
+            const res = await fetch(`${payBase}/receipt?session_id=${encodeURIComponent(sess)}`, {
+              credentials: 'same-origin',
+              headers: { 'Accept': 'application/json' }
+            });
+            if (res.status === 204) throw new Error('no-receipt-yet');
+            if (!res.ok) throw new Error('failed');
+            const data = await res.json().catch(() => ({}));
+            if (!data || !data.receipt_url) throw new Error('no-receipt');
+            openUrl(data.receipt_url);
+          } catch {
+            if (window.modalManager?.showNotification) {
+              window.modalManager.showNotification('Receipt unavailable', 'Could not open the official receipt right now. Please try again later.');
             } else {
-                official.setAttribute('aria-disabled', 'true'); // no URL yet
+              alert('Could not open the official receipt right now. Please try again later.');
             }
-        }
-        // If no server-provided URL, prefetch once to hydrate the button's href
-        if (official && !pre && sess) {
-            try {
-                const r0 = await fetch(`${payBase}/receipt?session_id=${encodeURIComponent(sess)}`, {
-                    credentials: 'same-origin',
-                    headers: { 'Accept': 'application/json' }
-                });
-                if (r0.ok) {
-                    const d0 = await r0.json().catch(() => ({}));
-                    const href0 = d0 && d0.receipt_url ? sanitizeUrl(d0.receipt_url) : '';
-                    if (href0) {
-                        official.setAttribute('href', href0);
-                        official.removeAttribute('aria-disabled');
-                    }                    
-                }
-            } catch (_) { /* ignore */ }
-        }
-        
-        function openUrl(url) {
-            const href = sanitizeUrl(url);
-            if (!href) return;
-            try {
-                // Also set the anchor’s href so middle-click works even after this click
-                official?.setAttribute('href', href);
-                official?.removeAttribute('aria-disabled');
-                window.open(href, '_blank', 'noopener,noreferrer');
-            } catch (e) {
-                official?.removeAttribute('aria-disabled');
-                location.href = href;
-            }
-        }
-        
-        if (official) {
-            official.addEventListener('click', async function(e) {
-                e.preventDefault();
-                // If visually disabled and no href yet, ignore mouse + keyboard activation
-                if (official.getAttribute('aria-disabled') === 'true' &&
-                    (!official.getAttribute('href') || official.getAttribute('href') === '#')) {
-                    if (window.modalManager?.showNotification) {
-                        window.modalManager.showNotification('Receipt not ready', 'We’re still fetching your receipt. Please try again in a moment.');
-                    }
-                    return;
-                }
-                // Don’t call the API without a session id
-                if (!sess) {
-                    if (window.modalManager?.showNotification) {
-                        window.modalManager.showNotification('Missing info', 'We couldn’t find your session ID to fetch the receipt.');
-                    }
-                    return;
-                }                
-                official.disabled = true;
-                official.setAttribute('aria-busy','true');
-                
-                try {
-                    if (pre) {
-                        openUrl(pre);
-                        return;
-                    }
-                    
-                    const res = await fetch(`${payBase}/receipt?session_id=${encodeURIComponent(sess)}`, {
-                        credentials: 'same-origin',
-                        headers: { 'Accept': 'application/json' }
-                    });
-                    
-                    // Gracefully handle 204 (no receipt yet) and avoid JSON parse errors
-                    if (res.status === 204) throw new Error('no-receipt-yet');
-                    if (!res.ok) throw new Error('failed');
-                    const data = await res.json().catch(() => ({}));
-                    if (!data || !data.receipt_url) throw new Error('no-receipt');
-                    openUrl(data.receipt_url);
-                } catch (err) {
-                    // use centralized modal if available
-                    if (window.modalManager && typeof window.modalManager.showNotification === 'function') {
-                        window.modalManager.showNotification(
-                            'Receipt unavailable',
-                            'Could not open the official receipt right now. Please try again later.'
-                        );
-                    } else {
-                        alert('Could not open the official receipt right now. Please try again later.');
-                    }
-                } finally {
-                    official.disabled = false;
-                    official.removeAttribute('aria-busy');
-                    if (official.getAttribute('href') && official.getAttribute('href') !== '#') {
-                        official.removeAttribute('aria-disabled');
-                    }                    // If we ended up with a valid href during the attempt, ensure state is clear
-                }
-            });
-        }
+          } finally {
+            official.disabled = false;
+            official.removeAttribute('aria-busy');
+            if (official.getAttribute('href') && official.getAttribute('href') !== '#') official.removeAttribute('aria-disabled');
+          }
+        });
+      }
 
-        // Amount formatting (handles zero-decimal currencies)
-        const amountMinor = <%- JSON.stringify(((confirmation && confirmation.amountMinor) != null ? confirmation.amountMinor : null)) %>;
-        let currency      = <%- JSON.stringify(((confirmation && confirmation.currency) || 'USD')) %>;
-        if (typeof currency === 'string') currency = currency.toUpperCase();
-        const $amount = document.querySelector('[data-amount]');
-        const zeroDecimal = new Set(['BIF','CLP','DJF','GNF','JPY','KMF','KRW','MGA','PYG','RWF','UGX','VND','VUV','XAF','XOF','XPF']);
-        
-        if ($amount && amountMinor != null && Number.isFinite(Number(amountMinor))) {
-            const nMinor = Number(amountMinor);
-            const major = zeroDecimal.has(currency) ? nMinor : (nMinor / 100);
-            try {
-                $amount.textContent = new Intl.NumberFormat(undefined, { style: 'currency', currency }).format(major);
-            } catch(e) {
-                $amount.textContent = (zeroDecimal.has(currency) ? nMinor : major.toFixed(2)) + ' ' + currency;
-            }
-        }
+      // Amount formatting
+      const amountMinor = <%- JSON.stringify(((confirmation && confirmation.amountMinor) != null ? confirmation.amountMinor : null)) %>;
+      let currency      = <%- JSON.stringify(((confirmation && confirmation.currency) || 'USD')) %>;
+      if (typeof currency === 'string') currency = currency.toUpperCase();
+      const $amount = document.querySelector('[data-amount]');
+      const zeroDecimal = new Set(['BIF','CLP','DJF','GNF','JPY','KMF','KRW','MGA','PYG','RWF','UGX','VND','VUV','XAF','XOF','XPF']);
+      if ($amount && amountMinor != null && Number.isFinite(Number(amountMinor))) {
+        const nMinor = Number(amountMinor);
+        const major = zeroDecimal.has(currency) ? nMinor : (nMinor / 100);
+        try { $amount.textContent = new Intl.NumberFormat(undefined, { style: 'currency', currency }).format(major); }
+        catch { $amount.textContent = (zeroDecimal.has(currency) ? nMinor : major.toFixed(2)) + ' ' + currency; }
+      }
 
-        // Paid at: use ISO from server and let browser localize
-        const iso = <%- JSON.stringify((confirmation && confirmation.paidAtIso) || '') %>;
-        const $paid = document.querySelector('[data-paidat]');
-        if ($paid && iso) {
-            try {
-                $paid.textContent = new Date(iso).toLocaleString();
-            } catch(e) {
-                $paid.textContent = iso;
-            }
-        }
+      // Paid at
+      const iso = <%- JSON.stringify((confirmation && confirmation.paidAtIso) || '') %>;
+      const $paid = document.querySelector('[data-paidat]');
+      if ($paid && iso) {
+        try { $paid.textContent = new Date(iso).toLocaleString(); }
+        catch { $paid.textContent = iso; }
+      }
 
-        // Copy confirmation ID
-        const btnCopy = document.getElementById('copy-id');
-        const confId = document.getElementById('conf-id')?.textContent || '';
-        if (btnCopy && confId) {
-            btnCopy.addEventListener('click', async () => {
-                try {
-                    await navigator.clipboard.writeText(confId);
-                    btnCopy.textContent = 'Copied';
-                    setTimeout(() => btnCopy.textContent = 'Copy', 1200);
-                } catch(e) {
-                    // Fallback for older browsers
-                    const textarea = document.createElement('textarea');
-                    textarea.value = confId;
-                    document.body.appendChild(textarea);
-                    textarea.select();
-                    document.execCommand('copy');
-                    document.body.removeChild(textarea);
-                    btnCopy.textContent = 'Copied';
-                    setTimeout(() => btnCopy.textContent = 'Copy', 1200);
-                }
-            });
-        }
+      // Copy confirmation ID
+      const btnCopy = document.getElementById('copy-id');
+      const confId = document.getElementById('conf-id')?.textContent || '';
+      if (btnCopy && confId) {
+        btnCopy.addEventListener('click', async () => {
+          try {
+            await navigator.clipboard.writeText(confId);
+            btnCopy.textContent = 'Copied';
+            setTimeout(() => btnCopy.textContent = 'Copy', 1200);
+          } catch {
+            const textarea = document.createElement('textarea');
+            textarea.value = confId;
+            document.body.appendChild(textarea);
+            textarea.select();
+            document.execCommand('copy');
+            document.body.removeChild(textarea);
+            btnCopy.textContent = 'Copied';
+            setTimeout(() => btnCopy.textContent = 'Copy', 1200);
+          }
+        });
+      }
     })();
-    </script>
+  </script>
 </body>
 </html>

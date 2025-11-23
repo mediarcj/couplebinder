@@ -228,111 +228,122 @@ router.get('/billing/buy', async (req, res) => {
  * Review page before checkout - shows product details and summary
  */
 router.get('/checkout/review', async (req, res, next) => {
-    try {
-        const { product: productKeyRaw, qty } = req.query;
-        
-        if (!productKeyRaw) {
-            return res.status(400).render('error', {
-                page: {
-                    title: '400 - Bad Request',
-                    nonce: res.locals.nonce
-                },
-                error: {
-                    status: 400,
-                    message: 'Missing product parameter'
-                },
-                app_info: {
-                    name: config.branding.appName
-                }
-            });
-        }
+  try {
+    const { product: productKeyRaw, qty } = req.query;
 
-        const quantity = Math.max(1, parseInt(qty || '1', 10));
-        const productKey = String(productKeyRaw).trim();
-
-        // Get pricing catalog to find product details
-        const catalog = await getPricingCatalog();
-
-        // Helper function to select product by key with multiple fallback strategies
-        function selectByKey(key) {
-            const isOneTime = config.stripe.priceResumeOneTime && key === 'resume_one_time';
-            const isExpert = config.stripe.priceResumeExpert && key === 'resume_expert';
-            
-            return catalog.find(p =>
-                // Prefer explicit metadata keys if present
-                p.product_metadata?.product_key === key ||
-                p.product_key === key ||
-                // Fallback: match the known config price IDs for the two products
-                (isOneTime && p.priceId === config.stripe.priceResumeOneTime) ||
-                (isExpert && p.priceId === config.stripe.priceResumeExpert)
-            );
-        }
-
-        const product = selectByKey(productKey);
-
-        if (!product) {
-            logger.warn({
-                event: 'checkout.review.product_not_found',
-                productKey,
-                requestId: req.requestId
-            }, 'Review product not found');
-            
-            return res.status(404).render('error', {
-                page: {
-                    title: '404 - Not Found',
-                    nonce: res.locals.nonce
-                },
-                error: {
-                    status: 404,
-                    message: 'Product not found'
-                },
-                app_info: {
-                    name: config.branding.appName
-                }
-            });
-        }
-
-        // Build page model for consistent dashboard layout
-        const pageModel = await buildDashboardPageModel(req, res);
-        pageModel.page.title = 'Review Purchase - ' + config.branding.appName;
-        pageModel.page.nonce = res.locals.nonce;
-        pageModel.page.assetVersion = res.locals.assetVersion || '';
-        pageModel.ui = pageModel.ui || {};
-        pageModel.ui.csrfToken = res.locals.csrfToken || '';
-        pageModel.ui.supabaseUrl = config.supabase.url;
-        pageModel.ui.supabaseAnonKey = config.supabase.anonKey;
-
-        // Normalize product data for template
-        const normalizedProduct = {
-            key: product.product_metadata?.product_key || productKey,
-            name: product.name,
-            currency: product.currency || 'usd',
-            unit_amount: product.unit_amount,
-            interval: product.interval,
-            priceId: product.priceId
-        };
-
-        // Compute totals (Stripe will finalize taxes)
-        const subtotal = (normalizedProduct.unit_amount || 0) * quantity;
-        const total = subtotal;
-
-        // Add product and pricing data
-        pageModel.product = normalizedProduct;
-        pageModel.quantity = quantity;
-        pageModel.subtotal = subtotal;
-        pageModel.total = total;
-        pageModel.productKey = normalizedProduct.key;
-
-        res.render('checkout-review', pageModel);
-    } catch (err) {
-        logger.error({
-            event: 'dashboard.checkout_review.error',
-            error: err.message,
-            stack: err.stack,
-            requestId: req.requestId
-        }, 'Checkout review route error');
-        next(err);
+    if (!productKeyRaw) {
+      return res.status(400).render('error', {
+        page: { title: '400 - Bad Request', nonce: res.locals.nonce },
+        error: { status: 400, message: 'Missing product parameter' },
+        app_info: { name: config.branding.appName }
+      });
     }
+
+    const quantity = Math.max(1, parseInt(qty || '1', 10));
+    const productKey = String(productKeyRaw).trim(); // expected: 'resume_one_time' or 'resume_expert'
+
+    // Pull the latest catalog
+    const catalog = await getPricingCatalog();
+
+    // Build candidate price IDs for the requested key from config (active/live/test) + legacy envs
+    function priceCandidatesForKey(key) {
+      const ids = new Set();
+
+      const add = (v) => { const s = String(v || '').trim(); if (s) ids.add(s); };
+
+      // Active
+      if (key === 'resume_one_time') add(config?.stripe?.active?.priceResumeOneTime);
+      if (key === 'resume_expert')   add(config?.stripe?.active?.priceResumeExpert);
+
+      // Live/Test
+      if (key === 'resume_one_time') {
+        add(config?.stripe?.live?.priceResumeOneTime);
+        add(config?.stripe?.test?.priceResumeOneTime);
+      }
+      if (key === 'resume_expert') {
+        add(config?.stripe?.live?.priceResumeExpert);
+        add(config?.stripe?.test?.priceResumeExpert);
+      }
+
+      // Legacy envs (only as last resort)
+      if (key === 'resume_one_time') {
+        add(process.env.STRIPE_PRICE_RESUME_ONE_TIME_LIVE);
+        add(process.env.STRIPE_PRICE_RESUME_ONE_TIME_TEST);
+        add(process.env.STRIPE_PRICE_RESUME_ONE_TIME);
+      }
+      if (key === 'resume_expert') {
+        add(process.env.STRIPE_PRICE_RESUME_EXPERT_LIVE);
+        add(process.env.STRIPE_PRICE_RESUME_EXPERT_TEST);
+        add(process.env.STRIPE_PRICE_RESUME_EXPERT);
+      }
+
+      return ids;
+    }
+
+    const candidateIds = priceCandidatesForKey(productKey);
+
+    // Prefer explicit product_key match, then candidate priceId match
+    const product = catalog.find(p =>
+      p.product_key === productKey ||
+      candidateIds.has(p.priceId)
+    );
+
+    if (!product) {
+      // Helpful diagnostics to the log so we can see what catalog had
+      logger.warn({
+        event: 'checkout.review.product_not_found',
+        productKey,
+        candidateIds: Array.from(candidateIds),
+        catalogPriceIds: catalog.map(p => p.priceId),
+        requestId: req.requestId
+      }, 'Review product not found');
+
+      return res.status(404).render('error', {
+        page: { title: '404 - Not Found', nonce: res.locals.nonce },
+        error: { status: 404, message: 'Product not found' },
+        app_info: { name: config.branding.appName }
+      });
+    }
+
+    // Build page model (aligns with dashboard chrome)
+    const pageModel = await buildDashboardPageModel(req, res);
+    pageModel.page.title = 'Review Purchase - ' + config.branding.appName;
+    pageModel.page.nonce = res.locals.nonce;
+    pageModel.page.assetVersion = res.locals.assetVersion || '';
+    pageModel.ui = pageModel.ui || {};
+    pageModel.ui.csrfToken = res.locals.csrfToken || '';
+    pageModel.ui.supabaseUrl = config.supabase.url;
+    pageModel.ui.supabaseAnonKey = config.supabase.anonKey;
+
+    // Normalize for template
+    const normalizedProduct = {
+      key: product.product_key || productKey,
+      name: product.name,
+      currency: product.currency || 'usd',
+      unit_amount: product.unit_amount,
+      interval: product.interval,
+      priceId: product.priceId
+    };
+
+    const subtotal = (normalizedProduct.unit_amount || 0) * quantity;
+    const total = subtotal; // taxes handled by Stripe at checkout
+
+    pageModel.product = normalizedProduct;
+    pageModel.quantity = quantity;
+    pageModel.subtotal = subtotal;
+    pageModel.total = total;
+    pageModel.productKey = normalizedProduct.key;
+
+    res.render('checkout-review', pageModel);
+  } catch (err) {
+    logger.error({
+      event: 'dashboard.checkout_review.error',
+      error: err.message,
+      stack: err.stack,
+      requestId: req.requestId
+    }, 'Checkout review route error');
+    next(err);
+  }
 });
 
 // ============================================================

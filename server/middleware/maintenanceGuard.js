@@ -53,12 +53,15 @@ const MAINTENANCE_CONFIG = {
   bypassToken: config.maintenance.bypassToken || null,
 
   // Paths that should always work (strict, prefix match)
-  allowedPaths: [
-    '/health/liveness',
-    '/health/readiness',
-    '/health',
-    '/.well-known/acme-challenge/'
-  ]
+  allowedPaths: Array.isArray(config.maintenance.allowedPaths) && config.maintenance.allowedPaths.length
+    ? config.maintenance.allowedPaths
+    : [
+        '/health/liveness',
+        '/health/readiness',
+        '/health',
+        '/.well-known/acme-challenge/',
+        '/api/stripe/webhook'
+      ]
 };
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -94,8 +97,9 @@ function escapeHtml(s) {
 }
 
 /** ACME + health allowed paths */
-function isAllowedPath(req) {
-  const p = req.path || req.url || '';
+ function isAllowedPath(req) {
+   // originalUrl survives proxies and raw-body middleware better
+   const p = req.originalUrl || req.path || req.url || '';
   for (const prefix of MAINTENANCE_CONFIG.allowedPaths) {
     if (p.startsWith(prefix)) return true;
   }

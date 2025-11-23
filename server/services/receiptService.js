@@ -1,35 +1,24 @@
 // File: server/services/receiptService.js
 // Description: Normalize Stripe receipt data for branded display
 // Purpose: Provide consistent receipt view-model for checkout sessions
-// Notes: Handles both one-time payments and subscription/invoice flows
+// Notes: Handles both one-time payments and subscription/invoice flows. Uses active Stripe config.
 
-/**
- * WHAT:
- * Fetch a Checkout Session and return a normalized receipt view-model.
- * Ensures the session belongs to the current user.
- * 
- * WHY:
- * Users need a branded receipt page after successful payment.
- * Centralizes receipt data normalization for consistency.
- * 
- * HOW:
- * 1. Retrieve checkout session from Stripe with expanded fields
- * 2. Verify ownership using metadata.user_id
- * 3. Extract line items for display
- * 4. Return normalized receipt data
- */
+'use strict';
 
 const Stripe = require('stripe');
 const { config } = require('../config');
 const logger = require('../utils/logger');
 
-const stripe = config.stripe.secretKey ? new Stripe(config.stripe.secretKey, { apiVersion: '2023-10-16' }) : null;
+function pickStripeSecret() {
+  return String(config?.stripe?.active?.secretKey || config?.stripe?.secretKey || '').trim();
+}
+
+const SECRET_KEY = pickStripeSecret();
+const stripe = SECRET_KEY ? new Stripe(SECRET_KEY, { apiVersion: '2025-09-30.clover' }) : null;
 
 function sanitizeReceiptUrl(input) {
   if (!input) return null;
-  // Strip leading/trailing quotes (single or double) and whitespace
   let s = String(input).trim().replace(/^["']+|["']+$/g, '');
-  // Very light validation: only allow http(s) schemes
   if (!/^https?:\/\//i.test(s)) return null;
   return s;
 }
@@ -41,49 +30,41 @@ function sanitizeReceiptUrl(input) {
  * @returns {Object} Normalized receipt view-model
  */
 async function getReceiptVM({ sessionId, userId }) {
-  // Check for required configuration
-  if (!stripe || !config.stripe.secretKey) {
+  if (!stripe || !SECRET_KEY) {
     const err = new Error('Stripe configuration missing');
     err.status = 500;
-    logger.stripe('config.missing', { reason: 'secret_key_missing' });
+    logger.warn({ event: 'stripe.config.missing', reason: 'secret_key_missing' });
     throw err;
   }
 
-  // Safer expand set: avoid nested expansions that Stripe may reject on sessions.retrieve
   const EXPAND_SAFE = [
     'payment_intent.latest_charge',
     'payment_intent.charges',
     'invoice.charge',
     'customer',
-    'line_items' // plain line_items only; products will be expanded via listLineItems below
+    'line_items'
   ];
-  
+
   let session;
   try {
     session = await stripe.checkout.sessions.retrieve(sessionId, { expand: EXPAND_SAFE });
   } catch (e) {
-    // Fallback: try again without line_items if the API rejects that expand
     try {
-      session = await stripe.checkout.sessions.retrieve(
-        sessionId,
-        { expand: EXPAND_SAFE.filter(x => x !== 'line_items') }
-      );
+      session = await stripe.checkout.sessions.retrieve(sessionId, { expand: EXPAND_SAFE.filter(x => x !== 'line_items') });
     } catch (e2) {
       e2.status = e2.status || 500;
       throw e2;
     }
   }
 
-  // Authorization: session must belong to the current user
   const ownerId = session?.metadata?.user_id || session?.client_reference_id || null;
-
   if (!ownerId || ownerId !== userId) {
     const err = new Error('Not found');
     err.status = 404;
     throw err;
   }
 
-  // Line items for display (names/amounts)
+  // Collect line items
   const items = [];
   try {
     const li = await stripe.checkout.sessions.listLineItems(session.id, {
@@ -104,11 +85,9 @@ async function getReceiptVM({ sessionId, userId }) {
       });
     }
   } catch (err) {
-    // Best-effort; don't fail the page if Stripe omits them in rare cases
-    logger.stripe('line_items.fetch_failed', { session_id: sessionId, error: err.message });
+    logger.warn({ event: 'receipt.line_items.fetch_failed', session_id: sessionId, error: err.message });
   }
 
-  // Prefer names from the fetched line items; fall back to metadata
   const firstLineItem = items[0] || session?.line_items?.data?.[0] || null;
   const productName =
     firstLineItem?.description
@@ -118,25 +97,19 @@ async function getReceiptVM({ sessionId, userId }) {
     || session?.metadata?.product_key
     || null;
 
-  // Extract payment time (prefer charge creation time, fallback to session/PI)
   const pi = session.payment_intent || null;
   const latestCharge = (pi && typeof pi.latest_charge !== 'string') ? pi.latest_charge : null;
   const firstCharge = pi?.charges?.data?.[0] || null;
-  const paidAtUnix = latestCharge?.created || 
-                     firstCharge?.created || 
-                     (typeof pi?.created === 'number' ? pi.created : null) || 
-                     session.created;
-  const paidAtIso = new Date((paidAtUnix || Math.floor(Date.now()/1000)) * 1000).toISOString();
+  const paidAtUnix = latestCharge?.created
+    || firstCharge?.created
+    || (typeof pi?.created === 'number' ? pi.created : null)
+    || session.created;
+  const paidAtIso = new Date((paidAtUnix || Math.floor(Date.now() / 1000)) * 1000).toISOString();
 
-  // Extract receipt URL and sanitize
   const rawUrl = latestCharge?.receipt_url || firstCharge?.receipt_url || null;
   const receiptUrl = sanitizeReceiptUrl(rawUrl);
   if (rawUrl && rawUrl !== receiptUrl) {
-    logger.stripe('receipt.url.sanitized', {
-      session_id: sessionId,
-      hadQuotes: /^["']|["']$/.test(String(rawUrl)),
-      receipt_url: rawUrl
-    });
+    logger.info({ event: 'receipt.url.sanitized', session_id: sessionId });
   }
 
   const base = {
@@ -148,7 +121,6 @@ async function getReceiptVM({ sessionId, userId }) {
     customer_email: session.customer_details?.email || null,
     customer_name: session.customer_details?.name || null,
     items,
-    // New fields for confirmation page
     product_label: productName,
     product_key: session?.metadata?.product_key || null,
     paid_at_iso: paidAtIso,
@@ -172,11 +144,8 @@ async function getReceiptVM({ sessionId, userId }) {
     };
   }
 
-  // One-time payment path (pi is already declared above)
-  const charge =
-    pi?.latest_charge && typeof pi.latest_charge === 'object'
-      ? pi.latest_charge
-      : null;
+  // One-time payment path
+  const charge = (pi && typeof pi.latest_charge === 'object') ? pi.latest_charge : null;
   const pm = charge?.payment_method_details?.card || {};
   return {
     ...base,

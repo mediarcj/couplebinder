@@ -1,21 +1,22 @@
 // File: server/services/billingService.js
 // Description: Stripe billing service with customer management and checkout sessions
 // Purpose: Handle Stripe payments, customer creation, and payment tracking
-// Notes: Follows Building Laws: backend is source of truth, no card data storage
+// Notes: Backend is the source of truth; no card data stored here.
+
+'use strict';
 
 /**
  * WHAT:
  * Stripe billing service that handles customer creation, checkout sessions, and payment tracking.
- * 
+ *
  * WHY:
- * Need secure payment processing without storing sensitive card data.
- * Stripe handles PCI compliance and payment method storage.
- * 
+ * We need secure payments without touching card data. Stripe is PCI compliant.
+ *
  * HOW:
- * 1. Create/retrieve Stripe customers mapped to user IDs
- * 2. Generate secure checkout sessions with allowed price IDs only
- * 3. Track payment status in database for audit and user history
- * 4. Use idempotency keys to prevent duplicate charges
+ * 1) Create/retrieve Stripe customers mapped to user IDs
+ * 2) Generate secure checkout sessions using an allowlist of active prices
+ * 3) Track payment status in DB (webhook is the source of truth; we also upsert on reads)
+ * 4) Use idempotency keys to avoid duplicate charges
  */
 
 const Stripe = require('stripe');
@@ -23,60 +24,48 @@ const logger = require('../utils/logger');
 const { supabaseAdmin } = require('../utils/supabaseClient');
 const { config } = require('../config');
 
-const stripe = new Stripe(config.stripe.secretKey, {
-  apiVersion: '2025-09-30.clover'
-});
-
-// Price configuration: maps price IDs to their expected mode and product key
-const ALLOWED_PRICES = Object.freeze({
-  [config.stripe.priceResumeOneTime]: { 
-    type: 'one_time', 
-    mode: 'payment', 
-    productKey: 'resume_one_time' 
-  },
-  [config.stripe.priceResumeExpert]: { 
-    type: 'one_time', 
-    mode: 'payment', 
-    productKey: 'resume_expert' 
-  }
-});
-
-// Legacy Set for backward compatibility (use ALLOWED_PRICES going forward)
-const ALLOWED_PRICE_IDS = new Set(Object.keys(ALLOWED_PRICES).filter(Boolean));
-
-/**
- * WHAT:
- * Map Stripe price ID to internal product key for tracking.
- * 
- * WHY:
- * Need consistent product identification across systems.
- * 
- * HOW:
- * Use ALLOWED_PRICES configuration to get product key.
- */
-function productKeyForPrice(priceId) {
-  return ALLOWED_PRICES[priceId]?.productKey || 'unknown';
+// Prefer the active stripe block; fallback to legacy flat fields for back-compat
+function pickStripeCfg() {
+  const base = config?.stripe || {};
+  return (base.active && (base.active.secretKey || base.active.priceResumeOneTime || base.active.priceResumeExpert))
+    ? base.active
+    : base;
 }
 
-/**
- * WHAT:
- * Get or create Stripe customer for user, storing mapping in database.
- * 
- * WHY:
- * Stripe requires customer objects for checkout sessions.
- * Need to track customer relationships for billing history.
- * 
- * HOW:
- * 1. Check database for existing customer ID
- * 2. Create Stripe customer if not found
- * 3. Store mapping in billing_customers table
- * 4. Return customer ID for checkout session
- */
-async function getOrCreateStripeCustomer(userId, email) {
-  const isLive = config.stripe.secretKey?.startsWith('sk_live_');
-  const col = isLive ? 'stripe_customer_id_live' : 'stripe_customer_id_test';
+const sCfg = pickStripeCfg();
+const SECRET_KEY = String(config?.stripe?.active?.secretKey || config?.stripe?.secretKey || '').trim();
+if (!SECRET_KEY) {
+  throw new Error('Stripe secret key missing in config (expected config.stripe.active.secretKey or config.stripe.secretKey)');
+}
 
-  // Fetch current row with environment-specific column
+const stripe = new Stripe(SECRET_KEY, { apiVersion: '2025-09-30.clover' });
+
+// Live/test detection based on the secret prefix
+const IS_LIVE = SECRET_KEY.startsWith('sk_live_');
+
+// Price allowlist from the effective config (active preferred, flat as fallback)
+const ACTIVE_PRICES = Object.freeze({
+  [String(sCfg.priceResumeOneTime || '').trim()]: {
+    type: 'one_time',
+    mode: 'payment',
+    productKey: 'resume_one_time'
+  },
+  [String(sCfg.priceResumeExpert || '').trim()]: {
+    type: 'one_time',
+    mode: 'payment',
+    productKey: 'resume_expert'
+  }
+});
+const ALLOWED_PRICE_IDS = new Set(Object.keys(ACTIVE_PRICES).filter(Boolean));
+
+function productKeyForPrice(priceId) {
+  return ACTIVE_PRICES[priceId]?.productKey || 'unknown';
+}
+
+// Keep separate live/test customer columns
+async function getOrCreateStripeCustomer(userId, email) {
+  const column = IS_LIVE ? 'stripe_customer_id_live' : 'stripe_customer_id_test';
+
   const { data: row, error } = await supabaseAdmin
     .from('billing_customers')
     .select('*')
@@ -84,184 +73,100 @@ async function getOrCreateStripeCustomer(userId, email) {
     .maybeSingle();
 
   if (error) throw error;
-  
-  // Return existing customer ID for current environment
-  if (row?.[col]) return row[col];
+  if (row?.[column]) return row[column];
 
-  // Create a customer in the current mode
   const customer = await stripe.customers.create({
     email: email || undefined,
-    metadata: { user_id: userId, env: isLive ? 'live' : 'test' }
+    metadata: { user_id: userId, env: IS_LIVE ? 'live' : 'test' }
   });
 
-  // Upsert with environment-specific column
-  // Also set stripe_customer_id for backward compatibility if not already set
-  const upsert = { 
-    user_id: userId, 
-    email: email || null, 
-    [col]: customer.id 
-  };
-  
-  // If no stripe_customer_id exists, set it from the newly created customer
-  if (!row?.stripe_customer_id) {
-    upsert.stripe_customer_id = customer.id;
-  }
-  
+  const upsert = { user_id: userId, email: email || null, [column]: customer.id };
+  if (!row?.stripe_customer_id) upsert.stripe_customer_id = customer.id; // back-compat
+
   const { error: insErr } = await supabaseAdmin
     .from('billing_customers')
     .upsert(upsert, { onConflict: 'user_id' });
 
   if (insErr) throw insErr;
-
   return customer.id;
 }
 
-/**
- * WHAT:
- * Create Stripe checkout session for payment processing.
- * 
- * WHY:
- * Secure payment collection without handling card data directly.
- * Stripe Checkout handles PCI compliance and payment method storage.
- * 
- * HOW:
- * 1. Validate price ID against allowlist
- * 2. Get/create Stripe customer
- * 3. Create checkout session with success/cancel URLs
- * 4. Return session URL for redirect
- */
 async function createCheckoutSession({ user, priceId, quantity = 1, idempotencyKey, requestId }) {
-  const trimmedPriceId = (priceId || '').trim();
-  
-  // Validate price against allowlist
-  const priceConfig = ALLOWED_PRICES[trimmedPriceId];
-  if (!priceConfig) {
-    logger.error({ 
-      event: 'checkout.session.error', 
-      requestId, 
-      priceId: trimmedPriceId 
-    }, 'Price not allowed');
+  const trimmedPriceId = String(priceId || '').trim();
+
+  // Allowlist check
+  const priceCfg = ACTIVE_PRICES[trimmedPriceId];
+  if (!priceCfg || !ALLOWED_PRICE_IDS.has(trimmedPriceId)) {
+    logger.error({ event: 'checkout.session.error', requestId, priceId: trimmedPriceId }, 'Price not allowed');
     const err = new Error('Price not allowed');
     err.status = 400;
     throw err;
   }
-  
-  // Get or create customer for both test and live modes
+
   const customerId = await getOrCreateStripeCustomer(user.id, user.email);
-  
-  const productKey = priceConfig.productKey;
-  
-  // Determine mode based on price configuration
-  let effectiveMode = priceConfig.mode;
-  
-  // Optional: Cross-check with Stripe for additional validation
+  let effectiveMode = priceCfg.mode; // default 'payment'
+  const productKey = priceCfg.productKey;
+
+  // Validate against Stripe (tolerant)
   try {
     const price = await stripe.prices.retrieve(trimmedPriceId);
-    const stripeSaysRecurring = !!price?.recurring;
-    const stripeMode = stripeSaysRecurring ? 'subscription' : 'payment';
-    
+    const stripeMode = price?.recurring ? 'subscription' : 'payment';
     if (stripeMode !== effectiveMode) {
-      logger.warn({ 
-        event: 'price.mode.mismatch', 
-        requestId, 
-        priceId: trimmedPriceId, 
-        expected: effectiveMode, 
-        stripeMode 
+      logger.warn({
+        event: 'price.mode.mismatch',
+        requestId, priceId: trimmedPriceId, expected: effectiveMode, stripeMode
       }, 'Mode mismatch; using Stripe mode');
-      effectiveMode = stripeMode; // Use Stripe's mode for resilience
+      effectiveMode = stripeMode;
     }
   } catch (err) {
-    logger.warn({ 
-      event: 'price.lookup.failed', 
-      requestId, 
-      priceId: trimmedPriceId, 
-      error: err.message 
+    logger.warn({
+      event: 'price.lookup.failed', requestId, priceId: trimmedPriceId, error: err.message
     }, 'Could not verify price; proceeding with allowlisted mode');
   }
 
-  // Validate publicOrigin is set (required for Stripe checkout URLs)
   if (!config.publicOrigin || !config.publicOrigin.trim()) {
-    logger.error({ 
-      event: 'checkout.config.missing_public_origin', 
-      requestId,
-      publicOrigin: config.publicOrigin,
-      nodeEnv: config.server?.nodeEnv
-    }, 'publicOrigin is missing or empty - required for Stripe checkout');
+    logger.error({
+      event: 'checkout.config.missing_public_origin', requestId, publicOrigin: config.publicOrigin
+    }, 'publicOrigin is missing or empty');
     const err = new Error('Server configuration error: publicOrigin not set');
     err.status = 500;
     throw err;
   }
 
-  // Build URLs
-  // The original code used: `${process.env.PUBLIC_ORIGIN}/dashboard/purchase/confirmation?session_id={CHECKOUT_SESSION_ID}`
-  // We maintain this behavior for consistency, but allow override via env for flexibility
-  const baseUrl = config.publicOrigin.replace(/\/+$/, ''); // Remove trailing slashes
-  
-  // Use env paths if provided and valid, otherwise use defaults (matching original behavior)
-  // Default success path: /dashboard/purchase/confirmation (matches original)
-  // Default cancel path: /dashboard/billing (matches original)
-  const defaultSuccessPath = '/dashboard/purchase/confirmation';
-  const defaultCancelPath = '/dashboard/billing';
-  
-  // Check if env paths are full URLs (backward compatibility for users who set full URLs)
-  const isFullUrl = (path) => {
-    if (!path) return false;
-    try {
-      const url = new URL(path);
-      return url.protocol === 'http:' || url.protocol === 'https:';
-    } catch {
-      return false;
-    }
-  };
-  
-  let successPath, cancelPath;
-  
-  if (config.stripe.successPath && !isFullUrl(config.stripe.successPath)) {
-    // Use env path if it's a relative path
-    successPath = config.stripe.successPath.startsWith('/') 
-      ? config.stripe.successPath 
-      : `/${config.stripe.successPath}`;
-  } else {
-    // Use default (original behavior)
-    successPath = defaultSuccessPath;
-  }
-  
-  if (config.stripe.cancelPath && !isFullUrl(config.stripe.cancelPath)) {
-    // Use env path if it's a relative path
-    cancelPath = config.stripe.cancelPath.startsWith('/') 
-      ? config.stripe.cancelPath 
-      : `/${config.stripe.cancelPath}`;
-  } else {
-    // Use default (original behavior)
-    cancelPath = defaultCancelPath;
-  }
-  
-  // Build final URLs (always absolute, matching original behavior)
-  const successUrl = `${baseUrl}${successPath}?session_id={CHECKOUT_SESSION_ID}`;
-  const cancelUrl = `${baseUrl}${cancelPath}?canceled=1`;
+  // URL building: prefer config.stripe.successPath/cancelPath; fallback to env; defaults preserved
+  const baseUrl = config.publicOrigin.replace(/\/+$/, '');
+  const cfgSuccess = config?.stripe?.successPath;
+  const cfgCancel  = config?.stripe?.cancelPath;
+  const envSuccess = process.env.STRIPE_SUCCESS_PATH;
+  const envCancel  = process.env.STRIPE_CANCEL_PATH;
 
-  // Validate URLs are absolute (Stripe requirement)
-  // Note: {CHECKOUT_SESSION_ID} is a Stripe placeholder, so we validate with a dummy value
+  const preferredSuccess = (cfgSuccess ?? envSuccess) || '/dashboard/purchase/confirmation';
+  const preferredCancel  = (cfgCancel  ?? envCancel)  || '/dashboard/billing';
+
+  const isFullUrl = (u) => { try { const x = new URL(u); return x.protocol === 'http:' || x.protocol === 'https:'; } catch { return false; } };
+  const normPath = (p) => (p ? (isFullUrl(p) ? p : (p.startsWith('/') ? p : `/${p}`)) : '');
+
+  const successPath = normPath(preferredSuccess);
+  const cancelPath  = normPath(preferredCancel);
+
+  const successUrl = isFullUrl(successPath)
+    ? `${successPath}${successPath.includes('?') ? '&' : '?'}session_id={CHECKOUT_SESSION_ID}`
+    : `${baseUrl}${successPath}?session_id={CHECKOUT_SESSION_ID}`;
+
+  const cancelUrl = isFullUrl(cancelPath)
+    ? `${cancelPath}${cancelPath.includes('?') ? '&' : '?'}canceled=1`
+    : `${baseUrl}${cancelPath}?canceled=1`;
+
   try {
-    const testSuccessUrl = successUrl.replace('{CHECKOUT_SESSION_ID}', 'test_session_id');
-    const testCancelUrl = cancelUrl;
-    new URL(testSuccessUrl); // Will throw if not valid
-    new URL(testCancelUrl);  // Will throw if not valid
-  } catch (urlError) {
-    logger.error({ 
-      event: 'checkout.url.invalid', 
-      requestId,
-      successUrl,
-      cancelUrl,
-      publicOrigin: config.publicOrigin,
-      error: urlError.message
-    }, 'Generated checkout URLs are invalid');
-    const err = new Error(`Invalid checkout URL: ${urlError.message}`);
+    new URL(successUrl.replace('{CHECKOUT_SESSION_ID}', 'test_session_id'));
+    new URL(cancelUrl);
+  } catch (e) {
+    logger.error({ event: 'checkout.url.invalid', requestId, successUrl, cancelUrl, error: e.message }, 'Generated checkout URLs are invalid');
+    const err = new Error(`Invalid checkout URL: ${e.message}`);
     err.status = 500;
     throw err;
   }
 
-  // Build session config - conditional fields based on mode
   const sessionConfig = {
     mode: effectiveMode,
     customer: customerId,
@@ -271,27 +176,14 @@ async function createCheckoutSession({ user, priceId, quantity = 1, idempotencyK
     success_url: successUrl,
     cancel_url: cancelUrl,
     client_reference_id: user.id,
-    metadata: { 
-      user_id: user.id, 
-      product_key: productKey,
-      price_id: trimmedPriceId,
-      request_id: requestId || '' 
-    }
+    metadata: { user_id: user.id, product_key: productKey, price_id: trimmedPriceId, request_id: requestId || '' }
   };
-  
-  // Only add payment_intent_data for payment mode (not for subscriptions)
+
   if (effectiveMode === 'payment') {
     sessionConfig.payment_intent_data = { setup_future_usage: 'off_session' };
   }
 
-  logger.debug({
-    event: 'checkout.session.config',
-    requestId,
-    successUrl,
-    cancelUrl,
-    publicOrigin: config.publicOrigin,
-    mode: effectiveMode
-  }, 'Creating Stripe checkout session');
+  logger.debug({ event: 'checkout.session.config', requestId, successUrl, cancelUrl, mode: effectiveMode }, 'Creating Stripe checkout session');
 
   const session = await stripe.checkout.sessions.create(
     sessionConfig,
@@ -299,30 +191,12 @@ async function createCheckoutSession({ user, priceId, quantity = 1, idempotencyK
   );
 
   logger.info({
-    event: 'checkout.session.created',
-    requestId,
-    sessionId: session.id,
-    mode: effectiveMode,
-    productKey,
-    userId: user.id
+    event: 'checkout.session.created', requestId, sessionId: session.id, mode: effectiveMode, productKey, userId: user.id
   }, `Checkout session created (mode: ${effectiveMode})`);
 
   return session;
 }
 
-/**
- * WHAT:
- * Update payment record from Stripe webhook session data.
- * 
- * WHY:
- * Need to track payment status for user history and business logic.
- * Webhooks provide authoritative payment status updates.
- * 
- * HOW:
- * 1. Extract payment details from session
- * 2. Upsert payment record in database
- * 3. Handle status overrides for refunds/cancellations
- */
 async function upsertPaymentFromSession(session, statusOverride) {
   const pi = session.payment_intent;
   const sId = session.id;
@@ -346,57 +220,32 @@ async function upsertPaymentFromSession(session, statusOverride) {
   const { error } = await supabaseAdmin
     .from('payments')
     .upsert(row, { onConflict: 'stripe_checkout_session_id' });
-  
-  if (error) throw error;
 
+  if (error) throw error;
   return true;
 }
 
-/**
- * WHAT:
- * Update payment status when refund is processed.
- * 
- * WHY:
- * Need to track refunds for customer support and accounting.
- * Full refunds revoke product access, partial refunds don't.
- * 
- * HOW:
- * 1. Find payment by payment_intent_id
- * 2. Update status to 'refunded' or 'partially_refunded'
- * 3. Mark full refunds for access revocation
- */
 async function upsertRefundStatus(charge, isFullRefund) {
-  const paymentIntentId = typeof charge.payment_intent === 'string' 
-    ? charge.payment_intent 
+  const paymentIntentId = typeof charge.payment_intent === 'string'
+    ? charge.payment_intent
     : charge.payment_intent?.id;
 
   if (!paymentIntentId) {
-    logger.warn({ 
-      event: 'refund.no_payment_intent',
-      chargeId: charge.id 
-    }, 'Refund charge missing payment_intent_id');
+    logger.warn({ event: 'refund.no_payment_intent', chargeId: charge.id }, 'Refund charge missing payment_intent_id');
     return;
   }
 
   const status = isFullRefund ? 'refunded' : 'partially_refunded';
-  
+
   const { error } = await supabaseAdmin
     .from('payments')
-    .update({ 
-      status,
-      updated_at: new Date().toISOString() 
-    })
+    .update({ status, updated_at: new Date().toISOString() })
     .eq('stripe_payment_intent_id', paymentIntentId);
-  
+
   if (error) {
-    logger.error({ 
-      event: 'refund.update_failed',
-      paymentIntentId,
-      error: error.message 
-    });
+    logger.error({ event: 'refund.update_failed', paymentIntentId, error: error.message });
     throw error;
   }
-
   return true;
 }
 

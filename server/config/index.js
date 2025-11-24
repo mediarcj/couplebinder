@@ -55,9 +55,6 @@ const KNOWN_ENV = new Set([
   'MAINTENANCE_ALLOWLIST','MAINTENANCE_RETRY_AFTER','MAINTENANCE_PAGE','MAINTENANCE_MESSAGE',
   'MAINTENANCE_KEY','MAINTENANCE_BYPASS_TOKEN','MAINTENANCE_ALLOWED_PATHS','OPS_HEALTH_TOKEN','OPS_HEALTH_IPS','OPS_DB_PROBE_TABLE','OPS_DB_PROBE_RPC','HEALTH_PUBLIC',
   'FIREWALL_FAIL_CLOSED',
-  // Legacy single-set Stripe (kept for back-compat reads only)
-  'STRIPE_SECRET_KEY','STRIPE_PUBLISHABLE_KEY','STRIPE_WEBHOOK_SECRET',
-  'STRIPE_PRICE_RESUME_ONE_TIME','STRIPE_PRICE_RESUME_EXPERT',
   // Shared success/cancel paths
   'STRIPE_SUCCESS_PATH','STRIPE_CANCEL_PATH',
   // Dual-set Stripe (LIVE/TEST)
@@ -175,11 +172,11 @@ const derivedPublicOrigin = process.env.PUBLIC_ORIGIN || (isDev ? `http://localh
 // Stripe configuration (dual-set) — active mode is derived from NODE_ENV
 // ──────────────────────────────────────────────────────────────────────────────
 const stripeLive = {
-  secretKey:          (process.env.STRIPE_SECRET_KEY_LIVE || process.env.STRIPE_SECRET_KEY || '').trim(),
-  publishableKey:     (process.env.STRIPE_PUBLISHABLE_KEY_LIVE || process.env.STRIPE_PUBLISHABLE_KEY || '').trim(),
-  webhookSecret:      (process.env.STRIPE_WEBHOOK_SECRET_LIVE || process.env.STRIPE_WEBHOOK_SECRET || '').trim(),
-  priceResumeOneTime: (process.env.STRIPE_PRICE_RESUME_ONE_TIME_LIVE || process.env.STRIPE_PRICE_RESUME_ONE_TIME || '').trim(),
-  priceResumeExpert:  (process.env.STRIPE_PRICE_RESUME_EXPERT_LIVE || process.env.STRIPE_PRICE_RESUME_EXPERT || '').trim()
+  secretKey:          (process.env.STRIPE_SECRET_KEY_LIVE || '').trim(),
+  publishableKey:     (process.env.STRIPE_PUBLISHABLE_KEY_LIVE || '').trim(),
+  webhookSecret:      (process.env.STRIPE_WEBHOOK_SECRET_LIVE || '').trim(),
+  priceResumeOneTime: (process.env.STRIPE_PRICE_RESUME_ONE_TIME_LIVE || '').trim(),
+  priceResumeExpert:  (process.env.STRIPE_PRICE_RESUME_EXPERT_LIVE || '').trim()
 };
 
 const stripeTest = {
@@ -459,7 +456,7 @@ function validateConfig() {
 
   if (usingStripePrices && isProd) {
     if (!config.stripe.active.secretKey) {
-      errors.push('STRIPE_SECRET_KEY_LIVE (or legacy STRIPE_SECRET_KEY) is required in production when Stripe prices are configured');
+      errors.push('STRIPE_SECRET_KEY_LIVE is required in production when Stripe prices are configured');
     }
     if (!config.stripe.live.webhookSecret) {
       errors.push('STRIPE_WEBHOOK_SECRET_LIVE (or legacy STRIPE_WEBHOOK_SECRET) is required in production when Stripe prices are configured');

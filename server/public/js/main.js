@@ -786,7 +786,7 @@ function updateUIForLoggedInUser(_userEmail) {
  * HOW:
  * 1. Find the auth section in the nav
  * 2. Replace content with Login and Sign Up links
- * 3. Link to dedicated login/signup pages
+ * 3. Link to dedicated login/register pages
  */
 function updateUIForLoggedOutUser() {
     const authSection = document.querySelector('.auth-section');
@@ -794,7 +794,7 @@ function updateUIForLoggedOutUser() {
         // Replace content with Login and Sign Up links
         authSection.innerHTML = `
             <a href="/login" class="login-link">Login</a>
-            <a href="/signup" class="signup-link">Sign Up</a>
+            <a href="/register" class="register-link">Register</a>
         `;
     }
 }

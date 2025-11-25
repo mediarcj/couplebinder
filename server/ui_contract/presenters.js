@@ -546,7 +546,11 @@ function buildLoginPageModel(req, res) {
     ui: {
       csrfToken: res.locals.csrfToken || '',
       supabaseUrl: config.supabase.url,
-      supabaseAnonKey: config.supabase.anonKey
+      supabaseAnonKey: config.supabase.anonKey,
+      turnstile: {
+        enabled: Boolean(config.turnstile?.enabled),
+        siteKey: config.turnstile?.enabled ? config.turnstile.siteKey : ''
+      }
     },
     ui_instructions: {
       input_limits: DEFAULT_AUTH_LIMITS
@@ -573,7 +577,11 @@ function buildRegisterPageModel(req, res) {
     ui: {
       csrfToken: res.locals.csrfToken || '',
       supabaseUrl: config.supabase.url,
-      supabaseAnonKey: config.supabase.anonKey
+      supabaseAnonKey: config.supabase.anonKey,
+      turnstile: {
+        enabled: Boolean(config.turnstile?.enabled),
+        siteKey: config.turnstile?.enabled ? config.turnstile.siteKey : ''
+      }
     },
     ui_instructions: {
       input_limits: DEFAULT_AUTH_LIMITS

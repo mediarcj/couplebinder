@@ -15,6 +15,9 @@
     <title>Log in - <%= app_info?.name || 'Application' %></title>
     <link rel="icon" href="/images/favicon.ico">
     <link rel="stylesheet" href="/css/style.css?v=<%= page.assetVersion || assetVersion || '' %>">
+    <% if (ui?.turnstile?.enabled && ui?.turnstile?.siteKey) { %>
+      <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+    <% } %>
 </head>
 <body data-auth-hydrate="false">
     <%- include('partials/nav', { nav: page.nav, app_info: app_info }) %>
@@ -23,7 +26,12 @@
         <div class="auth-card login-card">
             <h1 class="login-title">Log in</h1>
 
-            <form id="loginForm" method="post" action="/auth/login" class="login-form">
+            <form
+                id="loginForm"
+                method="post"
+                action="/auth/login"
+                class="login-form"
+                data-turnstile-enabled="<%= ui?.turnstile?.enabled ? 'true' : 'false' %>">
                 <input type="hidden" name="_csrf" value="<%= ui.csrfToken || '' %>">
 
                 <div class="form-group">
@@ -67,6 +75,18 @@
                     <% } %>
                   </div>
                 </div>
+
+                <% if (ui?.turnstile?.enabled && ui?.turnstile?.siteKey) { %>
+                  <div class="form-group turnstile-check">
+                    <div
+                      class="cf-turnstile"
+                      data-sitekey="<%= ui.turnstile.siteKey %>"
+                      data-action="login"
+                      data-theme="light"
+                      data-size="flexible">
+                    </div>
+                  </div>
+                <% } %>
 
                 <div class="form-actions login-actions">
                     <button type="submit" class="btn btn-primary btn-login">Log in</button>

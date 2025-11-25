@@ -169,14 +169,14 @@ module.exports = function csrfLite(req, res, next) {
 
     // ============================================================
     // 3) If client sent no cookies, check if this is a public auth endpoint
-    // Public auth endpoints (login/signup) don't need CSRF if no cookies
+    // Public auth endpoints (login/register) don't need CSRF if no cookies
     // ============================================================
     if (!usesCookies(req)) {
       // Public auth endpoints are exempt from CSRF when no cookies
       const isPublicAuth = req.path.startsWith('/api/auth/login') || 
-                          req.path.startsWith('/api/auth/signup') ||
+                          req.path.startsWith('/api/auth/register') ||
                           req.path.startsWith('/auth/login') ||
-                          req.path.startsWith('/auth/signup');
+                          req.path.startsWith('/auth/register');
       if (isPublicAuth) {
         return next();
       }

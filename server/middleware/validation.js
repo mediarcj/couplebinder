@@ -124,10 +124,11 @@ function validateUserRegistration(req, res, next) {
     errors.push('Email must be in valid format (e.g., user@example.com)');
   }
 
-  if (!validateRequiredString(data.password, 8)) {
-    errors.push('Password is required and must be at least 8 characters long');
-  } else if (data.password.length > 50) {
-    errors.push('Password must be 50 characters or less');
+  // Use server-authoritative password validation
+  const { validatePasswordServerSide } = require('./security');
+  const passwordValidation = validatePasswordServerSide(data.password);
+  if (!passwordValidation.valid) {
+    errors.push(passwordValidation.error || 'Password is required and must be at least 8 characters long');
   }
 
   if (!validateRequiredString(data.display_name)) {

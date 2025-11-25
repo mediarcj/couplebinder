@@ -14,6 +14,7 @@ const { validateEmailServerSide, validatePasswordServerSide } = require('../midd
 const { verifyToken } = require('../middleware/auth/supabaseJwt');
 const { setLastLogoutNow } = require('../lib/logoutWatermark');
 const { clearAuthCookie } = require('../lib/authCookie');
+const { verifyTurnstileRequest } = require('../lib/turnstile');
 
 const redirectTarget = config.auth?.passwordResetRedirect || '/auth/forgot-password';
 
@@ -26,8 +27,17 @@ function htmlPreferred(req) {
 
 router.get('/forgot-password', async (req, res, next) => {
   try {
-    const state = req.query.sent === '1' ? 'sent' : 'form';
-    const model = await buildForgotPasswordRequestModel(req, res, { state });
+    let state = 'form';
+    if (req.query.error === '1') {
+      state = 'error';
+    } else if (req.query.sent === '1') {
+      state = 'sent';
+    }
+    const options = { state };
+    if (state === 'error') {
+      options.message = 'Verification failed. Please try again.';
+    }
+    const model = await buildForgotPasswordRequestModel(req, res, options);
     res.render('forgot-password', model);
   } catch (error) {
     next(error);
@@ -36,6 +46,24 @@ router.get('/forgot-password', async (req, res, next) => {
 
 router.post('/forgot-password', generalLimiter(), async (req, res) => {
   try {
+    const turnstileCheck = await verifyTurnstileRequest(req, {
+      intent: 'forgot-password'
+    });
+    if (!turnstileCheck.ok) {
+      logger.warn({
+        event: 'password.reset.turnstile_denied',
+        code: turnstileCheck.code,
+        errors: turnstileCheck.errors,
+        requestId: req.requestId
+      }, 'Turnstile verification failed for password reset request');
+
+      if (htmlPreferred(req)) {
+        return res.redirect(303, '/forgot-password?error=1');
+      }
+
+      return res.status(400).json({ ok: false, error: 'Verification failed. Please try again.' });
+    }
+
     if (!supabase) throw new Error('Supabase client not configured');
     const emailRaw = req.body?.email || '';
     const validation = validateEmailServerSide(emailRaw);
@@ -60,7 +88,7 @@ router.post('/forgot-password', generalLimiter(), async (req, res) => {
     }, 'Password reset request failed');
 
     if (htmlPreferred(req)) {
-      return res.redirect(303, '/forgot-password?sent=0');
+      return res.redirect(303, '/forgot-password?error=1');
     }
 
     return res.status(400).json({ ok: false, error: error.message || 'Unable to send reset link' });

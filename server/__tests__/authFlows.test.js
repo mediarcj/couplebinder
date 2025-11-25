@@ -122,10 +122,10 @@ describe('Authentication Flows', () => {
     });
   });
 
-  describe('POST /api/auth/signup', () => {
+  describe('POST /api/auth/register', () => {
     it('should validate required fields', async () => {
       const response = await request(app)
-        .post('/api/auth/signup')
+        .post('/api/auth/register')
         .send({ email: 'test@example.com' }); // Missing display_name
 
       expect(response.status).toBe(400);
@@ -135,7 +135,7 @@ describe('Authentication Flows', () => {
 
     it('should return success for valid data', async () => {
       const response = await request(app)
-        .post('/api/auth/signup')
+        .post('/api/auth/register')
         .send({
           email: 'test@example.com',
           password: 'ValidPass123!',
@@ -151,7 +151,7 @@ describe('Authentication Flows', () => {
 
     it('should enforce email format validation', async () => {
       const response = await request(app)
-        .post('/api/auth/signup')
+        .post('/api/auth/register')
         .send({
           email: 'invalid-email',
           password: 'ValidPass123!',
@@ -164,7 +164,7 @@ describe('Authentication Flows', () => {
 
     it('should enforce password strength requirements', async () => {
       const response = await request(app)
-        .post('/api/auth/signup')
+        .post('/api/auth/register')
         .send({
           email: 'test@example.com',
           password: 'weak',

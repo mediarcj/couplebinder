@@ -367,6 +367,8 @@ const config = {
         windowMs: int(process.env.SIGNUP_WINDOW_MS, 60 * 60_000),
         max: int(process.env.SIGNUP_MAX, 5)
       },
+      // Note: signup config kept for backward compatibility with env vars
+      // Internal code uses 'register' but env vars remain SIGNUP_* for compatibility
       logout: {
         windowMs: int(process.env.LOGOUT_WINDOW_MS, 10 * 60_000),
         max: int(process.env.LOGOUT_MAX, 120)

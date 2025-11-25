@@ -1,5 +1,5 @@
-<!-- File: server/ejs/signup.ejs
-     Description: Dedicated signup page -->
+<!-- File: server/ejs/register.ejs
+     Description: Dedicated registration page -->
 
 <!DOCTYPE html>
 <html lang="en">
@@ -12,7 +12,7 @@
             data-supabase-url="<%= APP_CONFIG.SUPABASE_URL %>" 
             data-supabase-anon-key="<%= APP_CONFIG.SUPABASE_ANON_KEY %>">
     <% } %>
-    <title>Sign up - <%= app_info?.name || 'Application' %></title>
+    <title>Register - <%= app_info?.name || 'Application' %></title>
     <link rel="icon" href="/images/favicon.ico">
     <link rel="stylesheet" href="/css/style.css?v=<%= page.assetVersion || assetVersion || '' %>">
 </head>
@@ -20,63 +20,63 @@
     <%- include('partials/nav', { nav: page.nav, app_info: app_info }) %>
     
     <main class="auth-page">
-        <div class="auth-card signup-card">
-            <h1 class="signup-title">Create your account</h1>
+        <div class="auth-card register-card">
+            <h1 class="register-title">Create your account</h1>
 
-            <form id="signupForm" method="post" class="signup-form">
+            <form id="registerForm" method="post" class="register-form">
                 <input type="hidden" name="_csrf" value="<%= ui.csrfToken || '' %>">
 
                 <div class="form-group">
-                    <label for="signupDisplayName">Full name</label>
+                    <label for="registerDisplayName">Full name</label>
                     <input 
                         type="text" 
-                        id="signupDisplayName" 
+                        id="registerDisplayName" 
                         name="display_name" 
                         placeholder="Enter your full name"
                         maxlength="<%= ui_instructions?.input_limits?.name_max || 40 %>"
                         autocomplete="name"
                         required
-                        class="signup-input"
+                        class="register-input"
                     >
-                    <div id="signupDisplayNameError" class="error-message"></div>
+                    <div id="registerDisplayNameError" class="error-message"></div>
                 </div>
                 
                 <div class="form-group">
-                    <label for="signupEmail">Email address</label>
+                    <label for="registerEmail">Email address</label>
                     <input 
                         type="email" 
-                        id="signupEmail" 
+                        id="registerEmail" 
                         name="email" 
                         placeholder="Enter your email address"
                         maxlength="<%= ui_instructions?.input_limits?.email_max || 40 %>"
                         autocomplete="email"
                         required
-                        class="signup-input"
+                        class="register-input"
                     >
-                    <div id="signupEmailError" class="error-message"></div>
+                    <div id="registerEmailError" class="error-message"></div>
                 </div>
 
                 <div class="form-group">
-                    <label for="signupPhone">Phone number (optional)</label>
+                    <label for="registerPhone">Phone number (optional)</label>
                     <input 
                         type="tel" 
-                        id="signupPhone" 
+                        id="registerPhone" 
                         name="phone" 
                         placeholder="Enter your phone number"
                         minlength="8"
                         maxlength="15"
                         pattern="[0-9]+"
                         autocomplete="tel"
-                        class="signup-input"
+                        class="register-input"
                     >
-                    <div id="signupPhoneError" class="error-message"></div>
+                    <div id="registerPhoneError" class="error-message"></div>
                 </div>
                 
                 <div class="form-group">
-                    <label for="signupPassword">Password</label>
+                    <label for="registerPassword">Password</label>
                     <input 
                         type="password" 
-                        id="signupPassword" 
+                        id="registerPassword" 
                         name="password" 
                         placeholder="Min 8 chars, 1 capital, 1 number, no spaces"
                         minlength="<%= ui_instructions?.input_limits?.password_min || 8 %>"
@@ -84,38 +84,38 @@
                         autocomplete="new-password"
                         required
                         pattern="[a-zA-Z0-9]+"
-                        class="signup-input"
+                        class="register-input"
                     >
-                    <div id="signupPasswordError" class="error-message"></div>
+                    <div id="registerPasswordError" class="error-message"></div>
                 </div>
                 
                 <div class="form-group">
-                    <label for="signupConfirmPassword">Confirm password</label>
+                    <label for="registerConfirmPassword">Confirm password</label>
                     <input 
                         type="password" 
-                        id="signupConfirmPassword" 
+                        id="registerConfirmPassword" 
                         name="confirm_password" 
                         placeholder="Re-enter your password"
                         minlength="<%= ui_instructions?.input_limits?.password_min || 8 %>"
                         maxlength="<%= ui_instructions?.input_limits?.password_max || 40 %>"
                         autocomplete="new-password"
                         required
-                        class="signup-input"
+                        class="register-input"
                     >
                     <div id="confirmPasswordError" class="error-message"></div>
                 </div>
 
-                <div id="signupMessageContainer" class="form-group signup-message-row hidden">
-                    <div id="signupGeneralMessage" class="signup-message hidden" role="alert"></div>
+                <div id="registerMessageContainer" class="form-group register-message-row hidden">
+                    <div id="registerGeneralMessage" class="register-message hidden" role="alert"></div>
                 </div>
 
-                <div class="form-actions signup-actions">
-                    <button type="submit" class="btn btn-primary btn-signup">Create account</button>
+                <div class="form-actions register-actions">
+                    <button type="submit" class="btn btn-primary btn-register">Create account</button>
                 </div>
 
-                <div class="signup-footer">
-                    <p class="signup-login-text">
-                        Already have an account? <a href="/login" class="signup-login-link">Log in</a>
+                <div class="register-footer">
+                    <p class="register-login-text">
+                        Already have an account? <a href="/login" class="register-login-link">Log in</a>
                     </p>
                 </div>
             </form>
@@ -138,7 +138,7 @@
     <script src="/js/nav-client.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= page.nonce %>"></script>
     
     <!-- Page-specific scripts -->
-    <script src="/js/signup.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= page.nonce %>"></script>
+    <script src="/js/register.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= page.nonce %>"></script>
     <script src="/js/main.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= page.nonce %>"></script>
 </body>
 </html>

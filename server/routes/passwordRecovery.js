@@ -47,7 +47,8 @@ router.get('/forgot-password', async (req, res, next) => {
 router.post('/forgot-password', generalLimiter(), async (req, res) => {
   try {
     const turnstileCheck = await verifyTurnstileRequest(req, {
-      intent: 'forgot-password'
+      intent: 'forgot-password',
+      enforce: true
     });
     if (!turnstileCheck.ok) {
       logger.warn({

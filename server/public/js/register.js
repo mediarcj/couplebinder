@@ -29,6 +29,85 @@ const REGISTER_FIELD_ERRORS = [
   'confirmPasswordError'
 ];
 
+const TURNSTILE_FIELD_SELECTOR = 'textarea[name="cf-turnstile-response"], input[name="cf-turnstile-response"]';
+
+function isTurnstileRequired() {
+  try {
+    const form = document.getElementById('registerForm');
+    return form?.dataset?.turnstileEnabled === 'true';
+  } catch (_) {
+    return false;
+  }
+}
+
+function readTurnstileResponse() {
+  try {
+    const field = document.querySelector(TURNSTILE_FIELD_SELECTOR);
+    return field?.value?.trim() || '';
+  } catch (_) {
+    return '';
+  }
+}
+
+function resetTurnstileWidget() {
+  try {
+    const widget = typeof window !== 'undefined' ? window.turnstile : null;
+    if (widget && typeof widget.reset === 'function') {
+      widget.reset();
+    }
+  } catch (_) {
+    // ignore reset errors
+  }
+}
+
+function getCsrfToken() {
+  const meta = document.querySelector('meta[name="csrf-token"]');
+  if (meta?.content) {
+    return meta.content;
+  }
+  const hiddenField = document.querySelector('input[name="_csrf"]');
+  return hiddenField?.value || '';
+}
+
+async function requestRegisterValidation(payload, options = {}) {
+  const csrfToken = getCsrfToken();
+  if (!csrfToken) {
+    throw new Error('Unable to verify request. Missing CSRF token.');
+  }
+
+  const body = {
+    ...payload,
+    turnstileToken: options.turnstileToken,
+    turnstileIntent: options.turnstileIntent
+  };
+
+  const response = await fetch('/api/auth/register', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+      'x-csrf-token': csrfToken
+    },
+    credentials: 'include',
+    body: JSON.stringify(body)
+  });
+
+  if (!response.ok) {
+    let message = 'Verification failed. Please try again.';
+    try {
+      const json = await response.json();
+      if (json?.message) message = json.message;
+    } catch (_) {}
+    throw new Error(message);
+  }
+
+  const result = await response.json().catch(() => null);
+  if (!result?.success) {
+    throw new Error(result?.message || 'Verification failed. Please try again.');
+  }
+  return result;
+}
+
 function showRegisterMessage(message, isSuccess = false) {
   const container = document.getElementById('registerMessageContainer');
   const messageEl = document.getElementById('registerGeneralMessage');
@@ -203,6 +282,8 @@ async function handleRegisterSubmit(e) {
   clearRegisterMessage();
 
   const data = sanitizeRegisterData(form);
+  const turnstileRequired = isTurnstileRequired();
+  let turnstileToken = '';
 
   let hasErrors = false;
   const displayNameError = validateDisplayName(data.display_name);
@@ -235,7 +316,19 @@ async function handleRegisterSubmit(e) {
     hasErrors = true;
   }
 
-  if (hasErrors) return;
+  if (hasErrors) {
+    if (turnstileRequired) resetTurnstileWidget();
+    return;
+  }
+
+  if (turnstileRequired) {
+    turnstileToken = readTurnstileResponse();
+    if (!turnstileToken) {
+      showRegisterMessage('Please complete the verification challenge.');
+      resetTurnstileWidget();
+      return;
+    }
+  }
 
   REGISTER_IN_PROGRESS = true;
   if (submitBtn) {
@@ -244,6 +337,11 @@ async function handleRegisterSubmit(e) {
   }
 
   try {
+    await requestRegisterValidation(data, {
+      turnstileToken,
+      turnstileIntent: turnstileRequired ? 'interactive-register' : undefined
+    });
+
     const client = window.SB || window.supabase;
     if (!client || !client.auth?.signUp) {
       showSignupMessage('Authentication system not initialized. Please refresh the page.');
@@ -335,6 +433,9 @@ async function handleRegisterSubmit(e) {
     const message = error?.message ? `Registration failed: ${error.message}` : 'Network error. Please try again.';
     showRegisterMessage(message);
   } finally {
+    if (turnstileRequired) {
+      resetTurnstileWidget();
+    }
     REGISTER_IN_PROGRESS = false;
     if (submitBtn) {
       submitBtn.disabled = false;

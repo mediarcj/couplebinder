@@ -76,7 +76,7 @@ const toggles = {
 
   // Feature flags for user-facing features
   billing: bool('BILLING_ENABLED', true),   // Stripe billing (default on)
-  signup: bool('SIGNUP_ENABLED', true),     // User signup (default on)
+  register: bool('SIGNUP_ENABLED', true),   // User registration (default on, env var kept for backward compatibility)
   pricing: bool('PRICING_ENABLED', false),  // Pricing page (default off, hidden until ready)
 };
 

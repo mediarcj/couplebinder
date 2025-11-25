@@ -78,11 +78,12 @@
                         type="password" 
                         id="signupPassword" 
                         name="password" 
-                        placeholder="Min 8 characters"
+                        placeholder="Min 8 chars, 1 capital, 1 number, no spaces"
                         minlength="<%= ui_instructions?.input_limits?.password_min || 8 %>"
                         maxlength="<%= ui_instructions?.input_limits?.password_max || 40 %>"
                         autocomplete="new-password"
                         required
+                        pattern="[a-zA-Z0-9]+"
                         class="signup-input"
                     >
                     <div id="signupPasswordError" class="error-message"></div>

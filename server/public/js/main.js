@@ -569,6 +569,15 @@ async function postAuthCookieWithBackoff(payload, opts) {
   
   for (let i = 0; i <= retries; i++) {
     let res;
+    const requestBody = {
+      ...(payload && payload.body ? { ...payload.body } : {})
+    };
+    if (payload?.turnstileToken) {
+      requestBody.turnstileToken = payload.turnstileToken;
+    }
+    if (payload?.turnstileIntent) {
+      requestBody.turnstileIntent = payload.turnstileIntent;
+    }
     try {
       res = await fetch('/auth/set-cookie', {
         method: 'POST',
@@ -578,7 +587,7 @@ async function postAuthCookieWithBackoff(payload, opts) {
           ...payload.headers
         },
         credentials: 'include',
-        body: JSON.stringify(payload.body)
+        body: JSON.stringify(requestBody)
       });
     } catch (e) {
       return { ok: false, error: 'Network error' };

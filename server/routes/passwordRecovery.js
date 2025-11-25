@@ -104,7 +104,7 @@ router.post('/auth/forgot-password', generalLimiter(), async (req, res) => {
     clearAuthCookie(res, req, true);
 
     if (htmlPreferred(req)) {
-      return res.redirect(303, '/?password_changed=1');
+      return res.redirect(303, '/login?password_changed_success=1');
     }
 
     return res.status(200).json({ ok: true });
@@ -116,7 +116,7 @@ router.post('/auth/forgot-password', generalLimiter(), async (req, res) => {
     }, 'Password reset completion failed');
 
     if (htmlPreferred(req)) {
-      return res.redirect(303, '/?password_changed=0');
+      return res.redirect(303, '/login?password_changed_success=0');
     }
 
     return res.status(400).json({ ok: false, error: error.message || 'Password reset failed' });

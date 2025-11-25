@@ -66,8 +66,8 @@ const GENERAL_MAX        = config.rateLimit.windows.general.max;
 const LOGIN_WINDOW_S     = config.rateLimit.windows.login.windowMs / 1000;
 const LOGIN_MAX          = config.rateLimit.windows.login.max;
 
-const SIGNUP_WINDOW_S    = config.rateLimit.windows.signup.windowMs / 1000;
-const SIGNUP_MAX         = config.rateLimit.windows.signup.max;
+const REGISTER_WINDOW_S    = config.rateLimit.windows.signup.windowMs / 1000;
+const REGISTER_MAX         = config.rateLimit.windows.signup.max;
 
 const LOGOUT_WINDOW_S    = config.rateLimit.windows.logout.windowMs / 1000;
 const LOGOUT_MAX         = config.rateLimit.windows.logout.max;
@@ -131,7 +131,7 @@ function buildLimiter({ keyPrefix, points, durationSeconds }) {
 const limiters = {
   general:   buildLimiter({ keyPrefix: 'rl:general',    points: GENERAL_MAX,   durationSeconds: GENERAL_WINDOW_S }),
   login:     buildLimiter({ keyPrefix: 'rl:login',      points: LOGIN_MAX,     durationSeconds: LOGIN_WINDOW_S }),
-  signup:    buildLimiter({ keyPrefix: 'rl:signup',     points: SIGNUP_MAX,    durationSeconds: SIGNUP_WINDOW_S }),
+  register:  buildLimiter({ keyPrefix: 'rl:register',   points: REGISTER_MAX,  durationSeconds: REGISTER_WINDOW_S }),
   logout:    buildLimiter({ keyPrefix: 'rl:logout',     points: LOGOUT_MAX,    durationSeconds: LOGOUT_WINDOW_S }),
   cookieSet: buildLimiter({ keyPrefix: 'rl:cookieSet',  points: COOKIE_SET_MAX,durationSeconds: COOKIE_SET_WINDOW_S }),
 };
@@ -314,10 +314,10 @@ function loginLimiter() {
 }
 
 /**
- * Very strict rate limiter for signup attempts
+ * Very strict rate limiter for registration attempts
  */
-function signupLimiter() {
-  return limiterMiddleware(limiters.signup, 'signup_rate_limit', SIGNUP_MAX, SIGNUP_WINDOW_S);
+function registerLimiter() {
+  return limiterMiddleware(limiters.register, 'register_rate_limit', REGISTER_MAX, REGISTER_WINDOW_S);
 }
 
 /**
@@ -337,7 +337,7 @@ function cookieSetLimiter() {
 module.exports = {
   generalLimiter,
   loginLimiter,
-  signupLimiter,
+  registerLimiter,
   logoutLimiter,
   cookieSetLimiter
 };

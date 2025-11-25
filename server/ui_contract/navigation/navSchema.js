@@ -22,7 +22,7 @@ module.exports = {
   public: [
     { id: 'home',     label: 'Home',     href: '/',                    when: 'unauth', activeMatch: '^/$' },
     { id: 'login',    label: 'Log in',   href: '/login',                when: 'unauth', activeMatch: '^/login/?$' },
-    { id: 'signup',   label: 'Sign up',  href: '/signup',               when: 'unauth', activeMatch: '^/signup/?$' }
+    { id: 'register', label: 'Register', href: '/register',            when: 'unauth', activeMatch: '^/register/?$' }
   ],
 
   // Visible to authenticated users

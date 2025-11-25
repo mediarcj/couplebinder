@@ -1866,6 +1866,16 @@ nav ul li a.active {
     color: #166534;
 }
 
+.auth-error {
+    background: #fef2f2;
+    border: 1px solid #fecaca;
+    border-radius: 16px;
+    padding: 1.25rem;
+    color: #991b1b;
+    margin-bottom: 1rem;
+    text-align: left;
+}
+
 .btn-full {
     width: 100%;
     text-align: center;

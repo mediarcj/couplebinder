@@ -14,7 +14,7 @@ const { hasUser, getUserId, getUserEmail } = require('../utils/authz');
 // Import rate limiters (SECONDARY layer - Cloudflare edge is PRIMARY layer)
 // NOTE: These are imported but rate limiting is applied at the route level in zorvalon.js
 // See zorvalon.js lines 594-600 for actual rate limiter application
-const { loginLimiter, signupLimiter } = require('../middleware/rateLimiter');
+const { loginLimiter, registerLimiter } = require('../middleware/rateLimiter');
 const { validateUserRegistration } = require('../middleware/validation');
 const logger = require('../utils/logger');
 const { config } = require('../config');
@@ -159,16 +159,16 @@ router.get('/status', (req, res) => {
 });
 
 /**
- * POST /api/auth/signup
+ * POST /api/auth/register
  * Creates a new user account using Supabase Auth
  * Note: This is a server-side validation endpoint - actual user creation is handled by Supabase
  */
-router.post('/signup', signupLimiter(), validateUserRegistration, async (req, res) => {
+router.post('/register', registerLimiter(), validateUserRegistration, async (req, res) => {
     try {
         const clientIP = getClientIP(req);
         const { email, _password, _display_name, ..._profileData } = req.body;
         
-        logger.auth('signup_attempt', {
+        logger.auth('register_attempt', {
             requestId: req.requestId,
             email: email,
             ip: clientIP
@@ -193,7 +193,7 @@ router.post('/signup', signupLimiter(), validateUserRegistration, async (req, re
         });
         
     } catch (error) {
-        logger.error('Signup validation error', {
+        logger.error('Register validation error', {
             requestId: req.requestId,
             error: error.message
         });

@@ -27,7 +27,7 @@ function safeLoad(modPath, fallback = {}) {
 }
 
 // Load toggles for feature flags
-const toggles = safeLoad('../../config/toggles', { billing: true, signup: true, pricing: false });
+const toggles = safeLoad('../../config/toggles', { billing: true, register: true, pricing: false });
 
 /**
  * WHAT:
@@ -43,7 +43,7 @@ function featureEnabled(name) {
   if (!name) return true;
   const f = String(name).toLowerCase();
   if (f === 'billing') return !!toggles.billing;
-  if (f === 'signup') return !!toggles.signup;
+  if (f === 'register') return !!toggles.register;
   return true;
 }
 
@@ -172,7 +172,7 @@ function compose(req, res) {
         method,
         csrf: !!item.csrf,
         active,
-        modal: item.modal || null      // pass through for login/signup
+        modal: item.modal || null      // pass through for login/register
       };
     });
 

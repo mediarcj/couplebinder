@@ -111,11 +111,18 @@ function isAlreadyHttps(req) {
  * @param {Function} next - Express next function
  */
 function enforceHttps(req, res, next) {
+  // Load config once and use it for the guard
   const { config } = require('../config');
-  // Skip if HTTPS enforcement is disabled (dev environments)
-  if (!config.security.enforceHttps) {
+  // Allow HTTP in local dev or when explicitly disabled
+  if (config.server.nodeEnv === 'development' || !config.security.enforceHttps) {
     return next();
   }
+
+  // Stripe webhooks must never be redirected or mutated. They require the original raw body for signature verification.
+  // Let them pass through exactly as-is.
+  if (req.path === '/api/stripe/webhook') return next();
+
+  // (config-based checks already handled above)
 
   // Skip if request is already HTTPS
   if (isAlreadyHttps(req)) {

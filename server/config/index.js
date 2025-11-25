@@ -187,7 +187,7 @@ const stripeTest = {
   priceResumeExpert:  (process.env.STRIPE_PRICE_RESUME_EXPERT_TEST || '').trim()
 };
 
-const stripeMode = (nodeEnv === 'production') ? 'live' : 'test';
+const stripeMode = (nodeEnv === 'development') ? 'live' : 'test';
 const stripeActive = stripeMode === 'live' ? stripeLive : stripeTest;
 
 // ──────────────────────────────────────────────────────────────────────────────

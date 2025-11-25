@@ -34,5 +34,12 @@ create index if not exists payments_status_idx
 create index if not exists payments_created_at_idx 
   on public.payments(created_at);
 
+-- Ensure upserts can target a UNIQUE constraint/index (safe if the constraint already exists)
+-- A UNIQUE index satisfies Postgres ON CONFLICT just like a UNIQUE constraint.
+create unique index if not exists payments_stripe_checkout_session_id_uniq
+  on public.payments (stripe_checkout_session_id);
+create unique index if not exists payments_stripe_payment_intent_id_uniq
+  on public.payments (stripe_payment_intent_id);
+
 -- Note: These indexes complement the existing ones from the main migration
 -- and provide fast lookups for webhook processing and user queries.

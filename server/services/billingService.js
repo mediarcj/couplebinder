@@ -204,12 +204,20 @@ async function upsertPaymentFromSession(session, statusOverride) {
   const currency = session.currency ?? 'usd';
   const productKey = session.metadata?.product_key || 'unknown';
   const userId = session.metadata?.user_id || null;
+  const priceId = session.metadata?.price_id || null;
   const status = statusOverride || (session.payment_status === 'paid' ? 'paid' : 'requires_payment');
+
+  if (!userId || !priceId || !amount || !currency || !productKey) {
+    const err = new Error('Missing required fields for payment upsert');
+    err.details = { userId, priceId, amount, currency, productKey, sessionId: sId };
+    throw err;
+  }
 
   const row = {
     user_id: userId,
     stripe_checkout_session_id: sId,
     stripe_payment_intent_id: typeof pi === 'string' ? pi : (pi?.id || null),
+    price_id: priceId,
     product_key: productKey,
     amount,
     currency,

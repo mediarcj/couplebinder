@@ -1,24 +1,14 @@
 // File: server/routes/stripeWebhook.js
 // Description: Stripe webhook handler with signature verification (dual-secret: LIVE + TEST)
 // Purpose: Process Stripe events for payment status updates
-// Notes: Raw body processing; verifies against LIVE first in production, otherwise TEST first; falls back to the other.
-//        Uses the corresponding Stripe client (live/test) for follow-up API calls.
+// Notes:
+//  - Uses raw JSON body for signature verification (Stripe requirement)
+//  - Verifies against LIVE or TEST endpoint secrets (tries both, preferring config.stripe.mode)
+//  - Uses corresponding Stripe client for follow-up API calls
+//  - Fetches Checkout line items via listLineItems API (more reliable than deep expands)
+//  - Upserts payment rows (idempotent on stripe_checkout_session_id)
 
 'use strict';
-
-/**
- * WHAT:
- * Stripe webhook handler that processes payment events with signature verification.
- * 
- * WHY:
- * Receive authoritative payment status updates from Stripe (test and live).
- * Signature verification ensures authenticity.
- * 
- * HOW:
- * 1. Verify webhook signature using LIVE or TEST secret (try both, preferred order by NODE_ENV).
- * 2. Use corresponding Stripe client for retrieval/expansion.
- * 3. Process events and persist.
- */
 
 const express = require('express');
 const Stripe = require('stripe');
@@ -27,11 +17,12 @@ const logger = require('../utils/logger');
 const { supabaseAdmin } = require('../utils/supabaseClient');
 const { config } = require('../config');
 
-// Prepare both clients; webhooks.constructEvent works fine on either client.
-const stripeLiveClient = new Stripe(config.stripe.live.secretKey || '', { apiVersion: '2025-09-30.clover' });
-const stripeTestClient = new Stripe(config.stripe.test.secretKey || '', { apiVersion: '2025-09-30.clover' });
+// Prepare both clients; constructEvent only needs the endpoint secret, not the client.
+// We still keep both clients to do follow-up API calls with correct keys.
+const stripeLiveClient = new Stripe(config.stripe.live.secretKey || '');
+const stripeTestClient = new Stripe(config.stripe.test.secretKey || '');
 
-// Price → product_key allowlist (both modes)
+// Map price IDs (both modes) → stable product_key for your app logic
 const PRICE_TO_KEY = Object.freeze({
   [config.stripe.live.priceResumeOneTime]: 'resume_one_time',
   [config.stripe.live.priceResumeExpert]:  'resume_expert',
@@ -40,40 +31,47 @@ const PRICE_TO_KEY = Object.freeze({
 });
 
 function mountStripeWebhook(app) {
-  // Mount at /api/stripe/webhook (bypasses auth guards; ensure in maintenance allowlist)
-  app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
-    const sig = req.headers['stripe-signature'];
-    const requestId = req.id || crypto.randomUUID();
+  // Stripe requires the raw request body for signature verification.
+  // Use application/json (matches Stripe’s Content-Type). Docs show this exact pattern.
+  // Ref: https://docs.stripe.com/payments/checkout/fulfillment#webhooks (Node/Express example)
+  // Accept raw bytes regardless of Content-Type. Some proxies change it.
+  app.post('/api/stripe/webhook', express.raw({ type: '*/*' }), async (req, res) => {
+     const sig = req.headers['stripe-signature'];
+     const requestId = req.id || crypto.randomUUID();
+    // Minimal entry log so you can confirm the request actually reached this handler
+    logger.info(
+      { event: 'stripe.webhook.received', requestId, contentType: req.headers['content-type'], len: req.headers['content-length'] },
+      'Stripe webhook request received'
+    );
 
-    const liveSecret = config.stripe.live.webhookSecret;
-    const testSecret = config.stripe.test.webhookSecret;
+    const liveSecret = (config.stripe.live && config.stripe.live.webhookSecret) || '';
+    const testSecret = (config.stripe.test && config.stripe.test.webhookSecret) || '';
 
     if (!sig) {
       logger.warn({ event: 'stripe.webhook.missing_sig', requestId }, 'Missing Stripe-Signature header');
       return res.sendStatus(400);
     }
 
-    // Try verification, preferring mode by NODE_ENV
-    const preferLive = config.stripe.mode === 'live';
+    // Prefer verification order based on configured mode, but try both.
+    const preferLive = (config.stripe.mode === 'live');
     const tryOrder = preferLive ? ['live', 'test'] : ['test', 'live'];
 
-    /** @type {{event:any, mode:'live'|'test', client:any}|null} */
+    /** @type {{event: import('stripe').Stripe.Event, mode:'live'|'test'}|null} */
     let verified = null;
 
     for (const m of tryOrder) {
+      const secret = m === 'live' ? liveSecret : testSecret;
+      if (!secret) continue;
       try {
-        if (m === 'live' && liveSecret) {
-          const event = stripeLiveClient.webhooks.constructEvent(req.body, sig, liveSecret);
-          verified = { event, mode: 'live', client: stripeLiveClient };
-          break;
-        }
-        if (m === 'test' && testSecret) {
-          const event = stripeTestClient.webhooks.constructEvent(req.body, sig, testSecret);
-          verified = { event, mode: 'test', client: stripeTestClient };
-          break;
-        }
+        const evt = Stripe.webhooks.constructEvent(req.body, sig, secret);
+        verified = { event: evt, mode: m };
+        break;
       } catch (err) {
-        // keep trying with the other secret
+        // keep trying with the other secret, but record why it failed
+        logger.warn(
+          { event: 'stripe.webhook.verify_failed', mode: m, requestId, message: err?.message },
+          'constructEvent failed'
+        );
       }
     }
 
@@ -82,28 +80,48 @@ function mountStripeWebhook(app) {
       return res.sendStatus(400);
     }
 
-    const { event, mode, client } = verified;
+    const { event, mode } = verified;
+    const client = (mode === 'live') ? stripeLiveClient : stripeTestClient;
 
     try {
       switch (event.type) {
         case 'checkout.session.completed': {
-          const sessionObj = /** @type {import('stripe').Stripe.Checkout.Session} */ (event.data.object);
+          /** @type {import('stripe').Stripe.Checkout.Session} */
+          const sessionObj = event.data.object;
 
-          // Retrieve a fuller session; expand line_items and latest_charge for receipt URL if needed
+          // Retrieve a canonical session (minimal expand). We fetch line items separately.
           const fullSession = await client.checkout.sessions.retrieve(sessionObj.id, {
-            expand: ['line_items.data.price.product', 'payment_intent.latest_charge']
+            expand: ['payment_intent.latest_charge']
           });
+
+          // Prefer metadata.price_id we set during checkout; fall back to line_items only if missing
+          const metaPriceId = fullSession?.metadata?.price_id || null;
+          let priceId = metaPriceId;
+
+          if (!priceId) {
+            // Line items: use official endpoint as a fallback
+            // Ref: https://docs.stripe.com/api/checkout/sessions/line_items
+            try {
+              const liResp = await client.checkout.sessions.listLineItems(fullSession.id, {
+                limit: 1,
+                expand: ['data.price.product']
+              });
+              const first = liResp?.data?.[0];
+              priceId = first?.price?.id || null;
+            } catch (e) {
+              logger.warn({ event: 'webhook.line_items.error', requestId, mode, sessionId: fullSession.id, error: e.message }, 'Failed to fetch line items');
+            }
+          }
+
+          const metadataProductKey = fullSession?.metadata?.product_key || null;
+          const productKey = metadataProductKey || (priceId ? (PRICE_TO_KEY[priceId] || null) : null);
 
           const userId   = fullSession?.metadata?.user_id || fullSession?.client_reference_id || null;
           const amount   = fullSession?.amount_total ?? null;
           const currency = fullSession?.currency ?? null;
 
-          const li = fullSession?.line_items?.data?.[0] || null;
-          const priceId = li?.price?.id || null;
-          const productKey = priceId ? (PRICE_TO_KEY[priceId] || null) : null;
-
-          // Defensive: skip if required fields missing
-          if (!userId || !priceId || !amount || !currency) {
+          // Defensive guard: skip if required fields are missing
+          if (!userId || !priceId || !amount || !currency || !productKey) {
             logger.error({
               event: 'webhook.persist.missing_fields',
               requestId,
@@ -111,25 +129,29 @@ function mountStripeWebhook(app) {
               userId, priceId, amount, currency,
               sessionId: fullSession?.id
             }, 'Missing required fields for payment persistence');
+            // Return 200 so Stripe stops retrying; nothing to persist yet
             return res.status(200).send('[ok] skipped incomplete session');
           }
 
-          // Persist payment
+          // Idempotent upsert in case Stripe retries or UI fallback already persisted
+          const row = {
+            user_id: userId,
+            price_id: priceId,
+            product_key: productKey,
+            amount: amount,
+            currency: currency,
+            // Normalize to our internal vocabulary: Stripe calls this "paid"
+            status: 'paid',
+            stripe_checkout_session_id: fullSession.id,
+            stripe_payment_intent_id: typeof fullSession.payment_intent === 'string'
+              ? fullSession.payment_intent
+              : fullSession.payment_intent?.id || null,
+            metadata: fullSession.metadata || {}
+          };
+
           const { error } = await supabaseAdmin
             .from('payments')
-            .insert({
-              user_id: userId,
-              price_id: priceId,
-              product_key: productKey,
-              amount: amount,
-              currency: currency,
-              status: 'succeeded',
-              stripe_checkout_session_id: fullSession.id,
-              stripe_payment_intent_id: typeof fullSession.payment_intent === 'string'
-                ? fullSession.payment_intent
-                : fullSession.payment_intent?.id || null,
-              metadata: fullSession.metadata || {}
-            });
+            .upsert(row, { onConflict: 'stripe_checkout_session_id' });
 
           if (error) {
             logger.error({
@@ -138,8 +160,9 @@ function mountStripeWebhook(app) {
               mode,
               error: error.message,
               sessionId: fullSession.id
-            }, 'Failed to persist payment record');
-            throw error;
+            }, 'Failed to upsert payment record');
+            // Return 500 so Stripe will retry delivery; persistence failed
+            return res.sendStatus(500);
           }
 
           logger.info({
@@ -150,8 +173,10 @@ function mountStripeWebhook(app) {
             priceId,
             productKey,
             sessionId: fullSession.id
-          }, 'Payment recorded successfully');
-          break;
+          }, 'Payment recorded/upserted successfully');
+
+          // Acknowledge quickly (best practice: respond 2xx as soon as possible)
+          return res.sendStatus(200);
         }
 
         case 'charge.refunded': {
@@ -170,7 +195,7 @@ function mountStripeWebhook(app) {
               mode,
               chargeId: charge.id
             }, 'Refund charge missing payment_intent_id');
-            break;
+            return res.sendStatus(200);
           }
 
           const status = isFullRefund ? 'refunded' : 'partially_refunded';
@@ -191,7 +216,7 @@ function mountStripeWebhook(app) {
               paymentIntentId,
               error: error.message
             });
-            throw error;
+            return res.sendStatus(500);
           }
 
           logger.info({
@@ -203,7 +228,8 @@ function mountStripeWebhook(app) {
             refundAmount,
             isFullRefund
           }, `Charge refunded - ${isFullRefund ? 'full' : 'partial'} refund`);
-          break;
+
+          return res.sendStatus(200);
         }
 
         case 'refund.updated': {
@@ -216,26 +242,28 @@ function mountStripeWebhook(app) {
             status: refund.status,
             amount: refund.amount
           }, 'Refund status updated');
-          break;
+          return res.sendStatus(200);
         }
 
         default:
+          // Unknown/unhandled types should still 200 so Stripe doesn’t retry
           logger.debug({
-            event: 'stripe.webhook.unknown_event',
+            event: 'stripe.webhook.unhandled_event',
             requestId,
             mode,
             type: event.type
-          }, 'Unknown webhook event type');
+          }, 'Unhandled webhook event type');
+          return res.sendStatus(200);
       }
-      return res.sendStatus(200);
     } catch (err) {
       logger.error({
         event: 'stripe.webhook.handler_error',
         requestId,
-        mode,
-        type: event.type,
+        mode: verified?.event?.type ? mode : 'unknown',
+        type: verified?.event?.type || 'unknown',
         error: err.message
       });
+      // Non-2xx tells Stripe to retry, which we want if our handler failed
       return res.sendStatus(500);
     }
   });

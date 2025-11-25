@@ -86,7 +86,7 @@ const { generateCspNonce, securityHeaders } = require('./middleware/securityHead
 const cacheControl = require('./middleware/cacheControl');
 const trustProxyIp = require('./middleware/trustProxyIp');
 const corsAllowlist = require('./middleware/corsAllowlist');
-const { generalLimiter, loginLimiter, signupLimiter, logoutLimiter, cookieSetLimiter } = require('./middleware/rateLimiter');
+const { generalLimiter, loginLimiter, registerLimiter, logoutLimiter, cookieSetLimiter } = require('./middleware/rateLimiter');
 
 // ============================================================
 // STEP 0: Boot Order
@@ -672,7 +672,7 @@ consoleLogger.formatMiddlewareRegistration('Security middleware');
  *   2. Cookie set limiter (300 req/min) - lenient for post-login flow
  *   3. Logout limiter (120 req/10min) - very lenient, users click around
  *   4. Login limiter (10 attempts/15min) - strict to prevent brute force
- *   5. Signup limiter (5 attempts/hour) - very strict to prevent abuse
+ *   5. Register limiter (5 attempts/hour) - very strict to prevent abuse
  * - Escalates repeated violations to IP firewall blocking
  * - Uses Redis for shared state across multiple server instances
  *
@@ -698,8 +698,8 @@ app.use(['/auth/login', '/api/auth/login'], loginLimiter());
 // Login limiter enabled (10 attempts per 15 min) - logged via structured logger above
 // NOTE: This is SECONDARY layer - Cloudflare edge handles volumetric attacks first
 
-app.use(['/auth/signup', '/api/auth/signup'], signupLimiter());
-// Signup limiter enabled (5 attempts per hour) - logged via structured logger above
+app.use(['/auth/register', '/api/auth/register'], registerLimiter());
+// Register limiter enabled (5 attempts per hour) - logged via structured logger above
 // NOTE: This is SECONDARY layer - Cloudflare edge handles volumetric attacks first
 
 // ============================================================
@@ -867,21 +867,21 @@ app.get('/login', (req, res) => {
   }
 });
 
-// Signup page route (public)
-app.get('/signup', (req, res) => {
+// Register page route (public)
+app.get('/register', (req, res) => {
   try {
     if (req.user?.id) {
       return res.redirect('/dashboard');
     }
-    const { buildSignupPageModel } = require('./ui_contract/presenters');
-    const pageModel = buildSignupPageModel(req, res);
+    const { buildRegisterPageModel } = require('./ui_contract/presenters');
+    const pageModel = buildRegisterPageModel(req, res);
     pageModel.page.nonce = res.locals.nonce || pageModel.page.nonce;
-    res.render('signup', pageModel);
+    res.render('register', pageModel);
   } catch (error) {
-    console.error('Signup page error:', error);
+    console.error('Register page error:', error);
     res.status(500).render('error', {
-      title: 'Signup Error',
-      message: 'Unable to load signup page',
+      title: 'Register Error',
+      message: 'Unable to load register page',
       page: { nonce: res.locals.nonce }
     });
   }

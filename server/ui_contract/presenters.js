@@ -526,7 +526,7 @@ async function buildForgotPasswordResetModel(req, res, options = {}) {
 function buildLoginPageModel(req, res) {
   const url = new URL(req.originalUrl, `${req.protocol}://${req.get('host')}`);
   const passwordChangedSuccess = url.searchParams.get('password_changed_success') === '1';
-  const signupSuccess = url.searchParams.get('signup_success') === '1';  
+  const registerSuccess = url.searchParams.get('register_success') === '1';  
   return {
     page: {
       title: `Log in - ${config.branding.appName}`,
@@ -536,7 +536,7 @@ function buildLoginPageModel(req, res) {
       assetVersion: ASSET_VERSION,
       nav: navManager.compose(req, res),
       passwordChangedSuccess,
-      signupSuccess      
+      registerSuccess      
     },
     user: {
       isAuthenticated: Boolean(req.user?.id),
@@ -555,12 +555,12 @@ function buildLoginPageModel(req, res) {
   };
 }
 
-function buildSignupPageModel(req, res) {
+function buildRegisterPageModel(req, res) {
   return {
     page: {
-      title: `Sign up - ${config.branding.appName}`,
+      title: `Register - ${config.branding.appName}`,
       description: 'Create a new account',
-      type: 'signup',
+      type: 'register',
       nonce: res.locals.nonce || '',
       assetVersion: ASSET_VERSION,
       nav: navManager.compose(req, res)
@@ -591,5 +591,5 @@ module.exports = {
   buildForgotPasswordRequestModel,
   buildForgotPasswordResetModel,
   buildLoginPageModel,
-  buildSignupPageModel
+  buildRegisterPageModel
 };

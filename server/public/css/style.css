@@ -1920,6 +1920,23 @@ nav ul li a.active {
     gap: 0.75rem;
 }
 
+.turnstile-check {
+    width: 100%;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    padding: 0.75rem;
+    background: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 80px;
+}
+
+.turnstile-check .cf-turnstile,
+.turnstile-check iframe {
+    width: 100% !important;
+}
+
 .login-input {
     width: 100%;
     padding: 0.75rem 1rem;

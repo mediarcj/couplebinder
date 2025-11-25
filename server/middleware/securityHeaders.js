@@ -19,6 +19,8 @@ const helmet = require('helmet');
 const crypto = require('crypto');
 const logger = require('../utils/logger');
 
+const TURNSTILE_ORIGIN = 'https://challenges.cloudflare.com';
+
 /**
  * Generate CSP nonce middleware
  * MUST run before securityHeaders middleware
@@ -76,7 +78,8 @@ function securityHeaders() {
         // We use 'self' + nonce instead, which is still secure (nonces for inline, self for external).
         scriptSrc: [
           "'self'",
-          (req, res) => `'nonce-${res.locals.cspNonce}'`
+          (req, res) => `'nonce-${res.locals.cspNonce}'`,
+          TURNSTILE_ORIGIN
         ],
         
         // Styles: self-hosted + nonce (no unsafe-inline)
@@ -92,7 +95,9 @@ function securityHeaders() {
         fontSrc: ["'self'"],
         
         // AJAX/WebSocket: self + Supabase (HTTPS and WSS)
-        connectSrc: ["'self'", supabaseOrigin, supabaseWss].filter(Boolean),
+        connectSrc: ["'self'", supabaseOrigin, supabaseWss, TURNSTILE_ORIGIN].filter(Boolean),
+
+        frameSrc: ["'self'", TURNSTILE_ORIGIN],
         
         // No iframes allowed
         frameAncestors: ["'none'"],

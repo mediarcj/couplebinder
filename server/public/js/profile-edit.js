@@ -782,6 +782,32 @@ function initPasswordManager() {
       return;
     }
 
+    if (newPassword.length > 50) {
+      showPasswordError('New password must be 50 characters or less');
+      return;
+    }
+
+    if (/\s/.test(newPassword)) {
+      showPasswordError('Password cannot contain spaces');
+      return;
+    }
+
+    const validPasswordRegex = /^[a-zA-Z0-9]+$/;
+    if (!validPasswordRegex.test(newPassword)) {
+      showPasswordError('Password can only contain uppercase letters, lowercase letters, and numbers');
+      return;
+    }
+
+    if (!/[A-Z]/.test(newPassword)) {
+      showPasswordError('Password must contain at least one capital letter');
+      return;
+    }
+
+    if (!/[0-9]/.test(newPassword)) {
+      showPasswordError('Password must contain at least one number');
+      return;
+    }
+
     if (newPassword !== confirmPassword) {
       showPasswordError('New passwords do not match');
       return;

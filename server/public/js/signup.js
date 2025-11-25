@@ -115,6 +115,13 @@ function validateSignupPassword(password) {
   if (!password) return 'Password is required';
   if (password.length < SIGNUP_LIMITS.PASSWORD_MIN) return `Password must be at least ${SIGNUP_LIMITS.PASSWORD_MIN} characters`;
   if (password.length > SIGNUP_LIMITS.PASSWORD_MAX) return `Password must be ${SIGNUP_LIMITS.PASSWORD_MAX} characters or less`;
+  if (/\s/.test(password)) return 'Password cannot contain spaces';
+  const validPasswordRegex = /^[a-zA-Z0-9]+$/;
+  if (!validPasswordRegex.test(password)) {
+    return 'Password can only contain uppercase letters, lowercase letters, and numbers';
+  }
+  if (!/[A-Z]/.test(password)) return 'Password must contain at least one capital letter';
+  if (!/[0-9]/.test(password)) return 'Password must contain at least one number';
   return '';
 }
 

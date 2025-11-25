@@ -397,7 +397,7 @@ async function postAuthCookieWithBackoffLocal(payload, opts) {
   try {
     const urlParams = new URLSearchParams(window.location.search);
     const passwordChanged = urlParams.get('password_changed_success') === '1';
-    const signupSuccess = urlParams.get('signup_success') === '1';
+    const registerSuccess = urlParams.get('register_success') === '1';
     const sessionFlag = sessionStorage.getItem('passwordChangeSuccess') === '1';
 
     const messageEl = document.getElementById('loginGeneralMessage');
@@ -422,9 +422,9 @@ async function postAuthCookieWithBackoffLocal(payload, opts) {
           sessionStorage.removeItem('passwordChangeSuccess');
         }
         showLoginSuccess('Your password has been changed successfully. Please use your new password to log in.');
-      } else if (signupSuccess) {
+      } else if (registerSuccess) {
         // Clean up URL param
-        urlParams.delete('signup_success');
+        urlParams.delete('register_success');
         const query = urlParams.toString();
         if (history && history.replaceState) {
           history.replaceState({}, '', query ? `/login?${query}` : '/login');

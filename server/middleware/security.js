@@ -66,8 +66,21 @@ function validateEmailServerSide(email) {
 
 /**
  * Server-side password validation matching frontend rules
+ * 
+ * WHAT:
+ * Enforces strict password requirements: minimum 8 characters, at least 1 capital letter,
+ * at least 1 number, no spaces, and no special characters (only letters and numbers).
+ * 
+ * WHY:
+ * Backend is the source of truth. Client-side validation can be bypassed, so we must
+ * enforce all rules server-side before writing to database.
+ * 
+ * HOW:
+ * Validates length, character composition, and format requirements. Returns clear
+ * error messages for each validation failure.
+ * 
  * @param {string} password - Password to validate
- * @returns {object} Validation result
+ * @returns {object} Validation result with valid flag and error message
  */
 function validatePasswordServerSide(password) {
     if (!password || typeof password !== 'string') {
@@ -79,16 +92,35 @@ function validatePasswordServerSide(password) {
         return { valid: false, error: 'Password cannot be empty' };
     }
 
-    // No character restrictions - frontend allows any characters
-
-    // Additional server-side security: minimum length
+    // Minimum length requirement
     if (password.length < 8) {
         return { valid: false, error: 'Password must be at least 8 characters' };
     }
     
-    // Check maximum length
+    // Maximum length requirement
     if (password.length > 50) {
         return { valid: false, error: 'Password must be 50 characters or less' };
+    }
+
+    // Check for spaces (not allowed)
+    if (/\s/.test(password)) {
+        return { valid: false, error: 'Password cannot contain spaces' };
+    }
+
+    // Check for special characters (only letters and numbers allowed)
+    const validPasswordRegex = /^[a-zA-Z0-9]+$/;
+    if (!validPasswordRegex.test(password)) {
+        return { valid: false, error: 'Password can only contain uppercase letters, lowercase letters, and numbers' };
+    }
+
+    // Check for at least one capital letter
+    if (!/[A-Z]/.test(password)) {
+        return { valid: false, error: 'Password must contain at least one capital letter' };
+    }
+
+    // Check for at least one number
+    if (!/[0-9]/.test(password)) {
+        return { valid: false, error: 'Password must contain at least one number' };
     }
 
     return { valid: true, error: null };

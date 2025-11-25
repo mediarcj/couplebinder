@@ -15,6 +15,9 @@
     <title>Register - <%= app_info?.name || 'Application' %></title>
     <link rel="icon" href="/images/favicon.ico">
     <link rel="stylesheet" href="/css/style.css?v=<%= page.assetVersion || assetVersion || '' %>">
+    <% if (ui?.turnstile?.enabled && ui?.turnstile?.siteKey) { %>
+      <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+    <% } %>
 </head>
 <body data-auth-hydrate="false">
     <%- include('partials/nav', { nav: page.nav, app_info: app_info }) %>
@@ -23,7 +26,11 @@
         <div class="auth-card register-card">
             <h1 class="register-title">Create your account</h1>
 
-            <form id="registerForm" method="post" class="register-form">
+            <form
+                id="registerForm"
+                method="post"
+                class="register-form"
+                data-turnstile-enabled="<%= ui?.turnstile?.enabled ? 'true' : 'false' %>">
                 <input type="hidden" name="_csrf" value="<%= ui.csrfToken || '' %>">
 
                 <div class="form-group">
@@ -108,6 +115,18 @@
                 <div id="registerMessageContainer" class="form-group register-message-row hidden">
                     <div id="registerGeneralMessage" class="register-message hidden" role="alert"></div>
                 </div>
+
+                <% if (ui?.turnstile?.enabled && ui?.turnstile?.siteKey) { %>
+                  <div class="form-group turnstile-check">
+                    <div
+                      class="cf-turnstile"
+                      data-sitekey="<%= ui.turnstile.siteKey %>"
+                      data-action="register"
+                      data-theme="light"
+                      data-size="flexible">
+                    </div>
+                  </div>
+                <% } %>
 
                 <div class="form-actions register-actions">
                     <button type="submit" class="btn btn-primary btn-register">Create account</button>

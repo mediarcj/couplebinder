@@ -29,6 +29,37 @@ const log = (typeof window !== 'undefined' && window.logger) ? window.logger : {
 // Serialize auth actions to avoid double submits
 let AUTH_IN_PROGRESS = false;
 
+const TURNSTILE_FIELD_SELECTOR = 'textarea[name="cf-turnstile-response"], input[name="cf-turnstile-response"]';
+
+function isTurnstileRequired() {
+  try {
+    const form = document.getElementById('loginForm');
+    return form?.dataset?.turnstileEnabled === 'true';
+  } catch (_) {
+    return false;
+  }
+}
+
+function readTurnstileResponse() {
+  try {
+    const field = document.querySelector(TURNSTILE_FIELD_SELECTOR);
+    return field?.value?.trim() || '';
+  } catch (_) {
+    return '';
+  }
+}
+
+function resetTurnstileWidget() {
+  try {
+    const widget = typeof window !== 'undefined' ? window.turnstile : null;
+    if (widget && typeof widget.reset === 'function') {
+      widget.reset();
+    }
+  } catch (_) {
+    // ignore reset errors
+  }
+}
+
 /**
  * Show error message on login page
  */
@@ -86,6 +117,8 @@ async function handleLoginSubmit(e) {
   AUTH_IN_PROGRESS = true;
 
   const form = e.target;
+  const turnstileRequired = isTurnstileRequired();
+  let turnstileToken = '';
   const submitBtn = form.querySelector('button[type="submit"]');
   const originalText = submitBtn?.textContent;
   if (submitBtn) {
@@ -122,6 +155,19 @@ async function handleLoginSubmit(e) {
     }
     
     if (!hasErrors) {
+      if (turnstileRequired) {
+        turnstileToken = readTurnstileResponse();
+        if (!turnstileToken) {
+          showLoginError('Please complete the verification challenge.');
+          AUTH_IN_PROGRESS = false;
+          if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.textContent = originalText;
+          }
+          resetTurnstileWidget();
+          return;
+        }
+      }
       // Use Supabase Auth for login (shared client)
       try {
         const client = window.SB || window.supabase;
@@ -132,6 +178,7 @@ async function handleLoginSubmit(e) {
             submitBtn.disabled = false;
             submitBtn.textContent = originalText;
           }
+          if (turnstileRequired) resetTurnstileWidget();
           return;
         }
         
@@ -169,6 +216,7 @@ async function handleLoginSubmit(e) {
           log.error('Login failed:', error.message);
           showLoginError(`Login failed: ${error.message}`);
           AUTH_IN_PROGRESS = false;
+          if (turnstileRequired) resetTurnstileWidget();
         } else {
           log.info('Login successful');
           
@@ -182,6 +230,7 @@ async function handleLoginSubmit(e) {
               submitBtn.disabled = false;
               submitBtn.textContent = originalText;
             }
+            if (turnstileRequired) resetTurnstileWidget();
             return;
           }
           
@@ -197,7 +246,9 @@ async function handleLoginSubmit(e) {
             // Call server endpoint to set secure cookie with backoff
             const cookieResult = await (window.postAuthCookieWithBackoff || postAuthCookieWithBackoffLocal)({
               headers: { 'Authorization': `Bearer ${access}` },
-              body: {}
+              body: {},
+              turnstileToken: turnstileRequired ? turnstileToken : undefined,
+              turnstileIntent: turnstileRequired ? 'interactive-login' : undefined
             });
             
             if (!cookieResult.ok) {
@@ -208,6 +259,7 @@ async function handleLoginSubmit(e) {
                   submitBtn.disabled = false;
                   submitBtn.textContent = originalText;
                 }
+                if (turnstileRequired) resetTurnstileWidget();
                 return;
               }
               log.error('Failed to set authentication cookie', cookieResult.error);
@@ -217,6 +269,7 @@ async function handleLoginSubmit(e) {
                 submitBtn.disabled = false;
                 submitBtn.textContent = originalText;
               }
+              if (turnstileRequired) resetTurnstileWidget();
               return;
             }
             
@@ -271,6 +324,7 @@ async function handleLoginSubmit(e) {
               submitBtn.disabled = false;
               submitBtn.textContent = originalText;
             }
+            if (turnstileRequired) resetTurnstileWidget();
           }
         }
       } catch (error) {
@@ -291,6 +345,7 @@ async function handleLoginSubmit(e) {
           submitBtn.disabled = false;
           submitBtn.textContent = originalText;
         }
+        if (turnstileRequired) resetTurnstileWidget();
       }
     } else {
       AUTH_IN_PROGRESS = false;
@@ -298,6 +353,7 @@ async function handleLoginSubmit(e) {
         submitBtn.disabled = false;
         submitBtn.textContent = originalText;
       }
+      if (turnstileRequired) resetTurnstileWidget();
     }
   } finally {
     if (!AUTH_IN_PROGRESS && submitBtn) {
@@ -341,6 +397,15 @@ async function postAuthCookieWithBackoffLocal(payload, opts) {
   
   for (let i = 0; i <= retries; i++) {
     let res;
+    const requestBody = {
+      ...(payload && payload.body ? { ...payload.body } : {})
+    };
+    if (payload?.turnstileToken) {
+      requestBody.turnstileToken = payload.turnstileToken;
+    }
+    if (payload?.turnstileIntent) {
+      requestBody.turnstileIntent = payload.turnstileIntent;
+    }
     try {
       res = await fetch('/auth/set-cookie', {
         method: 'POST',
@@ -350,7 +415,7 @@ async function postAuthCookieWithBackoffLocal(payload, opts) {
           ...payload.headers
         },
         credentials: 'include',
-        body: JSON.stringify(payload.body)
+        body: JSON.stringify(requestBody)
       });
     } catch (e) {
       return { ok: false, error: 'Network error' };

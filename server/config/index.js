@@ -55,6 +55,7 @@ const KNOWN_ENV = new Set([
   'MAINTENANCE_ALLOWLIST','MAINTENANCE_RETRY_AFTER','MAINTENANCE_PAGE','MAINTENANCE_MESSAGE',
   'MAINTENANCE_KEY','MAINTENANCE_BYPASS_TOKEN','MAINTENANCE_ALLOWED_PATHS','OPS_HEALTH_TOKEN','OPS_HEALTH_IPS','OPS_DB_PROBE_TABLE','OPS_DB_PROBE_RPC','HEALTH_PUBLIC',
   'FIREWALL_FAIL_CLOSED',
+  'TURNSTILE_SITE_KEY','TURNSTILE_SECRET_KEY',
   // Shared success/cancel paths
   'STRIPE_SUCCESS_PATH','STRIPE_CANCEL_PATH',
   // Dual-set Stripe (LIVE/TEST)
@@ -151,6 +152,9 @@ const derivedDb = deriveDbParts(DB_PROVIDER, process.env);
 const nodeEnv = (process.env.NODE_ENV || 'development');
 const isDev = nodeEnv === 'development';
 const isTest = nodeEnv === 'test';
+const turnstileSiteKey = (process.env.TURNSTILE_SITE_KEY || '').trim();
+const turnstileSecretKey = (process.env.TURNSTILE_SECRET_KEY || '').trim();
+const turnstileEnabled = Boolean(turnstileSiteKey && turnstileSecretKey);
 
 const rateLimitEnabled        = bool(process.env.RATE_LIMIT_ENABLED, true);
 const localLimitersEnabled    = bool(process.env.LOCAL_LIMITERS_ENABLED, true);
@@ -388,6 +392,13 @@ const config = {
   firewall: {
     failClosed: bool(process.env.FIREWALL_FAIL_CLOSED, true),
     staticBlocklist: csv(process.env.IP_BLOCKLIST)
+  },
+
+  // Turnstile challenge configuration
+  turnstile: {
+    enabled: turnstileEnabled,
+    siteKey: turnstileSiteKey,
+    secretKey: turnstileSecretKey
   }
 };
 
@@ -501,6 +512,12 @@ function validateConfig() {
   }
   if (config.limits.maxSubmissions < 1) {
     errors.push('MAX_SUBMISSIONS must be at least 1');
+  }
+
+  const hasTurnstileSiteKey = !!turnstileSiteKey;
+  const hasTurnstileSecretKey = !!turnstileSecretKey;
+  if (hasTurnstileSiteKey !== hasTurnstileSecretKey) {
+    errors.push('TURNSTILE_SITE_KEY and TURNSTILE_SECRET_KEY must both be set or both be empty');
   }
 
   return errors;

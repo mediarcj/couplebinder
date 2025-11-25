@@ -35,7 +35,9 @@ router.get('/forgot-password', async (req, res, next) => {
     }
     const options = { state };
     if (state === 'error') {
-      options.message = 'Verification failed. Please try again.';
+      options.message = req.query.message === 'verification'
+        ? 'Please complete the verification challenge.'
+        : 'Something went wrong. Please try again.';
     }
     const model = await buildForgotPasswordRequestModel(req, res, options);
     res.render('forgot-password', model);
@@ -89,7 +91,8 @@ router.post('/forgot-password', generalLimiter(), async (req, res) => {
     }, 'Password reset request failed');
 
     if (htmlPreferred(req)) {
-      return res.redirect(303, '/forgot-password?error=1');
+      return res.redirect(303, '/forgot-password?error=1&message=verification');
+      return res.redirect(303, '/forgot-password?error=1&message=verification');
     }
 
     return res.status(400).json({ ok: false, error: error.message || 'Unable to send reset link' });

@@ -32,16 +32,17 @@
 
 /**
  * WHAT:
- * Intercept legacy auth links (/?login=true, /?signup=true) and redirect to dedicated pages.
+ * Intercept legacy auth links (/?login=true, /?signup=true, /?register=true) and redirect to dedicated pages.
  * 
  * WHY:
  * Maintains backwards compatibility for old deep links without reopening modals.
  * Prevents query params from flashing in the URL bar.
  * 
  * HOW:
- * Listen for clicks on anchors with login/signup query params.
- * Redirect to /login or /signup accordingly.
+ * Listen for clicks on anchors with login/register query params.
+ * Redirect to /login or /register accordingly.
  * Also handle direct page loads with these params.
+ * Legacy /?signup=true redirects to /register for backward compatibility.
  */
 (function interceptAuthLinks() {
   function getAnchor(el) {
@@ -52,6 +53,7 @@
     if (params) {
       params.delete('login');
       params.delete('signup');
+      params.delete('register');
       if (history && history.replaceState) {
         const query = params.toString();
         history.replaceState({}, '', query ? (`${originalUrl.pathname}?${query}`) : originalUrl.pathname);
@@ -75,9 +77,9 @@
         cleanAndRedirect(params, '/login', url);
         return;
       }
-      if (params.get('signup') === 'true') {
+      if (params.get('register') === 'true' || params.get('signup') === 'true') {
         e.preventDefault();
-        cleanAndRedirect(params, '/signup', url);
+        cleanAndRedirect(params, '/register', url);
         return;
       }
     } catch (_) {}
@@ -91,9 +93,9 @@
         cleanAndRedirect(params, '/login', clone);
         return;
       }
-      if (params.get('signup') === 'true') {
+      if (params.get('register') === 'true' || params.get('signup') === 'true') {
         const clone = new URL(window.location.href);
-        cleanAndRedirect(params, '/signup', clone);
+        cleanAndRedirect(params, '/register', clone);
       }
     } catch (_) {}
   }

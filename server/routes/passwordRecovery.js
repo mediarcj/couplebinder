@@ -61,7 +61,8 @@ router.post('/forgot-password', generalLimiter(), async (req, res) => {
       }, 'Turnstile verification failed for password reset request');
 
       if (htmlPreferred(req)) {
-        return res.redirect(303, '/forgot-password?error=1');
+        // Turnstile failed → show the verification-specific message
+        return res.redirect(303, '/forgot-password?error=1&message=verification');
       }
 
       return res.status(400).json({ ok: false, error: 'Verification failed. Please try again.' });
@@ -91,8 +92,8 @@ router.post('/forgot-password', generalLimiter(), async (req, res) => {
     }, 'Password reset request failed');
 
     if (htmlPreferred(req)) {
-      return res.redirect(303, '/forgot-password?error=1&message=verification');
-      return res.redirect(303, '/forgot-password?error=1&message=verification');
+      // Generic failure (Supabase / validation / unexpected error) → generic message
+      return res.redirect(303, '/forgot-password?error=1');
     }
 
     return res.status(400).json({ ok: false, error: error.message || 'Unable to send reset link' });

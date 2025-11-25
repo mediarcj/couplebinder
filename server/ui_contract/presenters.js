@@ -473,14 +473,19 @@ async function buildForgotPasswordRequestModel(req, res, options = {}) {
     },
     ui: {
       csrfToken: res.locals.csrfToken || '',
-      state
+      state,
+      turnstile: {
+        enabled: Boolean(config.turnstile?.enabled),
+        siteKey: config.turnstile?.enabled ? config.turnstile.siteKey : ''
+      }
     },
     ui_instructions: {
       input_limits: DEFAULT_AUTH_LIMITS
     },
     reset: {
       state,
-      email: options.email || ''
+      email: options.email || '',
+      message: options.message || ''
     },
     app_info: baseAppInfo()
   };

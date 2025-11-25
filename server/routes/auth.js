@@ -18,6 +18,7 @@ const { loginLimiter, registerLimiter } = require('../middleware/rateLimiter');
 const { validateUserRegistration } = require('../middleware/validation');
 const logger = require('../utils/logger');
 const { config } = require('../config');
+const { verifyTurnstileRequest } = require('../lib/turnstile');
 const router = express.Router();
 
 /**
@@ -165,6 +166,24 @@ router.get('/status', (req, res) => {
  */
 router.post('/register', registerLimiter(), validateUserRegistration, async (req, res) => {
     try {
+        const turnstileCheck = await verifyTurnstileRequest(req, {
+            intent: 'interactive-register'
+        });
+
+        if (!turnstileCheck.ok) {
+            logger.warn({
+                event: 'auth.turnstile.denied',
+                requestId: req.requestId,
+                code: turnstileCheck.code,
+                errors: turnstileCheck.errors,
+                intent: 'interactive-register'
+            }, 'Turnstile verification failed for registration');
+            return res.status(400).json({
+                success: false,
+                message: 'Verification failed. Please try again.'
+            });
+        }
+
         const clientIP = getClientIP(req);
         const { email, _password, _display_name, ..._profileData } = req.body;
         

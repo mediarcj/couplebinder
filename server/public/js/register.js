@@ -1,18 +1,18 @@
 /**
- * File: server/public/js/signup.js
- * Description: Dedicated signup page script
- * Purpose: Handles validation and Supabase sign ups on the signup page
+ * File: server/public/js/register.js
+ * Description: Dedicated registration page script
+ * Purpose: Handles validation and Supabase user registration on the register page
  */
 
-const signupLog = (typeof window !== 'undefined' && window.logger) ? window.logger : {
+const registerLog = (typeof window !== 'undefined' && window.logger) ? window.logger : {
   info: () => {},
   error: () => {},
   warn: () => {}
 };
 
-let SIGNUP_IN_PROGRESS = false;
+let REGISTER_IN_PROGRESS = false;
 
-const SIGNUP_LIMITS = {
+const REGISTER_LIMITS = {
   NAME_MAX: 40,
   EMAIL_MAX: 40,
   PASSWORD_MIN: 8,
@@ -21,31 +21,31 @@ const SIGNUP_LIMITS = {
   PHONE_MAX: 15
 };
 
-const SIGNUP_FIELD_ERRORS = [
-  'signupDisplayNameError',
-  'signupEmailError',
-  'signupPhoneError',
-  'signupPasswordError',
+const REGISTER_FIELD_ERRORS = [
+  'registerDisplayNameError',
+  'registerEmailError',
+  'registerPhoneError',
+  'registerPasswordError',
   'confirmPasswordError'
 ];
 
-function showSignupMessage(message, isSuccess = false) {
-  const container = document.getElementById('signupMessageContainer');
-  const messageEl = document.getElementById('signupGeneralMessage');
+function showRegisterMessage(message, isSuccess = false) {
+  const container = document.getElementById('registerMessageContainer');
+  const messageEl = document.getElementById('registerGeneralMessage');
   if (!container || !messageEl) return;
   messageEl.textContent = message;
   messageEl.classList.remove('hidden');
   container.classList.remove('hidden');
-  messageEl.classList.toggle('signup-message--success', Boolean(isSuccess));
+  messageEl.classList.toggle('register-message--success', Boolean(isSuccess));
 }
 
-function clearSignupMessage() {
-  const container = document.getElementById('signupMessageContainer');
-  const messageEl = document.getElementById('signupGeneralMessage');
+function clearRegisterMessage() {
+  const container = document.getElementById('registerMessageContainer');
+  const messageEl = document.getElementById('registerGeneralMessage');
   if (!container || !messageEl) return;
   messageEl.textContent = '';
   messageEl.classList.add('hidden');
-  messageEl.classList.remove('signup-message--success');
+  messageEl.classList.remove('register-message--success');
   container.classList.add('hidden');
 }
 
@@ -58,7 +58,7 @@ function showFieldError(id, message) {
 }
 
 function clearFieldErrors() {
-  SIGNUP_FIELD_ERRORS.forEach((id) => {
+  REGISTER_FIELD_ERRORS.forEach((id) => {
     const el = document.getElementById(id);
     if (el) {
       el.textContent = '';
@@ -67,21 +67,21 @@ function clearFieldErrors() {
   });
 }
 
-function sanitizeSignupData(form) {
+function sanitizeRegisterData(form) {
   const formData = new FormData(form);
   const data = Object.fromEntries(formData.entries());
 
-  data.display_name = (data.display_name || '').trim().slice(0, SIGNUP_LIMITS.NAME_MAX);
-  data.email = (data.email || '').trim().slice(0, SIGNUP_LIMITS.EMAIL_MAX);
-  data.password = (data.password || '').slice(0, SIGNUP_LIMITS.PASS_MAX);
-  data.confirm_password = (data.confirm_password || '').slice(0, SIGNUP_LIMITS.PASS_MAX);
-  data.phone = (data.phone || '').replace(/\D+/g, '').slice(0, SIGNUP_LIMITS.PHONE_MAX);
+  data.display_name = (data.display_name || '').trim().slice(0, REGISTER_LIMITS.NAME_MAX);
+  data.email = (data.email || '').trim().slice(0, REGISTER_LIMITS.EMAIL_MAX);
+  data.password = (data.password || '').slice(0, REGISTER_LIMITS.PASS_MAX);
+  data.confirm_password = (data.confirm_password || '').slice(0, REGISTER_LIMITS.PASS_MAX);
+  data.phone = (data.phone || '').replace(/\D+/g, '').slice(0, REGISTER_LIMITS.PHONE_MAX);
 
-  if (form.signupDisplayName) form.signupDisplayName.value = data.display_name;
-  if (form.signupEmail) form.signupEmail.value = data.email;
-  if (form.signupPassword) form.signupPassword.value = data.password;
-  if (form.signupConfirmPassword) form.signupConfirmPassword.value = data.confirm_password;
-  if (form.signupPhone) form.signupPhone.value = data.phone;
+  if (form.registerDisplayName) form.registerDisplayName.value = data.display_name;
+  if (form.registerEmail) form.registerEmail.value = data.email;
+  if (form.registerPassword) form.registerPassword.value = data.password;
+  if (form.registerConfirmPassword) form.registerConfirmPassword.value = data.confirm_password;
+  if (form.registerPhone) form.registerPhone.value = data.phone;
 
   return data;
 }
@@ -89,7 +89,7 @@ function sanitizeSignupData(form) {
 function validateDisplayName(displayName) {
   if (!displayName) return 'Display name is required';
   if (displayName.length < 2) return 'Display name must be at least 2 characters long';
-  if (displayName.length > SIGNUP_LIMITS.NAME_MAX) return `Display name must be ${SIGNUP_LIMITS.NAME_MAX} characters or less`;
+  if (displayName.length > REGISTER_LIMITS.NAME_MAX) return `Display name must be ${REGISTER_LIMITS.NAME_MAX} characters or less`;
   const validDisplayNameRegex = /^[a-zA-Z0-9\s'-._]+$/;
   if (!validDisplayNameRegex.test(displayName)) {
     return 'Display name can only contain letters, numbers, spaces, hyphens, apostrophes, periods, and underscores';
@@ -97,9 +97,9 @@ function validateDisplayName(displayName) {
   return '';
 }
 
-function validateSignupEmail(email) {
+function validateRegisterEmail(email) {
   if (!email) return 'Email address is required';
-  if (email.length > SIGNUP_LIMITS.EMAIL_MAX) return `Email address must be ${SIGNUP_LIMITS.EMAIL_MAX} characters or less`;
+  if (email.length > REGISTER_LIMITS.EMAIL_MAX) return `Email address must be ${REGISTER_LIMITS.EMAIL_MAX} characters or less`;
   if (email.includes(' ')) return 'Email address cannot contain spaces';
   if (!email.includes('@') || !email.includes('.')) return 'Email address must contain @ and .';
   if (email.indexOf('@') !== email.lastIndexOf('@')) return 'Email address can only contain one @ symbol';
@@ -111,10 +111,10 @@ function validateSignupEmail(email) {
   return '';
 }
 
-function validateSignupPassword(password) {
+function validateRegisterPassword(password) {
   if (!password) return 'Password is required';
-  if (password.length < SIGNUP_LIMITS.PASSWORD_MIN) return `Password must be at least ${SIGNUP_LIMITS.PASSWORD_MIN} characters`;
-  if (password.length > SIGNUP_LIMITS.PASSWORD_MAX) return `Password must be ${SIGNUP_LIMITS.PASSWORD_MAX} characters or less`;
+  if (password.length < REGISTER_LIMITS.PASSWORD_MIN) return `Password must be at least ${REGISTER_LIMITS.PASSWORD_MIN} characters`;
+  if (password.length > REGISTER_LIMITS.PASSWORD_MAX) return `Password must be ${REGISTER_LIMITS.PASSWORD_MAX} characters or less`;
   if (/\s/.test(password)) return 'Password cannot contain spaces';
   const validPasswordRegex = /^[a-zA-Z0-9]+$/;
   if (!validPasswordRegex.test(password)) {
@@ -136,7 +136,7 @@ function validatePhone(phone) {
   const phoneRegex = /^\d+$/;
   if (!phoneRegex.test(phone)) return 'Phone must contain only numbers';
   if (phone.length < 8) return 'Phone must be at least 8 digits';
-  if (phone.length > SIGNUP_LIMITS.PHONE_MAX) return `Phone must be ${SIGNUP_LIMITS.PHONE_MAX} digits or less`;
+  if (phone.length > REGISTER_LIMITS.PHONE_MAX) return `Phone must be ${REGISTER_LIMITS.PHONE_MAX} digits or less`;
   return '';
 }
 
@@ -144,17 +144,17 @@ function validatePhone(phone) {
  * Map Supabase auth errors to user-friendly messages and targets.
  * Returns { target: 'general'|'email'|'password', uiMessage: string }.
  */
-function mapSupabaseSignupError(err) {
+function mapSupabaseRegisterError(err) {
   const status = err?.status;
   const code = (err?.code || '').toLowerCase();
   const msg = (err?.message || '').toLowerCase();
 
-  // True "signups disabled" signal (instance setting)
+  // True "registration disabled" signal (instance setting)
   if (
     status === 422 &&
-    (msg.includes('signups not allowed') || code === 'signup_disabled' || code === 'signup_disabled_for_instance')
+    (msg.includes('signups not allowed') || msg.includes('registration not allowed') || code === 'signup_disabled' || code === 'signup_disabled_for_instance')
   ) {
-    return { target: 'general', uiMessage: 'Sign up is currently disabled. Please try again later or contact support.' };
+    return { target: 'general', uiMessage: 'Registration is currently disabled. Please try again later or contact support.' };
   }
 
   // Duplicate email / already registered (varies by backend)
@@ -188,38 +188,38 @@ function mapSupabaseSignupError(err) {
   }
 
   // Generic fallback
-  return { target: 'general', uiMessage: `Sign up failed: ${err?.message || 'Unknown error'}` };
+  return { target: 'general', uiMessage: `Registration failed: ${err?.message || 'Unknown error'}` };
 }
 
-async function handleSignupSubmit(e) {
+async function handleRegisterSubmit(e) {
   e.preventDefault();
-  if (SIGNUP_IN_PROGRESS) return;
+  if (REGISTER_IN_PROGRESS) return;
 
   const form = e.target;
   const submitBtn = form.querySelector('button[type="submit"]');
   const originalText = submitBtn?.textContent;
 
   clearFieldErrors();
-  clearSignupMessage();
+  clearRegisterMessage();
 
-  const data = sanitizeSignupData(form);
+  const data = sanitizeRegisterData(form);
 
   let hasErrors = false;
   const displayNameError = validateDisplayName(data.display_name);
   if (displayNameError) {
-    showFieldError('signupDisplayNameError', displayNameError);
+    showFieldError('registerDisplayNameError', displayNameError);
     hasErrors = true;
   }
 
-  const emailError = validateSignupEmail(data.email);
+  const emailError = validateRegisterEmail(data.email);
   if (emailError) {
-    showFieldError('signupEmailError', emailError);
+    showFieldError('registerEmailError', emailError);
     hasErrors = true;
   }
 
-  const passwordError = validateSignupPassword(data.password);
+  const passwordError = validateRegisterPassword(data.password);
   if (passwordError) {
-    showFieldError('signupPasswordError', passwordError);
+    showFieldError('registerPasswordError', passwordError);
     hasErrors = true;
   }
 
@@ -231,13 +231,13 @@ async function handleSignupSubmit(e) {
 
   const phoneError = validatePhone(data.phone);
   if (phoneError) {
-    showFieldError('signupPhoneError', phoneError);
+    showFieldError('registerPhoneError', phoneError);
     hasErrors = true;
   }
 
   if (hasErrors) return;
 
-  SIGNUP_IN_PROGRESS = true;
+  REGISTER_IN_PROGRESS = true;
   if (submitBtn) {
     submitBtn.disabled = true;
     submitBtn.textContent = 'Creating account…';
@@ -266,7 +266,7 @@ async function handleSignupSubmit(e) {
     }
 
     // Start telemetry
-    signupLog.info('signup.start', { event: 'signup.start', email: data.email });
+    registerLog.info('register.start', { event: 'register.start', email: data.email });
 
     const { data: authData, error: authError } = await client.auth.signUp({
       email: data.email,
@@ -283,11 +283,11 @@ async function handleSignupSubmit(e) {
     });
 
     if (authError) {
-      const mapped = mapSupabaseSignupError(authError);
+      const mapped = mapSupabaseRegisterError(authError);
 
       // Structured client log
-      signupLog.error('signup.failed', {
-        event: 'signup.failed',
+      registerLog.error('register.failed', {
+        event: 'register.failed',
         status: authError.status || null,
         code: authError.code || null,
         rawMessage: authError.message || null,
@@ -295,47 +295,47 @@ async function handleSignupSubmit(e) {
       });
 
       if (mapped.target === 'email') {
-        showFieldError('signupEmailError', mapped.uiMessage);
+        showFieldError('registerEmailError', mapped.uiMessage);
       } else if (mapped.target === 'password') {
-        showFieldError('signupPasswordError', mapped.uiMessage);
+        showFieldError('registerPasswordError', mapped.uiMessage);
       } else {
-        showSignupMessage(mapped.uiMessage);
+        showRegisterMessage(mapped.uiMessage);
       }
       return;
     }
 
     if (!authData?.user) {
-      signupLog.error('signup.failed.no_user', {
-        event: 'signup.failed.no_user',
+      registerLog.error('register.failed.no_user', {
+        event: 'register.failed.no_user',
         email: data.email
       });
-      showSignupMessage('Sign up failed: please try again.');
+      showRegisterMessage('Registration failed: please try again.');
       return;
     }
 
     // Success telemetry
-    signupLog.info('signup.success', {
-      event: 'signup.success',
+    registerLog.info('register.success', {
+      event: 'register.success',
       userId: authData.user.id,
       email: data.email
     });
 
     // Many projects require email confirmation: user exists but no session.
     clearFieldErrors();
-    showSignupMessage(`Welcome ${data.display_name}! Your account has been created. Redirecting to login…`, true);
+    showRegisterMessage(`Welcome ${data.display_name}! Your account has been created. Redirecting to login…`, true);
 
     setTimeout(() => {
-      window.location.replace('/login?signup_success=1');
+      window.location.replace('/login?register_success=1');
     }, 1200);
   } catch (error) {
-    signupLog.error('signup.error', {
-      event: 'signup.error',
+    registerLog.error('register.error', {
+      event: 'register.error',
       message: error?.message || String(error)
     });
-    const message = error?.message ? `Sign up failed: ${error.message}` : 'Network error. Please try again.';
-    showSignupMessage(message);
+    const message = error?.message ? `Registration failed: ${error.message}` : 'Network error. Please try again.';
+    showRegisterMessage(message);
   } finally {
-    SIGNUP_IN_PROGRESS = false;
+    REGISTER_IN_PROGRESS = false;
     if (submitBtn) {
       submitBtn.disabled = false;
       submitBtn.textContent = originalText;
@@ -343,15 +343,15 @@ async function handleSignupSubmit(e) {
   }
 }
 
-function initSignupPage() {
-  const form = document.getElementById('signupForm');
+function initRegisterPage() {
+  const form = document.getElementById('registerForm');
   if (form) {
-    form.addEventListener('submit', handleSignupSubmit);
+    form.addEventListener('submit', handleRegisterSubmit);
   }
 }
 
 if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', initSignupPage);
+  document.addEventListener('DOMContentLoaded', initRegisterPage);
 } else {
-  initSignupPage();
+  initRegisterPage();
 }

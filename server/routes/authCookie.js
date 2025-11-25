@@ -25,6 +25,7 @@ const logger = require('../utils/logger');
 const { config } = require('../config');
 const { setAuthCookie, clearAuthCookie, AUTH_COOKIE_NAME } = require('../lib/authCookie');
 const { getLastLogoutAt, setLastLogoutNow } = require('../lib/logoutWatermark');
+const { verifyTurnstileRequest } = require('../lib/turnstile');
 
 // =======================
 // Configuration
@@ -120,6 +121,23 @@ router.post('/set-cookie', async (req, res) => {
   }
 
   try {
+    const turnstileCheck = await verifyTurnstileRequest(req, {
+      intent: req.body?.turnstileIntent || 'interactive-login'
+    });
+    if (!turnstileCheck.ok) {
+      logger.warn(
+        {
+          event: 'auth.turnstile.denied',
+          requestId: req.requestId,
+          code: turnstileCheck.code,
+          errors: turnstileCheck.errors,
+          intent: req.body?.turnstileIntent || null
+        },
+        'Turnstile verification failed for login flow'
+      );
+      return res.status(400).json({ ok: false, error: 'Verification failed. Please try again.' });
+    }
+
     // Extract Bearer token
     const auth = req.get('authorization') || '';
     const token = auth.startsWith('Bearer ') ? auth.slice(7).trim() : null;

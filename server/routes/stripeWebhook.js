@@ -36,11 +36,16 @@ function mountStripeWebhook(app) {
   // Ref: https://docs.stripe.com/payments/checkout/fulfillment#webhooks (Node/Express example)
   // Accept raw bytes regardless of Content-Type. Some proxies change it.
   app.post('/api/stripe/webhook', express.raw({ type: '*/*' }), async (req, res) => {
-     const sig = req.headers['stripe-signature'];
-     const requestId = req.id || crypto.randomUUID();
+    const sig = req.headers['stripe-signature'];
+    const requestId = req.id || crypto.randomUUID();
     // Minimal entry log so you can confirm the request actually reached this handler
     logger.info(
-      { event: 'stripe.webhook.received', requestId, contentType: req.headers['content-type'], len: req.headers['content-length'] },
+      {
+        event: 'stripe.webhook.received',
+        requestId,
+        contentType: req.headers['content-type'],
+        len: req.headers['content-length']
+      },
       'Stripe webhook request received'
     );
 
@@ -69,14 +74,22 @@ function mountStripeWebhook(app) {
       } catch (err) {
         // keep trying with the other secret, but record why it failed
         logger.warn(
-          { event: 'stripe.webhook.verify_failed', mode: m, requestId, message: err?.message },
+          {
+            event: 'stripe.webhook.verify_failed',
+            mode: m,
+            requestId,
+            message: err?.message
+          },
           'constructEvent failed'
         );
       }
     }
 
     if (!verified) {
-      logger.warn({ event: 'stripe.webhook.bad_signature', requestId }, 'Signature verification failed for both LIVE and TEST');
+      logger.warn(
+        { event: 'stripe.webhook.bad_signature', requestId },
+        'Signature verification failed for both LIVE and TEST'
+      );
       return res.sendStatus(400);
     }
 
@@ -94,12 +107,12 @@ function mountStripeWebhook(app) {
             expand: ['payment_intent.latest_charge']
           });
 
-          // Prefer metadata.price_id we set during checkout; fall back to line_items only if missing
+          // Prefer metadata price_id/product_key that we set at checkout time
           const metaPriceId = fullSession?.metadata?.price_id || null;
           let priceId = metaPriceId;
 
           if (!priceId) {
-            // Line items: use official endpoint as a fallback
+            // Line items fallback: still useful if metadata is missing for some reason
             // Ref: https://docs.stripe.com/api/checkout/sessions/line_items
             try {
               const liResp = await client.checkout.sessions.listLineItems(fullSession.id, {
@@ -109,7 +122,16 @@ function mountStripeWebhook(app) {
               const first = liResp?.data?.[0];
               priceId = first?.price?.id || null;
             } catch (e) {
-              logger.warn({ event: 'webhook.line_items.error', requestId, mode, sessionId: fullSession.id, error: e.message }, 'Failed to fetch line items');
+              // fixed: removed invalid spread `...`
+              logger.warn(
+                {
+                  event: 'webhook.line_items.error',
+                  requestId,
+                  mode,
+                  message: e?.message
+                },
+                'Failed to fetch line items'
+              );
             }
           }
 
@@ -126,7 +148,10 @@ function mountStripeWebhook(app) {
               event: 'webhook.persist.missing_fields',
               requestId,
               mode,
-              userId, priceId, amount, currency,
+              userId,
+              priceId,
+              amount,
+              currency,
               sessionId: fullSession?.id
             }, 'Missing required fields for payment persistence');
             // Return 200 so Stripe stops retrying; nothing to persist yet
@@ -140,7 +165,7 @@ function mountStripeWebhook(app) {
             product_key: productKey,
             amount: amount,
             currency: currency,
-            // Normalize to our internal vocabulary: Stripe calls this "paid"
+            // Normalize success to 'paid' to match the rest of the codebase
             status: 'paid',
             stripe_checkout_session_id: fullSession.id,
             stripe_payment_intent_id: typeof fullSession.payment_intent === 'string'

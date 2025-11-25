@@ -12,7 +12,7 @@ const path = require('path');
 // ──────────────────────────────────────────────────────────────────────────────
 // Goal:
 //   - In development: read .env.development.local at repo root
-//   - In production (EC2/SSM/Docker): read .env.production.full at repo root
+//   - In production (EC2/SSS/Docker): read .env.production.full at repo root
 //   - Never read the legacy .env file anymore.
 //
 // Note:
@@ -49,7 +49,7 @@ const KNOWN_ENV = new Set([
   'LOGIN_MAX','LOGIN_WINDOW_MS','LOGIN_WINDOW_MIN','LOGOUT_MAX','LOGOUT_WINDOW_MS','MAX_SUBMISSIONS','NODE_ENV','PORT','PUBLIC_ORIGIN',
   'RATE_LIMIT_ENABLED','RATE_LIMIT_MAX','RATE_LIMIT_WINDOW_MS','REDIS_HOST','REDIS_PASSWORD','REDIS_PORT','REDIS_URL','REPAIR_QUEUE_CONCURRENCY',
   'REPAIR_QUEUE_ENABLED','REPAIR_QUEUE_NAME','SELF_HOST_SUPABASE_JS','SESSION_SECRET','SIGNUP_ATTEMPTS',
-  'SIGNUP_MAX','SIGNUP_WINDOW_MS','SIGNUP_WINDOW_MIN','SKIP_RATE_LIMIT_IN_DEV','SKIP_RATE_LIMIT_IN_TEST','SUPABASE_ANON_KEY','SUPABASE_DB_URL',
+  'SIGNUP_MAX','SIGNUP_WINDOW_MS','SIGNUP_WINDOW_MIN','SUPABASE_ANON_KEY','SUPABASE_DB_URL',
   'SUPABASE_EXPECTED_AUD','SUPABASE_ISSUER','SUPABASE_JWKS_URL','SUPABASE_JWT_SECRET',
   'SUPABASE_SERVICE_ROLE_KEY','SUPABASE_URL','TEXT_MAX_LENGTH','TEXT_MIN_LENGTH','MAINTENANCE_DEFAULT',
   'MAINTENANCE_ALLOWLIST','MAINTENANCE_RETRY_AFTER','MAINTENANCE_PAGE','MAINTENANCE_MESSAGE',
@@ -187,7 +187,10 @@ const stripeTest = {
   priceResumeExpert:  (process.env.STRIPE_PRICE_RESUME_EXPERT_TEST || '').trim()
 };
 
-const stripeMode = (nodeEnv === 'development') ? 'live' : 'test';
+// Clean, intuitive logic:
+// - development  → test mode (test keys + STRIPE_WEBHOOK_SECRET_TEST; pairs with `stripe listen`)
+// - production   → live mode (live keys + STRIPE_WEBHOOK_SECRET_LIVE; Stripe hits detechify.com directly)
+const stripeMode = (nodeEnv === 'development') ? 'test' : 'live';
 const stripeActive = stripeMode === 'live' ? stripeLive : stripeTest;
 
 // ──────────────────────────────────────────────────────────────────────────────

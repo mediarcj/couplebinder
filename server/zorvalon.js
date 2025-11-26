@@ -520,7 +520,7 @@ registerRoutes({
 consoleLogger.formatMiddlewareRegistration('Routes');
 
 // ============================================================
-// STEP 8: Error Handling
+// STEP 8: Error Handling (delegated to bootstrap)
 // ============================================================
 
 /**
@@ -530,102 +530,16 @@ consoleLogger.formatMiddlewareRegistration('Routes');
  * WHY:
  * Prevents information leakage (no stack traces, no internal paths).
  * Provides consistent UX across HTML/JSON/text responses.
- * Single source of truth for error handling.
+ * Error handling is delegated to bootstrap/errors.js for better organization.
  *
  * HOW:
- * Use errorResponder module for all error responses.
- * Log errors server-side with full context.
- * Send minimal, safe info to clients.
- * Support content negotiation (HTML/JSON/text).
+ * We call registerErrorHandlers from bootstrap/errors.js which handles all error
+ * handling including 404 responses and centralized error handler.
  */
-const { respondError } = require('./utils/errorResponder');
-const isProd = config.server.nodeEnv === 'production';
 
-// 404 handler (no route matched)
-app.use((req, res) => {
-  respondError(req, res, {
-    status: 404,
-    message: 'The requested resource was not found.',
-    code: 'not_found',
-  });
-});
+const { registerErrorHandlers } = require('./bootstrap/errors');
 
-// Centralized error handler (must have 4 args)
-app.use((err, req, res, next) => {
-  // Check if headers were already sent (prevents "headers already sent" errors)
-  if (res.headersSent) {
-    return next(err);
-  }
-  
-  // Do not leak internals to clients
-  const status = err.status || err.statusCode || 500;
-
-  // Handle static file errors appropriately
-  const isStaticReq = req.path.startsWith('/images/') || 
-                      req.path.startsWith('/css/') || 
-                      req.path.startsWith('/js/') ||
-                      req.path === '/favicon.ico' || 
-                      req.path === '/robots.txt';
-  
-  // Determine status based on error code
-  let finalStatus = status;
-  if (err.code === 'ENOENT') {
-    finalStatus = 404;
-  } else if (err.code === 'EACCES') {
-    finalStatus = 403;
-  }
-  
-  // For static requests, return proper status without HTML error page
-  if (isStaticReq && (err.code === 'ENOENT' || err.code === 'EACCES' || finalStatus === 404 || finalStatus === 403)) {
-    return res.status(finalStatus).end();
-  }
-
-  /**
-   * WHAT:
-   * Log full error details server-side only.
-   * 
-   * WHY:
-   * Need complete error context for debugging.
-   * But never send stack traces or internals to clients.
-   * 
-   * HOW:
-   * Use structured logger with full context.
-   * Include stack trace in logs only.
-   * Client gets generic message only.
-   */
-  try {
-    logger.error('Uncaught error', {
-      requestId: req.requestId || 'unknown',
-      status,
-      name: err.name,
-    message: err.message,
-      code: err.code,
-    url: req.url,
-    method: req.method,
-      ip: req.ip,
-      syscall: err.syscall, // Added for ENOENT diagnosis
-      // Stack trace in logs only (not sent to client)
-      stack: isProd ? undefined : err.stack,
-    });
-  } catch {
-    // Fail silently if logging fails
-  }
-
-  // 429 hint: if upstream rate limiter set retryAfter seconds, reflect it safely
-  if (status === 429 && err.retryAfter) {
-    res.set('Retry-After', String(err.retryAfter));
-  }
-
-  respondError(req, res, {
-    status,
-    message: status === 500 ? 'An unexpected error occurred.' : (err.publicMessage || err.message),
-    code: status === 500 ? 'internal_error' : undefined,
-    // Never send stack/details in prod responses
-    extra: isProd ? {} : { detail: err.type || err.code },
-  });
-});
-
-consoleLogger.formatMiddlewareRegistration('Error handling');
+registerErrorHandlers({ app, logger, config, consoleLogger });
 
 // ============================================================
 // STEP 9: Server Startup

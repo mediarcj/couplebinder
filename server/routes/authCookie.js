@@ -121,9 +121,32 @@ router.post('/set-cookie', async (req, res) => {
   }
 
   try {
+    // Fast-path: if this request already has a valid authenticated user and the
+    // canonical auth cookie, treat it as a no-op and skip Turnstile  heavy checks.
+    // This avoids noisy warnings when background/client code "re-hydrates" auth
+    // after the user is already logged in.
+    try {
+      const hasCanonicalCookie = !!(req.cookies && req.cookies[COOKIE_NAME]);
+      const hasUser = !!req.user;
+      if (hasUser && hasCanonicalCookie) {
+        logger.info(
+          {
+            event: 'auth.set_cookie.skip',
+            reason: 'already_authenticated',
+            requestId: req.requestId
+          },
+          'Set-cookie skipped: request already has authenticated session'
+        );
+        return res.status(200).json({ ok: true, alreadyAuthenticated: true });
+      }
+    } catch (_) {
+      // If inspection fails for any reason, fall through to normal flow.
+    }
+
     const turnstileCheck = await verifyTurnstileRequest(req, {
       intent: req.body?.turnstileIntent || 'interactive-login'
     });
+    
     if (!turnstileCheck.ok) {
       logger.warn(
         {

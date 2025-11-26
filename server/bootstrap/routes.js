@@ -12,29 +12,23 @@
  * Centralizing route registration makes the codebase easier to maintain.
  *
  * HOW:
- * We register routes with CSRF protection for state-changing requests
- * and organize them by functional areas (auth, API, dashboard, health).
- * All route loading is wrapped in try/catch to prevent crashes.
+ * CSRF protection for state-changing requests is applied globally
+ * in the core middleware stack. Here we only register routers and
+ * organize them by functional areas (auth, API, dashboard, health).
  *
  * @param {Object} params - Route registration parameters
  * @param {Object} params.app - Express application instance
  * @param {Object} params.config - Application configuration object
  * @param {Object} params.toggles - Feature flags/toggles object
  * @param {Function} params.requireAuth - Authentication middleware function
- * @param {Object} params.logger - Structured logger instance
- * @param {Object} params.consoleLogger - Console logger with formatting
- * @param {Function} params.csrfLite - CSRF middleware (for reference, already applied globally)
  */
 function registerRoutes({
   app,
   config,
   toggles,
-  requireAuth,
-  logger,
-  consoleLogger,
-  csrfLite,
+  requireAuth
 }) {
-  // Import modular routes (CSRF protection handled globally by csrfLite)
+  // Import modular routes (CSRF protection is handled globally in core middleware)
   // CRITICAL SECTION: Safe route loading to prevent crashes
 
   try {
@@ -72,7 +66,12 @@ function registerRoutes({
   try {
     // Admin routes (require admin role)
     app.use('/api/admin', requireAuth, require('../routes/admin'));
-    
+    console.log('Admin API routes loaded successfully');
+  } catch (error) {
+    console.error('Failed to load admin API routes:', error.message);
+  }
+
+  try {
     // User routes (require ownership)
     app.use('/api/users', requireAuth, require('../routes/users'));
     console.log('Users API routes loaded successfully');
@@ -87,10 +86,10 @@ function registerRoutes({
     console.error('Failed to load page API routes:', error.message);
   }
 
+  let submissionsRouter = null;
   try {
-    // Note: /api/submit is public so CSRF can check it first (returns 403 if no token)
-    // The route handler will check auth internally if needed
-    app.use('/api/submit', require('../routes/submissions'));
+    submissionsRouter = require('../routes/submissions');
+    app.use('/api/submit', submissionsRouter);
     console.log('Submissions API routes loaded successfully');
   } catch (error) {
     console.error('Failed to load submissions API routes:', error.message);
@@ -146,8 +145,6 @@ function registerRoutes({
     }
   }
 
-  // (removed) late health mount — now mounted early
-
   try {
     app.use('/dashboard', requireAuth, require('../routes/dashboard'));
     console.log('Dashboard routes loaded successfully');
@@ -168,7 +165,6 @@ function registerRoutes({
       if (req.user?.id) {
         return res.redirect('/dashboard');
       }
-      const { buildLoginPageModel } = require('../ui_contract/presenters');
       const pageModel = buildLoginPageModel(req, res);
       pageModel.page.nonce = res.locals.nonce || pageModel.page.nonce;
       res.render('login', pageModel);
@@ -188,7 +184,7 @@ function registerRoutes({
       if (req.user?.id) {
         return res.redirect('/dashboard');
       }
-      const { buildRegisterPageModel } = require('../ui_contract/presenters');
+
       const pageModel = buildRegisterPageModel(req, res);
       pageModel.page.nonce = res.locals.nonce || pageModel.page.nonce;
       res.render('register', pageModel);
@@ -204,24 +200,39 @@ function registerRoutes({
 
   // Initialize submissions storage (now using database)
   try {
-    const submissionsRouter = require('../routes/submissions');
-    if (submissionsRouter.initSubmissionsStorage) {
+    if (submissionsRouter && submissionsRouter.initSubmissionsStorage) {
       submissionsRouter.initSubmissionsStorage();
+      console.log('Submissions storage initialized successfully (Supabase database)');
     }
-    console.log('Submissions storage initialized successfully (Supabase database)');
   } catch (error) {
     console.error('Failed to initialize submissions storage:', error.message);
   }
 
-  // Import presenters
+  // Import presenters (home, login, register)
   let buildHomePageModel;
+  let buildLoginPageModel;
+  let buildRegisterPageModel;
   try {
     const presentersModule = require('../ui_contract/presenters');
     buildHomePageModel = presentersModule.buildHomePageModel;
+    buildLoginPageModel = presentersModule.buildLoginPageModel;
+    buildRegisterPageModel = presentersModule.buildRegisterPageModel;
     console.log('Presenters module loaded successfully');
   } catch (error) {
     console.error('Failed to load presenters module:', error.message);
-    buildHomePageModel = () => ({ page: { title: 'Error', description: 'Service unavailable' } });
+    // Fallbacks so routes still render something instead of crashing
+    buildHomePageModel = () => ({
+      page: { title: 'Error', description: 'Service unavailable', nonce: '' },
+      ui: { csrfToken: '', turnstile: { enabled: false } }
+    });
+    buildLoginPageModel = () => ({
+      page: { title: 'Login', nonce: '' },
+      ui: { csrfToken: '', turnstile: { enabled: false } }
+    });
+    buildRegisterPageModel = () => ({
+      page: { title: 'Register', nonce: '' },
+      ui: { csrfToken: '', turnstile: { enabled: false } }
+    });
   }
 
   // Home page route
@@ -244,9 +255,10 @@ function registerRoutes({
       res.render('index', pageModel);
     } catch (error) {
       console.error('Home page error:', error);
-      res.status(500).json({ 
-        error: 'Internal server error',
-        message: error.message,
+      res.status(500).render('error', {
+        title: 'Home Error',
+        message: 'Unable to load home page',
+        page: { nonce: res.locals.nonce },
         requestId: req.requestId,
         timestamp: new Date().toISOString()
       });
@@ -255,4 +267,3 @@ function registerRoutes({
 }
 
 module.exports = { registerRoutes };
-

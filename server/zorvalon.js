@@ -1,7 +1,10 @@
-// File: zorvalon.js
-// Description: Entry point for application server - Refactored for better organization
-// Boot order: Express  Database  Redis  SecurityHeaders  CORS  TrustProxy  RequestID  IPFirewall  Parsers  CacheControl  Auth  Sessions  CSRF  Routes  Errors
-// Notes: Console logs mark important checkpoints for audit and debugging
+// File: server/zorvalon.js
+// Description: Entry point for application server - refactored and modular
+// High-level boot order (see detailed comment below):
+//   Express → preflight OPTIONS → toggles → trust proxy/canonical host →
+//   core security + health/degrade/cors/rate limiters → Stripe webhook + parsers + cookies →
+//   app config → auth bridge + default-deny → views/static → routes → errors → shutdown
+// Notes: Console logs mark important checkpoints for audit and debugging.
 
 const express = require('express');
 const path = require('path');
@@ -79,7 +82,7 @@ try {
   toggles = { env: 'production', logLevel: 'info', blockCmsScans: false, corsDebug: false, exposeDebugRoutes: false };
 }
 
-// New security middleware
+// New security middleware (wired via bootstrap/coreMiddleware)
 const methodGuard = require('./middleware/methodGuard');
 const credentialGuard = require('./middleware/credentialGuard');
 const { generateCspNonce, securityHeaders } = require('./middleware/securityHeaders');
@@ -93,13 +96,20 @@ const { generalLimiter, loginLimiter, registerLimiter, logoutLimiter, cookieSetL
 // ============================================================
 
 /**
- * 
- * Express → Preflight OPTIONS → Toggles → CSP Nonce → Method Guard → Credential Guard → 
- * Security Headers → Cache-Control → Trust Proxy + Client IP → Request ID → /health → 
- * Redis Degrade Guard (early) → IP Firewall → Redis client init (async) → Maintenance Guard → 
- * HTTPS Enforce → Permissions-Policy → CORS allowlist → Stripe webhook (raw) → Body parsers → 
- * Cookies → App config → AuthBridge → Default-deny guard (/api,/dashboard) → Request timing logs → 
- * Static → CSRF → App rate limiters → Routes → Error handlers → Start → Graceful shutdown
+ * Detailed boot order (after refactor, via bootstrap modules):
+ *
+ * Express → preflight OPTIONS → toggles →
+ * trust proxy + canonical host redirect →
+ * CSP nonce → method guard → credential guard →
+ * security headers → cache-control → trust proxy IP → request ID →
+ * /health + degrade guard (early) → IP firewall →
+ * Redis client init (async) + maintenance guard →
+ * HTTPS enforce → CORS allowlist (+ optional CORS debug) →
+ * Stripe webhook (raw body, CSRF bypass) →
+ * body parsers → cookie guardian → app config →
+ * auth bridge → default-deny guard (/api, /dashboard) →
+ * static + view engine → CSRF →
+ * app rate limiters → routes → error handlers → graceful shutdown.
  */
 
 
@@ -208,12 +218,6 @@ if (toggles.blockCmsScans) {
 
 // CORS debug logging is now handled in registerCoreMiddleware
 
-// ============================================================
-// NEW SECURITY MIDDLEWARE (Step-by-step integration)
-// ============================================================
-// NOTE: Core middleware registration is now handled by bootstrap/coreMiddleware.js
-// This section is kept for reference but actual registration happens in registerCoreMiddleware()
-
 console.log(`${config.branding.appName} server starting...`);
 try {
   if (typeof logConfigSummary === 'function') {
@@ -264,13 +268,13 @@ let redisClient = null;
  * Load Redis client module and prepare for connection.
  *
  * WHY:
- * Session middleware needs the Redis client reference.
- * Actual connection happens asynchronously after sessions are mounted.
+ * Redis is used for rate limiting, IP firewall, maintenance guard, and
+ * degrade guard. These features need a shared client reference.
  *
  * HOW:
  * Import Redis client with lazyConnect enabled.
- * Store client reference for session middleware.
- * Connection will be initiated after middleware is configured.
+ * Store client reference on this module and app.locals.
+ * Connection is initiated asynchronously during boot.
  */
 try {
     const { client, connectRedis } = require('./utils/redisClient');
@@ -287,7 +291,7 @@ try {
             console.log('Redis connection established successfully');
         } catch (error) {
             console.error('Redis connection failed:', error.message);
-            console.log('Sessions will use memory store fallback');
+            console.log('Redis-dependent features will fall back or degrade gracefully');
             app.locals.redisReady = false;
             app.locals.rateLimitStoreReady = false;
             updateRedisStatus(false, new Date().toISOString());
@@ -323,7 +327,7 @@ try {
 // 7. Maintenance Guard factory (will be mounted in registerCoreMiddleware)
 const createMaintenanceGuard = require('./middleware/maintenanceGuard');
 
-// 8. Redis Degrade Guard — already mounted early to protect pre-firewall paths
+// 8. Redis Degrade Guard — mounted early inside registerCoreMiddleware to protect sensitive paths
 console.log('Security: Redis degrade guard ready (mounted once, early)');
 
 // 9. Default-Deny Auth Guard will be mounted after authBridge (see below)
@@ -331,17 +335,17 @@ console.log('Security: Redis degrade guard ready (mounted once, early)');
 /**
  * WHAT:
  * Function to update Redis status for health checks.
- * 
+ *
  * WHY:
- * Health endpoints need to know if Redis is connected.
- * This allows monitoring systems to track Redis availability.
- * 
+ * Health endpoints need to know if Redis is connected so monitoring
+ * can track availability and partial-degrade behavior.
+ *
  * HOW:
- * Import and call updateRedisStatus from health routes.
- * Pass connection status and timestamp for monitoring.
- * 
+ * Import and call updateRedisStatus from routes/health. If health
+ * routes are not available (e.g. during tests), fall back to a no-op.
+ *
  * @param {boolean} connected - Whether Redis is connected
- * @param {string} lastCheck - Timestamp of last check
+ * @param {string} lastCheck - Timestamp of last health check
  */
 let updateRedisStatus;
 try {
@@ -551,11 +555,10 @@ registerErrorHandlers({ app, logger, config, consoleLogger });
  *
  * WHY:
  * The server needs to listen on a port to accept HTTP requests.
- * We also set up graceful shutdown handling for production deployments.
  *
  * HOW:
- * We start the server on the configured port and host,
- * and set up signal handlers for graceful shutdown.
+ * We start the server on the configured port and host, log the final
+ * startup summary, and then register the graceful shutdown system below.
  */
 const PORT = config.server.port;
 const HOST = config.server.host;

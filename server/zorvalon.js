@@ -582,7 +582,7 @@ const server = app.listen(PORT, HOST, () => {
 });
 
 // ============================================================
-// STEP 10: Graceful Shutdown System
+// STEP 10: Graceful Shutdown System (delegated to bootstrap)
 // ============================================================
 
 /**
@@ -593,99 +593,16 @@ const server = app.listen(PORT, HOST, () => {
  * WHY:
  * Graceful shutdown prevents data corruption, ensures active requests
  * complete safely, and allows load balancers to drain connections properly.
- * This is essential for production deployments and zero-downtime updates.
+ * Shutdown logic is delegated to bootstrap/shutdown.js for better organization.
  *
  * HOW:
- * We track server state, implement connection draining, close database
- * connections, flush Redis data, and provide timeout fallbacks.
+ * We call registerShutdownSystem from bootstrap/shutdown.js which handles all
+ * shutdown logic including signal handlers, connection draining, and cleanup.
  */
 
-// Graceful shutdown configuration
-const GRACE_MS = config.shutdown.graceMs;
-const SOCKET_CULL_MS = Math.max(0, GRACE_MS - 2000);
+const { registerShutdownSystem } = require('./bootstrap/shutdown');
 
-let shuttingDown = false;
-const sockets = new Set();
-
-// Track active connections for graceful draining
-server.on('connection', (sock) => {
-  sockets.add(sock);
-  sock.on('close', () => sockets.delete(sock));
-});
-
-/**
- * Gracefully shutdown the server and all resources
- * 
- * WHAT:
- * Handle shutdown signals exactly once, close HTTP server cleanly, and exit(0).
- * 
- * WHY:
- * Duplicate signals or timeout exits with code 1 make systemd/npm report failures.
- * Always exit(0) for clean restarts.
- * 
- * HOW:
- * 1) Debounce with process.once and shuttingDown flag
- * 2) Close server and cull lingering sockets
- * 3) Always exit(0) so systemd doesn't mark restart as failed
- * 
- * @param {string} signal - The signal that triggered shutdown
- */
-function gracefulShutdown(signal) {
-  if (shuttingDown) {
-    console.log('Shutdown already in progress (ignored duplicate signal)');
-    return; // Just return, don't exit(1)
-  }
-  shuttingDown = true;
-
-  console.log('GRACEFUL SHUTDOWN INITIATED');
-  console.log(`   Signal: ${signal}`);
-  console.log(`   Time: ${new Date().toLocaleString()}`);
-  console.log('   Shutting down gracefully...');
-  
-  // Stop accepting new connections
-  server.close((err) => {
-    if (err) {
-      console.error('HTTP server close error:', err);
-      // Still exit(0) to avoid npm/systemd "failed" spam during restarts
-      process.exit(0);
-      return;
-    }
-    console.log('HTTP server closed');
-      console.log('All active connections closed');
-    console.log('Graceful shutdown completed');
-    process.exit(0); // IMPORTANT: exit(0) so systemd/npm doesn't mark it as failure
-  });
-
-  // After a short delay, kill any lingering sockets (keep-alive, long polls)
-  setTimeout(() => {
-    for (const s of sockets) {
-      try { s.destroy(); } catch {}
-    }
-  }, SOCKET_CULL_MS).unref();
-
-  // Final failsafe - if close callback never fires, exit(0) anyway
-  setTimeout(() => {
-    console.warn('Graceful shutdown timeout reached, forcing exit');
-    process.exit(0); // exit(0) on timeout to avoid restart "failed" noise
-  }, GRACE_MS).unref();
-}
-
-// Handle termination signals (use once() to prevent duplicate handlers)
-process.once('SIGTERM', () => gracefulShutdown('SIGTERM'));
-process.once('SIGINT', () => gracefulShutdown('SIGINT'));
-
-// Handle uncaught exceptions and unhandled rejections
-process.once('uncaughtException', (error) => {
-  console.error('Uncaught Exception:', error);
-  gracefulShutdown('UNCAUGHT_EXCEPTION');
-});
-
-process.once('unhandledRejection', (reason, promise) => {
-  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
-  gracefulShutdown('UNHANDLED_REJECTION');
-});
-
-consoleLogger.formatMiddlewareRegistration('Graceful shutdown system');
+registerShutdownSystem({ server, logger, config, consoleLogger });
 
 // Export for testing
 module.exports = app;

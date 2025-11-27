@@ -1969,6 +1969,58 @@ nav ul li a.active {
     color: #9ca3af;
 }
 
+/* Password field with show/hide eye icon */
+.password-input-wrapper {
+    position: relative;
+    width: 100%;
+}
+
+.password-input {
+    padding-right: 3rem; /* make room for the eye icon */
+}
+
+/* The eye button */
+.password-toggle {
+    position: absolute;
+    right: 0.75rem;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 2.25rem;
+    height: 2.25rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    color: #9ca3af;             /* neutral grey */
+    padding: 0;
+}
+
+/* Profile edit: keep password rows compact inside the card,
+   without stretching the wrapper across the whole width */
+.password-fields .password-input-wrapper {
+    width: auto;
+    display: inline-block;
+}
+
+.password-fields .password-input {
+    width: 260px;
+    max-width: 100%;
+}
+
+/* The SVG eye icon */
+.password-toggle-icon {
+    width: 1.35rem;
+    height: 1.35rem;
+    display: block;
+}
+
+/* When password is visible, highlight the icon a bit */
+.password-toggle.is-visible {
+    color: #4F46E5;
+}
+
 .login-actions {
     margin-top: 0.25rem;
     margin-bottom: 0;

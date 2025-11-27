@@ -504,10 +504,42 @@ async function postAuthCookieWithBackoffLocal(payload, opts) {
     // Ignore errors
   }
   
+  function initPasswordToggles() {
+    try {
+      const toggles = document.querySelectorAll('.password-toggle');
+      if (!toggles || toggles.length === 0) return;
+
+      toggles.forEach((btn) => {
+        const targetId = btn.getAttribute('data-target');
+        const input = targetId ? document.getElementById(targetId) : null;
+        if (!input) return;
+
+        btn.addEventListener('click', () => {
+          const currentlyHidden = input.type === 'password';
+          input.type = currentlyHidden ? 'text' : 'password';
+
+          // Update ARIA and visual state
+          btn.setAttribute('aria-pressed', currentlyHidden ? 'true' : 'false');
+          btn.setAttribute('aria-label', currentlyHidden ? 'Hide password' : 'Show password');
+
+          if (currentlyHidden) {
+            btn.classList.add('is-visible');
+          } else {
+            btn.classList.remove('is-visible');
+          }
+        });
+      });
+    } catch (err) {
+      log.error('initPasswordToggles error:', err);
+    }
+  }
+
   const loginForm = document.getElementById('loginForm');
   if (loginForm) {
     loginForm.addEventListener('submit', handleLoginSubmit);
     log.info('Login form event listener attached');
   }
-})();
 
+  // Set up show/hide password toggles
+  initPasswordToggles();
+})();

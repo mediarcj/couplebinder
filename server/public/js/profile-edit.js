@@ -186,9 +186,10 @@ document.addEventListener('DOMContentLoaded', () => {
   log.info('Profile edit page loaded');
   loadUserProfile().then(() => {
     attachEventHandlers();
-    // Initialize password and delete account features AFTER profile loads (consistent with Edit buttons)
+    // Initialize password, delete-account, and visibility toggles AFTER profile loads
     initPasswordManager();
     initDeleteAccountFlow();
+    initPasswordToggles();
   });
   log.info('Profile edit page initialized - logout handled by logout.js module');
 });
@@ -956,6 +957,36 @@ function whenModalManagerReady(cb, tries = 40) {
   setTimeout(() => whenModalManagerReady(cb, tries - 1), 50);
 }
 
+/**
+ * Password visibility toggles for password fields (shared pattern with login/register)
+ */
+function initPasswordToggles() {
+  try {
+    const toggles = document.querySelectorAll('.password-toggle[data-target]');
+    if (!toggles.length) return;
+
+    toggles.forEach((btn) => {
+      const targetId = btn.getAttribute('data-target');
+      if (!targetId) return;
+
+      const input = document.getElementById(targetId);
+      if (!input) return;
+
+      btn.addEventListener('click', () => {
+        const isHidden = input.type === 'password';
+        input.type = isHidden ? 'text' : 'password';
+
+        btn.setAttribute('aria-pressed', String(isHidden));
+        btn.setAttribute('aria-label', isHidden ? 'Hide password' : 'Show password');
+
+        // highlight button when visible
+        btn.classList.toggle('is-visible', isHidden);
+      });
+    });
+  } catch (_) {
+    // fail-safe
+  }
+}
 
 /* ============================================================
    Delete Account Modal

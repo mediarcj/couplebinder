@@ -344,7 +344,7 @@ async function handleRegisterSubmit(e) {
 
     const client = window.SB || window.supabase;
     if (!client || !client.auth?.signUp) {
-      showSignupMessage('Authentication system not initialized. Please refresh the page.');
+      showRegisterMessage('Authentication system not initialized. Please refresh the page.');
       return;
     }
 
@@ -444,11 +444,44 @@ async function handleRegisterSubmit(e) {
   }
 }
 
+/**
+ * Password show/hide toggles (shared pattern with login page)
+ */
+function initPasswordToggles() {
+  try {
+    const toggles = document.querySelectorAll('.password-toggle[data-target]');
+    if (!toggles.length) return;
+
+    toggles.forEach((btn) => {
+      const targetId = btn.getAttribute('data-target');
+      if (!targetId) return;
+
+      const input = document.getElementById(targetId);
+      if (!input) return;
+
+      btn.addEventListener('click', () => {
+        const isHidden = input.type === 'password';
+        input.type = isHidden ? 'text' : 'password';
+
+        btn.setAttribute('aria-pressed', String(isHidden));
+        btn.setAttribute('aria-label', isHidden ? 'Hide password' : 'Show password');
+
+        // highlight button when visible
+        btn.classList.toggle('is-visible', isHidden);
+      });
+    });
+  } catch (_) {
+    // fail-safe
+  }
+}
+
 function initRegisterPage() {
   const form = document.getElementById('registerForm');
   if (form) {
     form.addEventListener('submit', handleRegisterSubmit);
   }
+  // Wire up eye icons
+  initPasswordToggles();
 }
 
 if (document.readyState === 'loading') {

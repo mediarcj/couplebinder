@@ -81,34 +81,62 @@
                 
                 <div class="form-group">
                     <label for="registerPassword">Password</label>
-                    <input 
-                        type="password" 
-                        id="registerPassword" 
-                        name="password" 
-                        placeholder="Min 8 chars, 1 capital, 1 number, no spaces"
-                        minlength="<%= ui_instructions?.input_limits?.password_min || 8 %>"
-                        maxlength="<%= ui_instructions?.input_limits?.password_max || 40 %>"
-                        autocomplete="new-password"
-                        required
-                        pattern="[a-zA-Z0-9]+"
-                        class="register-input"
-                    >
+                    <div class="password-input-wrapper">
+                        <input 
+                            type="password" 
+                            id="registerPassword" 
+                            name="password" 
+                            placeholder="Min 8 chars, 1 capital, 1 number, no spaces"
+                            minlength="<%= ui_instructions?.input_limits?.password_min || 8 %>"
+                            maxlength="<%= ui_instructions?.input_limits?.password_max || 40 %>"
+                            autocomplete="new-password"
+                            required
+                            pattern="[a-zA-Z0-9]+"
+                            class="register-input password-input"
+                        >
+                        <button
+                            type="button"
+                            class="password-toggle"
+                            data-target="registerPassword"
+                            aria-label="Show password"
+                            aria-pressed="false">
+                            <svg class="password-toggle-icon" viewBox="0 0 24 24" aria-hidden="true">
+                                <!-- Simple eye icon -->
+                                <path d="M12 4.5C7 4.5 2.9 7.6 1 12c1.9 4.4 6 7.5 11 7.5s9.1-3.1 11-7.5c-1.9-4.4-6-7.5-11-7.5zm0 12.0a4.5 4.5 0 1 1 0-9 4.5 4.5 0 0 1 0 9z"/>
+                                <circle cx="12" cy="12" r="2.2"></circle>
+                            </svg>
+                        </button>
+                    </div>
                     <div id="registerPasswordError" class="error-message"></div>
                 </div>
                 
                 <div class="form-group">
                     <label for="registerConfirmPassword">Confirm password</label>
-                    <input 
-                        type="password" 
-                        id="registerConfirmPassword" 
-                        name="confirm_password" 
-                        placeholder="Re-enter your password"
-                        minlength="<%= ui_instructions?.input_limits?.password_min || 8 %>"
-                        maxlength="<%= ui_instructions?.input_limits?.password_max || 40 %>"
-                        autocomplete="new-password"
-                        required
-                        class="register-input"
-                    >
+                    <div class="password-input-wrapper">
+                        <input 
+                            type="password" 
+                            id="registerConfirmPassword" 
+                            name="confirm_password" 
+                            placeholder="Re-enter your password"
+                            minlength="<%= ui_instructions?.input_limits?.password_min || 8 %>"
+                            maxlength="<%= ui_instructions?.input_limits?.password_max || 40 %>"
+                            autocomplete="new-password"
+                            required
+                            class="register-input password-input"
+                        >
+                        <button
+                            type="button"
+                            class="password-toggle"
+                            data-target="registerConfirmPassword"
+                            aria-label="Show password"
+                            aria-pressed="false">
+                            <svg class="password-toggle-icon" viewBox="0 0 24 24" aria-hidden="true">
+                                <!-- Same eye icon -->
+                                <path d="M12 4.5C7 4.5 2.9 7.6 1 12c1.9 4.4 6 7.5 11 7.5s9.1-3.1 11-7.5c-1.9-4.4-6-7.5-11-7.5zm0 12.0a4.5 4.5 0 1 1 0-9 4.5 4.5 0 0 1 0 9z"/>
+                                <circle cx="12" cy="12" r="2.2"></circle>
+                            </svg>
+                        </button>
+                    </div>
                     <div id="confirmPasswordError" class="error-message"></div>
                 </div>
 

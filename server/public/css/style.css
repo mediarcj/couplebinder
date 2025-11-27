@@ -1947,6 +1947,22 @@ nav ul li a.active {
     width: 100% !important;
 }
 
+/* Login page: make Turnstile look like a normal field, no extra box */
+.login-card .turnstile-check {
+    border: none;
+    padding: 0;
+    background: transparent;
+    min-height: 0;
+    display: block;
+}
+
+/* Make the Turnstile widget stretch to the same width as the inputs */
+.login-card .turnstile-check .cf-turnstile,
+.login-card .turnstile-check iframe {
+    width: 100% !important;
+    max-width: 100%;
+}
+
 .login-input {
     width: 100%;
     padding: 0.75rem 1rem;
@@ -2024,6 +2040,27 @@ nav ul li a.active {
 .login-actions {
     margin-top: 0.25rem;
     margin-bottom: 0;
+}
+
+/* Step 1: email + Continue row tweaks */
+.login-actions--continue {
+    border-top: none;       /* remove the horizontal line above Continue */
+    padding-top: 0;         /* no extra padding above */
+    margin-top: 0.75rem;    /* small gap after email */
+}
+
+/* Step 1: Continue row – no divider line, compact spacing */
+.login-actions--continue {
+    border-top: none;
+    padding-top: 0;
+    margin-top: 0.75rem;
+}
+
+/* Step 2: Log in row – no divider line, compact spacing */
+.login-step--secondary .login-actions {
+    border-top: none;
+    padding-top: 0.75rem;
+    margin-top: 0.75rem;
 }
 
 .btn-login {

@@ -34,97 +34,121 @@
                 data-turnstile-enabled="<%= ui?.turnstile?.enabled ? 'true' : 'false' %>">
                 <input type="hidden" name="_csrf" value="<%= ui.csrfToken || '' %>">
 
-                <div class="form-group">
-                    <input 
-                        type="email" 
-                        id="loginEmail" 
-                        name="email" 
-                        placeholder="Email"
-                        maxlength="<%= ui_instructions?.input_limits?.email_max || 100 %>"
-                        autocomplete="email"
-                        required
-                        class="login-input"
-                    >
-                    <div id="emailError" class="error-message"></div>
-                </div>
-                
-                <div class="form-group">
-                    <div class="password-input-wrapper">
+                <div id="loginStep1" class="login-step login-step--primary">
+                    <div class="form-group login-email-group">
                         <input 
-                            type="password" 
-                            id="loginPassword" 
-                            name="password" 
-                            placeholder="Password"
-                            autocomplete="current-password"
+                            type="email" 
+                            id="loginEmail" 
+                            name="email" 
+                            placeholder="Email"
+                            maxlength="<%= ui_instructions?.input_limits?.email_max || 100 %>"
+                            autocomplete="email"
                             required
-                            class="login-input password-input"
+                            class="login-input"
                         >
+                        <div id="emailError" class="error-message"></div>
+                    </div>
+
+                    <div
+                        id="loginContinueRow"
+                        class="form-actions login-actions login-actions--continue">
                         <button
                             type="button"
-                            class="password-toggle"
-                            data-target="loginPassword"
-                            aria-label="Show password"
-                            aria-pressed="false">
-                            <svg
-                                class="password-toggle-icon"
-                                viewBox="0 0 24 24"
-                                aria-hidden="true">
-                                <path
-                                    d="M2.458 12C3.732 7.943 7.523 5 12 5s8.268 2.943 9.542 7c-1.274 4.057-5.065 7-9.542 7S3.732 16.057 2.458 12z"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    stroke-width="1.8"
-                                    stroke-linecap="round"
-                                    stroke-linejoin="round" />
-                                <circle
-                                    cx="12"
-                                    cy="12"
-                                    r="3"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    stroke-width="1.8" />
-                            </svg>
+                            id="loginContinueBtn"
+                            class="btn btn-primary btn-login-continue btn-full">
+                            Continue
                         </button>
                     </div>
-                    <div id="passwordError" class="error-message"></div>
-                </div>                
-                <div
-                  id="loginMessageContainer"
-                  class="form-group login-message-row <%= (page.passwordChangedSuccess || page.registerSuccess) ? '' : 'hidden' %>">
-                  <div
-                    id="loginGeneralMessage"
-                    class="login-message <%= (page.passwordChangedSuccess || page.registerSuccess) ? 'login-message--success' : 'hidden' %>"
-                    role="alert">
-                    <% if (page.passwordChangedSuccess) { %>
-                      Your password has been changed successfully. Please use your new password to log in.
-                    <% } else if (page.registerSuccess) { %>
-                      Your account has been created. Please log in to continue.
-                    <% } %>
-                  </div>
+
+                    <!-- Step 1 footer (will be hidden when Step 2 is active) -->
+                    <div id="loginFooterStep1" class="login-footer">
+                        <p class="login-register-text">
+                            Don't have an account? <a href="/register" class="login-register-link">Register</a>
+                        </p>
+                    </div>                    
                 </div>
 
-                <% if (ui?.turnstile?.enabled && ui?.turnstile?.siteKey) { %>
-                  <div class="form-group turnstile-check">
-                    <div
-                      class="cf-turnstile"
-                      data-sitekey="<%= ui.turnstile.siteKey %>"
-                      data-action="login"
-                      data-theme="light"
-                      data-size="flexible">
+                <div id="loginStep2" class="login-step login-step--secondary hidden">
+                    <div class="form-group">
+                        <div class="password-input-wrapper">
+                            <input 
+                                type="password" 
+                                id="loginPassword" 
+                                name="password" 
+                                placeholder="Password"
+                                autocomplete="current-password"
+                                required
+                                class="login-input password-input"
+                            >
+                            <button
+                                type="button"
+                                class="password-toggle"
+                                data-target="loginPassword"
+                                aria-label="Show password"
+                                aria-pressed="false">
+                                <svg
+                                    class="password-toggle-icon"
+                                    viewBox="0 0 24 24"
+                                    aria-hidden="true">
+                                    <path
+                                        d="M2.458 12C3.732 7.943 7.523 5 12 5s8.268 2.943 9.542 7c-1.274 4.057-5.065 7-9.542 7S3.732 16.057 2.458 12z"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        stroke-width="1.8"
+                                        stroke-linecap="round"
+                                        stroke-linejoin="round" />
+                                    <circle
+                                        cx="12"
+                                        cy="12"
+                                        r="3"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        stroke-width="1.8" />
+                                </svg>
+                            </button>
+                        </div>
+                        <div id="passwordError" class="error-message"></div>
                     </div>
-                  </div>
-                <% } %>
 
-                <div class="form-actions login-actions">
-                    <button type="submit" class="btn btn-primary btn-login">Log in</button>
+                    <div
+                      id="loginMessageContainer"
+                      class="form-group login-message-row <%= (page.passwordChangedSuccess || page.registerSuccess) ? '' : 'hidden' %>">
+                      <div
+                        id="loginGeneralMessage"
+                        class="login-message <%= (page.passwordChangedSuccess || page.registerSuccess) ? 'login-message--success' : 'hidden' %>"
+                        role="alert">
+                        <% if (page.passwordChangedSuccess) { %>
+                          Your password has been changed successfully. Please use your new password to log in.
+                        <% } else if (page.registerSuccess) { %>
+                          Your account has been created. Please log in to continue.
+                        <% } %>
+                      </div>
+                    </div>
+
+                    <% if (ui?.turnstile?.enabled && ui?.turnstile?.siteKey) { %>
+                      <div class="form-group turnstile-check">
+                        <div
+                          class="cf-turnstile"
+                          data-sitekey="<%= ui.turnstile.siteKey %>"
+                          data-action="login"
+                          data-theme="light"
+                          data-size="flexible">
+                        </div>
+                      </div>
+                    <% } %>
+
+                    <div class="form-actions login-actions">
+                        <button type="submit" class="btn btn-primary btn-login">Log in</button>
+                    </div>
+
+                    <div class="login-footer">
+                        <p class="login-register-text">
+                            Don't have an account? <a href="/register" class="login-register-link">Register</a>
+                        </p>
+                        <a href="/forgot-password" class="login-forgot-link">Forgot Password?</a>
+                    </div>
                 </div>
 
-                <div class="login-footer">
-                    <p class="login-register-text">
-                        Don't have an account? <a href="/register" class="login-register-link">Register</a>
-                    </p>
-                    <a href="/forgot-password" class="login-forgot-link">Forgot Password?</a>
-                </div>
             </form>
         </div>
     </main>

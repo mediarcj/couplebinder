@@ -534,11 +534,79 @@ async function postAuthCookieWithBackoffLocal(payload, opts) {
     }
   }
 
+  function setupTwoStepLogin() {
+    const form = document.getElementById('loginForm');
+    const emailInput = document.getElementById('loginEmail');
+    const continueBtn = document.getElementById('loginContinueBtn');
+    const continueRow = document.getElementById('loginContinueRow');
+    const step1Footer = document.getElementById('loginFooterStep1');
+    const step2 = document.getElementById('loginStep2');
+    const passwordInput = document.getElementById('loginPassword');
+    const emailError = document.getElementById('emailError');
+
+    if (!form || !emailInput || !continueBtn || !step2) {
+      return;
+    }
+
+    function showStep2() {
+      // Reveal step 2
+      step2.classList.remove('hidden');
+
+      // Mark form as being in step 2 (for CSS tweaks if needed)
+      form.classList.add('login-form--step2');
+
+      // Hide the Continue row entirely
+      if (continueRow) {
+        continueRow.classList.add('hidden');
+      }
+
+      // Hide the step-1 "Don't have an account? Register" footer
+      if (step1Footer) {
+        step1Footer.classList.add('hidden');
+      }
+
+      // Focus password field for smoother UX
+      if (passwordInput) {
+        passwordInput.focus();
+      }
+    }
+
+    continueBtn.addEventListener('click', () => {
+      const email = emailInput.value || '';
+
+      if (emailError) {
+        emailError.textContent = '';
+      }
+
+      const emailErrorMsg = window.validateEmail
+        ? window.validateEmail(email)
+        : validateEmailLocal(email);
+
+      if (emailErrorMsg && emailError) {
+        emailError.textContent = emailErrorMsg;
+        return;
+      }
+
+      showStep2();
+    });
+
+    // Pressing Enter on the email field should act like clicking Continue
+    emailInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && step2.classList.contains('hidden')) {
+        e.preventDefault();
+        continueBtn.click();
+      }
+    });
+  }
+
   const loginForm = document.getElementById('loginForm');
   if (loginForm) {
     loginForm.addEventListener('submit', handleLoginSubmit);
     log.info('Login form event listener attached');
   }
+
+  // Step 2 (password + Turnstile) is revealed only after a valid email + Continue
+  setupTwoStepLogin();
 
   // Set up show/hide password toggles
   initPasswordToggles();

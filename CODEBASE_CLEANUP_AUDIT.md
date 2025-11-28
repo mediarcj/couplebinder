@@ -437,3 +437,25 @@ This audit examined the Detechify codebase for dead code, redundant implementati
 
 - Restarted the app and verified there were no startup or runtime errors after the changes.
 
+### [2025-01-27] Phase 7 – Replace console.log in core server modules with structured logger
+
+- Audited core runtime modules under `server/` (utils, services, bootstrap, lib, zorvalon.js) for `console.log`, `console.error`, and `console.warn` usage.
+
+- Replaced all in-scope `console.*` calls with the shared structured logger:
+  - `server/utils/submissionsQueue.js`: Replaced 1 `console.error` with `logger.error`
+  - `server/utils/supabaseClient.js`: Replaced 1 `console.warn` with `logger.warn`
+  - `server/lib/audit.js`: Replaced `console.log` and `console.error` with `logger.info` and `logger.error` (audit events now use structured logger)
+  - `server/bootstrap/routes.js`: Replaced 37 `console.log`/`console.error` calls with structured logger calls
+  - `server/bootstrap/shutdown.js`: Replaced 8 `console.log`/`console.error`/`console.warn` calls with structured logger calls
+  - `server/bootstrap/coreMiddleware.js`: Replaced 16 `console.log`/`console.error` calls with structured logger calls
+  - `server/zorvalon.js`: Replaced 19 `console.log`/`console.error` calls with structured logger calls (11 early boot messages intentionally left as console.* since logger isn't available yet)
+
+- Added logger imports where needed using the project's standard pattern: `const logger = require('../utils/logger')` or `const logger = require('./logger')`
+
+- Left intentional console.* calls in:
+  - `server/utils/logger.js` and `server/utils/consoleLogger.js` (logger utilities that format output)
+  - `server/utils/consoleShim.js` (console manipulation utility)
+  - Early boot messages in `server/zorvalon.js` (before logger module loads, with explanatory comments)
+
+- Restarted the app and verified there were no startup or runtime errors after the changes.
+

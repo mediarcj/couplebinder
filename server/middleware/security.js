@@ -182,31 +182,6 @@ function validateTextServerSide(text) {
 
 /**
  * WHAT:
- * Legacy authentication rate limiting function (deprecated).
- *
- * WHY:
- * Rate limiting hierarchy: Cloudflare edge (primary) → Origin Redis (secondary).
- * Edge sheds volumetric load before hitting origin. Origin limiters provide
- * defense-in-depth and escalate to IP firewall auto-ban.
- *
- * HOW:
- * Returns a no-op middleware for backward compatibility.
- * Use rateLimiter middleware from ../middleware/rateLimiter.js instead.
- *
- * IMPORTANT: This application uses DUAL-LAYER rate limiting:
- * - LAYER 1 (PRIMARY): Cloudflare Edge handles volumetric DDoS attacks
- * - LAYER 2 (SECONDARY): Redis-based application limiters handle app-specific logic
- * Both layers are active and working together for comprehensive protection.
- */
-function createAuthRateLimit() {
-    return (req, res, next) => {
-        // Use rateLimiter middleware instead - this is deprecated
-        next();
-    };
-}
-
-/**
- * WHAT:
  * Account lockout functions now imported from Redis-backed lockout module.
  * 
  * WHY:
@@ -387,7 +362,6 @@ module.exports = {
     validateEmailServerSide,
     validatePasswordServerSide,
     validateTextServerSide,
-    createAuthRateLimit,
     checkAccountLockout,
     recordFailedAttempt,
     clearFailedAttempts,

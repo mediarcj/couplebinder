@@ -5,6 +5,21 @@
 //  - Never logs secrets. If keys are missing, exports null clients.
 //  - In test, exports tiny stubs so code paths don't hit the network.
 
+/**
+ * WHAT:
+ * Supabase client factory that prefers the centralized config object but can fall back to process.env.
+ * 
+ * WHY:
+ * This module may be imported very early in the boot process or in tools/tests where the config module
+ * is not guaranteed to be initialized. The fallback ensures the client can still be created safely.
+ * This is an intentional exception to the "no process.env in runtime code" rule.
+ * 
+ * HOW:
+ * Try to read from config.supabase / config.branding first; if config is missing or partial,
+ * fall back to process.env.SUPABASE_URL / SUPABASE_ANON_KEY / SUPABASE_SERVICE_ROLE_KEY / APP_VERSION.
+ * This dual pattern provides safety during early boot and in edge cases where config may not be available.
+ */
+
 'use strict';
 
 const isTest = process.env.NODE_ENV === 'test';

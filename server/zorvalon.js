@@ -10,10 +10,12 @@ const express = require('express');
 const path = require('path');
 
 // Install console shim early to intercept JSON event logs
+// Note: Logger not available yet, so we use console.error for this early boot error
 try {
   const { installJsonLogShim } = require('./utils/consoleLogger');
   installJsonLogShim();
 } catch (err) {
+  // Logger not available yet - this is acceptable for early boot errors
   console.error('Failed to install console shim:', err.message);
 }
 
@@ -21,10 +23,13 @@ try {
 // CRITICAL SECTION: Safe module loading to prevent crashes
 let config, logConfigSummary, csrfLite, requestIdMiddleware, logger, consoleLogger;
 
+// Note: Logger not available yet for these early boot messages
+// These console calls are acceptable as they occur before logger is loaded
 try {
   const configModule = require('./config');
   config = configModule.config;
   logConfigSummary = configModule.logConfigSummary;
+  // Logger not available yet - acceptable for early boot
   console.log('Configuration module loaded successfully');
 } catch (error) {
   console.error('Failed to load config module:', error.message);
@@ -35,6 +40,7 @@ try {
 
 try {
   csrfLite = require('./middleware/csrfLite');
+  // Logger not available yet - acceptable for early boot
   console.log('CSRF middleware loaded successfully');
 } catch (error) {
   console.error('FATAL: Cannot load CSRF middleware:', error);
@@ -46,6 +52,7 @@ try {
 
 try {
   requestIdMiddleware = require('./middleware/requestId');
+  // Logger not available yet - acceptable for early boot
   console.log('Request ID middleware loaded successfully');
 } catch (error) {
   console.error('FATAL: Cannot load request ID middleware:', error);
@@ -57,7 +64,8 @@ try {
 
 try {
   logger = require('./utils/logger');
-  console.log('Logger module loaded successfully');
+  // Logger just loaded - use it going forward
+  logger.info({ event: 'boot.module_loaded', module: 'logger' }, 'Logger module loaded successfully');
 } catch (error) {
   console.error('Failed to load logger module:', error.message);
   logger = { info: () => {}, error: () => {}, warn: () => {} };
@@ -65,9 +73,9 @@ try {
 
 try {
   consoleLogger = require('./utils/consoleLogger');
-  console.log('Console logger module loaded successfully');
+  logger.info({ event: 'boot.module_loaded', module: 'consoleLogger' }, 'Console logger module loaded successfully');
 } catch (error) {
-  console.error('Failed to load console logger module:', error.message);
+  logger.error({ event: 'boot.module_load_failed', module: 'consoleLogger', error: error.message }, 'Failed to load console logger module');
   consoleLogger = { formatConfigSummary: () => {}, formatMiddlewareRegistration: () => {} };
 }
 
@@ -75,9 +83,9 @@ try {
 let toggles;
 try {
   toggles = require('./config/toggles');
-  console.log('Server toggles loaded successfully');
+  logger.info({ event: 'boot.module_loaded', module: 'toggles' }, 'Server toggles loaded successfully');
 } catch (error) {
-  console.error('Failed to load toggles module:', error.message);
+  logger.error({ event: 'boot.module_load_failed', module: 'toggles', error: error.message }, 'Failed to load toggles module');
   // Safe defaults if toggles fail to load
   toggles = { env: 'production', logLevel: 'info', blockCmsScans: false, corsDebug: false, exposeDebugRoutes: false };
 }
@@ -213,20 +221,20 @@ app.use((req, res, next) => {
 if (toggles.blockCmsScans) {
   const blockCmsScans = require('./middleware/blockCmsScans');
   app.use(blockCmsScans());
-  console.log('Toggle: CMS scan blocking enabled');
+  logger.info({ event: 'boot.toggle_enabled', toggle: 'blockCmsScans' }, 'Toggle: CMS scan blocking enabled');
 }
 
 // CORS debug logging is now handled in registerCoreMiddleware
 
-console.log(`${config.branding.appName} server starting...`);
+logger.info({ event: 'boot.server_starting', appName: config.branding.appName }, `${config.branding.appName} server starting...`);
 try {
   if (typeof logConfigSummary === 'function') {
     logConfigSummary();
   } else {
-    console.log('[detechify] logConfigSummary is not a function; skipping config summary log');
+    logger.warn({ event: 'boot.config_summary_unavailable' }, '[detechify] logConfigSummary is not a function; skipping config summary log');
   }
 } catch (err) {
-  console.error('[detechify] Failed to log config summary:', err.message);
+  logger.error({ event: 'boot.config_summary_failed', error: err.message }, '[detechify] Failed to log config summary');
 }
 
 // ============================================================
@@ -279,7 +287,7 @@ let redisClient = null;
 try {
     const { client, connectRedis } = require('./utils/redisClient');
     redisClient = client;
-    console.log('Redis client module loaded successfully');
+    logger.info({ event: 'boot.module_loaded', module: 'redisClient' }, 'Redis client module loaded successfully');
     
     // Initialize Redis connection asynchronously
     const initRedis = async () => {
@@ -288,10 +296,10 @@ try {
             app.locals.redisReady = true;
             app.locals.rateLimitStoreReady = true;
             updateRedisStatus(true, new Date().toISOString());
-            console.log('Redis connection established successfully');
+            logger.info({ event: 'boot.redis_connected' }, 'Redis connection established successfully');
         } catch (error) {
-            console.error('Redis connection failed:', error.message);
-            console.log('Redis-dependent features will fall back or degrade gracefully');
+            logger.error({ event: 'boot.redis_connection_failed', error: error.message }, 'Redis connection failed');
+            logger.info({ event: 'boot.redis_degrade' }, 'Redis-dependent features will fall back or degrade gracefully');
             app.locals.redisReady = false;
             app.locals.rateLimitStoreReady = false;
             updateRedisStatus(false, new Date().toISOString());
@@ -318,8 +326,8 @@ try {
     });
     
 } catch (error) {
-    console.error('Redis client module load failed:', error.message);
-    console.log('Continuing without Redis...');
+    logger.error({ event: 'boot.module_load_failed', module: 'redisClient', error: error.message }, 'Redis client module load failed');
+    logger.info({ event: 'boot.redis_unavailable' }, 'Continuing without Redis...');
     app.locals.redisReady = false;
     app.locals.rateLimitStoreReady = false;
 }
@@ -328,7 +336,7 @@ try {
 const createMaintenanceGuard = require('./middleware/maintenanceGuard');
 
 // 8. Redis Degrade Guard — mounted early inside registerCoreMiddleware to protect sensitive paths
-console.log('Security: Redis degrade guard ready (mounted once, early)');
+logger.info({ event: 'boot.middleware_ready', middleware: 'degradeGuard' }, 'Security: Redis degrade guard ready (mounted once, early)');
 
 // 9. Default-Deny Auth Guard will be mounted after authBridge (see below)
 
@@ -447,8 +455,7 @@ const PUBLIC_DIR_PRIMARY = path.resolve(__dirname, '../public');
 // Legacy (back-compat): /server/public
 const PUBLIC_DIR_LEGACY = path.resolve(__dirname, 'public');
 
-console.log('Static files - Primary:', PUBLIC_DIR_PRIMARY);
-console.log('Static files - Legacy:', PUBLIC_DIR_LEGACY);
+logger.info({ event: 'boot.static_paths', primary: PUBLIC_DIR_PRIMARY, legacy: PUBLIC_DIR_LEGACY }, 'Static files configured');
 
 // Subdirs (primary first, then legacy; fallthrough enabled)
 function mountStatic(prefix, subdir, maxAge, immutable = false) {
@@ -578,9 +585,9 @@ const server = app.listen(PORT, HOST, () => {
   try {
     const { startOutboxProcessor } = require('./jobs/outboxProcessor');
     startOutboxProcessor(30000); // Process every 30 seconds
-    console.log('Outbox processor started successfully');
+    logger.info({ event: 'boot.outbox_processor_started' }, 'Outbox processor started successfully');
   } catch (error) {
-    console.error('Failed to start outbox processor:', error.message);
+    logger.error({ event: 'boot.outbox_processor_failed', error: error.message }, 'Failed to start outbox processor');
   }
 });
 

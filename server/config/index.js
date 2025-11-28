@@ -326,7 +326,12 @@ const config = {
     mode: stripeMode, // 'live' | 'test', derived from NODE_ENV
     live: stripeLive,
     test: stripeTest,
-    active: stripeActive
+    active: stripeActive,
+    // WHAT: Dashboard paths for successful and cancelled Stripe checkouts.
+    // WHY: We want one source of truth for where Stripe redirects after payment.
+    // HOW: Read from env with safe defaults; runtime code will use config.stripe.successPath/cancelPath only.
+    successPath: process.env.STRIPE_SUCCESS_PATH || '/dashboard/purchase/confirmation',
+    cancelPath: process.env.STRIPE_CANCEL_PATH || '/dashboard/billing'
   },
 
   // Public origin (for redirects and client-side URLs)
@@ -416,6 +421,16 @@ const config = {
     enabled: turnstileEnabled,
     siteKey: turnstileSiteKey,
     secretKey: turnstileSecretKey
+  },
+
+  // Logging configuration
+  logging: {
+    /**
+     * WHAT: Minimum log level for the app-wide logger (e.g. 'debug', 'info', 'warn', 'error').
+     * WHY: Centralizes logging verbosity in one place so we can control logs per environment.
+     * HOW: Read from LOG_LEVEL env var, default to 'info'. Runtime code reads config.logging.logLevel only.
+     */
+    logLevel: (process.env.LOG_LEVEL || 'info').toLowerCase()
   }
 };
 

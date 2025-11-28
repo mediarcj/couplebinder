@@ -419,3 +419,21 @@ This audit examined the Detechify codebase for dead code, redundant implementati
 
 - Restarted the app and verified there were no startup or runtime errors after the changes.
 
+### [2025-01-27] Phase 6 – Consolidate email validation
+
+- Reviewed both email validation functions:
+  - `validateEmail()` in `server/middleware/validation.js` (returns boolean)
+  - `validateEmailServerSide()` in `server/middleware/security.js` (returns object with valid, error, sanitized)
+
+- Chose `validateEmailServerSide()` as the canonical implementation for server-side email validation due to its comprehensive checks (regex, length limits, sanitization).
+
+- Updated `validation.js` to import and delegate to the canonical implementation:
+  - `validateEmail()` now wraps `validateEmailServerSide()` and returns boolean for backward compatibility
+  - All email validation logic (regex, sanitization, length limits) now comes from a single source of truth
+
+- Ensured all call sites continue to work without changes:
+  - `validateEmail()` is used internally in `validation.js` (lines 139, 215) and maintains the same boolean return type
+  - No call sites needed updates as the wrapper preserves the existing interface
+
+- Restarted the app and verified there were no startup or runtime errors after the changes.
+

@@ -4,6 +4,7 @@
 // Notes: All middleware is registered here in the correct boot order with appropriate logging
 
 const express = require('express');
+const logger = require('../utils/logger');
 
 /**
  * WHAT:
@@ -100,51 +101,51 @@ function registerCoreMiddleware({
 
   // 0. Generate CSP nonce for each request (MUST come first for security headers)
   app.use(generateCspNonce());
-  console.log('Security: CSP nonce generation enabled');
+  logger.info({ event: 'boot.middleware_registered', middleware: 'cspNonce' }, 'Security: CSP nonce generation enabled');
 
   // 1. Method guard: reject PROPFIND, TRACE, and unknown methods
   app.use(methodGuard());
-  console.log('Security: Method guard enabled');
+  logger.info({ event: 'boot.middleware_registered', middleware: 'methodGuard' }, 'Security: Method guard enabled');
 
   // Credential guard (block credentials in GET params - CRITICAL)
   app.use(credentialGuard);
-  console.log('Security: Credential guard enabled (blocks credentials in GET)');
+  logger.info({ event: 'boot.middleware_registered', middleware: 'credentialGuard' }, 'Security: Credential guard enabled (blocks credentials in GET)');
 
   // 2. Strict security headers with nonce-based CSP
   app.use(securityHeaders());
-  console.log('Security: Strict CSP and security headers enabled');
+  logger.info({ event: 'boot.middleware_registered', middleware: 'securityHeaders' }, 'Security: Strict CSP and security headers enabled');
 
   // 3. Cache control: no-store for dynamic routes
   app.use(cacheControl());
-  console.log('Security: Cache control enabled');
+  logger.info({ event: 'boot.middleware_registered', middleware: 'cacheControl' }, 'Security: Cache control enabled');
 
   // 4. Trust proxy and expose real client IP
   app.use(trustProxyIp(app));
-  console.log('Security: Trust proxy and clientIp extraction enabled');
+  logger.info({ event: 'boot.middleware_registered', middleware: 'trustProxyIp' }, 'Security: Trust proxy and clientIp extraction enabled');
 
   // 5. Request ID middleware - add unique ID to every request (must be early for logging)
   app.use(requestIdMiddleware);
-  console.log('Security: Request ID tracking enabled');
+  logger.info({ event: 'boot.middleware_registered', middleware: 'requestId' }, 'Security: Request ID tracking enabled');
 
   // Health routes (fast, Redis-free) mounted early
   try {
     app.use('/health', healthRouter);
-    console.log('Health routes mounted early');
+    logger.info({ event: 'boot.route_loaded', route: 'health' }, 'Health routes mounted early');
   } catch (error) {
-    console.error('Failed to load health routes:', error.message);
+    logger.error({ event: 'boot.route_load_failed', route: 'health', error: error.message }, 'Failed to load health routes');
   }
 
   // Redis Degrade Guard - must run before IP firewall and rate limiters
   app.use(degradeGuard);
-  console.log('Security: Redis degrade guard enabled (early; 503 on sensitive paths if Redis down)');
+  logger.info({ event: 'boot.middleware_registered', middleware: 'degradeGuard' }, 'Security: Redis degrade guard enabled (early; 503 on sensitive paths if Redis down)');
 
   // 6. IP Firewall - block abusive IPs before they reach route logic
   app.use(ipFirewall());
-  console.log('Security: IP firewall enabled (Redis-backed auto-ban)');
+  logger.info({ event: 'boot.middleware_registered', middleware: 'ipFirewall' }, 'Security: IP firewall enabled (Redis-backed auto-ban)');
 
   // 7. Maintenance Guard - instant maintenance mode toggle (after Redis client is available)
   app.use(createMaintenanceGuard(redisClient));
-  console.log('Security: Maintenance guard enabled (Redis/env toggle)');
+  logger.info({ event: 'boot.middleware_registered', middleware: 'maintenanceGuard' }, 'Security: Maintenance guard enabled (Redis/env toggle)');
 
   // ============================================================
   // Security and Core Middleware Registration
@@ -208,7 +209,7 @@ function registerCoreMiddleware({
   // CORS debug logging (noisy, keep off unless actively debugging)
   if (toggles.corsDebug && corsDebugMiddleware) {
     app.use(corsDebugMiddleware());
-    console.log('Toggle: CORS debug logging enabled');
+    logger.info({ event: 'boot.toggle_enabled', toggle: 'corsDebug' }, 'Toggle: CORS debug logging enabled');
   }
 
   // Rate limiting will be applied after static files
@@ -217,9 +218,9 @@ function registerCoreMiddleware({
   // Stripe webhook (raw body, CSRF bypass) - must be before body parsers
   try {
     mountStripeWebhook(app);
-    console.log('Stripe webhook mounted (raw body, CSRF bypass).');
+    logger.info({ event: 'boot.webhook_mounted', webhook: 'stripe' }, 'Stripe webhook mounted (raw body, CSRF bypass).');
   } catch (e) {
-    console.error('Failed to mount Stripe webhook:', e.message);
+    logger.error({ event: 'boot.webhook_mount_failed', webhook: 'stripe', error: e.message }, 'Failed to mount Stripe webhook');
   }
 
   // Body size limits (32KB to match text input limits and prevent abuse)
@@ -248,7 +249,7 @@ function registerCoreMiddleware({
    * All authentication is handled via Supabase JWT tokens.
    */
 
-  console.log('Authentication: Stateless only (Supabase JWT tokens)');
+  logger.info({ event: 'boot.auth_mode', mode: 'stateless' }, 'Authentication: Stateless only (Supabase JWT tokens)');
 
   // Request timing middleware for formatted logging
   app.use((req, res, next) => {

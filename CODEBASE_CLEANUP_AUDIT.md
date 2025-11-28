@@ -459,3 +459,24 @@ This audit examined the Detechify codebase for dead code, redundant implementati
 
 - Restarted the app and verified there were no startup or runtime errors after the changes.
 
+### [2025-01-27] Phase 8 – Centralize env config for auth cookie and Supabase JWT middleware
+
+- Identified direct `process.env` usage in:
+  - `server/routes/authCookie.js`: `AUTH_SENTINEL_MS`, `AUTH_FRESH_GRACE_SEC`
+  - `server/middleware/auth/supabaseJwt.js`: `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_JWKS_URL`, `SUPABASE_EXPECTED_AUD`, `JWT_CLOCK_SKEW_SEC`, `AUTH_COOKIE_NAME`
+
+- Moved these env reads into `server/config/index.js` with clear WHAT/WHY/HOW documentation:
+  - Added `config.auth.sentinelMs` (default: 0) and `config.auth.freshLoginGraceSec` (default: 20)
+  - Updated `config.jwt.expectedAud` default to 'authenticated' (was undefined)
+  - Updated `config.jwt.clockSkewSec` default to 60 (was 30) to match middleware behavior
+  - Added documentation comments explaining each field's purpose and usage
+
+- Updated the auth cookie routes and Supabase JWT middleware to consume values from the centralized config object instead of `process.env`:
+  - `authCookie.js`: Replaced `process.env.AUTH_SENTINEL_MS` and `process.env.AUTH_FRESH_GRACE_SEC` with `config.auth.sentinelMs` and `config.auth.freshLoginGraceSec`
+  - `supabaseJwt.js`: Replaced all `process.env.*` reads with corresponding `config.*` values, preserving all default/fallback logic
+
+- Restarted the app and verified:
+  - Server boots without errors
+  - JWT verification and auth cookie behavior remain unchanged
+  - All process.env usages removed from the two in-scope files
+

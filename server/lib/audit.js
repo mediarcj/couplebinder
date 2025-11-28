@@ -14,6 +14,8 @@
  * 2) Lines appear in journalctl. Ship to CloudWatch later for alerts.
  */
 
+const logger = require('../utils/logger');
+
 /**
  * Extract real client IP from request
  *
@@ -66,11 +68,15 @@ function audit(event, data = {}, req = null) {
   const line = { ...base, ...data };
   
   // Write as JSON line (stdout -> journalctl -> CloudWatch)
+  // Use logger.info which outputs JSON in production mode
   try {
-    console.log(JSON.stringify(line));
+    logger.info(line, '');
   } catch (err) {
     // If JSON serialization fails, log a fallback message
-    console.error('[audit] Failed to serialize audit log:', err.message);
+    logger.error({
+      event: 'audit.serialization_failed',
+      error: err.message
+    }, 'Failed to serialize audit log');
   }
 }
 

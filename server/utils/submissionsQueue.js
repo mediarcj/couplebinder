@@ -5,20 +5,30 @@
 
 /**
  * WHAT:
- * We provide a promise-based queue that ensures atomic operations
- * without busy-waiting or spin-locks.
+ * This is an in-memory promise-based queue that ensures atomic operations
+ * within a single Node.js process. It serializes submission operations to
+ * prevent race conditions and ensure data consistency.
  * 
  * WHY:
  * The previous busy-wait mutex pattern works but is noisy and inefficient.
- * This approach is cleaner and more maintainable.
+ * This approach is cleaner and more maintainable for single-instance deployments.
+ * It provides serialization without busy-waiting or spin-locks.
  * 
  * HOW:
  * We maintain a chain of promises, where each operation waits for
- * the previous one to complete before executing.
+ * the previous one to complete before executing. This ensures operations
+ * run one at a time in the order they were enqueued.
  * 
- * SCALING NOTE:
- * If we scale horizontally (multiple server instances), we MUST use
- * the DB atomic approach instead of this in-memory queue.
+ * LIMITATION - SINGLE INSTANCE ONLY:
+ * This queue is NOT multi-instance safe. If the application runs on multiple
+ * server instances or processes (horizontal scaling), each instance will have
+ * its own separate queue. This can introduce race conditions, duplicate processing,
+ * or inconsistent behavior across instances.
+ * 
+ * FUTURE MIGRATION PATH:
+ * For real horizontal scaling, this must be migrated to a Redis-backed queue
+ * (or similar distributed queue system) so that all instances share the same
+ * queue state and operations are serialized across the entire deployment.
  */
 
 let queue = Promise.resolve();

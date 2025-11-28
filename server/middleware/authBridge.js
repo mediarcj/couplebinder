@@ -20,6 +20,7 @@
 
 const { createRemoteJWKSet, jwtVerify, decodeProtectedHeader } = require('jose');
 const { config } = require('../config');
+const logger = require('../utils/logger');
 
 // JWKS fetcher with automatic caching and key rotation support
 let jwks;
@@ -57,7 +58,6 @@ function readAccessToken(req, cookieOnly = false) {
 
   // Debug logging for cookie read attempt (only when AUTH_DEBUG=true)
   if (config.auth.debug) {
-    const logger = require('../utils/logger');
     logger.debug({
       event: 'auth.cookie.read.attempt',
       cookieOnly,
@@ -117,8 +117,7 @@ module.exports = async function authBridge(req, res, next) {
       const hasBearer = /^Bearer\s+/.test(req.headers.authorization || '');
       const hasCookie = !!(req.cookies && Object.prototype.hasOwnProperty.call(req.cookies, cookieName));
       
-      console.log(JSON.stringify({
-        ts: new Date().toISOString(),
+      logger.debug({
         event: 'auth.debug',
         method: req.method,
         path: req.originalUrl,
@@ -127,7 +126,7 @@ module.exports = async function authBridge(req, res, next) {
         hasCookie,
         cookieName,
         authSource: hasCookie ? 'cookie' : (hasBearer ? 'bearer' : 'none')
-      }));
+      }, 'Auth bridge debug info');
     }
     
     // Step 1: Read token - cookie-only for SSR, cookie+header for API
@@ -136,7 +135,6 @@ module.exports = async function authBridge(req, res, next) {
       req.user = null;
       // Log auth source for SSR routes (debug level only - expected when not logged in)
       if (isSSR && config.auth.debug) {
-        const logger = require('../utils/logger');
         const { AUTH_COOKIE_NAME } = require('../lib/authCookie');
         const cookieName = AUTH_COOKIE_NAME;
         const hostPrefixed = `__Host-${cookieName}`;
@@ -162,7 +160,6 @@ module.exports = async function authBridge(req, res, next) {
     }
     
     // Log auth source (debug level, PII-safe)
-    const logger = require('../utils/logger');
     const { AUTH_COOKIE_NAME } = require('../lib/authCookie');
     const cookieName = AUTH_COOKIE_NAME;
     const hostPrefixed = `__Host-${cookieName}`;

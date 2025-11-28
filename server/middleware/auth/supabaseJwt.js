@@ -21,18 +21,19 @@
 const { createRemoteJWKSet, jwtVerify } = require('jose');
 const { audit } = require('../../lib/audit');
 const logger = require('../../utils/logger');
+const { config } = require('../../config');
 
 // ============================================================
-// STEP 1: Read env (fail fast on missing core vars)
+// STEP 1: Read config (fail fast on missing core vars)
 // ------------------------------------------------------------
 // WHAT: Resolve base URL and anon key. Normalize URL (no trailing slash).
 // WHY: We need the project URL to reach JWKS, and many projects require apikey to read JWKS.
-// HOW: Read SUPABASE_URL and SUPABASE_ANON_KEY. Warn if anon key is missing (JWKS may 401).
+// HOW: Read from config.supabase.url and config.supabase.anonKey. Warn if anon key is missing (JWKS may 401).
 // ============================================================
-const SUPABASE_URL = process.env.SUPABASE_URL?.replace(/\/+$/, '');
+const SUPABASE_URL = config.supabase?.url?.replace(/\/+$/, '');
 if (!SUPABASE_URL) throw new Error('SUPABASE_URL env is required');
 
-const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || '';
+const SUPABASE_ANON_KEY = config.supabase?.anonKey || '';
 if (!SUPABASE_ANON_KEY) {
   // We can still boot, but some projects will reject JWKS without an apikey.
   logger.warn({
@@ -46,10 +47,10 @@ if (!SUPABASE_ANON_KEY) {
 // ------------------------------------------------------------
 // WHAT: Use the GoTrue JWKS path. Add apikey query so Supabase authorizes the read.
 // WHY: Without apikey, many projects return 401. This call is server-side only.
-// HOW: Prefer /auth/v1/jwks. Allow SUPABASE_JWKS_URL override for rare setups.
+// HOW: Prefer config.jwt.jwksUrl override, otherwise build from SUPABASE_URL. Allow SUPABASE_JWKS_URL override for rare setups.
 // ============================================================
 const JWKS_URL =
-  process.env.SUPABASE_JWKS_URL?.trim() ||
+  config.jwt?.jwksUrl?.trim() ||
   `${SUPABASE_URL}/auth/v1/jwks${SUPABASE_ANON_KEY ? `?apikey=${encodeURIComponent(SUPABASE_ANON_KEY)}` : ''}`;
 
 const JWKS = createRemoteJWKSet(new URL(JWKS_URL), {
@@ -64,13 +65,13 @@ const JWKS = createRemoteJWKSet(new URL(JWKS_URL), {
 // WHY: These claims help prove the token came from your project and is still valid.
 // HOW: Supabase default aud is "authenticated"; issuer usually ends with /auth/v1.
 // ============================================================
-const EXPECTED_AUD = process.env.SUPABASE_EXPECTED_AUD || 'authenticated';
+const EXPECTED_AUD = config.jwt?.expectedAud || 'authenticated';
 const ALLOWED_ISSUERS = [
   `${SUPABASE_URL}/auth/v1`, // common shape
   SUPABASE_URL               // lenient fallback (some tokens may use base URL)
 ];
 
-const CLOCK_SKEW_SEC = Number(process.env.JWT_CLOCK_SKEW_SEC || 60); // allow 60s time drift
+const CLOCK_SKEW_SEC = config.jwt?.clockSkewSec || 60; // allow 60s time drift
 
 // ============================================================
 // STEP 4: Read token from request
@@ -85,8 +86,8 @@ function readToken(req) {
   const m = h.match(/^Bearer\s+(.+)$/i);
   if (m && m[1]) return m[1].trim();
 
-  // 2) Cookie fallback (env-driven + legacy for migration safety)
-  const cookieName = process.env.AUTH_COOKIE_NAME || 'sb_session';
+  // 2) Cookie fallback (config-driven + legacy for migration safety)
+  const cookieName = config.auth?.cookieName || 'sb_session';
   return (
     req.cookies?.[cookieName] ||
     req.cookies?.['sb-access-token'] || // legacy

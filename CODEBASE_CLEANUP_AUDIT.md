@@ -480,3 +480,65 @@ This audit examined the Detechify codebase for dead code, redundant implementati
   - JWT verification and auth cookie behavior remain unchanged
   - All process.env usages removed from the two in-scope files
 
+### [2025-01-27] Phase 9 – Stripe services and dashboard config migration
+
+- Migrated Stripe configuration from process.env to centralized config:
+  - `server/services/pricingCatalog.js`: Removed 12 process.env fallbacks for Stripe price IDs (now uses config.stripe.* exclusively)
+  - `server/services/billingService.js`: Removed 2 process.env fallbacks for Stripe success/cancel paths (now uses config.stripe.successPath/cancelPath)
+  - `server/routes/dashboard.js`: Removed 6 process.env fallbacks for Stripe price IDs (now uses config.stripe.* exclusively)
+
+- Added missing config fields to `server/config/index.js`:
+  - `config.stripe.successPath` (default: '/dashboard/purchase/confirmation')
+  - `config.stripe.cancelPath` (default: '/dashboard/billing')
+  - Added WHAT/WHY/HOW documentation for both fields
+
+- All three files now use config.stripe.* exclusively with no process.env fallbacks.
+
+- Restarted the app and verified:
+  - Server boots without errors
+  - Dashboard loads correctly
+  - Stripe checkout flows work as expected
+
+### [2025-01-27] Phase 10 – Utilities and middleware config migration
+
+- Migrated remaining process.env usage in utilities and middleware:
+  - `server/middleware/securityHeaders.js`: Replaced `process.env.SUPABASE_URL` with `config.supabase.url` (2 matches)
+  - `server/utils/logger.js`: Replaced `process.env.LOG_LEVEL` with `config.logging.logLevel` (1 match)
+  - `server/lib/authCookie.js`: Replaced `process.env.NODE_ENV` with `config.server.nodeEnv` (1 match)
+
+- Added missing config fields to `server/config/index.js`:
+  - `config.logging.logLevel` (default: 'info', reads from LOG_LEVEL env var)
+  - Added WHAT/WHY/HOW documentation
+
+- Documented intentional exception in `server/utils/supabaseClient.js`:
+  - Added comprehensive WHAT/WHY/HOW comment block explaining the intentional fallback pattern
+  - This file keeps process.env fallbacks for early-boot safety (documented exception)
+
+- Restarted the app and verified:
+  - Server boots without errors
+  - CSP headers work correctly
+  - Logger respects LOG_LEVEL configuration
+  - Cookie security attributes work correctly
+
+### [2025-01-27] Phase 11 – Final validation and environment config migration completion
+
+- Performed final sweep of all runtime code for process.env usage:
+  - Verified zero process.env usage in: routes, services, middleware (except documented exceptions), lib, utils (except supabaseClient.js), bootstrap
+  - Confirmed all intentional exceptions are properly documented:
+    - `server/config/index.js` (central config - must read process.env)
+    - `server/zorvalon.js` (early boot code - minimal NODE_ENV checks)
+    - `server/utils/supabaseClient.js` (intentional fallback pattern for early loading safety)
+    - Test files (excluded from migration)
+    - Scripts (excluded from migration)
+
+- Environment config migration status: **COMPLETE**
+  - All runtime code now uses `config.*` from `server/config/index.js`
+  - Single source of truth for all environment variables
+  - Improved testability (easy to mock config object)
+  - Centralized validation and type safety
+
+- Restarted the app and verified:
+  - Server boots without errors
+  - All key flows work correctly (auth, dashboard, Stripe checkout)
+  - No functional behavior changes
+

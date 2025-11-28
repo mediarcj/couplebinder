@@ -18,6 +18,7 @@
 const helmet = require('helmet');
 const crypto = require('crypto');
 const logger = require('../utils/logger');
+const { config } = require('../config');
 
 const TURNSTILE_ORIGIN = 'https://challenges.cloudflare.com';
 
@@ -43,8 +44,9 @@ function securityHeaders() {
   // Include both HTTPS and WSS protocols for real-time subscriptions
   let supabaseWss = null;
   try {
-    if (process.env.SUPABASE_URL) {
-      const url = new URL(process.env.SUPABASE_URL);
+    const supabaseUrl = config?.supabase?.url;
+    if (supabaseUrl) {
+      const url = new URL(supabaseUrl);
       supabaseOrigin = url.origin;
       supabaseWss = `wss://${url.hostname}`;
     }
@@ -52,7 +54,7 @@ function securityHeaders() {
     logger.warn({
       event: 'security_headers.supabase_url_parse.failed',
       error: err.message
-    }, 'Could not parse SUPABASE_URL for CSP');
+    }, 'Could not parse Supabase URL for CSP');
   }
 
   return helmet({

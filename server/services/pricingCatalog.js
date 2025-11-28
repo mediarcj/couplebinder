@@ -1,7 +1,7 @@
 // File: server/services/pricingCatalog.js
 // Description: Pricing catalog service for Stripe price data
 // Purpose: Fetch and cache Stripe price information for display
-// Notes: Prefer config.stripe.active/live/test. Adds top-level product_key for stable matching.
+// Notes: Uses config.stripe.active/live/test exclusively for all Stripe price IDs. Adds top-level product_key for stable matching.
 
 'use strict';
 
@@ -39,14 +39,6 @@ function buildPriceIdToKeyMap() {
   add(config?.stripe?.test?.priceResumeOneTime, 'resume_one_time');
   add(config?.stripe?.test?.priceResumeExpert,  'resume_expert');
 
-  // Legacy env fallbacks (if still present)
-  add(process.env.STRIPE_PRICE_RESUME_ONE_TIME_LIVE, 'resume_one_time');
-  add(process.env.STRIPE_PRICE_RESUME_EXPERT_LIVE,  'resume_expert');
-  add(process.env.STRIPE_PRICE_RESUME_ONE_TIME_TEST, 'resume_one_time');
-  add(process.env.STRIPE_PRICE_RESUME_EXPERT_TEST,  'resume_expert');
-  add(process.env.STRIPE_PRICE_RESUME_ONE_TIME,      'resume_one_time');
-  add(process.env.STRIPE_PRICE_RESUME_EXPERT,        'resume_expert');
-
   return map;
 }
 
@@ -58,6 +50,7 @@ let cacheKey = null;
 
 function currentPriceIdsFromConfig() {
   // Prefer active; fall back to live/test; ignore empties
+  // All price IDs now come from config.stripe.* only (no process.env fallbacks)
   const ids = [
     config?.stripe?.active?.priceResumeOneTime,
     config?.stripe?.active?.priceResumeExpert,
@@ -69,19 +62,7 @@ function currentPriceIdsFromConfig() {
     .map(v => String(v || '').trim())
     .filter(Boolean);
 
-  // As a last resort, include legacy envs the billing page might still reference
-  const legacy = [
-    process.env.STRIPE_PRICE_RESUME_ONE_TIME_LIVE,
-    process.env.STRIPE_PRICE_RESUME_EXPERT_LIVE,
-    process.env.STRIPE_PRICE_RESUME_ONE_TIME_TEST,
-    process.env.STRIPE_PRICE_RESUME_EXPERT_TEST,
-    process.env.STRIPE_PRICE_RESUME_ONE_TIME,
-    process.env.STRIPE_PRICE_RESUME_EXPERT
-  ]
-    .map(v => String(v || '').trim())
-    .filter(Boolean);
-
-  return Array.from(new Set([...ids, ...legacy]));
+  return Array.from(new Set(ids));
 }
 
 function buildCacheKey(ids) {

@@ -133,21 +133,16 @@ async function createCheckoutSession({ user, priceId, quantity = 1, idempotencyK
     throw err;
   }
 
-  // URL building: prefer config.stripe.successPath/cancelPath; fallback to env; defaults preserved
+  // URL building: use config.stripe.successPath/cancelPath only (no process.env fallbacks)
   const baseUrl = config.publicOrigin.replace(/\/+$/, '');
-  const cfgSuccess = config?.stripe?.successPath;
-  const cfgCancel  = config?.stripe?.cancelPath;
-  const envSuccess = process.env.STRIPE_SUCCESS_PATH;
-  const envCancel  = process.env.STRIPE_CANCEL_PATH;
-
-  const preferredSuccess = (cfgSuccess ?? envSuccess) || '/dashboard/purchase/confirmation';
-  const preferredCancel  = (cfgCancel  ?? envCancel)  || '/dashboard/billing';
+  const rawSuccessPath = config?.stripe?.successPath || '/dashboard/purchase/confirmation';
+  const rawCancelPath = config?.stripe?.cancelPath || '/dashboard/billing';
 
   const isFullUrl = (u) => { try { const x = new URL(u); return x.protocol === 'http:' || x.protocol === 'https:'; } catch { return false; } };
   const normPath = (p) => (p ? (isFullUrl(p) ? p : (p.startsWith('/') ? p : `/${p}`)) : '');
 
-  const successPath = normPath(preferredSuccess);
-  const cancelPath  = normPath(preferredCancel);
+  const successPath = normPath(rawSuccessPath);
+  const cancelPath  = normPath(rawCancelPath);
 
   const successUrl = isFullUrl(successPath)
     ? `${successPath}${successPath.includes('?') ? '&' : '?'}session_id={CHECKOUT_SESSION_ID}`

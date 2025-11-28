@@ -52,8 +52,17 @@ function readAccessToken(req, cookieOnly = false) {
   // Priority 1: HttpOnly cookie (web pages) - env-driven name + legacy fallback
   const cookieToken = req.cookies?.[hostPrefixed]
     || req.cookies?.[cookieName]
-    || req.cookies?.['sb-access-token']   // legacy
-    || req.cookies?.['sb_session']        // legacy
+    || (() => {
+      // Check for legacy cookies and log usage
+      const legacyToken = req.cookies?.['sb-access-token'] || req.cookies?.['sb_session'];
+      if (legacyToken) {
+        logger.info({
+          event: 'legacy.cookie_used',
+          cookieName: req.cookies?.['sb-access-token'] ? 'sb-access-token' : 'sb_session'
+        }, 'Legacy auth cookie was accepted');
+      }
+      return legacyToken;
+    })()
     || null;
 
   // Debug logging for cookie read attempt (only when AUTH_DEBUG=true)

@@ -265,17 +265,7 @@ router.get('/checkout/review', async (req, res, next) => {
         add(config?.stripe?.test?.priceResumeExpert);
       }
 
-      // Legacy envs (only as last resort)
-      if (key === 'resume_one_time') {
-        add(process.env.STRIPE_PRICE_RESUME_ONE_TIME_LIVE);
-        add(process.env.STRIPE_PRICE_RESUME_ONE_TIME_TEST);
-        add(process.env.STRIPE_PRICE_RESUME_ONE_TIME);
-      }
-      if (key === 'resume_expert') {
-        add(process.env.STRIPE_PRICE_RESUME_EXPERT_LIVE);
-        add(process.env.STRIPE_PRICE_RESUME_EXPERT_TEST);
-        add(process.env.STRIPE_PRICE_RESUME_EXPERT);
-      }
+      // All price IDs now come from config.stripe.* only (no process.env fallbacks)
 
       return ids;
     }

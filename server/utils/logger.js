@@ -173,7 +173,8 @@ function extractFieldNames(obj) {
 class SecureLogger {
   constructor() {
     this.isDevelopment = config.server.nodeEnv === 'development';
-    this.logLevel = process.env.LOG_LEVEL || 'info';
+    // Log level now comes from centralized config (config.logging.logLevel)
+    this.logLevel = config?.logging?.logLevel || 'info';
   }
 
   // ──────────────────────────────────────────────────────────────────────────

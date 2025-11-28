@@ -362,3 +362,15 @@ This audit examined the Detechify codebase for dead code, redundant implementati
 
 - Empty directories `server/core/` and `server/middleware/security/` remain but contain no files.
 
+### [2025-01-27] Phase 2 – Remove deprecated createAuthRateLimit
+
+- Confirmed `createAuthRateLimit` had no active usages across the codebase (only documentation references found).
+
+- Removed the function implementation and its export from `server/middleware/security.js`:
+  - Removed deprecated function (lines 183-206) including the long deprecation comment
+  - Removed `createAuthRateLimit` from module exports (line 390)
+
+- Restarted the app and verified there were no startup or runtime errors.
+
+- No other files needed to be updated as the function was not imported anywhere.
+

@@ -5,7 +5,8 @@ module.exports = {
   parserOptions: { ecmaVersion: 2022 },
   ignorePatterns: [
     'public/js/supabase-client.js',
-    'public/js/**/*.min.js'
+    'public/js/**/*.min.js',
+    'ejs/**/*.ejs'
   ],
   overrides: [
     // Test files: expose vitest globals

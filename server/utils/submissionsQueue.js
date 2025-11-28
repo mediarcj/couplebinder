@@ -3,6 +3,8 @@
 // Purpose: Provides clean concurrency control without busy-waiting
 // Notes: Single-instance queue for development; for horizontal scaling, use DB atomic operations
 
+const logger = require('./logger');
+
 /**
  * WHAT:
  * This is an in-memory promise-based queue that ensures atomic operations
@@ -51,7 +53,10 @@ function enqueue(operation) {
       }
     }).catch((error) => {
       // Log error but don't break the queue
-      console.error('Queue operation failed:', error.message);
+      logger.error({
+        event: 'submissions.queue.operation_failed',
+        error: error.message
+      }, 'Queue operation failed');
     });
   });
 }

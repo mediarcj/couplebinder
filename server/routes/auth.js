@@ -43,6 +43,16 @@ router.post('/login', loginLimiter(), async (req, res) => {
         const isProd = config.server.nodeEnv === 'production';
         const allowLegacy = config.auth.allowLegacyLogin;
         
+        // Log legacy endpoint usage
+        logger.warn({
+            event: 'legacy.login_endpoint_used',
+            requestId: req.requestId,
+            ip: req.clientIp || req.ip,
+            path: req.originalUrl || req.path,
+            isProd,
+            allowLegacy
+        }, 'Legacy login endpoint was called; consider migrating to Supabase Auth only');
+        
         // In production, return 404 unless explicitly allowed
         if (isProd && !allowLegacy) {
             logger.warn({

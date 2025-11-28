@@ -3,6 +3,8 @@
 // Purpose: Separates route registration from main server boot file
 // Notes: All routes are registered here with appropriate middleware and error handling
 
+const logger = require('../utils/logger');
+
 /**
  * WHAT:
  * Register all application routes with appropriate middleware.
@@ -34,93 +36,93 @@ function registerRoutes({
   try {
     const profileRouter = require('../routes/profile');
     app.use('/api/profile', requireAuth, profileRouter);
-    console.log('Profile API routes loaded successfully');
+    logger.info({ event: 'boot.route_loaded', route: 'profile' }, 'Profile API routes loaded successfully');
   } catch (error) {
-    console.error('Failed to load profile API routes:', error.message);
+    logger.error({ event: 'boot.route_load_failed', route: 'profile', error: error.message }, 'Failed to load profile API routes');
   }
 
   try {
     app.use('/auth', require('../routes/authCookie'));  // HttpOnly cookie management (set/clear)
-    console.log('Auth cookie routes loaded successfully');
+    logger.info({ event: 'boot.route_loaded', route: 'authCookie' }, 'Auth cookie routes loaded successfully');
   } catch (error) {
-    console.error('Failed to load auth cookie routes:', error.message);
+    logger.error({ event: 'boot.route_load_failed', route: 'authCookie', error: error.message }, 'Failed to load auth cookie routes');
   }
 
   try {
     app.use('/api/auth', require('../routes/auth'));
-    console.log('Auth API routes loaded successfully');
+    logger.info({ event: 'boot.route_loaded', route: 'auth' }, 'Auth API routes loaded successfully');
   } catch (error) {
-    console.error('Failed to load auth API routes:', error.message);
+    logger.error({ event: 'boot.route_load_failed', route: 'auth', error: error.message }, 'Failed to load auth API routes');
   }
 
   // Debug route (enabled via AUTH_DEBUG=true env var)
   if (config.auth.debug) {
     try {
       app.use('/api/auth', require('../routes/authDebug'));
-      console.log('Auth debug routes loaded (AUTH_DEBUG=true)');
+      logger.info({ event: 'boot.route_loaded', route: 'authDebug' }, 'Auth debug routes loaded (AUTH_DEBUG=true)');
     } catch (error) {
-      console.error('Failed to load auth debug routes:', error.message);
+      logger.error({ event: 'boot.route_load_failed', route: 'authDebug', error: error.message }, 'Failed to load auth debug routes');
     }
   }
 
   try {
     // Admin routes (require admin role)
     app.use('/api/admin', requireAuth, require('../routes/admin'));
-    console.log('Admin API routes loaded successfully');
+    logger.info({ event: 'boot.route_loaded', route: 'admin' }, 'Admin API routes loaded successfully');
   } catch (error) {
-    console.error('Failed to load admin API routes:', error.message);
+    logger.error({ event: 'boot.route_load_failed', route: 'admin', error: error.message }, 'Failed to load admin API routes');
   }
 
   try {
     // User routes (require ownership)
     app.use('/api/users', requireAuth, require('../routes/users'));
-    console.log('Users API routes loaded successfully');
+    logger.info({ event: 'boot.route_loaded', route: 'users' }, 'Users API routes loaded successfully');
   } catch (error) {
-    console.error('Failed to load users API routes:', error.message);
+    logger.error({ event: 'boot.route_load_failed', route: 'users', error: error.message }, 'Failed to load users API routes');
   }
 
   try {
     app.use('/api/page', requireAuth, require('../routes/pageApi'));
-    console.log('Page API routes loaded successfully');
+    logger.info({ event: 'boot.route_loaded', route: 'pageApi' }, 'Page API routes loaded successfully');
   } catch (error) {
-    console.error('Failed to load page API routes:', error.message);
+    logger.error({ event: 'boot.route_load_failed', route: 'pageApi', error: error.message }, 'Failed to load page API routes');
   }
 
   let submissionsRouter = null;
   try {
     submissionsRouter = require('../routes/submissions');
     app.use('/api/submit', submissionsRouter);
-    console.log('Submissions API routes loaded successfully');
+    logger.info({ event: 'boot.route_loaded', route: 'submissions' }, 'Submissions API routes loaded successfully');
   } catch (error) {
-    console.error('Failed to load submissions API routes:', error.message);
+    logger.error({ event: 'boot.route_load_failed', route: 'submissions', error: error.message }, 'Failed to load submissions API routes');
   }
 
   try {
     app.use('/api/pay', requireAuth, require('../routes/payments'));
-    console.log('Payments API routes loaded successfully');
+    logger.info({ event: 'boot.route_loaded', route: 'payments' }, 'Payments API routes loaded successfully');
   } catch (error) {
-    console.error('Failed to load payments API routes:', error.message);
+    logger.error({ event: 'boot.route_load_failed', route: 'payments', error: error.message }, 'Failed to load payments API routes');
   }
 
   try {
     app.use('/api', require('../routes/api'));
-    console.log('General API routes loaded successfully');
+    logger.info({ event: 'boot.route_loaded', route: 'api' }, 'General API routes loaded successfully');
   } catch (error) {
-    console.error('Failed to load general API routes:', error.message);
+    logger.error({ event: 'boot.route_load_failed', route: 'api', error: error.message }, 'Failed to load general API routes');
   }
 
   try {
     app.use('/account', requireAuth, require('../routes/account'));
-    console.log('Account routes loaded successfully');
+    logger.info({ event: 'boot.route_loaded', route: 'account' }, 'Account routes loaded successfully');
   } catch (error) {
-    console.error('Failed to load account routes:', error.message);
+    logger.error({ event: 'boot.route_load_failed', route: 'account', error: error.message }, 'Failed to load account routes');
   }
 
   try {
     app.use('/', require('../routes/passwordRecovery'));
-    console.log('Password recovery routes loaded successfully');
+    logger.info({ event: 'boot.route_loaded', route: 'passwordRecovery' }, 'Password recovery routes loaded successfully');
   } catch (error) {
-    console.error('Failed to load password recovery routes:', error.message);
+    logger.error({ event: 'boot.route_load_failed', route: 'passwordRecovery', error: error.message }, 'Failed to load password recovery routes');
   }
 
   // Debug routes (toggle-based, off by default)
@@ -139,24 +141,24 @@ function registerRoutes({
   if (toggles.exposeDebugRoutes) {
     try {
       app.use('/_debug', require('../routes/debug'));
-      console.log('Toggle: Debug routes enabled (/_debug)');
+      logger.info({ event: 'boot.route_loaded', route: 'debug' }, 'Toggle: Debug routes enabled (/_debug)');
     } catch (error) {
-      console.error('Failed to load debug routes:', error.message);
+      logger.error({ event: 'boot.route_load_failed', route: 'debug', error: error.message }, 'Failed to load debug routes');
     }
   }
 
   try {
     app.use('/dashboard', requireAuth, require('../routes/dashboard'));
-    console.log('Dashboard routes loaded successfully');
+    logger.info({ event: 'boot.route_loaded', route: 'dashboard' }, 'Dashboard routes loaded successfully');
   } catch (error) {
-    console.error('Failed to load dashboard routes:', error.message);
+    logger.error({ event: 'boot.route_load_failed', route: 'dashboard', error: error.message }, 'Failed to load dashboard routes');
   }
 
   try {
     app.use('/dashboard/billing', requireAuth, require('../routes/dashboard-billing'));
-    console.log('Billing dashboard route loaded');
+    logger.info({ event: 'boot.route_loaded', route: 'dashboard-billing' }, 'Billing dashboard route loaded');
   } catch (e) {
-    console.error('Failed to load /dashboard/billing:', e.message);
+    logger.error({ event: 'boot.route_load_failed', route: 'dashboard-billing', error: e.message }, 'Failed to load /dashboard/billing');
   }
 
   // Login page route (public)
@@ -169,7 +171,7 @@ function registerRoutes({
       pageModel.page.nonce = res.locals.nonce || pageModel.page.nonce;
       res.render('login', pageModel);
     } catch (error) {
-      console.error('Login page error:', error);
+      logger.error({ event: 'boot.page_error', page: 'login', error: error.message }, 'Login page error');
       res.status(500).render('error', {
         title: 'Login Error',
         message: 'Unable to load login page',
@@ -189,7 +191,7 @@ function registerRoutes({
       pageModel.page.nonce = res.locals.nonce || pageModel.page.nonce;
       res.render('register', pageModel);
     } catch (error) {
-      console.error('Register page error:', error);
+      logger.error({ event: 'boot.page_error', page: 'register', error: error.message }, 'Register page error');
       res.status(500).render('error', {
         title: 'Register Error',
         message: 'Unable to load register page',
@@ -202,10 +204,10 @@ function registerRoutes({
   try {
     if (submissionsRouter && submissionsRouter.initSubmissionsStorage) {
       submissionsRouter.initSubmissionsStorage();
-      console.log('Submissions storage initialized successfully (Supabase database)');
+      logger.info({ event: 'boot.storage_initialized', storage: 'submissions' }, 'Submissions storage initialized successfully (Supabase database)');
     }
   } catch (error) {
-    console.error('Failed to initialize submissions storage:', error.message);
+    logger.error({ event: 'boot.storage_init_failed', storage: 'submissions', error: error.message }, 'Failed to initialize submissions storage');
   }
 
   // Import presenters (home, login, register)
@@ -217,9 +219,9 @@ function registerRoutes({
     buildHomePageModel = presentersModule.buildHomePageModel;
     buildLoginPageModel = presentersModule.buildLoginPageModel;
     buildRegisterPageModel = presentersModule.buildRegisterPageModel;
-    console.log('Presenters module loaded successfully');
+    logger.info({ event: 'boot.module_loaded', module: 'presenters' }, 'Presenters module loaded successfully');
   } catch (error) {
-    console.error('Failed to load presenters module:', error.message);
+    logger.error({ event: 'boot.module_load_failed', module: 'presenters', error: error.message }, 'Failed to load presenters module');
     // Fallbacks so routes still render something instead of crashing
     buildHomePageModel = () => ({
       page: { title: 'Error', description: 'Service unavailable', nonce: '' },
@@ -254,7 +256,7 @@ function registerRoutes({
       // Render EJS template with page model
       res.render('index', pageModel);
     } catch (error) {
-      console.error('Home page error:', error);
+      logger.error({ event: 'boot.page_error', page: 'home', error: error.message }, 'Home page error');
       res.status(500).render('error', {
         title: 'Home Error',
         message: 'Unable to load home page',

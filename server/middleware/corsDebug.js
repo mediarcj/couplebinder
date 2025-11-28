@@ -3,6 +3,8 @@
 // Purpose: Temporary troubleshooting tool for CORS issues
 // Notes: Keep disabled in production unless actively debugging
 
+const logger = require('../utils/logger');
+
 /**
  * WHAT:
  * Middleware to log CORS request details for debugging.
@@ -32,9 +34,10 @@ module.exports = function corsDebug() {
         acrh: req.headers['access-control-request-headers'],
       };
       
-      // Log to console (visible in journalctl/cloudwatch)
-      // eslint-disable-next-line no-console
-      console.warn('[CORS-DEBUG]', JSON.stringify(debugInfo));
+      logger.warn({
+        event: 'cors.debug',
+        ...debugInfo
+      }, 'CORS debug info');
     }
     next();
   };

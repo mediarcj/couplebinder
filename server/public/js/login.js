@@ -457,51 +457,64 @@ async function postAuthCookieWithBackoffLocal(payload, opts) {
     return;
   }
   
-  // If SSR pre-rendered a success message, don't clear it.
-  // Otherwise, handle URL flags to show banners client-side.
+  // Handle success banners (password changed / registration) via:
+  // 1) server-side flags on <body> data-attributes
+  // 2) URL query params (backwards compatibility)
+  // 3) sessionStorage flag (password change flow)
   try {
-    const urlParams = new URLSearchParams(window.location.search);
-    const passwordChanged = urlParams.get('password_changed_success') === '1';
-    const registerSuccess = urlParams.get('register_success') === '1';
+    const body = document.body;
+    const ds = body && body.dataset ? body.dataset : {};
+
+    const serverPasswordChanged = ds.loginPasswordChanged === '1';
+    const serverRegisterSuccess = ds.loginRegisterSuccess === '1';
+
+    const urlParams = new URLSearchParams(window.location.search || '');
+    const urlPasswordChanged = urlParams.get('password_changed_success') === '1';
+    const urlRegisterSuccess = urlParams.get('register_success') === '1';
     const sessionFlag = sessionStorage.getItem('passwordChangeSuccess') === '1';
 
-    const messageEl = document.getElementById('loginGeneralMessage');
-    const containerEl = document.getElementById('loginMessageContainer');
-    const ssrAlreadyVisible =
-      !!messageEl &&
-      messageEl.classList.contains('login-message--success') &&
-      containerEl && !containerEl.classList.contains('hidden');
+    let showed = false;
 
-    if (!ssrAlreadyVisible) {
-      if (passwordChanged || sessionFlag) {
-        // Clean up URL param
-        if (passwordChanged) {
-          urlParams.delete('password_changed_success');
-          const query = urlParams.toString();
-          if (history && history.replaceState) {
-            history.replaceState({}, '', query ? `/login?${query}` : '/login');
-          }
-        }
-        // Clean up sessionStorage
-        if (sessionFlag) {
-          sessionStorage.removeItem('passwordChangeSuccess');
-        }
-        showLoginSuccess('Your password has been changed successfully. Please use your new password to log in.');
-      } else if (registerSuccess) {
-        // Clean up URL param
+    // Password changed takes priority if any of the flags say so
+    if (serverPasswordChanged || urlPasswordChanged || sessionFlag) {
+      showLoginSuccess('Your password has been changed successfully. Please use your new password to log in.');
+      showed = true;
+
+      // Clean up URL and session for next page loads
+      if (urlPasswordChanged) {
+        urlParams.delete('password_changed_success');
+      }
+      if (urlRegisterSuccess) {
         urlParams.delete('register_success');
+      }
+      if (history && history.replaceState) {
         const query = urlParams.toString();
+        history.replaceState({}, '', query ? `/login?${query}` : '/login');
+      }
+      if (sessionFlag) {
+        sessionStorage.removeItem('passwordChangeSuccess');
+      }
+    } else if (serverRegisterSuccess || urlRegisterSuccess) {
+      // Registration success
+      showLoginSuccess('Your account has been created. Please log in to continue.');
+      showed = true;
+
+      if (urlRegisterSuccess) {
+        urlParams.delete('register_success');
         if (history && history.replaceState) {
+          const query = urlParams.toString();
           history.replaceState({}, '', query ? `/login?${query}` : '/login');
         }
-        showLoginSuccess('Your account has been created. Please log in to continue.');
-      } else {
-        // No SSR banner and no flags: keep the container hidden/empty
-        // (Do nothing – avoid flicker)
       }
+    } else {
+      // No flags: leave container empty/hidden (no flicker)
     }
-  } catch (_) {
-    // Ignore errors
+
+    if (showed) {
+      log.info('Login success banner displayed based on flags');
+    }
+  } catch (err) {
+    log.error('Error handling login success banners:', err);
   }
   
   function initPasswordToggles() {

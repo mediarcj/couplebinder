@@ -35,21 +35,13 @@ const COOKIE_TTL_MS = 1000 * 60 * 60 * 24 * 7; // 7 days
 const LEGACY_DOMAIN = config.branding?.legacyCookieDomain || null; // used only to clear old cookies
 
 // Sentinel (fallback only). If 0 or falsy => disabled.
-// Priority: ENV > config.auth.sentinelMs > default(0)
+// Priority: config.auth.sentinelMs (which reads from ENV with default 0)
 const SENTINEL_COOKIE_NAME = 'auth_logout';
-const SENTINEL_MS = Number(
-  process.env.AUTH_SENTINEL_MS ??
-  (config.auth && config.auth.sentinelMs) ??
-  0
-);
+const SENTINEL_MS = Number(config.auth?.sentinelMs ?? 0);
 
 // Fresh-token grace when watermark is unavailable. If unset, default 20s.
-// Priority: ENV > config.auth.freshLoginGraceSec > default(20)
-const FRESH_LOGIN_GRACE_SEC = Number(
-  process.env.AUTH_FRESH_GRACE_SEC ??
-  (config.auth && config.auth.freshLoginGraceSec) ??
-  20
-);
+// Priority: config.auth.freshLoginGraceSec (which reads from ENV with default 20)
+const FRESH_LOGIN_GRACE_SEC = Number(config.auth?.freshLoginGraceSec ?? 20);
 
 // =======================
 // Helpers

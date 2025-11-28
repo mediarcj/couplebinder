@@ -66,10 +66,15 @@ if (isTest) {
 
   // Quiet, one-time warning without leaking secrets
   let warned = false;
+  const logger = require('./logger');
   function warnOnce(msg) {
     if (warned) return;
     warned = true;
-    try { console.warn(msg); } catch (_) {}
+    try {
+      logger.warn({
+        event: 'supabase.client.missing_config'
+      }, msg);
+    } catch (_) {}
   }
 
   const supabase =

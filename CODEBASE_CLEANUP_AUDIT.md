@@ -374,3 +374,20 @@ This audit examined the Detechify codebase for dead code, redundant implementati
 
 - No other files needed to be updated as the function was not imported anywhere.
 
+### [2025-01-27] Phase 3 – Document single-instance limitations
+
+- Added comprehensive WHAT/WHY/HOW documentation comments to `server/utils/submissionsQueue.js`:
+  - Documented that the queue is an in-memory, single-instance implementation
+  - Clearly stated the limitation: NOT multi-instance safe for horizontal scaling
+  - Specified future migration path: Redis-backed queue for distributed deployments
+
+- Added comprehensive WHAT/WHY/HOW documentation comments to `server/middleware/security.js`:
+  - Documented the `codeAttempts` Map as single-instance only (above line 34)
+  - Explained the limitation: each instance maintains its own Map, causing inconsistencies across instances
+  - Specified future migration path: Redis (or similar shared storage) for multi-instance safety
+  - Added note in `verifySecureCode()` function comment reinforcing the Redis migration need
+
+- No runtime behavior was changed - only documentation comments were added or enhanced.
+
+- Restarted the app and verified there were no startup or runtime errors.
+

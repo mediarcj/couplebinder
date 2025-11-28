@@ -25,6 +25,8 @@
  * @param {Object} params.consoleLogger - Console logger with formatting
  */
 function registerShutdownSystem({ server, logger, config, consoleLogger }) {
+  // Use the logger passed in, or fallback to requiring it if not provided
+  const log = logger || require('../utils/logger');
   // Graceful shutdown configuration
   const GRACE_MS = config.shutdown.graceMs;
   const SOCKET_CULL_MS = Math.max(0, GRACE_MS - 2000);
@@ -57,27 +59,22 @@ function registerShutdownSystem({ server, logger, config, consoleLogger }) {
    */
   function gracefulShutdown(signal) {
     if (shuttingDown) {
-      console.log('Shutdown already in progress (ignored duplicate signal)');
+      log.info({ event: 'shutdown.duplicate_signal', signal }, 'Shutdown already in progress (ignored duplicate signal)');
       return; // Just return, don't exit(1)
     }
     shuttingDown = true;
 
-    console.log('GRACEFUL SHUTDOWN INITIATED');
-    console.log(`   Signal: ${signal}`);
-    console.log(`   Time: ${new Date().toLocaleString()}`);
-    console.log('   Shutting down gracefully...');
+    log.info({ event: 'shutdown.initiated', signal }, 'GRACEFUL SHUTDOWN INITIATED');
     
     // Stop accepting new connections
     server.close((err) => {
       if (err) {
-        console.error('HTTP server close error:', err);
+        log.error({ event: 'shutdown.server_close_error', error: err.message }, 'HTTP server close error');
         // Still exit(0) to avoid npm/systemd "failed" spam during restarts
         process.exit(0);
         return;
       }
-      console.log('HTTP server closed');
-      console.log('All active connections closed');
-      console.log('Graceful shutdown completed');
+      log.info({ event: 'shutdown.completed' }, 'Graceful shutdown completed');
       process.exit(0); // IMPORTANT: exit(0) so systemd/npm doesn't mark it as failure
     });
 
@@ -90,7 +87,7 @@ function registerShutdownSystem({ server, logger, config, consoleLogger }) {
 
     // Final failsafe - if close callback never fires, exit(0) anyway
     setTimeout(() => {
-      console.warn('Graceful shutdown timeout reached, forcing exit');
+      log.warn({ event: 'shutdown.timeout' }, 'Graceful shutdown timeout reached, forcing exit');
       process.exit(0); // exit(0) on timeout to avoid restart "failed" noise
     }, GRACE_MS).unref();
   }
@@ -101,19 +98,19 @@ function registerShutdownSystem({ server, logger, config, consoleLogger }) {
 
   // Handle uncaught exceptions and unhandled rejections
   process.once('uncaughtException', (error) => {
-    console.error('Uncaught Exception:', error);
+    log.error({ event: 'shutdown.uncaught_exception', error: error.message, stack: error.stack }, 'Uncaught Exception');
     gracefulShutdown('UNCAUGHT_EXCEPTION');
   });
 
   process.once('unhandledRejection', (reason, promise) => {
-    console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+    log.error({ event: 'shutdown.unhandled_rejection', reason: String(reason) }, 'Unhandled Rejection');
     gracefulShutdown('UNHANDLED_REJECTION');
   });
 
   if (consoleLogger && typeof consoleLogger.formatMiddlewareRegistration === 'function') {
     consoleLogger.formatMiddlewareRegistration('Graceful shutdown system');
   } else {
-    console.log('Graceful shutdown system registered');
+    log.info({ event: 'boot.shutdown_registered' }, 'Graceful shutdown system registered');
   }
 }
 

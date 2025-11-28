@@ -30,7 +30,31 @@ const {
   clearFailedAttempts
 } = require('./lockout');
 
-// Code attempts still use in-memory Map (not part of multi-instance concern)
+/**
+ * WHAT:
+ * This Map tracks secure code attempts and verification state in memory.
+ * It stores single-use codes generated for user actions (password changes,
+ * email verification, etc.) along with their expiration times and usage status.
+ * 
+ * WHY:
+ * It provides a simple way to prevent reuse of codes and to enforce limits
+ * in a single Node.js process. Codes are bound to specific users and actions,
+ * and the Map allows quick lookup and atomic marking of codes as used.
+ * 
+ * HOW / LIMITATION - SINGLE INSTANCE ONLY:
+ * This Map is stored in process memory and is NOT safe for multi-instance or
+ * horizontally scaled deployments. Each server instance would maintain its own
+ * separate Map, which means:
+ * - A code generated on instance A would not be recognized on instance B
+ * - Code verification state is not shared across instances
+ * - Race conditions could occur if the same code is verified on different instances
+ * 
+ * FUTURE MIGRATION PATH:
+ * When scaling out to multiple instances, this must be migrated to Redis (or similar
+ * shared storage) so that code verification state is shared across all instances.
+ * This will ensure codes work consistently regardless of which instance handles
+ * the request.
+ */
 const codeAttempts = new Map();
 
 /**
@@ -242,6 +266,11 @@ function generateSecureCode(userId, action, ttlSeconds = 300) {
 /**
  * Verify secure code with atomic consumption
  * CRITICAL SECTION: Atomic check-and-use to prevent double consumption
+ * 
+ * NOTE: This function currently depends on the in-memory codeAttempts Map.
+ * For multi-instance deployments, this should be migrated to Redis to ensure
+ * code verification state is shared across all server instances.
+ * 
  * @param {string} code - Code to verify
  * @param {string} userId - Expected user ID
  * @param {string} action - Expected action

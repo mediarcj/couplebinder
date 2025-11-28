@@ -243,15 +243,16 @@ try {
 
 /**
  * WHAT:
- * Database connection testing removed - now using Supabase HTTP API.
+ * Database bootstrap for the app - no direct database connection is created here.
  *
  * WHY:
- * Supabase provides a managed PostgreSQL database accessible via HTTP API.
- * No local database connection testing needed.
+ * This app uses Supabase over HTTPS instead of a direct DB driver connection, so there is no local pool to initialize.
+ * Supabase handles all database connectivity via its HTTP API, eliminating the need for connection pooling or startup-time handshakes.
  *
  * HOW:
- * All database operations go through Supabase client which handles connectivity.
- * Database info is now logged once in the configuration summary above.
+ * We rely on Supabase client modules (supabaseClient.js, routes that use Supabase) that call the HTTP API at runtime.
+ * There is no startup-time database connection or connection testing here - connectivity is handled on-demand by Supabase's HTTP API.
+ * Database configuration and status are logged once in the configuration summary above.
  */
 
 // ============================================================
@@ -464,8 +465,28 @@ function mountStatic(prefix, subdir, maxAge, immutable = false) {
 
   // Primary first
   app.use(prefix, express.static(path.join(PUBLIC_DIR_PRIMARY, subdir), opts));
-  // Legacy second
-  app.use(prefix, express.static(path.join(PUBLIC_DIR_LEGACY, subdir), opts));
+  
+  // Legacy second - with monitoring to track usage
+  // Note: This middleware only runs if primary static didn't serve the file
+  app.use(prefix, (req, res, next) => {
+    // If we reach here, primary didn't serve it - check if legacy has it
+    const fs = require('fs');
+    const filePath = req.path.replace(prefix, '');
+    const legacyPath = path.join(PUBLIC_DIR_LEGACY, subdir, filePath);
+    try {
+      if (fs.existsSync(legacyPath) && fs.statSync(legacyPath).isFile()) {
+        logger.info({
+          event: 'legacy.static_path_used',
+          url: req.url,
+          pathRoot: '/server/public',
+          subdir: subdir
+        }, 'Legacy static asset path served');
+      }
+    } catch {
+      // Ignore errors checking file existence
+    }
+    next();
+  }, express.static(path.join(PUBLIC_DIR_LEGACY, subdir), opts));
 }
 
 // Images: long-lived
@@ -476,7 +497,26 @@ mountStatic('/js', 'js', '7d');
 
 // Generic fallbacks (primary then legacy)
 app.use(express.static(PUBLIC_DIR_PRIMARY, { etag: true, maxAge: '7d', fallthrough: true }));
-app.use(express.static(PUBLIC_DIR_LEGACY, { etag: true, maxAge: '7d', fallthrough: true }));
+
+// Legacy static path with monitoring
+// Note: This middleware only runs if primary static didn't serve the file
+app.use((req, res, next) => {
+  // If we reach here, primary didn't serve it - check if legacy has it
+  const fs = require('fs');
+  const legacyPath = path.join(PUBLIC_DIR_LEGACY, req.path);
+  try {
+    if (fs.existsSync(legacyPath) && fs.statSync(legacyPath).isFile()) {
+      logger.info({
+        event: 'legacy.static_path_used',
+        url: req.url,
+        pathRoot: '/server/public'
+      }, 'Legacy static asset path served');
+    }
+  } catch {
+    // Ignore errors checking file existence
+  }
+  next();
+}, express.static(PUBLIC_DIR_LEGACY, { etag: true, maxAge: '7d', fallthrough: true }));
 
 // Route for favicon
 app.get('/favicon.ico', (req, res) => {

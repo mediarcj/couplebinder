@@ -224,10 +224,19 @@ const config = {
 
   // Auth / JWT verification
   jwt: {
+    // WHAT: Custom JWKS URL override (optional, defaults to Supabase standard path)
+    // WHY: Allows custom JWKS endpoints for non-standard Supabase setups
+    // HOW: Used by supabaseJwt middleware to fetch public keys for token verification
     jwksUrl: process.env.SUPABASE_JWKS_URL,
     issuer: process.env.SUPABASE_ISSUER,
-    expectedAud: process.env.SUPABASE_EXPECTED_AUD,
-    clockSkewSec: int(process.env.JWT_CLOCK_SKEW_SEC, 30),
+    // WHAT: Expected JWT audience claim value
+    // WHY: Validates tokens are intended for this application
+    // HOW: Used by supabaseJwt middleware to verify token audience (default: 'authenticated')
+    expectedAud: process.env.SUPABASE_EXPECTED_AUD || 'authenticated',
+    // WHAT: Clock skew tolerance in seconds for JWT expiration checks
+    // WHY: Accounts for time drift between servers and token issuers
+    // HOW: Used by supabaseJwt middleware during token verification (default: 60s)
+    clockSkewSec: int(process.env.JWT_CLOCK_SKEW_SEC, 60),
     secret: process.env.SUPABASE_JWT_SECRET
   },
 
@@ -333,7 +342,15 @@ const config = {
     allowLegacyLogin: bool(process.env.ALLOW_LEGACY_LOGIN, false),
     debug: bool(process.env.AUTH_DEBUG, false),
     passwordResetRedirect: process.env.PASSWORD_RESET_REDIRECT_URL ||
-      (derivedPublicOrigin ? `${derivedPublicOrigin}/auth/forgot-password` : '/auth/forgot-password')
+      (derivedPublicOrigin ? `${derivedPublicOrigin}/auth/forgot-password` : '/auth/forgot-password'),
+    // WHAT: Sentinel cookie fallback duration in milliseconds (0 = disabled)
+    // WHY: Provides a small client-side fallback when Redis watermark is unavailable
+    // HOW: Used by authCookie routes to set a temporary sentinel cookie after logout
+    sentinelMs: int(process.env.AUTH_SENTINEL_MS, 0),
+    // WHAT: Fresh token grace period in seconds when watermark is unavailable
+    // WHY: Allows fresh interactive logins to pass even when sentinel is active
+    // HOW: Used by authCookie routes to allow tokens issued within this window
+    freshLoginGraceSec: int(process.env.AUTH_FRESH_GRACE_SEC, 20)
   },
 
   // Ops health DB probe configuration

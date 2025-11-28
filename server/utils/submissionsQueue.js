@@ -31,34 +31,75 @@ const logger = require('./logger');
  * For real horizontal scaling, this must be migrated to a Redis-backed queue
  * (or similar distributed queue system) so that all instances share the same
  * queue state and operations are serialized across the entire deployment.
+ * 
+ * See docs/REDIS_MIGRATION_PLAN.md for the complete design and migration steps.
  */
 
 let queue = Promise.resolve();
 
 /**
- * Enqueue an operation to ensure atomic execution
+ * WHAT:
+ * Enqueue an async operation to ensure atomic execution within the queue.
+ * 
+ * WHY:
+ * Serializes operations so they run one at a time, preventing race conditions
+ * on shared resources like database writes.
+ * 
+ * HOW:
+ * Chains operations onto an internal promise queue. If an operation fails,
+ * the caller's promise rejects (so they see the error), but the queue chain
+ * continues from a resolved state so later operations can still execute.
+ * 
  * @param {Function} operation - Async function to execute atomically
- * @returns {Promise} Promise that resolves with operation result
+ * @returns {Promise} Promise that resolves with operation result or rejects with operation error
  */
 function enqueue(operation) {
-  return new Promise((resolve, reject) => {
-    queue = queue.then(async () => {
+  // Create a promise that will be resolved/rejected based on the operation result
+  let resolveCaller, rejectCaller;
+  const callerPromise = new Promise((resolve, reject) => {
+    resolveCaller = resolve;
+    rejectCaller = reject;
+  });
+
+  // Chain the operation onto the queue
+  queue = queue
+    .then(async () => {
       try {
+        // Execute the operation
         const result = await operation();
-        resolve(result);
+        // Resolve the caller's promise with the result
+        resolveCaller(result);
+        // Return result to keep the queue chain resolved
         return result;
       } catch (error) {
-        reject(error);
-        throw error; // Re-throw to maintain queue integrity
+        // Log the error for observability
+        logger.error({
+          event: 'submissions.queue.operation_failed',
+          error: error.message,
+          stack: error.stack
+        }, 'Queue operation failed');
+        
+        // Reject the caller's promise so they see the error
+        rejectCaller(error);
+        
+        // Re-throw to maintain queue chain, but we'll catch it below
+        throw error;
       }
-    }).catch((error) => {
-      // Log error but don't break the queue
+    })
+    .catch((error) => {
+      // If the queue chain itself fails (shouldn't happen after our try/catch,
+      // but safety net), log it and ensure the chain continues from a resolved state
       logger.error({
-        event: 'submissions.queue.operation_failed',
+        event: 'submissions.queue.chain_error',
         error: error.message
-      }, 'Queue operation failed');
+      }, 'Queue chain error (unexpected)');
+      
+      // Return undefined to keep the chain resolved, allowing future operations
+      return undefined;
     });
-  });
+
+  // Return the caller's promise (they'll see success or failure)
+  return callerPromise;
 }
 
 module.exports = { enqueue };

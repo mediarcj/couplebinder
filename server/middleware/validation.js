@@ -3,14 +3,30 @@
 // Purpose: Enforces specific formats and constraints for all user data fields
 // Notes: Provides comprehensive validation for email, phone, dates, and enum values
 
+const { validateEmailServerSide } = require('./security');
+
 /**
  * Validate email format
+ * 
+ * WHAT:
+ * Validates email format using the canonical server-side validation function.
+ * 
+ * WHY:
+ * This wrapper maintains backward compatibility with existing callers that expect
+ * a boolean return value, while delegating to the comprehensive validateEmailServerSide()
+ * function which includes sanitization and length checks.
+ * 
+ * HOW:
+ * Calls validateEmailServerSide() and returns true if valid, false otherwise.
+ * All email validation logic (regex, sanitization, length limits) comes from
+ * the canonical implementation in security.js.
+ * 
  * @param {string} email - Email to validate
  * @returns {boolean} True if valid email format
  */
 function validateEmail(email) {
-  const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
-  return emailRegex.test(email);
+  const result = validateEmailServerSide(email);
+  return result.valid;
 }
 
 /**

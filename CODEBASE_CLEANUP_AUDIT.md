@@ -403,3 +403,19 @@ This audit examined the Detechify codebase for dead code, redundant implementati
 
 - Verified the app starts successfully and all routes continue to use structured logging as expected.
 
+### [2025-01-27] Phase 5 – Replace console.log in middleware with structured logger
+
+- Audited all middleware files under `server/middleware/` for `console.log`, `console.error`, and `console.warn` usage.
+
+- Replaced 2 active `console.*` calls with the shared structured logger:
+  - `server/middleware/authBridge.js`: Replaced `console.log(JSON.stringify({...}))` with `logger.debug({...}, 'Auth bridge debug info')`
+  - `server/middleware/corsDebug.js`: Replaced `console.warn('[CORS-DEBUG]', JSON.stringify(debugInfo))` with `logger.warn({ event: 'cors.debug', ...debugInfo }, 'CORS debug info')`
+
+- Added logger import at the top of both files using the project's standard pattern: `const logger = require('../utils/logger')`
+
+- Removed redundant conditional logger imports that were inside debug blocks (now using the top-level import).
+
+- Left no commented-out `console.*` lines - all were active code that needed replacement.
+
+- Restarted the app and verified there were no startup or runtime errors after the changes.
+

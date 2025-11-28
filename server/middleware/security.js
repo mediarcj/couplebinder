@@ -54,6 +54,8 @@ const {
  * shared storage) so that code verification state is shared across all instances.
  * This will ensure codes work consistently regardless of which instance handles
  * the request.
+ * 
+ * See docs/REDIS_MIGRATION_PLAN.md for the complete design and migration steps.
  */
 const codeAttempts = new Map();
 

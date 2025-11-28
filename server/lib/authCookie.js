@@ -1,30 +1,18 @@
-// File: server/lib/authCookie.js
-// Centralized helpers for setting/clearing the auth cookie(s).
-// Dev/local: plain host-only cookie (secure=false).
-// Public HTTPS: ALSO set __Host- cookie (secure=true, no Domain).
-// Always avoid Domain on set (host-only) to dodge subdomain pitfalls.
-
 /**
+ * WHAT:
+ * Centralized authentication cookie helpers for setting and clearing auth cookies with strict security rules.
  *
- * Purpose
- * =======
- * Single-cookie auth helper with strict __Host- rules in production.
- * - In production: sets ONLY "__Host-sb_session" (Secure; Path=/; NO Domain).
- * - In non-prod   : sets ONLY "sb_session" (host-only; secure may be false).
+ * WHY:
+ * Single-cookie auth helper with strict __Host- rules in production prevents subdomain attacks and ensures
+ * consistent cookie naming across the app. Multiple parallel cookie names caused confusion and cleanup pain.
  *
- * Why single-cookie?
- * ------------------
- * Multiple parallel names (plain + __Host-) caused confusion and cleanup pain.
- * This module makes the name deterministic and exports it for other modules.
+ * HOW:
+ * - In production: sets ONLY "__Host-<basename>" cookie (Secure; Path=/; NO Domain).
+ * - In non-prod: sets ONLY "<basename>" cookie (host-only; secure may be false).
+ * - Never sets "domain" attribute (host-only required for __Host-).
+ * - Clears legacy cookie names on logout for migration safety.
  *
- * Invariants we enforce
- * ---------------------
- * 1) Never set "domain" when writing the cookie (host-only).
- * 2) In production, cookie must be Secure and named "__Host-<basename>".
- * 3) Clear legacy names on logout (__Host-sb_session, sb_session, sb-access-token, plus aliases).
- *
- * Public API
- * ----------
+ * Public API:
  *   AUTH_COOKIE_NAME : string   // the one canonical name for this process
  *   setAuthCookie(res, req, token, ttlMs)
  *   clearAuthCookie(res, req, clearAll = false)
@@ -66,8 +54,17 @@ const LEGACY_COOKIE_DOMAIN =
 // ───────────────────────────────────────────────────────────────────────────────
 
 /**
- * True if the request effectively arrived over HTTPS from the user's point of view.
- * Keeps logic in one place for callers that need this check elsewhere.
+ * WHAT:
+ * Determines if the request effectively arrived over HTTPS from the user's point of view.
+ *
+ * WHY:
+ * Keeps HTTPS detection logic in one place for callers that need this check elsewhere (cookie security, redirects, etc.).
+ *
+ * HOW:
+ * Checks multiple signals in priority order: x-forwarded-proto header, Cloudflare CF-Visitor header, Express req.secure flag.
+ *
+ * @param {import('express').Request} req - Express request object
+ * @returns {boolean} True if request is effectively HTTPS
  */
 function isHttps(req) {
   try {
@@ -90,8 +87,18 @@ function isHttps(req) {
 }
 
 /**
- * Build cookie options for writing the canonical cookie.
- * We never put a Domain attribute here; host-only is required for __Host-.
+ * WHAT:
+ * Build cookie options for writing the canonical authentication cookie.
+ *
+ * WHY:
+ * Centralizes cookie attribute logic (Secure, SameSite, HttpOnly, Path) so they stay consistent.
+ *
+ * HOW:
+ * Uses config.auth.cookieSameSite and config.server.nodeEnv to set security attributes correctly.
+ * Never sets "domain" attribute (host-only required for __Host- cookies).
+ *
+ * @param {number} ttlMs - Max-Age in milliseconds
+ * @returns {object} Cookie options object
  */
 function buildWriteOpts(ttlMs) {
   const sameSite = (config.auth && config.auth.cookieSameSite) || 'lax';
@@ -143,9 +150,18 @@ function hardenWriteOpts(opts) {
 // ───────────────────────────────────────────────────────────────────────────────
 
 /**
- * Set the authentication cookie.
- * @param {import('express').Response} res
- * @param {import('express').Request} _req
+ * WHAT:
+ * Set the primary authentication cookie for a logged-in user.
+ *
+ * WHY:
+ * Centralizes cookie naming, flags, and security attributes so they stay consistent across the app.
+ *
+ * HOW:
+ * Uses config.auth.cookieName and config.server.nodeEnv to set Secure, HttpOnly, and SameSite correctly.
+ * In production, forces Secure=true and uses __Host- prefix. Never sets Domain attribute.
+ *
+ * @param {import('express').Response} res - Express response object
+ * @param {import('express').Request} _req - Express request object (unused but kept for API consistency)
  * @param {string} token - JWT or session token value
  * @param {number} ttlMs - Max-Age in milliseconds
  */
@@ -168,13 +184,19 @@ function setAuthCookie(res, _req, token, ttlMs) {
 }
 
 /**
- * Clear the authentication cookie and common legacy names.
- * Note: Express clearCookie must match important write options (path, domain, secure).
- * For __Host- cookies: use secure:true and NO domain.
+ * WHAT:
+ * Clear the authentication cookie and all legacy cookie names for complete logout.
  *
- * @param {import('express').Response} res
- * @param {import('express').Request} req
- * @param {boolean} clearAll - when true, tries even more historical variants
+ * WHY:
+ * Ensures complete cookie cleanup on logout, including legacy names from previous deployments or client versions.
+ *
+ * HOW:
+ * Clears the canonical cookie first, then attempts to clear all known legacy names (sb-access-token, sb_session, etc.)
+ * with various path/domain combinations to catch cookies set by old code paths.
+ *
+ * @param {import('express').Response} res - Express response object
+ * @param {import('express').Request} req - Express request object (used to detect hostname for domain clearing)
+ * @param {boolean} clearAll - When true, tries even more historical cookie name variants
  */
 function clearAuthCookie(res, req, clearAll = false) {
   // Clear the current canonical cookie first.

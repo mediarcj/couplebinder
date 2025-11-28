@@ -95,10 +95,11 @@ This audit examined the Detechify codebase for dead code, redundant implementati
 - **Removal Plan:** Documented in `docs/LEGACY_FEATURE_REMOVAL_PLAN.md`. Removal will be scheduled after monitoring shows zero usage for 30-60 days or explicit migration decision.
 
 #### 2.4 Legacy Environment Variable Names
-- **Location:** `server/config/index.js` - many env vars with `LEGACY_` prefix or legacy fallbacks
-- **Pattern:** Support for old env var names during migration
-- **Status:** Migration safety
-- **Action:** Keep for now. Document removal after migration complete.
+- **Status:** ✅ INTENTIONAL LEGACY SUPPORT, DOCUMENTED
+- **Location:** `server/config/index.js` - legacy env vars with `LEGACY_` prefix and fallback patterns
+- **Pattern:** Support for old env var names during migration (e.g., `LEGACY_COOKIE_DOMAIN`, `ALLOW_LEGACY_LOGIN`, `AUTH_COOKIE_BASENAME` fallback to `AUTH_COOKIE_NAME`)
+- **Status:** Intentional migration safety feature, similar to legacy cookies and login endpoint
+- **Documentation:** Covered in `docs/LEGACY_FEATURE_REMOVAL_PLAN.md`. These env vars support legacy features that are monitored and will be removed based on usage data (30-60 day monitoring period).
 
 ### Outdated Code Patterns
 

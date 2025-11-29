@@ -85,7 +85,11 @@ async function getReceiptVM({ sessionId, userId }) {
       });
     }
   } catch (err) {
-    logger.warn({ event: 'receipt.line_items.fetch_failed', session_id: sessionId, error: err.message });
+    logger.warn({ 
+      event: 'receipt.line_items.fetch_failed', 
+      session_id: sessionId
+      // Removed: error: err.message (security: could leak Stripe API details)
+    });
   }
 
   const firstLineItem = items[0] || session?.line_items?.data?.[0] || null;

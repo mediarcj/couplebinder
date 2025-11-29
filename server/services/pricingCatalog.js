@@ -18,7 +18,7 @@ function pickStripeSecret() {
 }
 
 const SECRET_KEY = pickStripeSecret();
-const stripe = SECRET_KEY ? new Stripe(SECRET_KEY, { apiVersion: '2025-11-17.clover' }) : null;
+const stripe = SECRET_KEY ? new Stripe(SECRET_KEY, { apiVersion: config.stripe.apiVersion }) : null;
 
 // Build a map of priceId -> product_key from all known slots (active/live/test + legacy envs)
 function buildPriceIdToKeyMap() {

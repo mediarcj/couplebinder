@@ -35,7 +35,7 @@
               <button class="btn" data-action="print" type="button">Print / Save PDF</button>
               <a class="btn btn-secondary" href="/dashboard/receipt.pdf?session_id=<%= encodeURIComponent(receipt.session_id || '') %>" target="_blank" rel="noopener">Download PDF</a>
               <% if (features && features.emailReceipt) { %>
-                <button class="btn btn-secondary" data-action="email" type="button">Email me this receipt</button>
+                <button class="btn btn-secondary" data-action="email" data-session-id="<%= receipt.session_id || '' %>" type="button">Email me this receipt</button>
               <% } %>
             </div>
           </div>
@@ -47,7 +47,7 @@
             </div>
             <div class="info-item">
               <span class="info-label">Date:</span>
-              <span class="info-value"><%= new Date(receipt.created_ms).toLocaleString() %></span>
+              <span class="info-value"><%= receipt.created_formatted || (receipt.created_ms ? new Date(receipt.created_ms).toLocaleString() : '—') %></span>
             </div>
             <div class="info-item">
               <span class="info-label">Customer:</span>
@@ -55,7 +55,7 @@
             </div>
             <div class="info-item">
               <span class="info-label">Total:</span>
-              <span class="info-value"><%= (receipt.amount_total/100).toFixed(2) %> <%= receipt.currency.toUpperCase() %></span>
+              <span class="info-value"><%= receipt.amount_formatted || ((receipt.amount_total ? (receipt.amount_total/100).toFixed(2) : '—') + ' ' + (receipt.currency || 'USD').toUpperCase()) %></span>
             </div>
             <% if (receipt.card_brand) { %>
               <div class="info-item">
@@ -89,7 +89,7 @@
                 <tr>
                   <td><%= item.description %></td>
                   <td><%= item.quantity %></td>
-                  <td><%= (item.amount_total/100).toFixed(2) %> <%= (item.currency || receipt.currency).toUpperCase() %></td>
+                  <td><%= item.amount_formatted || ((item.amount_total ? (item.amount_total/100).toFixed(2) : '—') + ' ' + (item.currency || receipt.currency || 'USD').toUpperCase()) %></td>
                 </tr>
               <% }) %>
             </tbody>
@@ -101,13 +101,8 @@
 
       <div class="dashboard-actions">
         <div class="action-grid">
-          <%
-            const _rawUrl = (receipt.stripe_receipt_url || receipt.official_receipt_url || '').trim();
-            const _cleanUrl = _rawUrl.replace(/^["']+|["']+$/g, '');
-            const _ok = /^https?:\/\//i.test(_cleanUrl);
-          %>
-          <% if (_ok) { %>
-            <a href="<%= _cleanUrl %>" class="btn btn-primary" rel="noopener noreferrer" target="_blank">View official Stripe receipt</a>
+          <% if (receipt.official_receipt_url) { %>
+            <a href="<%= receipt.official_receipt_url %>" class="btn btn-primary" rel="noopener noreferrer" target="_blank">View official Stripe receipt</a>
           <% } %>
           <a href="/dashboard/billing" class="btn btn-secondary">Back to Billing</a>
           <a href="/dashboard" class="btn btn-secondary">Home</a>
@@ -125,36 +120,7 @@
   <%- include('partials/modals') %>
 
   <script src="/js/modalManager.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= page.nonce %>"></script>
-  <script nonce="<%= page.nonce %>">
-    (function () {
-      const btn = document.querySelector('[data-action="print"]');
-      if (btn) btn.addEventListener('click', function () { window.print(); });
-
-      const emailBtn = document.querySelector('[data-action="email"]');
-      if (emailBtn) {
-        emailBtn.addEventListener('click', async function () {
-          if (emailBtn.disabled) return;
-          emailBtn.disabled = true;
-          const sessionId = "<%= (receipt.session_id || '') %>";
-          try {
-            const res = await fetch('/api/receipt/email', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              credentials: 'include',
-              body: JSON.stringify({ session_id: sessionId })
-            });
-            const data = await res.json().catch(() => ({}));
-            if (!res.ok || !data.ok) throw new Error(data.error || 'Failed to queue email');
-            window.modalManager?.showNotification('Email sent', 'We\'ll email your receipt shortly.');
-          } catch (err) {
-            window.modalManager?.showNotification('Error', 'Could not send email. Please try again.');
-          } finally {
-            emailBtn.disabled = false;
-          }
-        });
-      }
-    })();
-  </script>
+  <script src="/js/receipt.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= page.nonce %>"></script>
   <script src="/js/main.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= page.nonce %>"></script>
 </body>
 </html>

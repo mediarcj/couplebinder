@@ -38,15 +38,12 @@
               </div>
               <div class="row">
                 <dt>Unit price</dt>
-                <dd>
-                  $<%= (product.unit_amount/100).toFixed(2) %> <%= (product.currency||'usd').toUpperCase() %>
-                  <% if (product.interval) { %>/<%= product.interval %><% } %>
-                </dd>
+                <dd><%= product.unitPriceFormatted || '—' %></dd>
               </div>
               <div class="row"></div>
               <div class="row total">
                 <dt>Total (estimate)</dt>
-                <dd><strong>$<%= (total/100).toFixed(2) %> <%= (product.currency||'usd').toUpperCase() %></strong></dd>
+                <dd><strong><%= totalFormatted || '—' %></strong></dd>
               </div>
             </dl>
           </aside>
@@ -92,47 +89,7 @@
     </div>
   </footer>
 
-  <script nonce="<%= page.nonce %>">
-    (function () {
-      function csrf() {
-        var m = document.querySelector('meta[name="csrf-token"]');
-        return m ? m.getAttribute('content') || '' : '';
-      }
-      function cryptoRandom() {
-        try { var a = new Uint8Array(16); crypto.getRandomValues(a); return Array.from(a).map(b=>b.toString(16).padStart(2,'0')).join(''); }
-        catch { return String(Date.now()) + Math.random().toString(36).slice(2); }
-      }
-      var btn = document.getElementById('continueToPay');
-      if (!btn) return;
-      btn.addEventListener('click', async function () {
-        if (btn.disabled) return;
-        btn.disabled = true;
-        var productKey = btn.getAttribute('data-product');
-        var qty = parseInt(btn.getAttribute('data-quantity') || '1', 10);
-        try {
-          var res = await fetch('/api/pay/checkout', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf(), 'Idempotency-Key': cryptoRandom() },
-            credentials: 'include',
-            body: JSON.stringify({ sku: productKey, quantity: qty })
-          });
-          var data = await res.json().catch(() => ({}));
-          if (!res.ok || !data.url) throw new Error(data.error || 'Checkout failed');
-          window.location.assign(data.url);
-        } catch (err) {
-          console.error('Checkout error:', err);
-          if (window.modalManager?.showNotification) {
-            window.modalManager.showNotification('Error', 'Could not start checkout. Please try again.');
-          } else {
-            alert('Could not start checkout. Please try again.');
-          }
-        } finally {
-          btn.disabled = false;
-        }
-      });
-    })();
-  </script>
-
+  <script src="/js/checkout-review.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= page.nonce %>"></script>
   <script src="/js/modalManager.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= page.nonce %>"></script>
   <script src="/js/main.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= page.nonce %>"></script>
 </body>

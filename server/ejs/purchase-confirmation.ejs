@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="csrf-token" content="<%= ui.csrfToken || '' %>">
-  <meta id="api-pay-base" data-base="<%= (page && page.payBase) || '/api/pay' %>">
+  <meta id="api-pay-base" data-base="<%= confirmation?.payBase || '/api/pay' %>">
   <% if (typeof APP_CONFIG !== 'undefined') { %>
     <meta id="app-config"
       data-supabase-url="<%= APP_CONFIG.SUPABASE_URL %>"
@@ -41,13 +41,14 @@
           <p class="receipt-cta__copy">View or download the receipt hosted by our payment processor.</p>
         </div>
         <div class="receipt-cta__action">
-          <%
-            const __raw = (confirmation && confirmation.officialReceiptUrl) || '';
-            const __clean = String(__raw).trim().replace(/^["']+|["']+$/g, '');
-            const __href  = /^https?:\/\//i.test(__clean) ? __clean : '#';
-          %>
-          <a id="open-official" class="btn btn-primary btn-lg btn-block receipt-cta__btn"
-             rel="noopener noreferrer" target="_blank" href="<%= __href %>">
+          <a id="open-official" 
+             class="btn btn-primary btn-lg btn-block receipt-cta__btn"
+             rel="noopener noreferrer" 
+             target="_blank" 
+             href="<%= confirmation?.officialReceiptUrl || '#' %>"
+             data-session-id="<%= confirmation?.sessionId || '' %>"
+             data-receipt-url="<%= confirmation?.officialReceiptUrl || '' %>"
+             <%= confirmation?.officialReceiptUrl ? '' : 'aria-disabled="true"' %>>
             View official receipt
           </a>
         </div>
@@ -63,11 +64,11 @@
             </div>
             <div class="info-item">
               <span class="info-label">Total paid:</span>
-              <span class="info-value" data-amount></span>
+              <span class="info-value"><%= confirmation?.amountFormatted || '—' %></span>
             </div>
             <div class="info-item">
               <span class="info-label">Paid at:</span>
-              <span class="info-value" data-paidat></span>
+              <span class="info-value"><%= confirmation?.paidAtFormatted || '—' %></span>
             </div>
             <div class="info-item">
               <span class="info-label">Confirmation ID:</span>
@@ -95,6 +96,7 @@
   <%- include('partials/modals') %>
 
   <script src="/js/modalManager.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= (page && page.nonce) || '' %>"></script>
+  <script src="/js/purchase-confirmation.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= (page && page.nonce) || '' %>"></script>
   <script src="/js/main.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= (page && page.nonce) || '' %>"></script>
 
   <style nonce="<%= (page && page.nonce) || '' %>">
@@ -120,130 +122,5 @@
     .receipt-cta__btn[aria-disabled="true"] { pointer-events: none; opacity: 0.6; cursor: not-allowed; }
   </style>
 
-  <script nonce="<%= (page && page.nonce) || '' %>">
-    (async function(){
-      function sanitizeUrl(u) {
-        if (!u) return '';
-        const t = String(u).trim().replace(/^["']+|["']+$/g, '');
-        return /^https?:\/\//i.test(t) ? t : '';
-      }
-      const official = document.getElementById('open-official');
-      const sess = <%- JSON.stringify((confirmation && confirmation.sessionId) || '') %>;
-      const rawBase = document.getElementById('api-pay-base')?.dataset.base || '/api/pay';
-      const payBase = String(rawBase || '/api/pay').replace(/\/+$/, '') || '/api/pay';
-      const pre = <%- JSON.stringify((confirmation && confirmation.officialReceiptUrl) || null) %>;
-
-      if (official) {
-        const hrefPre = sanitizeUrl(pre);
-        if (hrefPre) { official.setAttribute('href', hrefPre); official.removeAttribute('aria-disabled'); }
-        else { official.setAttribute('aria-disabled', 'true'); }
-      }
-
-      if (official && !pre && sess) {
-        try {
-          const r0 = await fetch(`${payBase}/receipt?session_id=${encodeURIComponent(sess)}`, {
-            credentials: 'same-origin',
-            headers: { 'Accept': 'application/json' }
-          });
-          if (r0.ok) {
-            const d0 = await r0.json().catch(() => ({}));
-            const href0 = d0 && d0.receipt_url ? sanitizeUrl(d0.receipt_url) : '';
-            if (href0) { official.setAttribute('href', href0); official.removeAttribute('aria-disabled'); }
-          }
-        } catch {}
-      }
-
-      function openUrl(url) {
-        const href = sanitizeUrl(url);
-        if (!href) return;
-        try {
-          official?.setAttribute('href', href);
-          official?.removeAttribute('aria-disabled');
-          window.open(href, '_blank', 'noopener,noreferrer');
-        } catch { location.href = href; }
-      }
-
-      if (official) {
-        official.addEventListener('click', async function(e) {
-          e.preventDefault();
-          if (official.getAttribute('aria-disabled') === 'true' && (!official.getAttribute('href') || official.getAttribute('href') === '#')) {
-            window.modalManager?.showNotification?.('Receipt not ready', 'We’re still fetching your receipt. Please try again in a moment.');
-            return;
-          }
-          if (!sess) {
-            window.modalManager?.showNotification?.('Missing info', 'We couldn’t find your session ID to fetch the receipt.');
-            return;
-          }
-          official.disabled = true;
-          official.setAttribute('aria-busy','true');
-          try {
-            if (pre) { openUrl(pre); return; }
-            const res = await fetch(`${payBase}/receipt?session_id=${encodeURIComponent(sess)}`, {
-              credentials: 'same-origin',
-              headers: { 'Accept': 'application/json' }
-            });
-            if (res.status === 204) throw new Error('no-receipt-yet');
-            if (!res.ok) throw new Error('failed');
-            const data = await res.json().catch(() => ({}));
-            if (!data || !data.receipt_url) throw new Error('no-receipt');
-            openUrl(data.receipt_url);
-          } catch {
-            if (window.modalManager?.showNotification) {
-              window.modalManager.showNotification('Receipt unavailable', 'Could not open the official receipt right now. Please try again later.');
-            } else {
-              alert('Could not open the official receipt right now. Please try again later.');
-            }
-          } finally {
-            official.disabled = false;
-            official.removeAttribute('aria-busy');
-            if (official.getAttribute('href') && official.getAttribute('href') !== '#') official.removeAttribute('aria-disabled');
-          }
-        });
-      }
-
-      // Amount formatting
-      const amountMinor = <%- JSON.stringify(((confirmation && confirmation.amountMinor) != null ? confirmation.amountMinor : null)) %>;
-      let currency      = <%- JSON.stringify(((confirmation && confirmation.currency) || 'USD')) %>;
-      if (typeof currency === 'string') currency = currency.toUpperCase();
-      const $amount = document.querySelector('[data-amount]');
-      const zeroDecimal = new Set(['BIF','CLP','DJF','GNF','JPY','KMF','KRW','MGA','PYG','RWF','UGX','VND','VUV','XAF','XOF','XPF']);
-      if ($amount && amountMinor != null && Number.isFinite(Number(amountMinor))) {
-        const nMinor = Number(amountMinor);
-        const major = zeroDecimal.has(currency) ? nMinor : (nMinor / 100);
-        try { $amount.textContent = new Intl.NumberFormat(undefined, { style: 'currency', currency }).format(major); }
-        catch { $amount.textContent = (zeroDecimal.has(currency) ? nMinor : major.toFixed(2)) + ' ' + currency; }
-      }
-
-      // Paid at
-      const iso = <%- JSON.stringify((confirmation && confirmation.paidAtIso) || '') %>;
-      const $paid = document.querySelector('[data-paidat]');
-      if ($paid && iso) {
-        try { $paid.textContent = new Date(iso).toLocaleString(); }
-        catch { $paid.textContent = iso; }
-      }
-
-      // Copy confirmation ID
-      const btnCopy = document.getElementById('copy-id');
-      const confId = document.getElementById('conf-id')?.textContent || '';
-      if (btnCopy && confId) {
-        btnCopy.addEventListener('click', async () => {
-          try {
-            await navigator.clipboard.writeText(confId);
-            btnCopy.textContent = 'Copied';
-            setTimeout(() => btnCopy.textContent = 'Copy', 1200);
-          } catch {
-            const textarea = document.createElement('textarea');
-            textarea.value = confId;
-            document.body.appendChild(textarea);
-            textarea.select();
-            document.execCommand('copy');
-            document.body.removeChild(textarea);
-            btnCopy.textContent = 'Copied';
-            setTimeout(() => btnCopy.textContent = 'Copy', 1200);
-          }
-        });
-      }
-    })();
-  </script>
 </body>
 </html>

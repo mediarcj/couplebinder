@@ -450,6 +450,18 @@ registerCoreMiddleware({
 app.set('view engine', 'ejs');
 app.set('views', path.resolve(__dirname, 'ejs'));
 
+// Enable view caching in production for performance
+// WHAT: Caches compiled EJS templates in memory to avoid recompiling on every request
+// WHY: Significantly improves response times in production by avoiding template recompilation
+// HOW: Only enabled when NODE_ENV is 'production'; disabled in development for fast iteration
+if (config?.server?.nodeEnv === 'production') {
+  app.set('view cache', true);
+  logger.info({ event: 'boot.view_cache_enabled' }, 'View caching enabled for production');
+} else {
+  app.set('view cache', false);
+  logger.info({ event: 'boot.view_cache_disabled', env: config?.server?.nodeEnv || 'development' }, 'View caching disabled for development');
+}
+
 // ===== Static roots =====
 // Primary (canonical): repo-root /public
 const PUBLIC_DIR_PRIMARY = path.resolve(__dirname, '../public');

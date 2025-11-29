@@ -144,7 +144,11 @@ async function getPricingCatalog() {
           };
         } catch (err) {
           logger.warn(
-            { event: 'pricing.catalog.lookup_failed', priceId, error: err.message },
+            { 
+              event: 'pricing.catalog.lookup_failed', 
+              priceId
+              // Removed: error: err.message (security: could leak Stripe API details)
+            },
             'Stripe price lookup failed; using fallback'
           );
           return {
@@ -171,7 +175,10 @@ async function getPricingCatalog() {
     logger.info({ event: 'pricing.catalog.cached', count: catalogCache.length }, 'Pricing catalog cached');
     return catalogCache;
   } catch (err) {
-    logger.error({ event: 'pricing.catalog.fetch_error', error: err.message }, 'Failed to fetch pricing catalog');
+    logger.error({ 
+      event: 'pricing.catalog.fetch_error'
+      // Removed: error: err.message (security: could leak internal details)
+    }, 'Failed to fetch pricing catalog');
     catalogCache = [];
     cacheKey = keyNow;
     return catalogCache;

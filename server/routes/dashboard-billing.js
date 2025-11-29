@@ -11,6 +11,7 @@ const router = express.Router();
 const { buildDashboardPageModel } = require('../ui_contract/presenters');
 const { getPricingCatalog } = require('../services/pricingCatalog');
 const { config } = require('../config');
+const { formatPrice } = require('../ui_contract/presenters/helpers/viewFormatters');
 
 router.get('/', async (req, res) => {
   // If Stripe ever bounces here with ?paid=1, bounce on to confirmation like before
@@ -49,15 +50,48 @@ router.get('/', async (req, res) => {
     pricing = [];
   }
 
-  // Expose price IDs to the template for simple lookups
-  // IMPORTANT: use ACTIVE prices so test/dev uses test IDs and prod uses live IDs
-  pageModel.env = {
-    STRIPE_PRICE_RESUME_ONE_TIME: (config.stripe.active.priceResumeOneTime || '').trim(),
-    STRIPE_PRICE_RESUME_EXPERT:   (config.stripe.active.priceResumeExpert   || '').trim()
+  // Pre-compute products for display (moves logic out of EJS template)
+  // WHAT: Finds the products that match active Stripe price IDs
+  // WHY: Keeps template simple and moves business logic to server-side
+  // HOW: Matches pricing catalog items against active price IDs with fallback order
+  const activePriceOneTime = (config.stripe.active.priceResumeOneTime || '').trim();
+  const activePriceExpert = (config.stripe.active.priceResumeExpert || '').trim();
+  
+  // Fallback order: LIVE -> TEST -> legacy
+  const candidateOneTime = [
+    config.stripe.live?.priceResumeOneTime,
+    config.stripe.test?.priceResumeOneTime,
+    config.stripe.priceResumeOneTime
+  ].filter(Boolean);
+  
+  const candidateExpert = [
+    config.stripe.live?.priceResumeExpert,
+    config.stripe.test?.priceResumeExpert,
+    config.stripe.priceResumeExpert
+  ].filter(Boolean);
+  
+  const productOneTime = pricing.find(p => candidateOneTime.includes(p.priceId));
+  const productExpert = pricing.find(p => candidateExpert.includes(p.priceId));
+  
+  // Pre-format prices for template (moves logic out of EJS)
+  const formatProduct = (product) => {
+    if (!product) return null;
+    return {
+      ...product,
+      priceFormatted: product.unit_amount != null
+        ? formatPrice(product.unit_amount, product.currency, product.interval)
+        : '—'
+    };
   };
-
+  
   // Keep purchase history removed (your request)
-  pageModel.billing = { pricing };
+  pageModel.billing = {
+    pricing,
+    products: {
+      oneTime: formatProduct(productOneTime),
+      expert: formatProduct(productExpert)
+    }
+  };
 
   // Hard no-store for safety (avoids caching CSRF/meta)
   res.set('Cache-Control', 'no-store');

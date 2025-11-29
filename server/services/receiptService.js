@@ -14,7 +14,7 @@ function pickStripeSecret() {
 }
 
 const SECRET_KEY = pickStripeSecret();
-const stripe = SECRET_KEY ? new Stripe(SECRET_KEY, { apiVersion: '2025-11-17.clover' }) : null;
+const stripe = SECRET_KEY ? new Stripe(SECRET_KEY, { apiVersion: config.stripe.apiVersion }) : null;
 
 function sanitizeReceiptUrl(input) {
   if (!input) return null;

@@ -66,9 +66,10 @@ function productKeyForPrice(priceId) {
 async function getOrCreateStripeCustomer(userId, email) {
   const column = IS_LIVE ? 'stripe_customer_id_live' : 'stripe_customer_id_test';
 
+  // Select only needed columns instead of '*' for better performance on hot path
   const { data: row, error } = await supabaseAdmin
     .from('billing_customers')
-    .select('*')
+    .select(`user_id, ${column}, stripe_customer_id`)
     .eq('user_id', userId)
     .maybeSingle();
 

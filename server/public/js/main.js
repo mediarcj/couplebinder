@@ -887,3 +887,45 @@ function updateUIForLoggedOutUser() {
     setTimeout(init, 100);
   }
 })();
+
+/**
+ * Cross-tab logout synchronization
+ * 
+ * WHAT:
+ * Listens for logout events from other tabs and instantly syncs the UI.
+ *
+ * WHY:
+ * When a user logs out in one tab, all other tabs should immediately show
+ * the logged-out state for consistent UX.
+ *
+ * HOW:
+ * Uses BroadcastChannel to communicate between tabs and redirects to homepage
+ * when logout is detected from another tab.
+ */
+(function setupCrossTabLogoutSync() {
+  // Only run on pages that have data-auth-hydrate="true" (authenticated pages)
+  const body = document.body;
+  if (!body || body.getAttribute('data-auth-hydrate') !== 'true') {
+    return;
+  }
+
+  try {
+    const bc = new BroadcastChannel('auth');
+    
+    // Listen for logout events from other tabs
+    bc.onmessage = (e) => {
+      if (e?.data?.type === 'LOGOUT') {
+        // Drop any local UI state and hard-redirect to homepage
+        window.location.replace('/');
+      }
+    };
+    
+    // Clean up when page unloads
+    window.addEventListener('beforeunload', () => {
+      try { bc.close(); } catch {}
+    });
+  } catch (error) {
+    // BroadcastChannel not supported - continue without cross-tab sync
+    logger.warn('[Main] Cross-tab logout sync not available', { error: error.message });
+  }
+})();

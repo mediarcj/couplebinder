@@ -40,7 +40,7 @@ const logger = require('../utils/logger');
 const { config } = require('../config');
 
 const stripe = new Stripe(config.stripe.active.secretKey, {
-  apiVersion: '2025-11-17.clover'
+  apiVersion: config.stripe.apiVersion
 });
 
 const idem = createIdempotencyMiddleware({ ttl: 3600, headerName: 'Idempotency-Key' });

@@ -14,6 +14,7 @@ const { archiveReceiptSnapshot } = require('../services/receiptArchive');
 const { assertUser } = require('../utils/authz');
 const logger = require('../utils/logger');
 const { config } = require('../config');
+const { formatDateForDisplay, formatCurrency, sanitizeUrl, formatPrice } = require('../ui_contract/presenters/helpers/viewFormatters');
 
 /**
  * GET /dashboard
@@ -34,6 +35,12 @@ router.get('/', async (req, res) => {
         pageModel.ui.csrfToken = res.locals.csrfToken || '';
         pageModel.ui.supabaseUrl = config.supabase.url;
         pageModel.ui.supabaseAnonKey = config.supabase.anonKey;
+        
+        // Format dates server-side for template (moves logic out of EJS)
+        if (pageModel.user) {
+          pageModel.user.created_at_formatted = formatDateForDisplay(pageModel.user.created_at);
+          pageModel.user.last_sign_in_at_formatted = formatDateForDisplay(pageModel.user.last_sign_in_at);
+        }
         
         // Render EJS template with page model
         res.render('dashboard', pageModel);
@@ -148,14 +155,25 @@ router.get('/purchase/confirmation', async (req, res, next) => {
         pageModel.ui.supabaseUrl = config.supabase.url;
         pageModel.ui.supabaseAnonKey = config.supabase.anonKey;
 
-        // Attach confirmation payload (kept minimal—no PM details)
+        // Attach confirmation payload with pre-formatted values (moves logic out of EJS)
+        // WHAT: Pre-format currency, date, and sanitize URL on server-side
+        // WHY: Keeps template simple and ensures consistent formatting
+        // HOW: Use viewFormatters helpers to prepare display-ready values
+        const amountMinor = vm?.amount_total ?? null;
+        const currency = (vm?.currency || 'usd').toUpperCase();
+        const paidAtIso = vm?.paid_at_iso || null;
+        const rawReceiptUrl = vm?.official_receipt_url || vm?.stripe_receipt_url || null;
+        
         pageModel.confirmation = {
             sessionId,
-            amountMinor: vm?.amount_total ?? null,
-            currency: (vm?.currency || 'usd').toUpperCase(),
+            amountMinor,
+            currency,
+            amountFormatted: amountMinor != null ? formatCurrency(amountMinor, currency) : '—',
             productLabel: vm?.product_label || vm?.product_key || 'Your purchase',
-            paidAtIso: vm?.paid_at_iso || null,
-            officialReceiptUrl: vm?.official_receipt_url || vm?.stripe_receipt_url || null
+            paidAtIso,
+            paidAtFormatted: paidAtIso ? formatDateForDisplay(paidAtIso) : '',
+            officialReceiptUrl: sanitizeUrl(rawReceiptUrl),
+            payBase: '/api/pay' // API base path for receipt fetching
         };
 
         // Use callback to capture template errors for logging & handoff to error handler
@@ -318,10 +336,17 @@ router.get('/checkout/review', async (req, res, next) => {
     const subtotal = (normalizedProduct.unit_amount || 0) * quantity;
     const total = subtotal; // taxes handled by Stripe at checkout
 
-    pageModel.product = normalizedProduct;
+    // Pre-format prices for template (moves logic out of EJS)
+    pageModel.product = {
+      ...normalizedProduct,
+      unitPriceFormatted: normalizedProduct.unit_amount != null 
+        ? formatPrice(normalizedProduct.unit_amount, normalizedProduct.currency, normalizedProduct.interval)
+        : '—'
+    };
     pageModel.quantity = quantity;
     pageModel.subtotal = subtotal;
     pageModel.total = total;
+    pageModel.totalFormatted = total != null ? formatCurrency(total, normalizedProduct.currency) : '—';
     pageModel.productKey = normalizedProduct.key;
 
     res.render('checkout-review', pageModel);

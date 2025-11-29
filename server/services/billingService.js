@@ -38,7 +38,7 @@ if (!SECRET_KEY) {
   throw new Error('Stripe secret key missing in config (expected config.stripe.active.secretKey or config.stripe.secretKey)');
 }
 
-const stripe = new Stripe(SECRET_KEY, { apiVersion: '2025-11-17.clover' });
+const stripe = new Stripe(SECRET_KEY, { apiVersion: config.stripe.apiVersion });
 
 // Live/test detection based on the secret prefix
 const IS_LIVE = SECRET_KEY.startsWith('sk_live_');

@@ -63,6 +63,7 @@ const KNOWN_ENV = new Set([
   'STRIPE_SECRET_KEY_TEST','STRIPE_PUBLISHABLE_KEY_TEST','STRIPE_WEBHOOK_SECRET_TEST',
   'STRIPE_PRICE_RESUME_ONE_TIME_LIVE','STRIPE_PRICE_RESUME_EXPERT_LIVE',
   'STRIPE_PRICE_RESUME_ONE_TIME_TEST','STRIPE_PRICE_RESUME_EXPERT_TEST',
+  'STRIPE_API_VERSION',
   // audit toggle
   'CONFIG_ENV_AUDIT'
 ]);
@@ -196,6 +197,7 @@ const stripeTest = {
 // - production   → live mode (live keys + STRIPE_WEBHOOK_SECRET_LIVE; Stripe hits detechify.com directly)
 const stripeMode = (nodeEnv === 'development') ? 'test' : 'live';
 const stripeActive = stripeMode === 'live' ? stripeLive : stripeTest;
+const stripeApiVersion = (process.env.STRIPE_API_VERSION || '2025-11-17.clover').trim();
 
 // ──────────────────────────────────────────────────────────────────────────────
 
@@ -327,6 +329,7 @@ const config = {
     live: stripeLive,
     test: stripeTest,
     active: stripeActive,
+    apiVersion: stripeApiVersion,
     // WHAT: Dashboard paths for successful and cancelled Stripe checkouts.
     // WHY: We want one source of truth for where Stripe redirects after payment.
     // HOW: Read from env with safe defaults; runtime code will use config.stripe.successPath/cancelPath only.

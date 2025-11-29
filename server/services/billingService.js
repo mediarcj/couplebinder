@@ -120,7 +120,10 @@ async function createCheckoutSession({ user, priceId, quantity = 1, idempotencyK
     }
   } catch (err) {
     logger.warn({
-      event: 'price.lookup.failed', requestId, priceId: trimmedPriceId, error: err.message
+      event: 'price.lookup.failed', 
+      requestId, 
+      priceId: trimmedPriceId
+      // Removed: error: err.message (security: could leak Stripe API details)
     }, 'Could not verify price; proceeding with allowlisted mode');
   }
 
@@ -156,8 +159,14 @@ async function createCheckoutSession({ user, priceId, quantity = 1, idempotencyK
     new URL(successUrl.replace('{CHECKOUT_SESSION_ID}', 'test_session_id'));
     new URL(cancelUrl);
   } catch (e) {
-    logger.error({ event: 'checkout.url.invalid', requestId, successUrl, cancelUrl, error: e.message }, 'Generated checkout URLs are invalid');
-    const err = new Error(`Invalid checkout URL: ${e.message}`);
+    logger.error({ 
+      event: 'checkout.url.invalid', 
+      requestId, 
+      successUrl, 
+      cancelUrl
+      // Removed: error: e.message (security: could leak internal details)
+    }, 'Generated checkout URLs are invalid');
+    const err = new Error('Invalid checkout URL configuration');
     err.status = 500;
     throw err;
   }
@@ -246,7 +255,11 @@ async function upsertRefundStatus(charge, isFullRefund) {
     .eq('stripe_payment_intent_id', paymentIntentId);
 
   if (error) {
-    logger.error({ event: 'refund.update_failed', paymentIntentId, error: error.message });
+    logger.error({ 
+      event: 'refund.update_failed', 
+      paymentIntentId
+      // Removed: error: error.message (security: could leak database schema details)
+    });
     throw error;
   }
   return true;

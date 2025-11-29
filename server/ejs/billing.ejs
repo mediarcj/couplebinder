@@ -24,50 +24,38 @@
       </div>
 
       <div class="action-grid">
-        <%
-          // Prefer LIVE then TEST then legacy; match whichever exists in billing.pricing
-          const candOne = [env?.STRIPE_PRICE_RESUME_ONE_TIME_LIVE, env?.STRIPE_PRICE_RESUME_ONE_TIME_TEST, env?.STRIPE_PRICE_RESUME_ONE_TIME].filter(Boolean);
-          const candTwo = [env?.STRIPE_PRICE_RESUME_EXPERT_LIVE,  env?.STRIPE_PRICE_RESUME_EXPERT_TEST,  env?.STRIPE_PRICE_RESUME_EXPERT].filter(Boolean);
-          const pOne = (billing?.pricing || []).find(p => candOne.includes(p.priceId));
-          const pTwo = (billing?.pricing || []).find(p => candTwo.includes(p.priceId));
-        %>
-
-        <% if (pOne) { %>
+        <% if (billing?.products?.oneTime) { %>
+          <% const p = billing.products.oneTime; %>
         <div class="action-card">
-          <% if (pOne.image) { %>
-            <img class="product-img" src="<%= pOne.image %>" alt="<%= pOne.name || '' %>" loading="lazy" decoding="async">
+          <% if (p.image) { %>
+            <img class="product-img" src="<%= p.image %>" alt="<%= p.name || '' %>" loading="lazy" decoding="async">
           <% } %>
-          <% if (pOne.name) { %><h3><%= pOne.name %></h3><% } %>
-          <% if (pOne.description) { %><p><%= pOne.description %></p><% } %>
-          <% if (Number.isFinite(pOne.unit_amount)) { %>
-          <p class="price">
-            $<%= (pOne.unit_amount / 100).toFixed(0) %> <%= (pOne.currency || '').toUpperCase() %>
-            <%= pOne.isRecurring ? `/${pOne.interval}` : ' one-time' %>
-          </p>
+          <% if (p.name) { %><h3><%= p.name %></h3><% } %>
+          <% if (p.description) { %><p><%= p.description %></p><% } %>
+          <% if (p.priceFormatted) { %>
+          <p class="price"><%= p.priceFormatted %></p>
           <% } %>
           <a class="btn btn-primary btn-block" id="buyResumeBasic"
              href="/dashboard/checkout/review?product=resume_one_time&qty=1">
-            Buy<%= pOne.name ? ` ${pOne.name}` : '' %>
+            Buy<%= p.name ? ` ${p.name}` : '' %>
           </a>
         </div>
         <% } %>
 
-        <% if (pTwo) { %>
+        <% if (billing?.products?.expert) { %>
+          <% const p = billing.products.expert; %>
         <div class="action-card">
-          <% if (pTwo.image) { %>
-            <img class="product-img" src="<%= pTwo.image %>" alt="<%= pTwo.name || '' %>" loading="lazy" decoding="async">
+          <% if (p.image) { %>
+            <img class="product-img" src="<%= p.image %>" alt="<%= p.name || '' %>" loading="lazy" decoding="async">
           <% } %>
-          <% if (pTwo.name) { %><h3><%= pTwo.name %></h3><% } %>
-          <% if (pTwo.description) { %><p><%= pTwo.description %></p><% } %>
-          <% if (Number.isFinite(pTwo.unit_amount)) { %>
-          <p class="price">
-            $<%= (pTwo.unit_amount / 100).toFixed(0) %> <%= (pTwo.currency || '').toUpperCase() %>
-            <%= pTwo.isRecurring ? `/${pTwo.interval}` : ' one-time' %>
-          </p>
+          <% if (p.name) { %><h3><%= p.name %></h3><% } %>
+          <% if (p.description) { %><p><%= p.description %></p><% } %>
+          <% if (p.priceFormatted) { %>
+          <p class="price"><%= p.priceFormatted %></p>
           <% } %>
           <a class="btn btn-primary btn-block" id="buyResumeExpert"
              href="/dashboard/checkout/review?product=resume_expert&qty=1">
-            Buy<%= pTwo.name ? ` ${pTwo.name}` : '' %>
+            Buy<%= p.name ? ` ${p.name}` : '' %>
           </a>
         </div>
         <% } %>

@@ -77,12 +77,13 @@ function mountStripeWebhook(app) {
         break;
       } catch (err) {
         // keep trying with the other secret, but record why it failed
+        // Note: Do not log error message as it may leak webhook secret hints
         logger.warn(
           {
             event: 'stripe.webhook.verify_failed',
             mode: m,
-            requestId,
-            message: err?.message
+            requestId
+            // Removed: message: err?.message (security: could leak secret hints)
           },
           'constructEvent failed'
         );
@@ -131,8 +132,8 @@ function mountStripeWebhook(app) {
                 {
                   event: 'webhook.line_items.error',
                   requestId,
-                  mode,
-                  message: e?.message
+                  mode
+                  // Removed: message: e?.message (security: could leak internal details)
                 },
                 'Failed to fetch line items'
               );
@@ -187,8 +188,8 @@ function mountStripeWebhook(app) {
               event: 'webhook.persist.failed',
               requestId,
               mode,
-              error: error.message,
               sessionId: fullSession.id
+              // Removed: error: error.message (security: could leak database schema details)
             }, 'Failed to upsert payment record');
             // Return 500 so Stripe will retry delivery; persistence failed
             return res.sendStatus(500);
@@ -242,8 +243,8 @@ function mountStripeWebhook(app) {
               event: 'refund.update_failed',
               requestId,
               mode,
-              paymentIntentId,
-              error: error.message
+              paymentIntentId
+              // Removed: error: error.message (security: could leak database schema details)
             });
             return res.sendStatus(500);
           }
@@ -289,8 +290,8 @@ function mountStripeWebhook(app) {
         event: 'stripe.webhook.handler_error',
         requestId,
         mode: verified?.event?.type ? mode : 'unknown',
-        type: verified?.event?.type || 'unknown',
-        error: err.message
+        type: verified?.event?.type || 'unknown'
+        // Removed: error: err.message (security: could leak internal details)
       });
       // Non-2xx tells Stripe to retry, which we want if our handler failed
       return res.sendStatus(500);

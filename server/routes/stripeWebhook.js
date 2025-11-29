@@ -19,8 +19,12 @@ const { config } = require('../config');
 
 // Prepare both clients; constructEvent only needs the endpoint secret, not the client.
 // We still keep both clients to do follow-up API calls with correct keys.
-const stripeLiveClient = new Stripe(config.stripe.live.secretKey || '');
-const stripeTestClient = new Stripe(config.stripe.test.secretKey || '');
+const stripeLiveClient = new Stripe(config.stripe.live.secretKey || '', {
+  apiVersion: config.stripe.apiVersion
+});
+const stripeTestClient = new Stripe(config.stripe.test.secretKey || '', {
+  apiVersion: config.stripe.apiVersion
+});
 
 // Map price IDs (both modes) → stable product_key for your app logic
 const PRICE_TO_KEY = Object.freeze({

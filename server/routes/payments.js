@@ -90,8 +90,8 @@ async function persistIfPaid(session, requestId) {
     logger.error({
       event: 'payment.persisted.error',
       requestId,
-      sessionId: session?.id,
-      error: err.message
+      sessionId: session?.id
+      // Removed: error: err.message (security: could leak internal details)
     }, 'Failed to persist payment (fallback path)');
     return false;
   }
@@ -291,8 +291,8 @@ router.get('/session', async (req, res) => {
   } catch (err) {
     logger.error({
       event: 'session.fetch.error',
-      requestId: req.requestId,
-      error: err.message
+      requestId: req.requestId
+      // Removed: error: err.message (security: could leak internal details)
     });
     return res.status(500).json({ ok: false, error: 'internal_error' });
   }
@@ -320,7 +320,11 @@ router.post('/receipt/opened', async (req, res) => {
 
     return res.status(204).end();
   } catch (err) {
-    logger.warn({ event: 'receipt.opened.error', error: err.message, requestId: req.requestId });
+    logger.warn({ 
+      event: 'receipt.opened.error', 
+      requestId: req.requestId
+      // Removed: error: err.message (security: could leak internal details)
+    });
     return res.status(500).json({ ok: false, error: 'internal_error' });
   }
 });

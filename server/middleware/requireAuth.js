@@ -4,6 +4,7 @@
 // Notes: Uses req.user from authBridge middleware (Supabase token verification)
 
 const { respondError } = require('../utils/errorResponder');
+const { isLikelyExpiredSession } = require('../lib/authState');
 
 /**
  * WHAT:
@@ -75,13 +76,24 @@ function requireAuth(req, res, next) {
             code: 'auth_required'
         });
     } else {
-        // Page requests get the 401 error page instead of redirect
-        // This provides better UX for direct URL access attempts
-        return respondError(req, res, {
-            status: 401,
-            message: 'Authentication required for this page',
-            code: 'auth_required'
-        });
+        // Page requests: check if this is an expired session vs never-authenticated
+        const expired = isLikelyExpiredSession(req);
+        const nextUrl = safeNext(req.originalUrl);
+        
+        if (expired) {
+            // Expired session: redirect to login with reason=expired and next param
+            const loginUrl = nextUrl 
+                ? `/login?reason=expired&next=${encodeURIComponent(nextUrl)}`
+                : '/login?reason=expired';
+            return res.redirect(302, loginUrl);
+        } else {
+            // Never authenticated or manual logout: show 401 page (or redirect without reason)
+            // For consistency, we redirect to login but without the "expired" reason
+            const loginUrl = nextUrl
+                ? `/login?next=${encodeURIComponent(nextUrl)}`
+                : '/login';
+            return res.redirect(302, loginUrl);
+        }
     }
 }
 

@@ -200,7 +200,7 @@ function registerCoreMiddleware({
    * HOW:
    * Uses corsAllowlist.js which supports:
    * 1. Explicit CORS_ORIGINS env var
-   * 2. Any subdomain of BASE_DOMAIN (if set) or fallback to *.detechify.com (legacy)
+   * 2. Any subdomain of BASE_DOMAIN (if set) or fallback to *.couplebinder.com (legacy)
    * 3. Localhost in development
    * 4. Blocks and logs all others
    */

@@ -1,7 +1,7 @@
 {
-  "name": "detechify",
+  "name": "couplebinder",
   "version": "1.0.0",
-  "description": "A web application project",
+  "description": "Love evidence builder for K1 or CR-1 application requirements",
   "private": true,
   "workspaces": [
     "server"
@@ -24,12 +24,12 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/mediarcj/detechify.git"
+    "url": "git+https://github.com/mediarcj/couplebinder.git"
   },
   "bugs": {
-    "url": "https://github.com/mediarcj/detechify/issues"
+    "url": "https://github.com/mediarcj/couplebinder/issues"
   },
-  "homepage": "https://github.com/mediarcj/detechify#readme",
+  "homepage": "https://github.com/mediarcj/couplebinder#readme",
   "devDependencies": {
     "js-yaml": "^4.1.1"
   }

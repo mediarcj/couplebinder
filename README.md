@@ -1,4 +1,4 @@
-# Detechify
+# Couplebinder
 
 This app began as a tiny Node.js hello world with a `/health` check and grewincrementallyinto a security-first, stateless, Supabase-backed web app. Each step favored simplicity, correctness, and concurrency-safe patterns over cleverness.
 

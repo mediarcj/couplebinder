@@ -194,7 +194,7 @@ const stripeTest = {
 
 // Clean, intuitive logic:
 // - development  → test mode (test keys + STRIPE_WEBHOOK_SECRET_TEST; pairs with `stripe listen`)
-// - production   → live mode (live keys + STRIPE_WEBHOOK_SECRET_LIVE; Stripe hits detechify.com directly)
+// - production   → live mode (live keys + STRIPE_WEBHOOK_SECRET_LIVE; Stripe hits couplebinder.com directly)
 const stripeMode = (nodeEnv === 'development') ? 'test' : 'live';
 const stripeActive = stripeMode === 'live' ? stripeLive : stripeTest;
 const stripeApiVersion = (process.env.STRIPE_API_VERSION).trim();

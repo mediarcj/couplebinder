@@ -231,10 +231,10 @@ try {
   if (typeof logConfigSummary === 'function') {
     logConfigSummary();
   } else {
-    logger.warn({ event: 'boot.config_summary_unavailable' }, '[detechify] logConfigSummary is not a function; skipping config summary log');
+    logger.warn({ event: 'boot.config_summary_unavailable' }, '[couplebinder] logConfigSummary is not a function; skipping config summary log');
   }
 } catch (err) {
-  logger.error({ event: 'boot.config_summary_failed', error: err.message }, '[detechify] Failed to log config summary');
+  logger.error({ event: 'boot.config_summary_failed', error: err.message }, '[couplebinder] Failed to log config summary');
 }
 
 // ============================================================

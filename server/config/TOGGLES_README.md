@@ -31,7 +31,7 @@ Other: Any non-empty string enables the toggle
 
 ### Systemd Service
 
-Add to `/etc/systemd/system/detechify.service`:
+Add to `/etc/systemd/system/couplebinder.service`:
 
 ```ini
 [Service]
@@ -43,7 +43,7 @@ Environment="EXPOSE_DEBUG_ROUTES=false"
 Reload and restart:
 ```bash
 sudo systemctl daemon-reload
-sudo systemctl restart detechify.service
+sudo systemctl restart couplebinder.service
 ```
 
 ### AWS SSM Parameter Store
@@ -51,18 +51,18 @@ sudo systemctl restart detechify.service
 ```bash
 # Create parameters
 aws ssm put-parameter \
-  --name /detechify/prod/BLOCK_CMS_SCANS \
+  --name /couplebinder/prod/BLOCK_CMS_SCANS \
   --value "true" \
   --type String
 
 aws ssm put-parameter \
-  --name /detechify/prod/CORS_DEBUG \
+  --name /couplebinder/prod/CORS_DEBUG \
   --value "false" \
   --type String
 
 # Fetch in your startup script
-export BLOCK_CMS_SCANS=$(aws ssm get-parameter --name /detechify/prod/BLOCK_CMS_SCANS --query 'Parameter.Value' --output text)
-export CORS_DEBUG=$(aws ssm get-parameter --name /detechify/prod/CORS_DEBUG --query 'Parameter.Value' --output text)
+export BLOCK_CMS_SCANS=$(aws ssm get-parameter --name /couplebinder/prod/BLOCK_CMS_SCANS --query 'Parameter.Value' --output text)
+export CORS_DEBUG=$(aws ssm get-parameter --name /couplebinder/prod/CORS_DEBUG --query 'Parameter.Value' --output text)
 ```
 
 ### Docker Compose
@@ -135,7 +135,7 @@ HTTP/1.1 404 Not Found
 **Why**: Temporary troubleshooting for CORS issues  
 **Output**:
 ```
-[CORS-DEBUG] {"path":"/api/submissions","method":"POST","origin":"https://app.detechify.com"}
+[CORS-DEBUG] {"path":"/api/submissions","method":"POST","origin":"https://app.couplebinder.com"}
 ```
 
 **WARNING**: Very noisy. Only enable when actively debugging CORS issues.
@@ -153,7 +153,7 @@ HTTP/1.1 404 Not Found
 
 ```bash
 # Update systemd service
-sudo systemctl edit detechify.service
+sudo systemctl edit couplebinder.service
 
 # Add:
 # [Service]
@@ -162,7 +162,7 @@ sudo systemctl edit detechify.service
 # Environment="EXPOSE_DEBUG_ROUTES=false"
 
 # Restart
-sudo systemctl restart detechify.service
+sudo systemctl restart couplebinder.service
 ```
 
 ### Example: Temporarily enable CORS debug
@@ -172,12 +172,12 @@ sudo systemctl restart detechify.service
 sudo systemctl set-environment CORS_DEBUG=true
 
 # Restart
-sudo systemctl restart detechify.service
+sudo systemctl restart couplebinder.service
 
 # Watch logs
-sudo journalctl -u detechify.service -f | grep CORS-DEBUG
+sudo journalctl -u couplebinder.service -f | grep CORS-DEBUG
 
 # Disable after troubleshooting
 sudo systemctl unset-environment CORS_DEBUG
-sudo systemctl restart detechify.service
+sudo systemctl restart couplebinder.service
 ```

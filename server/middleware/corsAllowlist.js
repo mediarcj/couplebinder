@@ -12,7 +12,7 @@
  *
  * HOW:
  * 1. Check explicit CORS_ORIGINS env var
- * 2. Allow BASE_DOMAIN (if set) and all subdomains, or fallback to detechify.com (legacy)
+ * 2. Allow BASE_DOMAIN (if set) and all subdomains, or fallback to couplebinder.com (legacy)
  * 3. Allow localhost in development
  * 4. Deny all others with error
  */
@@ -35,8 +35,8 @@ const allowBaseDomain = BASE_DOMAIN
   ? new RegExp(`^https?:\\/\\/([a-z0-9-]+\\.)?${escapeRegex(BASE_DOMAIN)}(?::\\d+)?$`, 'i')
   : null;
 
-// Regex to match any subdomain of detechify.com (legacy fallback)
-const allowDetechify = /^https?:\/\/([a-z0-9-]+\.)?detechify\.com(?::\d+)?$/i;
+// Regex to match any subdomain of couplebinder.com (legacy fallback)
+const allowCouplebinder = /^https?:\/\/([a-z0-9-]+\.)?couplebinder\.com(?::\d+)?$/i;
 
 const corsOptions = {
   origin: (origin, callback) => {
@@ -48,8 +48,8 @@ const corsOptions = {
       return callback(null, true);
     }
     
-    // Allow *.BASE_DOMAIN if set; otherwise fallback to *.detechify.com (legacy)
-    if ((allowBaseDomain && allowBaseDomain.test(origin)) || allowDetechify.test(origin)) {
+    // Allow *.BASE_DOMAIN if set; otherwise fallback to *.couplebinder.com (legacy)
+    if ((allowBaseDomain && allowBaseDomain.test(origin)) || allowCouplebinder.test(origin)) {
       return callback(null, true);
     }
     

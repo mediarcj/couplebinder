@@ -34,7 +34,19 @@ const DEFAULT_AUTH_LIMITS = {
 function buildLoginPageModel(req, res) {
   const url = new URL(req.originalUrl, `${req.protocol}://${req.get('host')}`);
   const passwordChangedSuccess = url.searchParams.get('password_changed_success') === '1';
-  const registerSuccess = url.searchParams.get('register_success') === '1';  
+  const registerSuccess = url.searchParams.get('register_success') === '1';
+  
+  // Parse reason and next params for session expiration handling
+  const reason = url.searchParams.get('reason') || null;
+  const nextParam = url.searchParams.get('next') || null;
+  
+  // Validate next param to prevent open redirects (use same logic as requireAuth)
+  let safeNextUrl = null;
+  if (nextParam) {
+    const { safeNext } = require('../../middleware/requireAuth');
+    safeNextUrl = safeNext(nextParam);
+  }
+  
   return {
     page: {
       title: `Log in - ${config.branding.appName}`,
@@ -44,7 +56,9 @@ function buildLoginPageModel(req, res) {
       assetVersion: ASSET_VERSION,
       nav: navManager.compose(req, res),
       passwordChangedSuccess,
-      registerSuccess      
+      registerSuccess,
+      loginReason: reason, // 'expired' or null
+      nextUrl: safeNextUrl // validated next URL or null
     },
     user: {
       isAuthenticated: Boolean(req.user?.id),

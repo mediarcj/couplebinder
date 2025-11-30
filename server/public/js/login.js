@@ -306,10 +306,29 @@ async function handleLoginSubmit(e) {
             // Show success message briefly, then redirect
             showLoginSuccess('Login successful! Redirecting...');
             
-            // Get redirect URL from query param or default to dashboard
-            const urlParams = new URLSearchParams(window.location.search);
-            const nextUrl = urlParams.get('next');
-            const redirectUrl = nextUrl ? decodeURIComponent(nextUrl) : '/dashboard';
+            // Get redirect URL: prefer validated data attribute, then query param, then default
+            let redirectUrl = '/dashboard';
+            try {
+              const body = document.body;
+              const dataNext = body?.getAttribute('data-login-next');
+              if (dataNext) {
+                // Use validated next URL from server (already sanitized)
+                redirectUrl = dataNext;
+              } else {
+                // Fallback to query param (should be safe, but prefer data attribute)
+                const urlParams = new URLSearchParams(window.location.search);
+                const nextUrl = urlParams.get('next');
+                if (nextUrl) {
+                  // Basic validation: only allow same-site paths
+                  const decoded = decodeURIComponent(nextUrl);
+                  if (decoded.startsWith('/') && !decoded.includes('://') && !decoded.includes('//')) {
+                    redirectUrl = decoded;
+                  }
+                }
+              }
+            } catch (err) {
+              log.warn('Error reading redirect URL, using default:', err);
+            }
             
             // Redirect after brief delay to show success message
             setTimeout(() => {
@@ -611,6 +630,25 @@ async function postAuthCookieWithBackoffLocal(payload, opts) {
       }
     });
   }
+
+  // Check for session expiration reason and show inactivity message
+  function checkSessionExpiration() {
+    try {
+      const body = document.body;
+      if (!body) return;
+      
+      const reason = body.getAttribute('data-login-reason');
+      if (reason === 'expired') {
+        showLoginError('You were logged out due to inactivity. Please log in again.');
+        log.info('Session expiration message displayed');
+      }
+    } catch (err) {
+      log.error('Error checking session expiration:', err);
+    }
+  }
+  
+  // Check on page load
+  checkSessionExpiration();
 
   const loginForm = document.getElementById('loginForm');
   if (loginForm) {

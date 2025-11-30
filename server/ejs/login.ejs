@@ -22,7 +22,9 @@
 <body
   data-auth-hydrate="false"
   data-login-password-changed="<%= page.passwordChangedSuccess ? '1' : '0' %>"
-  data-login-register-success="<%= page.registerSuccess ? '1' : '0' %>">
+  data-login-register-success="<%= page.registerSuccess ? '1' : '0' %>"
+  data-login-reason="<%= page.loginReason || '' %>"
+  data-login-next="<%= page.nextUrl || '' %>">
     <%- include('partials/nav', { nav: page.nav, app_info: app_info }) %>
     
     <main class="auth-page">
@@ -79,6 +81,7 @@
                         <p class="login-register-text">
                             Don't have an account? <a href="/register" class="login-register-link">Register</a>
                         </p>
+                        <a href="/forgot-password" class="login-forgot-link">Forgot Password?</a>
                     </div>                    
                 </div>
 

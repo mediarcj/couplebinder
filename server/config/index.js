@@ -197,7 +197,8 @@ const stripeTest = {
 // - production   → live mode (live keys + STRIPE_WEBHOOK_SECRET_LIVE; Stripe hits detechify.com directly)
 const stripeMode = (nodeEnv === 'development') ? 'test' : 'live';
 const stripeActive = stripeMode === 'live' ? stripeLive : stripeTest;
-const stripeApiVersion = (process.env.STRIPE_API_VERSION || '2025-11-17.clover').trim();
+const stripeApiVersion = (process.env.STRIPE_API_VERSION).trim();
+// const stripeApiVersion = (process.env.STRIPE_API_VERSION || '2025-11-17.clover').trim();
 
 // ──────────────────────────────────────────────────────────────────────────────
 

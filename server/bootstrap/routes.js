@@ -161,6 +161,21 @@ function registerRoutes({
     logger.error({ event: 'boot.route_load_failed', route: 'dashboard-billing', error: e.message }, 'Failed to load /dashboard/billing');
   }
 
+  // Binder routes (proof-of-relationship document builder)
+  try {
+    const binderRouter = require('../routes/binderRoutes');
+    app.use('/dashboard/binder', requireAuth, binderRouter);
+    logger.info(
+      { event: 'boot.route_loaded', route: 'binder' },
+      'Binder routes loaded successfully'
+    );
+  } catch (error) {
+    logger.error(
+      { event: 'boot.route_load_failed', route: 'binder', error: error.message },
+      'Failed to load binder routes'
+    );
+  }
+    
   // Login page route (public)
   app.get('/login', (req, res) => {
     try {

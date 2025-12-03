@@ -8,6 +8,7 @@ const PDFDocument = require('pdfkit');
 const logger = require('../utils/logger');
 const { supabaseAdmin } = require('../utils/supabaseClient');
 const { supabase } = require('../utils/supabaseClient');
+// NOTE: we import the function directly
 const { saveBinderPhoto } = require('../services/storageProvider');
 
 /**
@@ -183,94 +184,127 @@ async function create(req, res, next) {
 
 /**
  * POST /dashboard/binder/:binderId/photos
- * Accept uploaded photos, push to storage (S3/local), and record metadata.
+ * Accept uploaded photos (via multer) and persist to S3 + binder_photos
  */
 async function addPhotos(req, res, next) {
   const { binderId } = req.params;
-  const userId = req.user?.id || null;
-  const files = req.files || [];
 
   try {
+    const userId = req.user?.id || req.user?.uid || null;
+
     if (!userId) {
+      logger.warn(
+        { event: 'binder.add_photos_no_user', binderId },
+        'addPhotos called without authenticated user'
+      );
       return res.status(401).json({ ok: false, error: 'Not authenticated' });
     }
 
-    if (!supabase) {
-      logger.error(
-        { event: 'binder.add_photos_no_supabase', binderId, userId },
-        'Supabase client not available in addPhotos'
-      );
-      return res.status(503).json({ ok: false, error: 'Storage temporarily unavailable' });
-    }
-
-    if (!binderId) {
-      return res.status(400).json({ ok: false, error: 'Missing binderId' });
-    }
-
+    const files = req.files || [];
     if (!files.length) {
       return res.status(400).json({ ok: false, error: 'No files uploaded' });
     }
 
-    // 1) Ensure binder exists and belongs to this user
-    const { data: binders, error: binderErr } = await supabase
+    logger.info(
+      {
+        event: 'binder.add_photos_start',
+        binderId,
+        userId,
+        fileCount: files.length
+      },
+      'Starting binder photo upload'
+    );
+
+    // 1) Load binder using service-role client (bypasses RLS)
+    const { data: binder, error: binderErr } = await supabaseAdmin
       .from('binders')
-      .select('id')
+      .select('id, user_id, title')
       .eq('id', binderId)
-      .eq('user_id', userId);
+      .single();
 
     if (binderErr) {
       logger.error(
         {
-          event: 'binder.add_photos_binder_query_failed',
+          event: 'binder.lookup_failed',
           binderId,
           userId,
+          code: binderErr.code,
           error: binderErr.message
         },
-        'Failed to fetch binder in addPhotos'
+        'Binder lookup failed before upload'
       );
-      return res.status(500).json({ ok: false, error: 'Could not verify binder' });
+
+      if (binderErr.code === 'PGRST116') {
+        return res.status(404).json({ ok: false, error: 'Binder not found' });
+      }
+
+      throw binderErr;
     }
 
-    if (!binders || binders.length === 0) {
+    if (!binder) {
+      logger.warn(
+        { event: 'binder.lookup_empty', binderId, userId },
+        'Binder lookup returned no rows'
+      );
       return res.status(404).json({ ok: false, error: 'Binder not found' });
     }
 
-    // 2) Save each file via the storage provider (S3/local)
-    const stored = [];
-    for (const [index, file] of files.entries()) {
-      const result = await saveBinderPhoto({ userId, binderId, file });
-      stored.push({ index, file, result });
-    }
-
-    // 3) Insert rows into binder_photos
-    const rowsToInsert = stored.map(({ index, file, result }) => ({
-      binder_id: binderId,
-      user_id: userId,
-      storage_provider: result.provider,
-      storage_key: result.storageKey,
-      original_filename: result.originalFilename,
-      mime_type: result.mimeType,
-      size_bytes: result.sizeBytes,
-      sort_order: index
-      // caption, created_at, updated_at use defaults/nulls for now
-    }));
-
-    const { data: inserted, error: insertErr } = await supabase
-      .from('binder_photos')
-      .insert(rowsToInsert)
-      .select('*');
-
-    if (insertErr) {
-      logger.error(
+    // Extra ownership check in app code
+    if (binder.user_id && binder.user_id !== userId) {
+      logger.warn(
         {
-          event: 'binder.add_photos_insert_failed',
+          event: 'binder.not_owned',
           binderId,
           userId,
-          error: insertErr.message
+          binderUserId: binder.user_id
         },
-        'Failed to insert binder_photos rows'
+        'User tried to upload photos to binder they do not own'
       );
-      return res.status(500).json({ ok: false, error: 'Could not save photos' });
+      return res.status(404).json({ ok: false, error: 'Binder not found' });
+    }
+
+    // 2) Upload each file via saveBinderPhoto and record in binder_photos
+    const uploaded = [];
+
+    for (const file of files) {
+      // storageResult includes storageKey, bucket, sizeBytes, mimeType, originalFilename
+      const storageResult = await saveBinderPhoto({ userId, binderId, file });
+
+      uploaded.push({
+        storageKey: storageResult.storageKey,
+        originalname: storageResult.originalFilename,
+        mimetype: storageResult.mimeType,
+        size: storageResult.sizeBytes,
+        provider: storageResult.provider,
+        bucket: storageResult.bucket
+      });
+
+      const { error: photoErr } = await supabaseAdmin
+        .from('binder_photos')
+        .insert({
+          binder_id: binderId,
+          user_id: userId,
+          storage_key: storageResult.storageKey,
+          original_filename: storageResult.originalFilename,
+          mime_type: storageResult.mimeType,
+          size_bytes: storageResult.sizeBytes,
+          status: 'stored'
+        });
+
+      if (photoErr) {
+        logger.error(
+          {
+            event: 'binder.photo_insert_failed',
+            binderId,
+            userId,
+            storageKey: storageResult.storageKey,
+            error: photoErr.message,
+            code: photoErr.code
+          },
+          'Failed to insert binder_photos row'
+        );
+        throw photoErr;
+      }
     }
 
     logger.info(
@@ -278,28 +312,28 @@ async function addPhotos(req, res, next) {
         event: 'binder.photos_uploaded',
         binderId,
         userId,
-        count: inserted.length
+        count: uploaded.length
       },
-      'Binder photos uploaded and recorded'
+      'Binder photos uploaded successfully'
     );
 
     return res.json({
       ok: true,
       binderId,
-      count: inserted.length,
-      photos: inserted
+      uploadedCount: uploaded.length,
+      photos: uploaded
     });
   } catch (err) {
     logger.error(
       {
         event: 'binder.add_photos_failed',
         binderId,
-        userId,
-        error: err.message
+        error: err.message,
+        stack: err.stack
       },
       'Binder addPhotos handler failed'
     );
-    next(err);
+    return next(err);
   }
 }
 

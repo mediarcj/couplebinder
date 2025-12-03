@@ -7,6 +7,8 @@
 const PDFDocument = require('pdfkit');
 const logger = require('../utils/logger');
 const { supabaseAdmin } = require('../utils/supabaseClient');
+const { supabase } = require('../utils/supabaseClient');
+const { saveBinderPhoto } = require('../services/storageProvider');
 
 /**
  * Small helper: ensure we have a logged-in user and a Supabase admin client.
@@ -178,78 +180,97 @@ async function create(req, res, next) {
  *      position (int),
  *      created_at (timestamptz)
  */
+
+/**
+ * POST /dashboard/binder/:binderId/photos
+ * Accept uploaded photos, push to storage (S3/local), and record metadata.
+ */
 async function addPhotos(req, res, next) {
+  const { binderId } = req.params;
+  const userId = req.user?.id || null;
+  const files = req.files || [];
+
   try {
-    const { binderId } = req.params;
-    const { userId, client } = getContext(req);
-    const files = Array.isArray(req.files) ? req.files : [];
+    if (!userId) {
+      return res.status(401).json({ ok: false, error: 'Not authenticated' });
+    }
+
+    if (!supabase) {
+      logger.error(
+        { event: 'binder.add_photos_no_supabase', binderId, userId },
+        'Supabase client not available in addPhotos'
+      );
+      return res.status(503).json({ ok: false, error: 'Storage temporarily unavailable' });
+    }
 
     if (!binderId) {
-      const err = new Error('Missing binderId');
-      err.status = 400;
-      throw err;
+      return res.status(400).json({ ok: false, error: 'Missing binderId' });
     }
 
     if (!files.length) {
-      return res.status(400).json({
-        ok: false,
-        message: 'No files uploaded',
-      });
+      return res.status(400).json({ ok: false, error: 'No files uploaded' });
     }
 
-    // Optional: cheap existence check for binder
-    const { data: binder, error: binderErr } = await client
+    // 1) Ensure binder exists and belongs to this user
+    const { data: binders, error: binderErr } = await supabase
       .from('binders')
-      .select('id, user_id')
+      .select('id')
       .eq('id', binderId)
-      .eq('user_id', userId)
-      .single();
+      .eq('user_id', userId);
 
-    if (binderErr || !binder) {
-      logger.warn(
+    if (binderErr) {
+      logger.error(
         {
-          event: 'binder.add_photos_binder_missing',
+          event: 'binder.add_photos_binder_query_failed',
           binderId,
           userId,
-          error: binderErr?.message,
+          error: binderErr.message
         },
-        'Binder not found or not owned by user when uploading photos'
+        'Failed to fetch binder in addPhotos'
       );
-      const err = new Error('Binder not found');
-      err.status = 404;
-      throw err;
+      return res.status(500).json({ ok: false, error: 'Could not verify binder' });
     }
 
-    // Build rows for binder_photos
-    const rows = files.map((f, index) => ({
+    if (!binders || binders.length === 0) {
+      return res.status(404).json({ ok: false, error: 'Binder not found' });
+    }
+
+    // 2) Save each file via the storage provider (S3/local)
+    const stored = [];
+    for (const [index, file] of files.entries()) {
+      const result = await saveBinderPhoto({ userId, binderId, file });
+      stored.push({ index, file, result });
+    }
+
+    // 3) Insert rows into binder_photos
+    const rowsToInsert = stored.map(({ index, file, result }) => ({
       binder_id: binderId,
       user_id: userId,
-      storage_key: f.path,            // local temp path for now (will be replaced by S3 key later)
-      original_filename: f.originalname,
-      mime_type: f.mimetype,
-      size_bytes: f.size,
-      position: index + 1,           // simple incremental order; later we can pass from client
+      storage_provider: result.provider,
+      storage_key: result.storageKey,
+      original_filename: result.originalFilename,
+      mime_type: result.mimeType,
+      size_bytes: result.sizeBytes,
+      sort_order: index
+      // caption, created_at, updated_at use defaults/nulls for now
     }));
 
-    const { data, error } = await client
+    const { data: inserted, error: insertErr } = await supabase
       .from('binder_photos')
-      .insert(rows)
-      .select('id, binder_id, storage_key, original_filename, mime_type, size_bytes, position, created_at');
+      .insert(rowsToInsert)
+      .select('*');
 
-    if (error) {
+    if (insertErr) {
       logger.error(
         {
           event: 'binder.add_photos_insert_failed',
-          error: error.message,
           binderId,
           userId,
-          fileCount: files.length,
+          error: insertErr.message
         },
-        'Binder photo insert failed'
+        'Failed to insert binder_photos rows'
       );
-      const err = new Error('Unable to save photo metadata');
-      err.status = 500;
-      throw err;
+      return res.status(500).json({ ok: false, error: 'Could not save photos' });
     }
 
     logger.info(
@@ -257,21 +278,25 @@ async function addPhotos(req, res, next) {
         event: 'binder.photos_uploaded',
         binderId,
         userId,
-        count: files.length,
+        count: inserted.length
       },
-      'Binder photos uploaded and stored'
+      'Binder photos uploaded and recorded'
     );
 
     return res.json({
       ok: true,
       binderId,
-      uploadedCount: files.length,
-      photos: data || [],
-      message: 'Photos saved for binder',
+      count: inserted.length,
+      photos: inserted
     });
   } catch (err) {
     logger.error(
-      { event: 'binder.add_photos_failed', error: err.message, userId: req.user?.id },
+      {
+        event: 'binder.add_photos_failed',
+        binderId,
+        userId,
+        error: err.message
+      },
       'Binder addPhotos handler failed'
     );
     next(err);

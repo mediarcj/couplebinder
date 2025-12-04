@@ -183,9 +183,10 @@ router.post(
         originalname: p.originalname || p.name || 'Photo',
         size: typeof p.size === 'number' ? p.size : undefined,
         storageKey: p.storageKey || p.key || p.id || null,
-        publicUrl: p.publicUrl || p.url || p.signedUrl || null
+        // Preserve whatever the storage layer gave us
+        publicUrl: p.publicUrl || p.url || p.signedUrl || null,
+        signedUrl: p.signedUrl || null
       }));
-
       return res.json({
         ok: true,
         uploadedCount: payloadPhotos.length,

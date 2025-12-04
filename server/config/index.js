@@ -70,7 +70,8 @@ const KNOWN_ENV = new Set([
   'STORAGE_PROVIDER',
   'STORAGE_S3_BUCKET',
   'STORAGE_S3_REGION',
-  'STORAGE_S3_BASE_PATH'
+  'STORAGE_S3_BASE_PATH',
+  'STORAGE_S3_PUBLIC_BASE_URL'
 ]);
 
 const APP_PREFIXES = [
@@ -210,7 +211,10 @@ const storageConfig = {
     // stored as "binders" instead of "/binders/" etc.
     basePath: (process.env.STORAGE_S3_BASE_PATH || 'binders')
       .replace(/^\/+/, '')
-      .replace(/\/+$/, '')
+      .replace(/\/+$/, ''),
+    // Optional: explicit public base URL ONLY if the bucket is genuinely public
+    // e.g. https://my-public-bucket.s3.us-west-2.amazonaws.com
+    publicBaseUrl: (process.env.STORAGE_S3_PUBLIC_BASE_URL || '').trim()
   }
 };
 

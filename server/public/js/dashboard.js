@@ -362,22 +362,6 @@ function wireCanvasPhotoInteractions(photoEl) {
         builderCanvasState.dragStartTop = rect.top - canvasRect.top;
     });
 
-    // Right-click to delete
-    photoEl.addEventListener('contextmenu', function (event) {
-        event.preventDefault();
-        setSelectedCanvasPhoto(photoEl);
-
-        const ok = window.confirm('Remove this photo from the page? This does not delete it from your account or storage.');
-        if (ok) {
-            if (photoEl.parentElement) {
-                photoEl.parentElement.removeChild(photoEl);
-            }
-            if (builderCanvasState.selectedPhotoEl === photoEl) {
-                builderCanvasState.selectedPhotoEl = null;
-            }
-        }
-    });
-
     // Resize handles (corners)
     const handles = photoEl.querySelectorAll('.canvas-photo-resize-handle');
     handles.forEach((handleEl) => {
@@ -651,11 +635,11 @@ function addUploadedPhotosToCanvas(data) {
     }
 
     data.photos.forEach((photo) => {
-        // Try several possible properties for the image URL
+        // Prefer signed URL (for private buckets), then public URL variants
         const src =
+            photo.signedUrl ||
             photo.publicUrl ||
             photo.url ||
-            photo.signedUrl ||
             photo.previewUrl ||
             '';
 

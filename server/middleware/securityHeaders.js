@@ -90,9 +90,16 @@ function securityHeaders() {
           (req, res) => `'nonce-${res.locals.cspNonce}'`
         ],
         
-        // Images: self-hosted + data URIs + Stripe product images
-        imgSrc: ["'self'", 'data:', 'https://files.stripe.com', 'https://*.stripe.com'],
-        
+        // Images: self-hosted + data URIs + Stripe product images + S3 uploads
+        imgSrc: [
+          "'self'",
+          'data:',
+          'https://files.stripe.com',
+          'https://*.stripe.com',
+          'https://couplebinder-uploads.s3.us-west-2.amazonaws.com',
+          'https://*.amazonaws.com'
+        ],
+
         // Fonts: self-hosted only
         fontSrc: ["'self'"],
         

@@ -6,14 +6,8 @@
 //
 // HOW:
 //  - Today: supports 's3' and a fallback 'local' mode.
-//  - S3 configuration is read from the central config first, then falls back
-//    to environment variables as a last resort.
-//
-// ENV (fallbacks, if config.storage is not wired yet):
-//  - STORAGE_PROVIDER=s3|local
-//  - STORAGE_S3_BUCKET=your-bucket-name
-//  - STORAGE_S3_REGION=us-west-2 (or your region)
-//  - STORAGE_S3_BASE_PATH=binders (optional)
+//  - S3 configuration is read from the central config (config.storage)
+//    so this module never touches process.env directly.
 //
 // AWS credentials:
 //  - Use standard AWS env vars (AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY / AWS_SESSION_TOKEN)
@@ -28,31 +22,19 @@ const { config } = require('../config');
 const logger = require('../utils/logger');
 
 // ------------------------------------------------------------
-// Resolve provider and config (config first, then env fallback)
+// Resolve provider and config (config only; no process.env here)
 // ------------------------------------------------------------
-const storageCfg = config.storage || {};
-const provider =
-  storageCfg.provider ||
-  process.env.STORAGE_PROVIDER ||
-  'local';
+const storageCfg = config.storage || { provider: 'local', s3: {} };
+
+const provider = (storageCfg.provider || 'local').toLowerCase();
 
 const s3Cfg = storageCfg.s3 || {};
 
-const s3Region =
-  s3Cfg.region ||
-  process.env.STORAGE_S3_REGION ||
-  process.env.AWS_REGION ||
-  'us-west-2';
-
-const s3Bucket =
-  s3Cfg.bucket ||
-  process.env.STORAGE_S3_BUCKET ||
-  '';
-
-const s3BasePath =
-  s3Cfg.basePath ||
-  process.env.STORAGE_S3_BASE_PATH ||
-  'binders';
+const s3Region = s3Cfg.region || 'us-west-2';
+const s3Bucket = s3Cfg.bucket || '';
+const s3BasePath = (s3Cfg.basePath || 'binders')
+  .replace(/^\/+/, '')
+  .replace(/\/+$/, '');
 
 // Lazily created S3 client (only if provider === 's3')
 let s3Client = null;

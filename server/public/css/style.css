@@ -2248,3 +2248,302 @@ nav ul li a.active {
 .register-form .error-message:not(:empty) {
     display: block;
 }
+
+/* ─────────────────────────────────────────────
+   Binder workspace – one-box layout
+   ───────────────────────────────────────────── */
+
+.dashboard-root {
+  padding: 24px 32px 40px;
+  background-color: #f5f5f7;
+}
+
+@media (max-width: 768px) {
+  .dashboard-root {
+    padding: 16px;
+  }
+}
+
+.workspace-shell {
+  margin: 0 auto;
+  max-width: 1440px;
+}
+
+/* Header */
+
+.workspace-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 24px;
+  margin-bottom: 16px;
+}
+
+.workspace-title {
+  margin: 0 0 4px;
+  font-size: 1.6rem;
+}
+
+.workspace-subtitle {
+  margin: 0;
+  font-size: 0.95rem;
+  color: #555;
+}
+
+.workspace-header-meta {
+  min-width: 220px;
+  font-size: 0.85rem;
+}
+
+.workspace-meta-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.meta-label {
+  color: #777;
+}
+
+.meta-value {
+  font-weight: 500;
+  text-align: right;
+}
+
+.meta-pill {
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.8rem;
+}
+
+.meta-pill-draft {
+  background: #fff3cd;
+  color: #856404;
+}
+
+/* Body + toolbar */
+
+.workspace-body {
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  padding: 16px 18px 18px;
+}
+
+.workspace-toolbar {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid #eee;
+  padding-bottom: 10px;
+}
+
+.toolbar-left,
+.toolbar-right {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.toolbar-btn {
+  font-size: 0.9rem;
+}
+
+/* Main area: canvas + optional side panel */
+
+.workspace-main {
+  display: flex;
+  align-items: stretch;
+  gap: 16px;
+  margin-top: 12px;
+}
+
+/* Canvas */
+
+.workspace-canvas-wrapper {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.canvas-stage {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 12px 0;
+}
+
+.builder-canvas {
+  position: relative;
+  width: 100%;
+  max-width: 820px;
+  padding-top: calc(100% * 1.414); /* A4 aspect ratio */
+  border-radius: 4px;
+  background: #fafafa;
+  border: 1px solid #ddd;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+  overflow: hidden;
+}
+
+.builder-canvas-placeholder {
+  position: absolute;
+  inset: 18px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  color: #777;
+  font-size: 0.9rem;
+}
+
+.builder-canvas-help {
+  margin-top: 6px;
+  font-size: 0.8rem;
+  color: #999;
+}
+
+.canvas-footer {
+  margin-top: 8px;
+  font-size: 0.8rem;
+  color: #666;
+}
+
+/* Side panel (slides in) */
+
+.workspace-panel {
+  position: relative;
+  flex: 0 0 320px;
+  max-width: 340px;
+  background: #fafafa;
+  border-radius: 6px;
+  border: 1px solid #e0e0e0;
+  padding: 14px 14px 16px;
+  font-size: 0.9rem;
+  display: none; /* default: hidden */
+}
+
+.workspace-panel.workspace-panel-visible {
+  display: block;
+}
+
+.workspace-panel-inner {
+  display: none;
+}
+
+.workspace-panel-inner.workspace-panel-inner-active {
+  display: block;
+}
+
+.workspace-panel-close {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  border: none;
+  background: transparent;
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+  color: #999;
+}
+
+.workspace-panel-close:hover {
+  color: #555;
+}
+
+.panel-title {
+  margin: 0 0 6px;
+  font-size: 1rem;
+}
+
+.panel-subtitle {
+  margin: 12px 0 6px;
+  font-size: 0.9rem;
+}
+
+.panel-hint {
+  margin: 0 0 10px;
+  font-size: 0.8rem;
+  color: #666;
+}
+
+.panel-section + .panel-section {
+  margin-top: 10px;
+}
+
+/* Simple list + controls reused in panel */
+
+.checklist {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.checklist li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.85rem;
+  margin-bottom: 4px;
+}
+
+.photo-palette {
+  min-height: 80px;
+  border-radius: 4px;
+  border: 1px dashed #ccc;
+  padding: 8px;
+  background: #fff;
+}
+
+.form-label {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 0.85rem;
+}
+
+.form-control {
+  width: 100%;
+  box-sizing: border-box;
+  font-size: 0.9rem;
+  padding: 6px 8px;
+  border-radius: 4px;
+  border: 1px solid #ccc;
+}
+
+textarea.form-control {
+  resize: vertical;
+}
+
+/* Responsive: stack panel below canvas on smaller screens */
+
+@media (max-width: 1024px) {
+  .workspace-main {
+    flex-direction: column;
+  }
+
+  .workspace-panel {
+    flex: 0 0 auto;
+    max-width: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .workspace-header {
+    flex-direction: column;
+  }
+
+  .workspace-header-meta {
+    width: 100%;
+  }
+
+  .workspace-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .toolbar-left,
+  .toolbar-right {
+    justify-content: flex-start;
+  }
+}

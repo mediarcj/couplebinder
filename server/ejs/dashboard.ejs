@@ -18,91 +18,225 @@
     <link rel="icon" href="/images/favicon.ico">
     <link rel="stylesheet" href="/css/style.css?v=<%= page.assetVersion || assetVersion || '' %>">
 </head>
-<body data-auth-hydrate="true">
+<body
+  data-auth-hydrate="true"
+  data-binder-id="<%= (typeof binder !== 'undefined' && binder && binder.id) || '' %>"
+>
     <%- include('partials/nav', { nav: page.nav, app_info: app_info }) %>
 
-    <main>
-        <div class="container">
-            <div class="hero">
-                <h1>Welcome to Your Dashboard</h1>
-                <p class="subtitle">Hello <%= user.display_name %>, you're successfully logged in!</p>
-            </div>
+    <main class="dashboard-root">
+        <div class="workspace-shell">
+            <!-- Workspace header -->
+            <header class="workspace-header">
+                <div class="workspace-header-main">
+                    <h1 class="workspace-title">Your Binder Workspace</h1>
+                    <p class="workspace-subtitle">
+                        Hi <%= user.display_name %>. This is your simple work table to build your proof-of-relationship pages.
+                    </p>
+                </div>
+                <div class="workspace-header-meta">
+                    <div class="workspace-meta-row">
+                        <span class="meta-label">Binder</span>
+                        <span class="meta-value"><%= user.display_name %>'s Binder</span>
+                    </div>
+                    <div class="workspace-meta-row">
+                        <span class="meta-label">Status</span>
+                        <span class="meta-value meta-pill meta-pill-draft">Draft</span>
+                    </div>
+                </div>
+            </header>
 
-            <div class="user-profile">
-                <h2>Your Profile</h2>
-                <div class="profile-card">
-                    <div class="profile-info">
-                        <div class="info-item">
-                            <span class="info-label">Display Name:</span>
-                            <span class="info-value"><%= user.display_name || 'Not set' %></span>
-                        </div>
-                        <div class="info-item">
-                            <span class="info-label">Email:</span>
-                            <span class="info-value"><%= user.email %></span>
-                        </div>
-                        <div class="info-item">
-                            <span class="info-label">Phone:</span>
-                            <span class="info-value"><%= user.phone || 'Not provided' %></span>
-                        </div>
-                        <div class="info-item">
-                            <span class="info-label">Member Since:</span>
-                            <span class="info-value"><%= user.created_at_formatted || 'Unknown' %></span>
-                        </div>
-                        <div class="info-item">
-                            <span class="info-label">Last Sign In:</span>
-                            <span class="info-value"><%= user.last_sign_in_at_formatted || 'Unknown' %></span>
-                        </div>
-                        <div class="info-item">
-                            <span class="info-label">Email Confirmed:</span>
-                            <span class="info-value"><%= user.email_confirmed === true ? 'Yes' : 'No' %></span>
-                        </div>
-                        <div class="info-item">
-                            <span class="info-label">Provider:</span>
-                            <span class="info-value"><%= user.providers ? user.providers.join(', ') : 'email' %></span>
-                        </div>
+            <!-- Workspace body: toolbar + canvas + optional side panel -->
+            <section class="workspace-body">
+                <!-- Toolbar -->
+                <div class="workspace-toolbar">
+                    <div class="toolbar-left">
+                        <button
+                            type="button"
+                            class="btn btn-primary toolbar-btn"
+                            data-panel-target="panel-add-photos"
+                        >
+                            Add photos
+                        </button>
+                        <button
+                            type="button"
+                            class="btn btn-secondary toolbar-btn"
+                            data-panel-target="panel-photo-library"
+                        >
+                            My photos
+                        </button>
+                        <button
+                            type="button"
+                            class="btn btn-secondary toolbar-btn"
+                            data-panel-target="panel-binder-details"
+                        >
+                            Binder details
+                        </button>
+                    </div>
+                    <div class="toolbar-right">
+                        <button
+                            type="button"
+                            class="btn btn-secondary toolbar-btn"
+                            id="builder-save-draft-btn"
+                        >
+                            Save draft
+                        </button>
+                        <button
+                            type="button"
+                            class="btn btn-primary toolbar-btn"
+                            id="builder-export-pdf-btn"
+                            disabled
+                        >
+                            Export PDF
+                        </button>
                     </div>
                 </div>
-            </div>
 
-            <div class="dashboard-actions">
-                <h2>Quick Actions</h2>
-                <div class="action-grid">
-                    <div class="action-card">
-                        <h3>Text Submission</h3>
-                        <p>Submit text for processing and analysis.</p>
-                        <a href="/" class="btn btn-primary">Go to Submission</a>
-                    </div>
-                    <div class="action-card">
-                        <h3>View Submissions</h3>
-                        <p>Check your recent text submissions.</p>
-                        <button id="viewSubmissionsBtn" class="btn btn-secondary">View Recent</button>
-                    </div>
-                    <div class="action-card">
-                        <h3>Edit Profile</h3>
-                        <p>Update your profile information and preferences.</p>
-                        <a href="/dashboard/profile-edit" class="btn btn-secondary">Edit Profile</a>
-                    </div>
-                </div>
-            </div>
+                <div class="workspace-main">
+                    <!-- Canvas always visible -->
+                    <section class="workspace-canvas-wrapper">
+                        <div class="canvas-stage">
+                            <div
+                                id="builder-canvas"
+                                class="builder-canvas"
+                                data-page="1"
+                            >
+                                <div class="builder-canvas-placeholder">
+                                    <p>
+                                        Page 1 preview (A4). This is where your photos will be placed.
+                                        We’ll keep margins and layout clean for the final PDF.
+                                    </p>
+                                    <p class="builder-canvas-help">
+                                        Start by clicking “Add photos” above. Once wired, you’ll be able to
+                                        drag photos into this page and resize them without breaking the layout.
+                                    </p>
+                                </div>
+                                <!-- Later: photo boxes go here -->
+                            </div>
+                        </div>
+                        <div class="canvas-footer">
+                            <span id="builder-status-text">
+                                Ready. Layout updates are saved here before generating the PDF.
+                            </span>
+                        </div>
+                    </section>
 
-            <div class="status">
-                <h2>Account Status</h2>
-                <div class="status-item">
-                    <span class="status-label">Authentication:</span>
-                    <span class="status-value status-success">Active</span>
+                    <!-- Slide-in side panel (hidden by default) -->
+                    <aside
+                        class="workspace-panel"
+                        id="workspace-panel"
+                        aria-hidden="true"
+                    >
+                        <!-- Panel: Add photos -->
+                        <div
+                            class="workspace-panel-inner workspace-panel-inner-active"
+                            id="panel-add-photos"
+                        >
+                            <h2 class="panel-title">Add photos</h2>
+                            <p class="panel-hint">
+                                Upload photos that belong to this binder. Later, you’ll be able to drag them onto the page.
+                            </p>
+
+                            <!-- Placeholder for now – real upload wiring will use your existing binder upload route -->
+                            <button
+                                type="button"
+                                class="btn btn-primary"
+                                id="builder-add-photos-btn"
+                            >
+                                Choose photos…
+                            </button>
+
+                            <!-- Hidden file input that the button will trigger -->
+                            <input
+                                type="file"
+                                id="builder-file-input"
+                                accept="image/*"
+                                multiple
+                                hidden
+                            />
+                            <div class="panel-section">
+                                <h3 class="panel-subtitle">Photos in this binder</h3>
+                                <div id="builder-photo-palette" class="photo-palette">
+                                    <p class="panel-hint">
+                                        No photos loaded yet. Once wired, you’ll see your uploaded photos here.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Panel: Binder details -->
+                        <div
+                            class="workspace-panel-inner"
+                            id="panel-binder-details"
+                        >
+                            <h2 class="panel-title">Binder details</h2>
+                            <p class="panel-hint">
+                                Title, description, and simple checklist for this binder.
+                            </p>
+
+                            <div class="panel-section">
+                                <label class="form-label" for="binder-title-input">Binder title</label>
+                                <input
+                                    id="binder-title-input"
+                                    type="text"
+                                    class="form-control"
+                                    value="<%= user.display_name %>'s Binder"
+                                >
+                            </div>
+
+                            <div class="panel-section">
+                                <label class="form-label" for="binder-notes-input">Notes</label>
+                                <textarea
+                                    id="binder-notes-input"
+                                    rows="3"
+                                    class="form-control"
+                                    placeholder="Optional notes about this binder (for you only)"
+                                ></textarea>
+                            </div>
+
+                            <div class="panel-section">
+                                <h3 class="panel-subtitle">Checklist</h3>
+                                <ul class="checklist">
+                                    <li><input type="checkbox" disabled> Add photos</li>
+                                    <li><input type="checkbox" disabled> Arrange photos on the page</li>
+                                    <li><input type="checkbox" disabled> Add captions &amp; dates</li>
+                                    <li><input type="checkbox" disabled> Export PDF</li>
+                                </ul>
+                            </div>
+                        </div>
+
+                        <!-- Panel: My photos (currently uploaded) -->
+                        <div
+                            class="workspace-panel-inner"
+                            id="panel-photo-library"
+                        >
+                            <h2 class="panel-title">My photos</h2>
+                            <p class="panel-hint">
+                                These are the photos you’ve already uploaded for this binder.
+                                Later, you’ll be able to drag them onto the page.
+                            </p>
+
+                            <div id="builder-photo-library" class="photo-palette">
+                                <p class="panel-hint">
+                                    No photos yet. Upload some using “Add photos”.
+                                </p>
+                            </div>
+                        </div>
+
+                        <button
+                            type="button"
+                            class="workspace-panel-close"
+                            id="workspace-panel-close-btn"
+                            aria-label="Close panel"
+                        >
+                            ×
+                        </button>
+                    </aside>
                 </div>
-                <div class="status-item">
-                    <span class="status-label">Session:</span>
-                    <span class="status-value status-success">Valid</span>
-                </div>
-                <div class="status-item">
-                    <span class="status-label">Account Type:</span>
-                    <span class="status-value">Standard</span>
-                </div>
-            </div>
+            </section>
         </div>
     </main>
-
+        
     <footer>
         <div class="container">
             <p>&copy; 2024 <%= app_info?.name || 'Application' %>. <%= app_info?.description || 'A modern web application' %>.</p>

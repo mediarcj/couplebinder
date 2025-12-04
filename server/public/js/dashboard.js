@@ -98,6 +98,8 @@ document.addEventListener('DOMContentLoaded', function() {
     // Initialize dashboard functionality
     initializeDashboard();
     initializeSubmissions();
+    initializeBuilderWorkspace();
+    initializeBinderWorkspaceUI();
     
     // Logout functionality is handled by logout.js module
     log.info('Dashboard page initialized - logout handled by logout.js module');
@@ -120,6 +122,170 @@ document.addEventListener('DOMContentLoaded', function() {
 function initializeDashboard() {
     // Dashboard-specific initialization (no logout handling needed)
     log.info('Dashboard functionality initialized');
+}
+
+/**
+ * Initialize binder builder workspace
+ *
+ * WHAT:
+ *  Wires up the "Add photos" button and hidden file input
+ *  so uploads can be sent to the existing binder photo route.
+ *
+ * HOW:
+ *  - Reads binderId from <body data-binder-id="...">
+ *  - When "Add photos" is clicked, opens the hidden file input
+ *  - When files are chosen, POSTs them to:
+ *      /dashboard/binder/:binderId/photos
+ */
+function initializeBuilderWorkspace() {
+    const binderId = getBinderIdFromBody();
+    const addPhotosBtn = document.getElementById('builder-add-photos-btn');
+    const fileInput = document.getElementById('builder-file-input');
+
+    if (!binderId) {
+        // No binder yet, nothing to wire. This keeps the page from crashing.
+        log.info('Builder workspace: no binderId found on body, skipping wiring');
+        return;
+    }
+
+    if (!addPhotosBtn || !fileInput) {
+        log.info('Builder workspace: required elements not found, skipping wiring');
+        return;
+    }
+
+    // Clicking the visible button opens the hidden file input
+    addPhotosBtn.addEventListener('click', function () {
+        fileInput.click();
+    });
+
+    // When files are selected, upload them
+    fileInput.addEventListener('change', function (event) {
+        const files = Array.from(event.target.files || []);
+        if (!files.length) return;
+
+        uploadBinderPhotos(binderId, files)
+            .catch((err) => {
+                log.error('Builder workspace: uploadBinderPhotos failed', { error: err?.message || String(err) });
+            })
+            .finally(() => {
+                // Reset the input so selecting the same file later still fires change
+                fileInput.value = '';
+            });
+    });
+}
+
+/**
+ * Read binderId from <body data-binder-id="">
+ */
+function getBinderIdFromBody() {
+    try {
+        const body = document.body;
+        return body && body.dataset ? (body.dataset.binderId || '').trim() : '';
+    } catch (e) {
+        log.error('Builder workspace: failed to read binderId from body', { error: e?.message || String(e) });
+        return '';
+    }
+}
+
+/**
+ * Upload photos to the binder photos endpoint.
+ *
+ * This hits your existing route:
+ *   POST /dashboard/binder/:binderId/photos
+ * which is already wired to S3 via storageProvider.js.
+ */
+async function uploadBinderPhotos(binderId, files) {
+    if (!binderId) {
+        throw new Error('Missing binderId for upload');
+    }
+
+    const csrfToken = _getCSRFToken();
+    const formData = new FormData();
+
+    files.forEach((file) => {
+        // "photos" matches the Multer field name you already use on the server
+        formData.append('photos', file);
+    });
+
+    const endpoint = `/dashboard/binder/${encodeURIComponent(binderId)}/photos`;
+
+    log.info('Builder workspace: uploading photos to binder', {
+        binderId,
+        count: files.length,
+        endpoint
+    });
+
+    const response = await fetch(endpoint, {
+        method: 'POST',
+        body: formData,
+        // Do NOT set Content-Type manually; the browser sets proper multipart boundary.
+        headers: csrfToken ? { 'x-csrf-token': csrfToken } : {}
+    });
+
+    if (!response.ok) {
+        const text = await response.text().catch(() => '');
+        log.error('Builder workspace: upload failed', { status: response.status, body: text });
+        // Try to show a friendly message if modalManager exists
+        if (window.modalManager && typeof window.modalManager.showNotification === 'function') {
+            window.modalManager.showNotification(
+                'Upload failed',
+                'We could not upload your photos right now. Please try again in a moment.'
+            );
+        } else {
+            alert('We could not upload your photos right now. Please try again.');
+        }
+        throw new Error(`Upload failed with status ${response.status}`);
+    }
+
+    const data = await response.json().catch(() => null);
+
+    log.info('Builder workspace: upload succeeded', {
+        binderId,
+        uploadedCount: data?.uploadedCount,
+        photos: data?.photos?.length
+    });
+
+    // Render basic thumbnails into the palettes (simple for now)
+    try {
+        refreshPhotoPalettes(data);
+    } catch (e) {
+        log.error('Builder workspace: failed to refresh photo palettes', { error: e?.message || String(e) });
+    }
+}
+
+/**
+ * Simple renderer: show uploaded photos as list items.
+ * Later, this can be replaced with real draggable thumbnails.
+ */
+function refreshPhotoPalettes(data) {
+    if (!data || !Array.isArray(data.photos)) return;
+
+    const paletteMain = document.getElementById('builder-photo-palette');
+    const paletteLibrary = document.getElementById('builder-photo-library');
+
+    if (!paletteMain && !paletteLibrary) return;
+
+    const itemsHtml = data.photos.map((photo) => {
+        const name = (photo.originalname || 'Photo').slice(0, 60);
+        const sizeKb = photo.size ? Math.round(photo.size / 1024) : null;
+        const sizeLabel = sizeKb ? `${sizeKb} KB` : '';
+        return `
+            <div class="photo-chip" data-storage-key="${escapeHtml(photo.storageKey || '')}">
+                <div class="photo-chip-thumb"></div>
+                <div class="photo-chip-meta">
+                    <div class="photo-chip-name">${escapeHtml(name)}</div>
+                    ${sizeLabel ? `<div class="photo-chip-size">${escapeHtml(sizeLabel)}</div>` : ''}
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    if (paletteMain) {
+        paletteMain.innerHTML = itemsHtml || '<p class="panel-hint">No photos uploaded yet.</p>';
+    }
+    if (paletteLibrary) {
+        paletteLibrary.innerHTML = itemsHtml || '<p class="panel-hint">No photos uploaded yet.</p>';
+    }
 }
 
 /**
@@ -201,5 +367,59 @@ function displaySubmissions(submissions) {
         hideBtn.addEventListener('click', function() {
             submissionsList.classList.add('hidden');
         });
+    }
+}
+
+/**
+ * Initialize slide-in binder workspace panel (Add photos, My photos, Binder details)
+ */
+function initializeBinderWorkspaceUI() {
+    const toolbarButtons = document.querySelectorAll('[data-panel-target]');
+    const panel = document.getElementById('workspace-panel');
+    const closeBtn = document.getElementById('workspace-panel-close-btn');
+
+    if (!panel || toolbarButtons.length === 0) {
+        // Old dashboard or markup not present – quietly do nothing
+        return;
+    }
+
+    const panelInnerSections = panel.querySelectorAll('.workspace-panel-inner');
+
+    function openPanel(targetId) {
+        panel.classList.add('workspace-panel-visible');
+        panel.setAttribute('aria-hidden', 'false');
+
+        panelInnerSections.forEach(section => {
+            section.classList.toggle(
+                'workspace-panel-inner-active',
+                section.id === targetId
+            );
+        });
+    }
+
+    function closePanel() {
+        panel.classList.remove('workspace-panel-visible');
+        panel.setAttribute('aria-hidden', 'true');
+    }
+
+    toolbarButtons.forEach(btn => {
+        btn.addEventListener('click', () => {
+            const targetId = btn.getAttribute('data-panel-target');
+            if (!targetId) return;
+
+            // If the same panel is already visible, toggle it closed
+            const active = panel.classList.contains('workspace-panel-visible') &&
+                panel.querySelector(`#${targetId}`)?.classList.contains('workspace-panel-inner-active');
+
+            if (active) {
+                closePanel();
+            } else {
+                openPanel(targetId);
+            }
+        });
+    });
+
+    if (closeBtn) {
+        closeBtn.addEventListener('click', closePanel);
     }
 }

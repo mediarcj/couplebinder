@@ -65,14 +65,20 @@ const KNOWN_ENV = new Set([
   'STRIPE_PRICE_RESUME_ONE_TIME_TEST','STRIPE_PRICE_RESUME_EXPERT_TEST',
   'STRIPE_API_VERSION',
   // audit toggle
-  'CONFIG_ENV_AUDIT'
+  'CONFIG_ENV_AUDIT',
+  // Storage
+  'STORAGE_PROVIDER',
+  'STORAGE_S3_BUCKET',
+  'STORAGE_S3_REGION',
+  'STORAGE_S3_BASE_PATH'
 ]);
 
 const APP_PREFIXES = [
   'ALLOWED_','APP_','AUTH_','BASE_','COOKIE_','CORS_','CSRF_','DB_',
   'ENFORCE_','FEATURE_','FIREWALL_','IMAGE_','JWT_','LEGACY_','LOGIN_','LOGOUT_',
   'MAINTENANCE_','NGINX_','OPS_','PUBLIC_','RATE_','REDIS_','REPAIR_',
-  'SELF_HOST_','SESSION_','SHUTDOWN_','SIGNUP_','SKIP_','STRIPE_','SUPABASE_','TEXT_','X_'
+  'SELF_HOST_','SESSION_','SHUTDOWN_','SIGNUP_','SKIP_','STRIPE_','SUPABASE_','TEXT_','X_',
+  'STORAGE_'
 ];
 
 function warnUnknownEnv() {
@@ -192,13 +198,28 @@ const stripeTest = {
   priceResumeExpert:  (process.env.STRIPE_PRICE_RESUME_EXPERT_TEST || '').trim()
 };
 
+// ──────────────────────────────────────────────────────────────────────────────
+// Storage configuration (binder photos, etc.)
+// ──────────────────────────────────────────────────────────────────────────────
+const storageConfig = {
+  // 'local' or 's3'
+  provider: (process.env.STORAGE_PROVIDER || 'local').toLowerCase(),
+  s3: {
+    bucket: (process.env.STORAGE_S3_BUCKET || '').trim(),
+    region: (process.env.STORAGE_S3_REGION || process.env.AWS_REGION || 'us-west-2').trim(),
+    // stored as "binders" instead of "/binders/" etc.
+    basePath: (process.env.STORAGE_S3_BASE_PATH || 'binders')
+      .replace(/^\/+/, '')
+      .replace(/\/+$/, '')
+  }
+};
+
 // Clean, intuitive logic:
 // - development  → test mode (test keys + STRIPE_WEBHOOK_SECRET_TEST; pairs with `stripe listen`)
 // - production   → live mode (live keys + STRIPE_WEBHOOK_SECRET_LIVE; Stripe hits couplebinder.com directly)
 const stripeMode = (nodeEnv === 'development') ? 'test' : 'live';
 const stripeActive = stripeMode === 'live' ? stripeLive : stripeTest;
-const stripeApiVersion = (process.env.STRIPE_API_VERSION).trim();
-// const stripeApiVersion = (process.env.STRIPE_API_VERSION || '2025-11-17.clover').trim();
+const stripeApiVersion = (process.env.STRIPE_API_VERSION || '').trim() || undefined;
 
 // ──────────────────────────────────────────────────────────────────────────────
 
@@ -337,6 +358,9 @@ const config = {
     successPath: process.env.STRIPE_SUCCESS_PATH || '/dashboard/purchase/confirmation',
     cancelPath: process.env.STRIPE_CANCEL_PATH || '/dashboard/billing'
   },
+
+  // Storage (binder photos, etc.)
+  storage: storageConfig,
 
   // Public origin (for redirects and client-side URLs)
   publicOrigin: derivedPublicOrigin,
@@ -515,6 +539,16 @@ function validateConfig() {
     }
     if (!config.stripe.test.webhookSecret) {
       errors.push('STRIPE_WEBHOOK_SECRET_TEST should also be set for test endpoint verification');
+    }
+  }
+
+  // Storage validation
+  if (storageConfig.provider === 's3') {
+    if (!storageConfig.s3.bucket) {
+      errors.push('STORAGE_S3_BUCKET is required when STORAGE_PROVIDER=s3');
+    }
+    if (!storageConfig.s3.region) {
+      errors.push('STORAGE_S3_REGION (or AWS_REGION) is required when STORAGE_PROVIDER=s3');
     }
   }
 

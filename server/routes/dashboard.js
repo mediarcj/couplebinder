@@ -25,7 +25,24 @@ router.get('/', async (req, res) => {
         // Build page model using presenter
         const pageModel = await buildDashboardPageModel(req, res);
 
-        // User data comes directly from Supabase token, no database lookup needed
+        // Ensure we have a user and attach a default binder id
+        const user = assertUser(req);
+        const binderId = `default-${user.id}`;
+
+        // Only set binder if it is not already provided by the presenter
+        if (!pageModel.binder || !pageModel.binder.id) {
+            pageModel.binder = { id: binderId };
+
+            logger.info(
+                {
+                    event: 'dashboard.binder_default_attached',
+                    binderId,
+                    userId: user.id,
+                    requestId: req.requestId
+                },
+                'Dashboard binder default attached'
+            );
+        }
 
         // Add nonce to page.nonce for EJS template (matches index.ejs pattern)
         pageModel.page.nonce = res.locals.nonce;

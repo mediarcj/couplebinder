@@ -640,7 +640,7 @@ footer p {
     border: 1px solid #e9ecef;
     border-radius: 6px;
     padding: 1rem;
-    margin-bottom: 0.75rem; /* Use larger margin for consistency */
+    margin-bottom: 0.75rem;
 }
 
 .submission-header {
@@ -988,7 +988,7 @@ nav ul li a.active {
     margin: 0;
 }
 
-/* Note: .submission-item is defined earlier in the file (line 637) */
+/* Note: .submission-item is defined earlier in the file */
 
 .submission-meta {
     display: flex;
@@ -1087,7 +1087,7 @@ nav ul li a.active {
     justify-content: center;
     background: rgba(0, 0, 0, 0.6);
     backdrop-filter: blur(3px);
-    z-index: 2147483647; /* Above all other content */
+    z-index: 2147483647;
 }
 
 #logoutModal .modal-content {
@@ -1450,9 +1450,6 @@ nav ul li a.active {
     min-width: 80px;
 }
 
-/* Note: Toast-style success messages should use .success-toast class (defined above) */
-/* This .success-message class is for inline form field messages only */
-
 /* Responsive Profile Edit */
 @media (max-width: 768px) {
     .profile-header h1 {
@@ -1507,7 +1504,6 @@ nav ul li a.active {
 }
 
 /* Print Styles for Receipt */
-/* Note: .print-hide is defined earlier in the file (line 459) */
 @media print {
     @page {
         margin: 16mm;
@@ -1686,7 +1682,6 @@ nav ul li a.active {
     display: inline-block;
 }
 
-/* Make sure long CTAs remain centered */
 .btn-long {
     width: 100%;
     text-align: center;
@@ -1704,7 +1699,7 @@ nav ul li a.active {
 .btn-secondary:focus-visible {
     background: #F9FAFB;
     border-color: #D1D5DB;
-    color: #111827;   /* prevent disappearing text */
+    color: #111827;
 }
 
 .btn-danger {
@@ -1947,7 +1942,6 @@ nav ul li a.active {
     width: 100% !important;
 }
 
-/* Login page: make Turnstile look like a normal field, no extra box */
 .login-card .turnstile-check {
     border: none;
     padding: 0;
@@ -1956,7 +1950,6 @@ nav ul li a.active {
     display: block;
 }
 
-/* Make the Turnstile widget stretch to the same width as the inputs */
 .login-card .turnstile-check .cf-turnstile,
 .login-card .turnstile-check iframe {
     width: 100% !important;
@@ -1985,17 +1978,15 @@ nav ul li a.active {
     color: #9ca3af;
 }
 
-/* Password field with show/hide eye icon */
 .password-input-wrapper {
     position: relative;
     width: 100%;
 }
 
 .password-input {
-    padding-right: 3rem; /* make room for the eye icon */
+    padding-right: 3rem;
 }
 
-/* The eye button */
 .password-toggle {
     position: absolute;
     right: 0.75rem;
@@ -2009,12 +2000,10 @@ nav ul li a.active {
     border: none;
     background: transparent;
     cursor: pointer;
-    color: #9ca3af;             /* neutral grey */
+    color: #9ca3af;
     padding: 0;
 }
 
-/* Profile edit: keep password rows compact inside the card,
-   without stretching the wrapper across the whole width */
 .password-fields .password-input-wrapper {
     width: auto;
     display: inline-block;
@@ -2025,14 +2014,12 @@ nav ul li a.active {
     max-width: 100%;
 }
 
-/* The SVG eye icon */
 .password-toggle-icon {
     width: 1.35rem;
     height: 1.35rem;
     display: block;
 }
 
-/* When password is visible, highlight the icon a bit */
 .password-toggle.is-visible {
     color: #4F46E5;
 }
@@ -2042,21 +2029,12 @@ nav ul li a.active {
     margin-bottom: 0;
 }
 
-/* Step 1: email + Continue row tweaks */
-.login-actions--continue {
-    border-top: none;       /* remove the horizontal line above Continue */
-    padding-top: 0;         /* no extra padding above */
-    margin-top: 0.75rem;    /* small gap after email */
-}
-
-/* Step 1: Continue row – no divider line, compact spacing */
 .login-actions--continue {
     border-top: none;
     padding-top: 0;
     margin-top: 0.75rem;
 }
 
-/* Step 2: Log in row – no divider line, compact spacing */
 .login-step--secondary .login-actions {
     border-top: none;
     padding-top: 0.75rem;
@@ -2250,7 +2228,7 @@ nav ul li a.active {
 }
 
 /* ─────────────────────────────────────────────
-   Binder workspace – one-box layout
+   Binder workspace – one-box layout, simplified
    ───────────────────────────────────────────── */
 
 .dashboard-root {
@@ -2322,7 +2300,7 @@ nav ul li a.active {
   color: #856404;
 }
 
-/* Body + toolbar */
+/* Body container */
 
 .workspace-body {
   background: #fff;
@@ -2331,6 +2309,78 @@ nav ul li a.active {
   padding: 16px 18px 18px;
 }
 
+/* Two-column layout: page strip on the left, canvas on the right */
+.workspace-body-simple {
+  display: flex;
+  align-items: stretch;
+  gap: 16px;
+}
+
+/* Left page strip */
+
+.page-strip {
+  flex: 0 0 160px;
+  max-width: 200px;
+  border-right: 1px solid #eee;
+  padding-right: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.page-strip-header {
+  padding-bottom: 4px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid #eee;
+}
+
+.page-strip-title {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #555;
+}
+
+.page-thumb {
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  font-size: 0.85rem;
+  color: #555;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.page-thumb:hover {
+  background: #f3f4f6;
+  border-color: #e5e7eb;
+}
+
+.page-thumb-active {
+  background: #eef2ff;
+  border-color: #4F46E5;
+  color: #111827;
+}
+
+.page-thumb-label {
+  flex: 1;
+  text-align: left;
+}
+
+/* Canvas side */
+
+.workspace-canvas-wrapper {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Toolbar at top of canvas area */
+
 .workspace-toolbar {
   display: flex;
   justify-content: space-between;
@@ -2338,6 +2388,10 @@ nav ul li a.active {
   margin-bottom: 12px;
   border-bottom: 1px solid #eee;
   padding-bottom: 10px;
+}
+
+.workspace-toolbar-simple {
+  /* hook for any future tweaks */
 }
 
 .toolbar-left,
@@ -2351,27 +2405,79 @@ nav ul li a.active {
   font-size: 0.9rem;
 }
 
-/* Main area: canvas + optional side panel */
-
-.workspace-main {
-  display: flex;
-  align-items: stretch;
-  gap: 16px;
-  margin-top: 12px;
-}
-
 /* Canvas */
-
-.workspace-canvas-wrapper {
-  flex: 1 1 auto;
-  min-width: 0;
-}
 
 .canvas-stage {
   display: flex;
   justify-content: center;
   align-items: center;
   padding: 12px 0;
+}
+
+/* ===== Binder canvas workspace ===== */
+
+.builder-canvas {
+    position: relative;
+    overflow: hidden; /* keep photos from spilling out visually */
+}
+
+/* Each photo on the canvas */
+.canvas-photo {
+    position: absolute;
+    cursor: move;
+    box-sizing: border-box;
+}
+
+/* The actual image inside the photo box */
+.canvas-photo img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    user-select: none;
+    pointer-events: none; /* all interaction happens on the parent .canvas-photo */
+}
+
+/* Selected state: show colored outline */
+.canvas-photo-selected {
+    outline: 2px solid #2563eb; /* blue-ish highlight */
+}
+
+/* Resize handles on the corners */
+.canvas-photo-resize-handle {
+    position: absolute;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background-color: #2563eb;
+    border: 1px solid #ffffff;
+    box-sizing: border-box;
+    pointer-events: auto;
+}
+
+/* Corners */
+.canvas-photo-resize-top-left {
+    top: -6px;
+    left: -6px;
+    cursor: nwse-resize;
+}
+
+.canvas-photo-resize-top-right {
+    top: -6px;
+    right: -6px;
+    cursor: nesw-resize;
+}
+
+.canvas-photo-resize-bottom-left {
+    bottom: -6px;
+    left: -6px;
+    cursor: nesw-resize;
+}
+
+.canvas-photo-resize-bottom-right {
+    bottom: -6px;
+    right: -6px;
+    cursor: nwse-resize;
 }
 
 .builder-canvas {
@@ -2404,127 +2510,105 @@ nav ul li a.active {
   color: #999;
 }
 
+/* Photo strip under canvas */
+
+.canvas-photo-strip {
+  margin-top: 10px;
+  padding: 8px;
+  border-radius: 6px;
+  background: #f9fafb;
+  border: 1px dashed #d1d5db;
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 8px;
+  overflow-x: auto;
+  align-items: center;
+}
+
+/* Reuse general palette styling for consistency */
+.photo-palette {
+  /* kept for backwards compatibility; overridden by .canvas-photo-strip where needed */
+}
+
+/* Simple photo chip */
+
+.photo-chip {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  min-width: 120px;
+}
+
+.photo-chip-thumb {
+  width: 32px;
+  height: 32px;
+  border-radius: 4px;
+  background: #e5e7eb;
+  flex-shrink: 0;
+}
+
+.photo-chip-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.photo-chip-name {
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: #111827;
+  max-width: 140px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+}
+
+.photo-chip-size {
+  font-size: 0.75rem;
+  color: #6b7280;
+}
+
+.panel-hint {
+  margin: 0;
+  font-size: 0.8rem;
+  color: #666;
+}
+
+/* Footer text under strip */
+
 .canvas-footer {
   margin-top: 8px;
   font-size: 0.8rem;
   color: #666;
 }
 
-/* Side panel (slides in) */
-
-.workspace-panel {
-  position: relative;
-  flex: 0 0 320px;
-  max-width: 340px;
-  background: #fafafa;
-  border-radius: 6px;
-  border: 1px solid #e0e0e0;
-  padding: 14px 14px 16px;
-  font-size: 0.9rem;
-  display: none; /* default: hidden */
-}
-
-.workspace-panel.workspace-panel-visible {
-  display: block;
-}
-
-.workspace-panel-inner {
-  display: none;
-}
-
-.workspace-panel-inner.workspace-panel-inner-active {
-  display: block;
-}
-
-.workspace-panel-close {
-  position: absolute;
-  top: 6px;
-  right: 8px;
-  border: none;
-  background: transparent;
-  font-size: 1.1rem;
-  line-height: 1;
-  cursor: pointer;
-  color: #999;
-}
-
-.workspace-panel-close:hover {
-  color: #555;
-}
-
-.panel-title {
-  margin: 0 0 6px;
-  font-size: 1rem;
-}
-
-.panel-subtitle {
-  margin: 12px 0 6px;
-  font-size: 0.9rem;
-}
-
-.panel-hint {
-  margin: 0 0 10px;
-  font-size: 0.8rem;
-  color: #666;
-}
-
-.panel-section + .panel-section {
-  margin-top: 10px;
-}
-
-/* Simple list + controls reused in panel */
-
-.checklist {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-}
-
-.checklist li {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 0.85rem;
-  margin-bottom: 4px;
-}
-
-.photo-palette {
-  min-height: 80px;
-  border-radius: 4px;
-  border: 1px dashed #ccc;
-  padding: 8px;
-  background: #fff;
-}
-
-.form-label {
-  display: block;
-  margin-bottom: 4px;
-  font-size: 0.85rem;
-}
-
-.form-control {
-  width: 100%;
-  box-sizing: border-box;
-  font-size: 0.9rem;
-  padding: 6px 8px;
-  border-radius: 4px;
-  border: 1px solid #ccc;
-}
-
-textarea.form-control {
-  resize: vertical;
-}
-
-/* Responsive: stack panel below canvas on smaller screens */
+/* Responsive: stack on smaller screens */
 
 @media (max-width: 1024px) {
-  .workspace-main {
+  .workspace-body-simple {
     flex-direction: column;
   }
 
-  .workspace-panel {
+  .page-strip {
+    flex-direction: row;
+    flex-wrap: wrap;
+    border-right: none;
+    border-bottom: 1px solid #eee;
+    padding-right: 0;
+    padding-bottom: 10px;
+  }
+
+  .page-strip-header {
+    width: 100%;
+  }
+
+  .page-thumb {
     flex: 0 0 auto;
-    max-width: none;
   }
 }
 
@@ -2545,5 +2629,9 @@ textarea.form-control {
   .toolbar-left,
   .toolbar-right {
     justify-content: flex-start;
+  }
+
+  .canvas-photo-strip {
+    flex-wrap: wrap;
   }
 }

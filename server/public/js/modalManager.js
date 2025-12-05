@@ -142,7 +142,78 @@ const modalManager = {
     if (closeBtn) closeBtn.onclick = closeModalFn;
     if (okBtn) okBtn.onclick = closeModalFn;
   },
-  
+
+  // ============================================================
+  // Generic Confirm Modal (reuses notificationModal)
+  // ============================================================
+  /**
+   * showConfirm
+   *
+   * Reuses the notificationModal with a custom confirm label.
+   * - Title + message set as usual
+   * - OK button becomes the "confirm" action
+   * - Close "×" acts as cancel
+   */
+  showConfirm({ title, message, confirmLabel = 'OK', onConfirm, onCancel } = {}) {
+    const modal = document.getElementById('notificationModal');
+    const titleEl = document.getElementById('notificationTitle');
+    const messageEl = document.getElementById('notificationMessage');
+    const closeBtn = document.querySelector('#notificationModal .close');
+    const okBtn = document.getElementById('notificationOkBtn');
+
+    // Fallback to native confirm if modal is missing
+    if (!modal || !titleEl || !messageEl || !okBtn) {
+      const promptText =
+        typeof message === 'string'
+          ? message
+          : (title || 'Are you sure?');
+      const confirmed = window.confirm(promptText);
+      if (confirmed && typeof onConfirm === 'function') onConfirm();
+      if (!confirmed && typeof onCancel === 'function') onCancel();
+      return;
+    }
+
+    // Set title
+    titleEl.textContent = title || 'Confirm';
+
+    // Set message (string only for confirm)
+    messageEl.textContent = '';
+    if (typeof message === 'string') {
+      messageEl.textContent = message;
+    } else if (message && typeof message === 'object' && message.text) {
+      messageEl.appendChild(document.createTextNode(message.text));
+    }
+
+    // Remember original OK text so we can restore it later
+    const originalOkText = okBtn.textContent;
+    if (confirmLabel) okBtn.textContent = confirmLabel;
+
+    const cleanupHandlers = () => {
+      okBtn.onclick = null;
+      if (closeBtn) closeBtn.onclick = null;
+      okBtn.textContent = originalOkText;
+    };
+
+    const closeAs = (isCancel) => {
+      modal.classList.remove('show');
+      cleanupHandlers();
+      if (isCancel && typeof onCancel === 'function') onCancel();
+    };
+
+    // Cancel via "×"
+    if (closeBtn) {
+      closeBtn.onclick = () => closeAs(true);
+    }
+
+    // Confirm via main button
+    okBtn.onclick = () => {
+      if (typeof onConfirm === 'function') onConfirm();
+      closeAs(false);
+    };
+
+    modal.classList.add('show');
+  },  
+
   // ============================================================
   // Universal Modal Close Handler (data-modal-close attribute)
   // ============================================================

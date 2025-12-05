@@ -158,7 +158,6 @@ router.post(
 
       const userId = req.user && req.user.id;
 
-      // EXPECTED SHAPE (you can adjust to match your real service):
       // storageProvider.storeBinderPhotos({
       //   binderId,
       //   userId,
@@ -285,6 +284,94 @@ router.get(
       return res.status(500).json({
         ok: false,
         message: 'Unable to generate photo URL right now.'
+      });
+    }
+  }
+);
+
+/**
+ * DELETE /dashboard/binder/:binderId/photos?storageKey=...
+ *
+ * Full system delete:
+ *  - Validates that the storageKey looks like it belongs to this binder
+ *  - Calls storageProvider.deleteBinderPhoto(storageKey) to remove from S3/local
+ *
+ * The canvas/layout is handled client-side and re-saved after delete.
+ */
+router.delete(
+  '/:binderId/photos',
+  async (req, res) => {
+    try {
+      const binderId = req.params.binderId;
+      const storageKey =
+        (req.query && req.query.storageKey) ||
+        (req.body && req.body.storageKey) ||
+        '';
+
+      if (!storageKey) {
+        return res.status(400).json({
+          ok: false,
+          message: 'storageKey is required to delete a photo.'
+        });
+      }
+
+      if (!storageProvider || typeof storageProvider.deleteBinderPhoto !== 'function') {
+        logger.error(
+          {
+            event: 'binder.delete.storage_unavailable',
+            binderId,
+            storageKey
+          },
+          'Storage provider not configured for delete endpoint'
+        );
+        return res.status(500).json({
+          ok: false,
+          message: 'Photo storage is not configured.'
+        });
+      }
+
+      // Safety check: storageKey should include this binderId
+      if (binderId && !String(storageKey).includes(String(binderId))) {
+        logger.warn(
+          {
+            event: 'binder.delete.key_mismatch',
+            binderId,
+            storageKey
+          },
+          'Delete request storageKey does not appear to belong to this binder'
+        );
+        return res.status(403).json({
+          ok: false,
+          message: 'Photo does not belong to this binder'
+        });
+      }
+
+      await storageProvider.deleteBinderPhoto(storageKey);
+
+      logger.info(
+        {
+          event: 'binder.photo_deleted',
+          binderId,
+          storageKey
+        },
+        'Binder photo deleted at user request'
+      );
+
+      return res.json({
+        ok: true
+      });
+    } catch (err) {
+      logger.error(
+        {
+          event: 'binder.delete.error',
+          error: err.message,
+          stack: err.stack
+        },
+        'Failed to delete binder photo'
+      );
+      return res.status(500).json({
+        ok: false,
+        message: 'Unable to delete photo right now.'
       });
     }
   }

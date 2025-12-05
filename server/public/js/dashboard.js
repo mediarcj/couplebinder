@@ -184,6 +184,7 @@ document.addEventListener('DOMContentLoaded', function() {
     initializeSubmissions();
     initializeBuilderWorkspace();
     initializeBinderLayoutAutosave();
+    initializeDeletePhotoButton();   // NEW: wire delete button
 
     log.info('Dashboard page initialized - logout handled by logout.js module');
 });
@@ -330,29 +331,19 @@ function handleCanvasMouseUp() {
 }
 
 /**
- * Delete selected photo with keyboard
+ * Delete selected photo with keyboard (Delete/Backspace).
+ * Uses the same full system delete flow as the Delete button.
  */
 function handleCanvasKeyDown(event) {
     if (event.key !== 'Delete' && event.key !== 'Backspace') return;
 
-    const photoEl = builderCanvasState.selectedPhotoEl;
-    if (!photoEl) return;
-
-    // Only delete if focus is not inside an input/textarea
     const active = document.activeElement;
-    if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) {
+    if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable)) {
         return;
     }
 
     event.preventDefault();
-
-    if (photoEl.parentElement) {
-        photoEl.parentElement.removeChild(photoEl);
-    }
-    builderCanvasState.selectedPhotoEl = null;
-
-    // Layout changed -> mark dirty
-    markCanvasDirty();
+    requestDeleteSelectedPhoto();
 }
 
 function setSelectedCanvasPhoto(photoEl) {
@@ -1161,6 +1152,183 @@ function sizeAndCenterCanvasPhoto(photoEl, imgEl) {
     photoEl.style.top = `${Math.max(0, top)}px`;
 
     bringCanvasPhotoToFront(photoEl);
+}
+
+/**
+ * Remove the photo chip from the strip for this storageKey.
+ */
+function removePhotoChipForStorageKey(storageKey) {
+    if (!storageKey) return;
+    const strip = document.getElementById('builder-photo-strip');
+    if (!strip) return;
+
+    const chips = strip.querySelectorAll('.photo-chip');
+    let removed = false;
+    chips.forEach((chip) => {
+        if (chip.dataset.storageKey === storageKey) {
+            chip.remove();
+            removed = true;
+        }
+    });
+
+    if (removed) {
+        const remaining = strip.querySelector('.photo-chip');
+        if (!remaining) {
+            strip.innerHTML = '<p class="panel-hint">No photos uploaded yet.</p>';
+        }
+    }
+}
+
+/**
+ * Call backend DELETE endpoint to remove photo from S3/local.
+ */
+async function deleteBinderPhotoOnServer(binderId, storageKey) {
+    if (!binderId || !storageKey) {
+        throw new Error('deleteBinderPhotoOnServer requires binderId and storageKey');
+    }
+
+    const csrfToken = _getCSRFToken();
+    const url = `/dashboard/binder/${encodeURIComponent(
+        binderId
+    )}/photos?storageKey=${encodeURIComponent(storageKey)}`;
+
+    const headers = {
+        'Accept': 'application/json'
+    };
+    if (csrfToken) {
+        headers['x-csrf-token'] = csrfToken;
+    }
+
+    const resp = await fetch(url, {
+        method: 'DELETE',
+        headers
+    });
+
+    if (!resp.ok) {
+        const text = await resp.text().catch(() => '');
+        throw new Error(`Delete failed with status ${resp.status}: ${text}`);
+    }
+
+    const data = await resp.json().catch(() => null);
+    if (!data || !data.ok) {
+        throw new Error('Delete endpoint returned an error response');
+    }
+}
+
+/**
+ * Central delete flow used by:
+ *  - Delete key (Delete/Backspace)
+ *  - Delete selected photo button
+ *
+ * Behavior:
+ *  - If no selected photo -> show hint and return
+ *  - Ask for confirmation via centralized modalManager (fallback to window.confirm)
+ *  - Call backend to delete (full system delete) when binderId + storageKey exist
+ *  - Remove photo from canvas + strip
+ *  - Mark layout dirty so Supabase layout is updated
+ */
+function requestDeleteSelectedPhoto() {
+    const photoEl = builderCanvasState.selectedPhotoEl;
+    if (!photoEl) {
+        if (window.modalManager && typeof window.modalManager.showNotification === 'function') {
+            window.modalManager.showNotification(
+                'No photo selected',
+                'Click on a photo on the page first, then try deleting again.'
+            );
+        } else {
+            alert('Please select a photo on the page first, then delete it.');
+        }
+        return;
+    }
+
+    const binderId = getBinderIdFromBody();
+    const storageKey = photoEl.dataset.storageKey || null;
+
+    const confirmMessage = storageKey
+        ? 'Delete this photo from your binder? This will remove it from this page and from our storage.'
+        : 'Delete this photo from this page?';
+
+    // Actual delete logic (same as before, kept in a helper)
+    const performDelete = async () => {
+        // If we have a binder and a storageKey, attempt full system delete
+        if (binderId && storageKey) {
+            try {
+                await deleteBinderPhotoOnServer(binderId, storageKey);
+            } catch (err) {
+                log.error('Binder delete: server delete failed', { error: err?.message || String(err) });
+                if (window.modalManager && typeof window.modalManager.showNotification === 'function') {
+                    window.modalManager.showNotification(
+                        'Delete failed',
+                        'We could not delete this photo from storage right now. Please try again in a moment.'
+                    );
+                } else {
+                    alert('We could not delete this photo from storage right now. Please try again.');
+                }
+                return;
+            }
+        } else if (!binderId && storageKey) {
+            // Very rare edge case: we have a storageKey but no binderId (miswired template).
+            log.warn('Binder delete: storageKey present but binderId missing; deleting from layout only', {
+                storageKey
+            });
+        }
+
+        // Remove from canvas
+        if (photoEl.parentElement) {
+            photoEl.parentElement.removeChild(photoEl);
+        }
+        if (builderCanvasState.selectedPhotoEl === photoEl) {
+            builderCanvasState.selectedPhotoEl = null;
+        }
+
+        // Remove matching chip from strip (if any)
+        if (storageKey) {
+            removePhotoChipForStorageKey(storageKey);
+        }
+
+        // Layout changed -> mark dirty so Supabase gets updated layout_json
+        markCanvasDirty();
+    };
+
+    const mm = window.modalManager;
+    if (mm && typeof mm.showConfirm === 'function') {
+        // Use centralized confirm modal
+        mm.showConfirm({
+            title: 'Delete photo',
+            message: confirmMessage,
+            confirmLabel: 'Delete photo',
+            onConfirm: () => {
+                // Fire and forget; errors are handled inside performDelete
+                performDelete();
+            },
+            onCancel: () => {
+                // No-op; user changed their mind
+            }
+        });
+        return;
+    }
+
+    // Fallback to native confirm if modal manager is unavailable
+    const confirmed = window.confirm(confirmMessage);
+    if (!confirmed) return;
+    performDelete();
+}
+
+/**
+ * Wire up the "Delete selected photo" toolbar button.
+ */
+function initializeDeletePhotoButton() {
+    const btn = document.getElementById('builder-delete-photo-btn');
+    if (!btn) {
+        log.info('Delete photo button not found on page; skipping wiring');
+        return;
+    }
+
+    btn.addEventListener('click', function () {
+        requestDeleteSelectedPhoto();
+    });
+    
+    log.info('Delete photo button wired');
 }
 
 // -----------------------------------------------------------------------------

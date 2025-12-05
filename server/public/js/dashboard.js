@@ -794,7 +794,7 @@ async function restoreCanvasLayoutFromSupabase(binderId) {
             }
         }
 
-        rebuildCanvasFromLayout(layout);
+        await rebuildCanvasFromLayout(binderId, layout);
 
         // After restoring, we consider the layout "clean" until user changes something.
         builderCanvasState.dirty = false;
@@ -812,9 +812,50 @@ async function restoreCanvasLayoutFromSupabase(binderId) {
 }
 
 /**
- * Actually rebuild the DOM canvas from a stored layout object.
+ * Ask the backend for a fresh signed URL for this storageKey.
  */
-function rebuildCanvasFromLayout(layout) {
+async function resolvePhotoSrcFromStorageKey(binderId, storageKey) {
+    if (!binderId || !storageKey) return null;
+
+    try {
+        const url = `/dashboard/binder/${encodeURIComponent(
+            binderId
+        )}/photos/view-url?storageKey=${encodeURIComponent(storageKey)}`;
+
+        const resp = await fetch(url, {
+            method: 'GET',
+            headers: {
+                'Accept': 'application/json'
+            }
+        });
+
+        if (!resp.ok) {
+            log.warn('Binder layout: view-url endpoint returned non-200', {
+                status: resp.status
+            });
+            return null;
+        }
+
+        const data = await resp.json().catch(() => null);
+        if (!data || !data.ok || !data.url) {
+            log.warn('Binder layout: view-url endpoint returned no url', { data });
+            return null;
+        }
+
+        return data.url;
+    } catch (e) {
+        log.error('Binder layout: failed to resolve photo src from storageKey', {
+            error: e?.message || String(e)
+        });
+        return null;
+    }
+}
+
+/**
+ * Actually rebuild the DOM canvas from a stored layout object.
+ * IMPORTANT: we now ignore any stale el.src and use storageKey -> fresh signed URL.
+ */
+async function rebuildCanvasFromLayout(binderId, layout) {
     const canvas = document.getElementById('builder-canvas');
     if (!canvas) return;
 
@@ -830,13 +871,29 @@ function rebuildCanvasFromLayout(layout) {
 
     const elements = Array.isArray(layout.elements) ? layout.elements : [];
 
-    elements.forEach((el, idx) => {
-        if (!el || !el.src) return;
+    for (let idx = 0; idx < elements.length; idx++) {
+        const el = elements[idx];
+        if (!el) continue;
+
+        const storageKey = el.storageKey || null;
+        if (!storageKey) {
+            log.warn('Binder layout: element missing storageKey, skipping', { idx, el });
+            continue;
+        }
+
+        // Always get a fresh URL from the backend
+        const src = await resolvePhotoSrcFromStorageKey(binderId, storageKey);
+        if (!src) {
+            log.warn('Binder layout: could not resolve src for storageKey', {
+                storageKey
+            });
+            continue;
+        }
 
         const photoEl = createCanvasPhotoElement(
             canvas,
-            el.src,
-            { storageKey: el.storageKey || null, originalname: `Photo ${idx + 1}` },
+            src,
+            { storageKey, originalname: `Photo ${idx + 1}` },
             {
                 fromLayout: true,
                 zIndex: typeof el.zIndex === 'number' ? el.zIndex : undefined
@@ -857,7 +914,7 @@ function rebuildCanvasFromLayout(layout) {
         photoEl.style.top = `${top}px`;
         photoEl.style.width = `${width}px`;
         photoEl.style.height = `${height}px`;
-    });
+    }
 
     log.info('Binder layout: canvas rebuilt from saved layout', {
         elementCount: elements.length

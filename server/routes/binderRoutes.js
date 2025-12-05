@@ -210,6 +210,86 @@ router.post(
   }
 );
 
+/**
+ * GET /dashboard/binder/:binderId/photos/view-url?storageKey=...
+ *
+ * Given a storageKey (stored in binder_layouts.layout_json.elements[].storageKey),
+ * return a fresh, signed URL the browser can use in <img src="...">.
+ */
+router.get(
+  '/:binderId/photos/view-url',
+  async (req, res) => {
+    try {
+      const binderId = req.params.binderId;
+      const storageKey = req.query.storageKey;
+
+      if (!storageKey) {
+        return res.status(400).json({
+          ok: false,
+          message: 'storageKey query parameter is required'
+        });
+      }
+
+      if (!storageProvider || typeof storageProvider.getBinderPhotoViewUrl !== 'function') {
+        logger.error(
+          {
+            event: 'binder.view_url.storage_unavailable',
+            binderId,
+            storageKey
+          },
+          'Storage provider not configured for view-url endpoint'
+        );
+        return res.status(500).json({
+          ok: false,
+          message: 'Photo storage is not configured.'
+        });
+      }
+
+      // Simple safety check: storageKey should include this binderId
+      if (binderId && !String(storageKey).includes(String(binderId))) {
+        logger.warn(
+          {
+            event: 'binder.view_url.key_mismatch',
+            binderId,
+            storageKey
+          },
+          'Requested storageKey does not appear to belong to this binder'
+        );
+        return res.status(403).json({
+          ok: false,
+          message: 'Photo does not belong to this binder'
+        });
+      }
+
+      const url = await storageProvider.getBinderPhotoViewUrl(storageKey);
+      if (!url) {
+        return res.status(404).json({
+          ok: false,
+          message: 'No view URL available for this photo.'
+        });
+      }
+
+      return res.json({
+        ok: true,
+        url
+      });
+    } catch (err) {
+      logger.error(
+        {
+          event: 'binder.view_url.error',
+          error: err.message,
+          stack: err.stack
+        },
+        'Failed to generate view url for binder photo'
+      );
+      return res.status(500).json({
+        ok: false,
+        message: 'Unable to generate photo URL right now.'
+      });
+    }
+  }
+);
+
 router.post(
   '/:binderId/export',
   binderController.exportPdf

@@ -1,15 +1,38 @@
 // File: server/controllers/binderController.js
 // Purpose: Controller for the proof-of-relationship binder feature
-// Status: First DB-backed version (uses Supabase tables + local temp uploads)
+// Status: DB-backed version (uses Supabase tables + S3/local uploads)
 
 'use strict';
 
 const PDFDocument = require('pdfkit');
 const logger = require('../utils/logger');
 const { supabaseAdmin } = require('../utils/supabaseClient');
-const { supabase } = require('../utils/supabaseClient');
-// NOTE: we import the function directly
+const { supabase } = require('../utils/supabaseClient'); // kept for future use
 const { saveBinderPhoto } = require('../services/storageProvider');
+
+// -----------------------------------------------------------------------------
+// Shared server-side image validation (aligns with binderRoutes + dashboard.js)
+// -----------------------------------------------------------------------------
+const ALLOWED_IMAGE_MIME_TYPES = new Set([
+  'image/jpeg',
+  'image/jpg',
+  'image/png',
+  'image/webp',
+  'image/heic',
+  'image/heif',
+  'image/avif'
+]);
+
+const ALLOWED_IMAGE_EXTENSIONS = /\.(jpe?g|png|webp|heic|heif|avif)$/i;
+
+function isAllowedImageUpload(file) {
+  if (!file) return false;
+  const mimeOk = file.mimetype && ALLOWED_IMAGE_MIME_TYPES.has(file.mimetype);
+  const name = file.originalname || '';
+  const extOk = ALLOWED_IMAGE_EXTENSIONS.test(name);
+  // Accept if either MIME or extension says "image we support"
+  return mimeOk || extOk;
+}
 
 /**
  * Small helper: ensure we have a logged-in user and a Supabase admin client.
@@ -51,7 +74,7 @@ async function list(req, res, next) {
         {
           event: 'binder.list_query_failed',
           error: error.message,
-          userId,
+          userId
         },
         'Binder list query failed'
       );
@@ -64,16 +87,14 @@ async function list(req, res, next) {
       {
         event: 'binder.list_ok',
         userId,
-        count: data?.length || 0,
+        count: data?.length || 0
       },
       'Binder list loaded'
     );
 
-    // For now, just return JSON so you can see real rows.
-    // Later we can render an EJS template instead.
     return res.json({
       ok: true,
-      binders: data || [],
+      binders: data || []
     });
   } catch (err) {
     logger.error(
@@ -118,7 +139,7 @@ async function create(req, res, next) {
       .from('binders')
       .insert({
         user_id: userId,
-        title,
+        title
       })
       .select('id, title, created_at, updated_at')
       .single();
@@ -129,7 +150,7 @@ async function create(req, res, next) {
           event: 'binder.create_query_failed',
           error: error.message,
           userId,
-          title,
+          title
         },
         'Binder create insert failed'
       );
@@ -143,7 +164,7 @@ async function create(req, res, next) {
         event: 'binder.created',
         binderId: data.id,
         userId,
-        title: data.title,
+        title: data.title
       },
       'Binder created'
     );
@@ -152,7 +173,7 @@ async function create(req, res, next) {
       ok: true,
       binderId: data.id,
       binder: data,
-      message: 'Binder created successfully',
+      message: 'Binder created successfully'
     });
   } catch (err) {
     logger.error(
@@ -165,137 +186,275 @@ async function create(req, res, next) {
 
 /**
  * POST /dashboard/binder/:binderId/photos
- * Accept uploaded photos (via multer) and persist metadata
+ * Accept uploaded photos (via multer) and persist to storage + binder_photos
  *
  * Assumptions:
  *  - Multer is configured in binderRoutes to write files under a temp root
  *    like /tmp/couplebinder/binder-photos.
  *  - DB table: binder_photos with at least:
  *      id (uuid, default),
- *      binder_id (uuid),
+ *      binder_id (uuid or text),
  *      user_id (uuid),
  *      storage_key (text),
  *      original_filename (text),
  *      mime_type (text),
  *      size_bytes (bigint),
- *      position (int),
+ *      status (text),
  *      created_at (timestamptz)
+ *
+ * NOTE:
+ *  This controller is written to match the JSON shape your dashboard expects:
+ *  {
+ *    ok: true,
+ *    binderId,
+ *    uploadedCount: <number>,
+ *    photos: [
+ *      {
+ *        storageKey,
+ *        originalname,
+ *        mimetype,
+ *        size,
+ *        provider,
+ *        bucket,
+ *        publicUrl,
+ *        signedUrl
+ *      },
+ *      ...
+ *    ]
+ *  }
  */
 
 /**
  * POST /dashboard/binder/:binderId/photos
- * Accept uploaded photos (via multer) and persist to S3 + binder_photos
+ * Accept uploaded photos (via multer) and persist to storage + binder_photos
+ *
+ * NOTE:
+ *  - :binderId in the URL is a *workspace* id (e.g. "default-<userId>") used by the UI
+ *    and for S3 path building.
+ *  - The actual DB primary key is binders.id (uuid).
+ *  - We now resolve "the binder row for this user" by user_id, not by :binderId,
+ *    and use that uuid for binder_photos.binder_id.
  */
 async function addPhotos(req, res, next) {
-  const { binderId } = req.params;
+  const workspaceBinderId = req.params.binderId; // e.g. "default-<userId>"
 
   try {
     const userId = req.user?.id || req.user?.uid || null;
 
     if (!userId) {
       logger.warn(
-        { event: 'binder.add_photos_no_user', binderId },
+        { event: 'binder.add_photos_no_user', workspaceBinderId },
         'addPhotos called without authenticated user'
       );
       return res.status(401).json({ ok: false, error: 'Not authenticated' });
     }
 
-    const files = req.files || [];
-    if (!files.length) {
+    // Raw files from Multer
+    const allFiles = Array.isArray(req.files) ? req.files : [];
+    if (!allFiles.length) {
       return res.status(400).json({ ok: false, error: 'No files uploaded' });
+    }
+
+    // Server-side image filter (aligns with router + dashboard.js)
+    const safeFiles = allFiles.filter(isAllowedImageUpload);
+
+    if (!safeFiles.length) {
+      logger.warn(
+        {
+          event: 'binder.add_photos.rejected_non_images',
+          workspaceBinderId,
+          userId,
+          totalSelected: allFiles.length
+        },
+        'Binder upload rejected: no valid image files'
+      );
+      return res.status(400).json({
+        ok: false,
+        error: 'Only image files (JPG, PNG, HEIC, WEBP, AVIF) are allowed.'
+      });
+    }
+
+    if (safeFiles.length < allFiles.length) {
+      logger.warn(
+        {
+          event: 'binder.add_photos.partial_non_images',
+          workspaceBinderId,
+          userId,
+          totalSelected: allFiles.length,
+          accepted: safeFiles.length
+        },
+        'Binder upload: some non-image files were rejected'
+      );
     }
 
     logger.info(
       {
         event: 'binder.add_photos_start',
-        binderId,
+        workspaceBinderId,
         userId,
-        fileCount: files.length
+        fileCount: safeFiles.length
       },
       'Starting binder photo upload'
     );
 
-    // 1) Load binder using service-role client (bypasses RLS)
-    const { data: binder, error: binderErr } = await supabaseAdmin
+    if (!supabaseAdmin) {
+      const err = new Error('Supabase admin client not initialized');
+      err.status = 503;
+      throw err;
+    }
+
+    // -----------------------------------------------------------------------
+    // 1) Resolve the REAL binder row for this user (DB uuid id)
+    //    We treat the URL :binderId as a UI/workspace id, not as binders.id.
+    // -----------------------------------------------------------------------
+    let binderRow = null;
+
+    const { data: existingBinder, error: binderSelectErr } = await supabaseAdmin
       .from('binders')
       .select('id, user_id, title')
-      .eq('id', binderId)
-      .single();
+      .eq('user_id', userId)
+      .order('created_at', { ascending: true })
+      .limit(1)
+      .maybeSingle();
 
-    if (binderErr) {
+    if (binderSelectErr) {
       logger.error(
         {
           event: 'binder.lookup_failed',
-          binderId,
+          workspaceBinderId,
           userId,
-          code: binderErr.code,
-          error: binderErr.message
+          code: binderSelectErr.code,
+          error: binderSelectErr.message
         },
-        'Binder lookup failed before upload'
+        'Binder lookup by user_id failed before upload'
       );
+      throw binderSelectErr;
+    }
 
-      if (binderErr.code === 'PGRST116') {
-        return res.status(404).json({ ok: false, error: 'Binder not found' });
+    if (existingBinder) {
+      binderRow = existingBinder;
+    } else {
+      // No binder for this user yet → create a default one
+      const { data: createdBinder, error: binderInsertErr } = await supabaseAdmin
+        .from('binders')
+        .insert({
+          user_id: userId,
+          title: 'My relationship story binder',
+          status: 'draft'
+        })
+        .select('id, user_id, title')
+        .single();
+
+      if (binderInsertErr) {
+        logger.error(
+          {
+            event: 'binder.create_default_failed',
+            workspaceBinderId,
+            userId,
+            error: binderInsertErr.message,
+            code: binderInsertErr.code
+          },
+          'Failed to create default binder for user before upload'
+        );
+        throw binderInsertErr;
       }
 
-      throw binderErr;
+      binderRow = createdBinder;
     }
 
-    if (!binder) {
-      logger.warn(
-        { event: 'binder.lookup_empty', binderId, userId },
-        'Binder lookup returned no rows'
-      );
-      return res.status(404).json({ ok: false, error: 'Binder not found' });
-    }
+    const binderDbId = binderRow.id;
 
-    // Extra ownership check in app code
-    if (binder.user_id && binder.user_id !== userId) {
+    logger.info(
+      {
+        event: 'binder.lookup_ok',
+        workspaceBinderId,
+        binderDbId,
+        userId
+      },
+      'Binder resolved for photo upload'
+    );
+
+    // Extra ownership check in app code (should always match)
+    if (binderRow.user_id && binderRow.user_id !== userId) {
       logger.warn(
         {
           event: 'binder.not_owned',
-          binderId,
+          workspaceBinderId,
+          binderDbId,
           userId,
-          binderUserId: binder.user_id
+          binderUserId: binderRow.user_id
         },
         'User tried to upload photos to binder they do not own'
       );
       return res.status(404).json({ ok: false, error: 'Binder not found' });
     }
 
+    // -----------------------------------------------------------------------
     // 2) Upload each file via saveBinderPhoto and record in binder_photos
+    //    IMPORTANT:
+    //      - For storage/S3 path we keep using workspaceBinderId (string).
+    //      - For DB binder_photos.binder_id we use binderDbId (uuid).
+    // -----------------------------------------------------------------------
     const uploaded = [];
 
-    for (const file of files) {
-      // storageResult includes storageKey, bucket, sizeBytes, mimeType, originalFilename
-      const storageResult = await saveBinderPhoto({ userId, binderId, file });
+    for (const file of safeFiles) {
+      logger.info(
+        {
+          event: 'binder.photo_upload_begin',
+          workspaceBinderId,
+          binderDbId,
+          userId,
+          originalname: file.originalname,
+          sizeBytes: file.size,
+          mimeType: file.mimetype
+        },
+        'Starting upload for single binder photo'
+      );
 
-      uploaded.push({
-        storageKey: storageResult.storageKey,
-        originalname: storageResult.originalFilename,
-        mimetype: storageResult.mimeType,
-        size: storageResult.sizeBytes,
-        provider: storageResult.provider,
-        bucket: storageResult.bucket
+      // For storage paths and later substring checks in binderRoutes,
+      // we keep the workspace binder id in the key (e.g. "default-<userId>").
+      const storageResult = await saveBinderPhoto({
+        userId,
+        binderId: workspaceBinderId || binderDbId,
+        file
       });
 
-      const { error: photoErr } = await supabaseAdmin
+      logger.info(
+        {
+          event: 'binder.photo_storage_ok',
+          workspaceBinderId,
+          binderDbId,
+          userId,
+          storageKey: storageResult.storageKey,
+          provider: storageResult.provider,
+          bucket: storageResult.bucket,
+          sizeBytes: storageResult.sizeBytes,
+          mimeType: storageResult.mimeType
+        },
+        'Binder photo stored in provider'
+      );
+
+      // Insert metadata row in binder_photos with the REAL uuid binder id
+      const { data: photoRows, error: photoErr } = await supabaseAdmin
         .from('binder_photos')
         .insert({
-          binder_id: binderId,
+          binder_id: binderDbId, // <<< uuid FK to binders(id)
           user_id: userId,
           storage_key: storageResult.storageKey,
           original_filename: storageResult.originalFilename,
           mime_type: storageResult.mimeType,
           size_bytes: storageResult.sizeBytes,
           status: 'stored'
-        });
+        })
+        .select('id, created_at')
+        .limit(1);
 
       if (photoErr) {
         logger.error(
           {
             event: 'binder.photo_insert_failed',
-            binderId,
+            workspaceBinderId,
+            binderDbId,
             userId,
             storageKey: storageResult.storageKey,
             error: photoErr.message,
@@ -305,12 +464,39 @@ async function addPhotos(req, res, next) {
         );
         throw photoErr;
       }
+
+      const inserted = Array.isArray(photoRows) && photoRows[0] ? photoRows[0] : null;
+
+      logger.info(
+        {
+          event: 'binder.photo_db_insert_ok',
+          workspaceBinderId,
+          binderDbId,
+          userId,
+          storageKey: storageResult.storageKey,
+          photoId: inserted?.id || null
+        },
+        'Binder photo metadata inserted into DB'
+      );
+
+      // Shape JSON for client (dashboard.js expects storageKey + optional URLs)
+      uploaded.push({
+        storageKey: storageResult.storageKey,
+        originalname: storageResult.originalFilename,
+        mimetype: storageResult.mimeType,
+        size: storageResult.sizeBytes,
+        provider: storageResult.provider,
+        bucket: storageResult.bucket,
+        publicUrl: storageResult.publicUrl || null,
+        signedUrl: storageResult.signedUrl || null
+      });
     }
 
     logger.info(
       {
         event: 'binder.photos_uploaded',
-        binderId,
+        workspaceBinderId,
+        binderDbId,
         userId,
         count: uploaded.length
       },
@@ -319,7 +505,8 @@ async function addPhotos(req, res, next) {
 
     return res.json({
       ok: true,
-      binderId,
+      // For the front-end we keep returning the workspace id so nothing breaks.
+      binderId: workspaceBinderId || binderDbId,
       uploadedCount: uploaded.length,
       photos: uploaded
     });
@@ -327,9 +514,10 @@ async function addPhotos(req, res, next) {
     logger.error(
       {
         event: 'binder.add_photos_failed',
-        binderId,
+        workspaceBinderId,
         error: err.message,
-        stack: err.stack
+        stack: err.stack,
+        userId: req.user?.id || req.user?.uid || null
       },
       'Binder addPhotos handler failed'
     );
@@ -340,11 +528,6 @@ async function addPhotos(req, res, next) {
 /**
  * POST /dashboard/binder/:binderId/export
  * Generate a simple PDF as a proof-of-life for the pipeline
- *
- * For now this does NOT query photos; it just proves the export path works.
- * Later we will:
- *   - Load binder + photos from Supabase
- *   - Render a proper multi-page PDF with images and captions
  */
 function exportPdf(req, res, next) {
   const { binderId } = req.params;
@@ -383,7 +566,7 @@ function exportPdf(req, res, next) {
       'Cover page with title and hero couple photo',
       'Chronological pages with photos and captions',
       'Layout tuned for USCIS-style submissions',
-      'Clear disclaimer that this is not legal or immigration advice',
+      'Clear disclaimer that this is not legal or immigration advice'
     ]);
 
     doc.end();
@@ -392,7 +575,7 @@ function exportPdf(req, res, next) {
       {
         event: 'binder.pdf_exported',
         binderId,
-        userId: req.user?.id,
+        userId: req.user?.id
       },
       'Binder PDF exported (placeholder)'
     );
@@ -410,5 +593,5 @@ module.exports = {
   newForm,
   create,
   addPhotos,
-  exportPdf,
+  exportPdf
 };

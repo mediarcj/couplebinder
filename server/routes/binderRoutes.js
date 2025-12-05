@@ -12,6 +12,7 @@ const os = require('os');
 const fs = require('fs');
 
 const logger = require('../utils/logger');
+const { supabaseAdmin } = require('../utils/supabaseClient');
 const binderController = require('../controllers/binderController');
 
 let storageProvider = null;
@@ -29,26 +30,6 @@ try {
 }
 
 const router = express.Router();
-
-const ALLOWED_IMAGE_MIME_TYPES = new Set([
-  'image/jpeg',
-  'image/jpg',
-  'image/png',
-  'image/webp',
-  'image/heic',
-  'image/heif',
-  'image/avif'
-]);
-
-const ALLOWED_IMAGE_EXTENSIONS = /\.(jpe?g|png|webp|heic|heif|avif)$/i;
-
-function isAllowedImageUpload(file) {
-  if (!file) return false;
-  const mimeOk = file.mimetype && ALLOWED_IMAGE_MIME_TYPES.has(file.mimetype);
-  const name = file.originalname || '';
-  const extOk = ALLOWED_IMAGE_EXTENSIONS.test(name);
-  return mimeOk || extOk;
-}
 
 /**
  * WHERE DO WE STORE UPLOADED PHOTOS?
@@ -102,111 +83,21 @@ router.get('/new', binderController.newForm);
 
 router.post('/', binderController.create);
 
-// Photo upload route used by dashboard.js
+/**
+ * POST /dashboard/binder/:binderId/photos
+ *
+ * Flow:
+ *  - Multer parses multipart form and writes to temp dir
+ *  - binderController.addPhotos:
+ *      - Validates safe image types
+ *      - Uploads each file via saveBinderPhoto (S3/local)
+ *      - Inserts metadata rows into binder_photos
+ *      - Logs success/failure per photo
+ */
 router.post(
   '/:binderId/photos',
   upload.array('photos', 50), // Multer parses multipart form, field name "photos"
-  async (req, res) => {
-    try {
-      const binderId = req.params.binderId;
-      const allFiles = Array.isArray(req.files) ? req.files : [];
-
-      const safeFiles = allFiles.filter(isAllowedImageUpload);
-
-      if (!safeFiles.length) {
-        logger.warn(
-          {
-            event: 'binder.upload.rejected_non_images',
-            binderId,
-            totalSelected: allFiles.length
-          },
-          'Binder upload rejected: no valid image files'
-        );
-
-        return res.status(400).json({
-          ok: false,
-          message: 'Only image files (JPG, PNG, HEIC, WEBP, AVIF) are allowed.'
-        });
-      }
-
-      if (safeFiles.length < allFiles.length) {
-        logger.warn(
-          {
-            event: 'binder.upload.partial_non_images',
-            binderId,
-            totalSelected: allFiles.length,
-            accepted: safeFiles.length
-          },
-          'Binder upload: some non-image files were rejected'
-        );
-      }
-
-      if (!storageProvider || typeof storageProvider.storeBinderPhotos !== 'function') {
-        logger.error(
-          {
-            event: 'binder.upload.storage_unavailable',
-            binderId
-          },
-          'Storage provider not configured; cannot persist binder photos'
-        );
-
-        return res.status(500).json({
-          ok: false,
-          message: 'Photo storage is not configured yet. Please try again later.'
-        });
-      }
-
-      const userId = req.user && req.user.id;
-
-      // storageProvider.storeBinderPhotos({
-      //   binderId,
-      //   userId,
-      //   files: safeFiles
-      // }) -> returns an array like:
-      // [
-      //   {
-      //     originalname,
-      //     size,
-      //     storageKey,
-      //     publicUrl
-      //   },
-      //   ...
-      // ]
-      const uploaded = await storageProvider.storeBinderPhotos({
-        binderId,
-        userId,
-        files: safeFiles
-      });
-
-      const payloadPhotos = (uploaded || []).map((p) => ({
-        originalname: p.originalname || p.name || 'Photo',
-        size: typeof p.size === 'number' ? p.size : undefined,
-        storageKey: p.storageKey || p.key || p.id || null,
-        // Preserve whatever the storage layer gave us
-        publicUrl: p.publicUrl || p.url || p.signedUrl || null,
-        signedUrl: p.signedUrl || null
-      }));
-      return res.json({
-        ok: true,
-        uploadedCount: payloadPhotos.length,
-        photos: payloadPhotos
-      });
-    } catch (err) {
-      logger.error(
-        {
-          event: 'binder.upload.error',
-          error: err.message,
-          stack: err.stack
-        },
-        'Binder photo upload failed'
-      );
-
-      return res.status(500).json({
-        ok: false,
-        message: 'Unable to upload photos right now.'
-      });
-    }
-  }
+  binderController.addPhotos
 );
 
 /**
@@ -295,6 +186,7 @@ router.get(
  * Full system delete:
  *  - Validates that the storageKey looks like it belongs to this binder
  *  - Calls storageProvider.deleteBinderPhoto(storageKey) to remove from S3/local
+ *  - Deletes the matching row from public.binder_photos using supabaseAdmin
  *
  * The canvas/layout is handled client-side and re-saved after delete.
  */
@@ -307,6 +199,7 @@ router.delete(
         (req.query && req.query.storageKey) ||
         (req.body && req.body.storageKey) ||
         '';
+      const userId = (req.user && (req.user.id || req.user.uid)) || null;
 
       if (!storageKey) {
         return res.status(400).json({
@@ -346,15 +239,76 @@ router.delete(
         });
       }
 
+      // 1) Delete from storage (S3/local)
       await storageProvider.deleteBinderPhoto(storageKey);
 
       logger.info(
         {
-          event: 'binder.photo_deleted',
+          event: 'binder.photo_file_deleted',
           binderId,
-          storageKey
+          storageKey,
+          userId
         },
-        'Binder photo deleted at user request'
+        'Binder photo deleted from storage at user request'
+      );
+
+      // 2) Delete metadata row from binder_photos via supabaseAdmin
+      if (!supabaseAdmin) {
+        logger.error(
+          {
+            event: 'binder.photo_db_delete_client_missing',
+            binderId,
+            storageKey
+          },
+          'Supabase admin client not initialized for binder photo delete'
+        );
+        return res.status(500).json({
+          ok: false,
+          message: 'Unable to delete photo metadata right now.'
+        });
+      }
+
+      let query = supabaseAdmin
+        .from('binder_photos')
+        .delete()
+        .eq('binder_id', binderId)
+        .eq('storage_key', storageKey);
+
+      if (userId) {
+        query = query.eq('user_id', userId);
+      }
+
+      const { data: deletedRows, error: dbErr } = await query.select('id');
+
+      if (dbErr) {
+        logger.error(
+          {
+            event: 'binder.photo_db_delete_failed',
+            binderId,
+            storageKey,
+            userId,
+            error: dbErr.message,
+            code: dbErr.code
+          },
+          'Failed to delete binder photo metadata from DB'
+        );
+        return res.status(500).json({
+          ok: false,
+          message: 'Unable to delete photo metadata right now.'
+        });
+      }
+
+      const deletedCount = Array.isArray(deletedRows) ? deletedRows.length : 0;
+
+      logger.info(
+        {
+          event: 'binder.photo_db_deleted',
+          binderId,
+          storageKey,
+          userId,
+          deletedCount
+        },
+        'Binder photo metadata deleted from DB'
       );
 
       return res.json({

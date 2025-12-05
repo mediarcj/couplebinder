@@ -321,8 +321,71 @@ async function storeBinderPhotos({ userId, binderId, files }) {
   return results;
 }
 
+/**
+ * getBinderPhotoViewUrl
+ *
+ * Given a storageKey (e.g. "binders/userId/binderId/filename.png"),
+ * return a fresh, short-lived signed URL so the browser can view it.
+ */
+async function getBinderPhotoViewUrl(storageKey) {
+  if (!storageKey) {
+    throw new Error('getBinderPhotoViewUrl called without storageKey');
+  }
+
+  // Only meaningful for S3; local provider has no HTTP URL
+  const s3 = getS3();
+  if (provider !== 's3' || !s3) {
+    logger.warn(
+      { event: 'storage.view_url_unsupported', provider },
+      '[storageProvider] getBinderPhotoViewUrl called but provider is not s3'
+    );
+    return null;
+  }
+
+  if (!getSignedUrl) {
+    logger.warn(
+      { event: 'storage.s3.presigner_missing' },
+      '[storageProvider] getBinderPhotoViewUrl: presigner not available'
+    );
+    return null;
+  }
+
+  try {
+    const cmd = new GetObjectCommand({
+      Bucket: s3Bucket,
+      Key: storageKey
+    });
+
+    // 1 hour is fine for editing sessions
+    const url = await getSignedUrl(s3, cmd, { expiresIn: 60 * 60 });
+
+    logger.info(
+      {
+        event: 'storage.s3.view_url_ok',
+        bucket: s3Bucket,
+        storageKey
+      },
+      'Generated fresh signed URL for binder photo'
+    );
+
+    return url;
+  } catch (err) {
+    logger.error(
+      {
+        event: 'storage.s3.view_url_failed',
+        bucket: s3Bucket,
+        storageKey,
+        error: err.message
+      },
+      'Failed to generate view URL for binder photo'
+    );
+    throw err;
+  }
+}
+
 module.exports = {
   provider,
   saveBinderPhoto,
-  storeBinderPhotos
+  storeBinderPhotos,
+  getBinderPhotoViewUrl
 };

@@ -4,6 +4,7 @@
 // WHAT:
 //  - saveBinderPhoto({ userId, binderId, file }) -> { provider, storageKey, ... }
 //  - storeBinderPhotos({ userId, binderId, files }) -> array for the binder route
+//  - deleteBinderPhoto(storageKey) -> delete from S3/local
 //
 // HOW:
 //  - Today: supports 's3' and a fallback 'local' mode.
@@ -18,7 +19,12 @@
 
 const fs = require('fs/promises');
 const path = require('path');
-const { S3Client, PutObjectCommand, GetObjectCommand } = require('@aws-sdk/client-s3');
+const {
+  S3Client,
+  PutObjectCommand,
+  GetObjectCommand,
+  DeleteObjectCommand
+} = require('@aws-sdk/client-s3');
 const { config } = require('../config');
 const logger = require('../utils/logger');
 
@@ -383,9 +389,107 @@ async function getBinderPhotoViewUrl(storageKey) {
   }
 }
 
+/**
+ * deleteBinderPhoto
+ *
+ * Given a storageKey, delete the underlying object from storage.
+ * - For S3: DeleteObject
+ * - For local: fs.unlink()
+ */
+async function deleteBinderPhoto(storageKey) {
+  if (!storageKey) {
+    throw new Error('deleteBinderPhoto called without storageKey');
+  }
+
+  // S3 delete
+  const s3 = getS3();
+  if (provider === 's3' && s3) {
+    try {
+      const cmd = new DeleteObjectCommand({
+        Bucket: s3Bucket,
+        Key: storageKey
+      });
+
+      await s3.send(cmd);
+
+      logger.info(
+        {
+          event: 'storage.s3.delete_ok',
+          bucket: s3Bucket,
+          storageKey
+        },
+        'Deleted binder photo from S3'
+      );
+
+      return { provider: 's3', deleted: true };
+    } catch (err) {
+      logger.error(
+        {
+          event: 'storage.s3.delete_failed',
+          bucket: s3Bucket,
+          storageKey,
+          error: err.message
+        },
+        'Failed to delete binder photo from S3'
+      );
+      throw err;
+    }
+  }
+
+  // Local provider: storageKey is a filesystem path
+  if (provider === 'local') {
+    try {
+      await fs.unlink(storageKey);
+      logger.info(
+        {
+          event: 'storage.local.delete_ok',
+          path: storageKey
+        },
+        'Deleted binder photo from local filesystem'
+      );
+      return { provider: 'local', deleted: true };
+    } catch (err) {
+      // If it's already gone, treat as success
+      if (err.code === 'ENOENT') {
+        logger.warn(
+          {
+            event: 'storage.local.delete_missing',
+            path: storageKey
+          },
+          'Local binder photo file did not exist at delete time'
+        );
+        return { provider: 'local', deleted: false };
+      }
+
+      logger.error(
+        {
+          event: 'storage.local.delete_failed',
+          path: storageKey,
+          error: err.message
+        },
+        'Failed to delete binder photo from local filesystem'
+      );
+      throw err;
+    }
+  }
+
+  // Some other provider / mis-config
+  logger.warn(
+    {
+      event: 'storage.delete_unsupported_provider',
+      provider,
+      storageKey
+    },
+    '[storageProvider] deleteBinderPhoto: provider does not support deletes'
+  );
+
+  return { provider, deleted: false };
+}
+
 module.exports = {
   provider,
   saveBinderPhoto,
   storeBinderPhotos,
-  getBinderPhotoViewUrl
+  getBinderPhotoViewUrl,
+  deleteBinderPhoto
 };

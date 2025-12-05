@@ -85,6 +85,9 @@ const ALLOWED_IMAGE_EXTENSIONS = /\.(jpe?g|png|webp|heic|heif|avif)$/i;
 // -----------------------------------------------------------------------------
 // Simple canvas state for selection, dragging, and resizing
 // -----------------------------------------------------------------------------
+const LAYOUT_AUTOSAVE_DEBOUNCE_MS = 1000;   // 1s after user stops changing layout
+const LAYOUT_AUTOSAVE_INTERVAL_MS = 10000;  // 10s periodic safety autosave
+
 const builderCanvasState = {
     canvasEl: null,
 
@@ -106,8 +109,48 @@ const builderCanvasState = {
     resizeStartRect: null,
     resizeAspectRatio: 1,
 
-    initialized: false
+    initialized: false,
+
+    // layout saving state
+    dirty: false,
+    autoSaveTimerId: null,      // periodic autosave interval id
+    saveDebounceId: null,       // debounce timer when user changes layout
+    lastSaveError: null,
+    lastSavedAt: null,
+    saving: false,
+
+    // binder + Supabase
+    binderId: null,
+    sbReady: false,
+    sbUserId: null
 };
+
+function markCanvasDirty() {
+    builderCanvasState.dirty = true;
+
+    const statusEl = document.getElementById('builder-status-text');
+    if (statusEl) {
+        statusEl.textContent = 'Unsaved changes...';
+    }
+
+    if (builderCanvasState.saveDebounceId) {
+        clearTimeout(builderCanvasState.saveDebounceId);
+    }
+
+    builderCanvasState.saveDebounceId = window.setTimeout(() => {
+        const binderId = getBinderIdFromBody();
+        if (!binderId) {
+            log.warn('Binder layout: no binderId during debounced save');
+            return;
+        }
+
+        saveCanvasLayoutIfDirty(binderId).catch((err) => {
+            log.error('Binder layout: debounced save failed', {
+                error: err?.message || String(err)
+            });
+        });
+    }, LAYOUT_AUTOSAVE_DEBOUNCE_MS);
+}
 
 // -----------------------------------------------------------------------------
 // CSRF helper
@@ -140,6 +183,7 @@ document.addEventListener('DOMContentLoaded', function() {
     initializeDashboard();
     initializeSubmissions();
     initializeBuilderWorkspace();
+    initializeBinderLayoutAutosave();
 
     log.info('Dashboard page initialized - logout handled by logout.js module');
 });
@@ -278,6 +322,11 @@ function handleCanvasMouseUp() {
     builderCanvasState.resizing = false;
     builderCanvasState.resizeHandle = null;
     builderCanvasState.resizeStartRect = null;
+
+    // If we had a selected photo and a drag/resize just ended, mark layout dirty
+    if (builderCanvasState.selectedPhotoEl) {
+        markCanvasDirty();
+    }
 }
 
 /**
@@ -301,6 +350,9 @@ function handleCanvasKeyDown(event) {
         photoEl.parentElement.removeChild(photoEl);
     }
     builderCanvasState.selectedPhotoEl = null;
+
+    // Layout changed -> mark dirty
+    markCanvasDirty();
 }
 
 function setSelectedCanvasPhoto(photoEl) {
@@ -524,6 +576,294 @@ function initializeBuilderWorkspace() {
     });
 }
 
+// -----------------------------------------------------------------------------
+// Binder layout autosave + restore (Supabase)
+// -----------------------------------------------------------------------------
+
+function initializeBinderLayoutAutosave() {
+    const binderId = getBinderIdFromBody();
+    if (!binderId) {
+        log.warn('Binder layout: no binderId on page; autosave disabled');
+        return;
+    }
+
+    function bootstrap() {
+        if (!window.SB) {
+            log.error('Binder layout: Supabase client (window.SB) not ready');
+            return;
+        }
+
+        // 1) Restore last saved layout for this binder/page
+        restoreCanvasLayoutFromSupabase(binderId)
+            .catch((err) => {
+                log.error('Binder layout: restore failed', { error: err?.message || String(err) });
+            });
+
+        // 2) Start periodic autosave every 10 seconds
+        if (!builderCanvasState.autoSaveTimerId) {
+            builderCanvasState.autoSaveTimerId = setInterval(() => {
+                saveCanvasLayoutIfDirty(binderId).catch((err) => {
+                    log.error('Binder layout: periodic save failed', { error: err?.message || String(err) });
+                });
+            }, LAYOUT_AUTOSAVE_INTERVAL_MS);
+        }
+
+        log.info('Binder layout: autosave + restore initialized', { binderId });
+    }
+
+    // If SB is already ready, bootstrap immediately; otherwise wait for sb-ready
+    if (window.SB) {
+        bootstrap();
+    } else {
+        document.addEventListener('sb-ready', bootstrap, { once: true });
+    }
+}
+
+/**
+ * Collect current canvas layout as relative percentages so it scales with A4.
+ */
+function collectCanvasLayout() {
+    const canvas = document.getElementById('builder-canvas');
+    if (!canvas) return null;
+
+    const canvasRect = canvas.getBoundingClientRect();
+    if (!canvasRect.width || !canvasRect.height) return null;
+
+    const elements = Array.from(canvas.querySelectorAll('.canvas-photo')).map((el, idx) => {
+        const r = el.getBoundingClientRect();
+
+        const left = r.left - canvasRect.left;
+        const top = r.top - canvasRect.top;
+
+        const leftPct = left / canvasRect.width;
+        const topPct = top / canvasRect.height;
+        const widthPct = r.width / canvasRect.width;
+        const heightPct = r.height / canvasRect.height;
+
+        const zIndex = parseInt(el.style.zIndex || '1', 10) || 1;
+
+        const src =
+            el.dataset.src ||
+            (el.querySelector('img') ? el.querySelector('img').src : '');
+
+        return {
+            id: el.dataset.id || `photo-${idx}`,
+            src,
+            storageKey: el.dataset.storageKey || null,
+            leftPct,
+            topPct,
+            widthPct,
+            heightPct,
+            zIndex
+        };
+    });
+
+    return {
+        pageWidthPx: canvasRect.width,
+        pageHeightPx: canvasRect.height,
+        elements
+    };
+}
+
+/**
+ * Save layout only if it's marked dirty.
+ */
+async function saveCanvasLayoutIfDirty(binderId) {
+    if (!builderCanvasState.dirty) return;
+    if (!window.SB) {
+        log.warn('Binder layout: save skipped, SB not ready');
+        return;
+    }
+
+    const layout = collectCanvasLayout();
+    if (!layout) {
+        log.info('Binder layout: nothing to save (empty canvas)');
+        builderCanvasState.dirty = false;
+        return;
+    }
+
+    const statusEl = document.getElementById('builder-status-text');
+    if (statusEl) {
+        statusEl.textContent = 'Saving changes…';
+    }
+
+    try {
+        // We need the Supabase auth user id to satisfy RLS (auth.uid())
+        const { data: userData, error: userErr } = await window.SB.auth.getUser();
+        if (userErr || !userData?.user?.id) {
+            log.error('Binder layout: unable to read Supabase user', { error: userErr?.message });
+            if (statusEl) {
+                statusEl.textContent = 'Save error – auth not ready.';
+            }
+            return;
+        }
+
+        const userId = userData.user.id;
+
+        const { error } = await window.SB
+            .from('binder_layouts')
+            .upsert(
+                [
+                    {
+                        user_id: userId,
+                        binder_id: binderId,
+                        page_number: 1,
+                        layout_json: layout
+                    }
+                ],
+                {
+                    onConflict: 'user_id,binder_id,page_number'
+                }
+            );
+
+        if (error) {
+            log.error('Binder layout: Supabase upsert failed', { error: error.message });
+            builderCanvasState.lastSaveError = error.message;
+            if (statusEl) {
+                statusEl.textContent = 'Save error – will retry…';
+            }
+            return;
+        }
+
+        builderCanvasState.dirty = false;
+        builderCanvasState.lastSaveError = null;
+        if (statusEl) {
+            statusEl.textContent = 'All changes saved.';
+        }
+    } catch (e) {
+        log.error('Binder layout: unexpected save error', { error: e?.message || String(e) });
+        if (statusEl) {
+            statusEl.textContent = 'Save error – will retry…';
+        }
+    }
+}
+
+/**
+ * Restore the latest layout for this binder/page from Supabase.
+ */
+async function restoreCanvasLayoutFromSupabase(binderId) {
+    if (!window.SB) {
+        log.warn('Binder layout: restore skipped, SB not ready');
+        return;
+    }
+
+    const statusEl = document.getElementById('builder-status-text');
+    if (statusEl) {
+        statusEl.textContent = 'Loading last saved layout…';
+    }
+
+    try {
+        // RLS will automatically filter to this user’s rows; we only filter by binder/page
+        const { data, error } = await window.SB
+            .from('binder_layouts')
+            .select('layout_json')
+            .eq('binder_id', binderId)
+            .eq('page_number', 1)
+            .order('updated_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+        if (error) {
+            log.error('Binder layout: restore query failed', { error: error.message });
+            if (statusEl) {
+                statusEl.textContent = 'Could not restore last layout.';
+            }
+            return;
+        }
+
+        if (!data || !data.layout_json) {
+            log.info('Binder layout: nothing to restore for this binder yet');
+            if (statusEl) {
+                statusEl.textContent = 'Ready. No saved layout yet.';
+            }
+            return;
+        }
+
+        let layout = data.layout_json;
+        if (typeof layout === 'string') {
+            try {
+                layout = JSON.parse(layout);
+            } catch (e) {
+                log.error('Binder layout: failed to parse layout_json string', {
+                    error: e?.message || String(e)
+                });
+                if (statusEl) {
+                    statusEl.textContent = 'Could not restore last layout.';
+                }
+                return;
+            }
+        }
+
+        rebuildCanvasFromLayout(layout);
+
+        // After restoring, we consider the layout "clean" until user changes something.
+        builderCanvasState.dirty = false;
+        builderCanvasState.lastSaveError = null;
+
+        if (statusEl) {
+            statusEl.textContent = 'Canvas restored from last saved layout.';
+        }
+    } catch (e) {
+        log.error('Binder layout: unexpected restore error', { error: e?.message || String(e) });
+        if (statusEl) {
+            statusEl.textContent = 'Could not restore last layout.';
+        }
+    }
+}
+
+/**
+ * Actually rebuild the DOM canvas from a stored layout object.
+ */
+function rebuildCanvasFromLayout(layout) {
+    const canvas = document.getElementById('builder-canvas');
+    if (!canvas) return;
+
+    const canvasRect = canvas.getBoundingClientRect();
+    if (!canvasRect.width || !canvasRect.height) return;
+
+    // Clear placeholder and any existing photos
+    const placeholder = canvas.querySelector('.builder-canvas-placeholder');
+    if (placeholder) {
+        placeholder.remove();
+    }
+    canvas.querySelectorAll('.canvas-photo').forEach((el) => el.remove());
+
+    const elements = Array.isArray(layout.elements) ? layout.elements : [];
+
+    elements.forEach((el, idx) => {
+        if (!el || !el.src) return;
+
+        const photoEl = createCanvasPhotoElement(
+            canvas,
+            el.src,
+            { storageKey: el.storageKey || null, originalname: `Photo ${idx + 1}` },
+            {
+                fromLayout: true,
+                zIndex: typeof el.zIndex === 'number' ? el.zIndex : undefined
+            }
+        );
+
+        const leftPct = typeof el.leftPct === 'number' ? el.leftPct : 0;
+        const topPct = typeof el.topPct === 'number' ? el.topPct : 0;
+        const widthPct = typeof el.widthPct === 'number' ? el.widthPct : 0.3;
+        const heightPct = typeof el.heightPct === 'number' ? el.heightPct : 0.2;
+
+        const left = leftPct * canvasRect.width;
+        const top = topPct * canvasRect.height;
+        const width = widthPct * canvasRect.width;
+        const height = heightPct * canvasRect.height;
+
+        photoEl.style.left = `${left}px`;
+        photoEl.style.top = `${top}px`;
+        photoEl.style.width = `${width}px`;
+        photoEl.style.height = `${height}px`;
+    });
+
+    log.info('Binder layout: canvas rebuilt from saved layout', {
+        elementCount: elements.length
+    });
+}
+
 /**
  * Upload photos to the binder photos endpoint.
  *
@@ -655,13 +995,25 @@ function addUploadedPhotosToCanvas(data) {
 /**
  * Create a draggable/resizable photo element on the canvas.
  * New photos start roughly 15% of canvas size, centered.
+ *
+ * options:
+ *  - fromLayout: true if we are restoring from Supabase (do NOT recenter, do NOT mark dirty)
+ *  - zIndex: optional explicit zIndex to apply
  */
-function createCanvasPhotoElement(canvas, src, photoMeta) {
+function createCanvasPhotoElement(canvas, src, photoMeta, options = {}) {
+    const fromLayout = options.fromLayout === true;
+    const explicitZ = typeof options.zIndex === 'number' ? options.zIndex : null;
+
     const photoEl = document.createElement('div');
     photoEl.className = 'canvas-photo';
 
     if (photoMeta && photoMeta.storageKey) {
         photoEl.dataset.storageKey = photoMeta.storageKey;
+    }
+
+    // Store src so we can rebuild layout later
+    if (src) {
+        photoEl.dataset.src = src;
     }
 
     const imgEl = document.createElement('img');
@@ -683,7 +1035,19 @@ function createCanvasPhotoElement(canvas, src, photoMeta) {
     // Make sure interactions are wired for this element
     wireCanvasPhotoInteractions(photoEl);
 
-    // Once the image has loaded, size and center it
+    if (fromLayout) {
+        // Layout restore: caller will set width/height/top/left.
+        // Only set zIndex and bump our counter.
+        if (explicitZ !== null) {
+            photoEl.style.zIndex = String(explicitZ);
+            builderCanvasState.zCounter = Math.max(builderCanvasState.zCounter, explicitZ);
+        } else {
+            bringCanvasPhotoToFront(photoEl);
+        }
+        return photoEl;
+    }
+
+    // New upload: size & center once the image is ready
     if (imgEl.complete && imgEl.naturalWidth) {
         sizeAndCenterCanvasPhoto(photoEl, imgEl);
     } else {
@@ -695,8 +1059,16 @@ function createCanvasPhotoElement(canvas, src, photoMeta) {
             { once: true }
         );
     }
+
+    // New photo on canvas => mark dirty
+    markCanvasDirty();
+
+    return photoEl;
 }
 
+/**
+ * Size photo to about 15% of canvas (by width/height) and center it.
+ */
 /**
  * Size photo to about 15% of canvas (by width/height) and center it.
  */

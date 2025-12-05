@@ -2484,6 +2484,7 @@ nav ul li a.active {
   position: relative;
   width: 100%;
   max-width: 820px;
+  aspect-ratio: 210 / 297;
   padding-top: calc(100% * 1.414); /* A4 aspect ratio */
   border-radius: 4px;
   background: #fafafa;

@@ -100,6 +100,11 @@ const builderCanvasState = {
     dragStartMouseY: 0,
     dragStartLeft: 0,
     dragStartTop: 0,
+    lastDragMouseX: 0,
+    lastDragMouseY: 0,
+    lastDragLeft: 0,
+    lastDragTop: 0,
+    dragAxis: null, // 'x' or 'y' for current drag
 
     // resizing
     resizing: false,
@@ -197,7 +202,85 @@ function initializeDashboard() {
 }
 
 // -----------------------------------------------------------------------------
-// Canvas interactions (drag / resize / delete)
+// Helpers for collision / geometry
+// -----------------------------------------------------------------------------
+
+function rectsOverlap(l1, t1, w1, h1, l2, t2, w2, h2) {
+    return !(
+        l1 + w1 <= l2 ||
+        l1 >= l2 + w2 ||
+        t1 + h1 <= t2 ||
+        t1 >= t2 + h2
+    );
+}
+
+/**
+ * Prevent dragging a photo on top of other photos.
+ *
+ * We treat other photos as "solid blocks". If the proposed rect would overlap
+ * another photo, we push the moving photo back so it just touches the obstacle,
+ * based on the main direction of movement (horizontal vs vertical).
+ */
+function constrainDragWithCollisions(photoEl, proposedLeft, proposedTop, width, height, dx, dy, canvasRect, dragAxis) {
+    const canvas = builderCanvasState.canvasEl;
+    if (!canvas) {
+        return { left: proposedLeft, top: proposedTop };
+    }
+
+    let left = proposedLeft;
+    let top = proposedTop;
+
+    const others = canvas.querySelectorAll('.canvas-photo');
+    others.forEach((other) => {
+        if (other === photoEl) return;
+
+        const r = other.getBoundingClientRect();
+        const oLeft = r.left - canvasRect.left;
+        const oTop = r.top - canvasRect.top;
+        const oWidth = r.width;
+        const oHeight = r.height;
+
+        if (!rectsOverlap(left, top, width, height, oLeft, oTop, oWidth, oHeight)) {
+            return;
+        }
+
+        // Decide which axis to resolve along:
+        // - Prefer the locked dragAxis from state
+        // - Fallback to per-frame dominant axis if dragAxis is missing
+        const absDx = Math.abs(dx);
+        const absDy = Math.abs(dy);
+        const axis = dragAxis || (absDx >= absDy ? 'x' : 'y');
+
+        if (axis === 'x') {
+            // Horizontal move dominates
+            if (dx > 0) {
+                // Moving right: stop to the left of the obstacle
+                left = Math.min(left, oLeft - width);
+            } else if (dx < 0) {
+                // Moving left: stop to the right of the obstacle
+                left = Math.max(left, oLeft + oWidth);
+            }
+        } else if (axis === 'y') {
+            // Vertical move dominates
+            if (dy > 0) {
+                // Moving down: stop above the obstacle
+                top = Math.min(top, oTop - height);
+            } else if (dy < 0) {
+                // Moving up: stop below the obstacle
+                top = Math.max(top, oTop + oHeight);
+            }
+        }
+    });
+
+    // Final safety clamp to canvas bounds
+    left = Math.max(0, Math.min(left, canvasRect.width - width));
+    top = Math.max(0, Math.min(top, canvasRect.height - height));
+
+    return { left, top };
+}
+
+// -----------------------------------------------------------------------------
+// Canvas interactions (drag / resize / delete + selection)
 // -----------------------------------------------------------------------------
 function initializeCanvasInteractions() {
     if (builderCanvasState.initialized) return;
@@ -207,6 +290,15 @@ function initializeCanvasInteractions() {
 
     builderCanvasState.canvasEl = canvas;
     builderCanvasState.initialized = true;
+
+    // Deselect when clicking on blank canvas area
+    canvas.addEventListener('mousedown', function(event) {
+        if (event.button !== 0) return; // left click only
+        const clickedPhoto = event.target.closest('.canvas-photo');
+        if (!clickedPhoto) {
+            setSelectedCanvasPhoto(null);
+        }
+    });
 
     // Global mouse move / up for dragging and resizing
     document.addEventListener('mousemove', handleCanvasMouseMove);
@@ -226,6 +318,12 @@ function handleCanvasMouseMove(event) {
     const canvasRect = canvas.getBoundingClientRect();
     if (!canvasRect.width || !canvasRect.height) return;
 
+    const insideCanvasBounds =
+        event.clientX >= canvasRect.left &&
+        event.clientX <= canvasRect.right &&
+        event.clientY >= canvasRect.top &&
+        event.clientY <= canvasRect.bottom;
+
     const photoEl = builderCanvasState.selectedPhotoEl;
     if (!photoEl) return;
 
@@ -233,28 +331,64 @@ function handleCanvasMouseMove(event) {
     if (builderCanvasState.dragging) {
         event.preventDefault();
 
-        const dx = event.clientX - builderCanvasState.dragStartMouseX;
-        const dy = event.clientY - builderCanvasState.dragStartMouseY;
+        if (!insideCanvasBounds) {
+            // Stop dragging if pointer leaves the canvas area
+            handleCanvasMouseUp();
+            return;
+        }
 
-        let newLeft = builderCanvasState.dragStartLeft + dx;
-        let newTop = builderCanvasState.dragStartTop + dy;
+        // Step-based movement: only move by the delta since the last event,
+        // not from the original click point. This avoids big jumps.
+        const dx = event.clientX - builderCanvasState.lastDragMouseX;
+        const dy = event.clientY - builderCanvasState.lastDragMouseY;
+
+        const absDx = Math.abs(dx);
+        const absDy = Math.abs(dy);
+
+        // Decide drag axis once per drag (first meaningful movement)
+        if (!builderCanvasState.dragAxis && (absDx > 0 || absDy > 0)) {
+            builderCanvasState.dragAxis = absDx >= absDy ? 'x' : 'y';
+        }
 
         const width = photoEl.offsetWidth;
         const height = photoEl.offsetHeight;
 
-        // Constrain inside canvas
-        newLeft = Math.max(0, Math.min(newLeft, canvasRect.width - width));
-        newTop = Math.max(0, Math.min(newTop, canvasRect.height - height));
+        let proposedLeft = builderCanvasState.lastDragLeft + dx;
+        let proposedTop = builderCanvasState.lastDragTop + dy;
 
-        photoEl.style.left = `${newLeft}px`;
-        photoEl.style.top = `${newTop}px`;
-        return;
+        const constrained = constrainDragWithCollisions(
+            photoEl,
+            proposedLeft,
+            proposedTop,
+            width,
+            height,
+            dx,
+            dy,
+            canvasRect,
+            builderCanvasState.dragAxis
+        );
+
+        photoEl.style.left = `${constrained.left}px`;
+        photoEl.style.top = `${constrained.top}px`;
+
+        // Update "last" state for the next small step
+        builderCanvasState.lastDragLeft = constrained.left;
+        builderCanvasState.lastDragTop = constrained.top;
+        builderCanvasState.lastDragMouseX = event.clientX;
+        builderCanvasState.lastDragMouseY = event.clientY;
+        return;    
     }
 
-    // Resizing
+    // Resizing (we still keep aspect ratio and canvas bounds, but allow overlap)
     if (builderCanvasState.resizing && builderCanvasState.resizeStartRect) {
         event.preventDefault();
 
+        if (!insideCanvasBounds) {
+            // Stop resizing if pointer leaves the canvas area
+            handleCanvasMouseUp();
+            return;
+        }
+        
         const handle = builderCanvasState.resizeHandle;
         if (!handle) return;
 
@@ -323,6 +457,7 @@ function handleCanvasMouseUp() {
     builderCanvasState.resizing = false;
     builderCanvasState.resizeHandle = null;
     builderCanvasState.resizeStartRect = null;
+    builderCanvasState.dragAxis = null; // reset for next drag
 
     // If we had a selected photo and a drag/resize just ended, mark layout dirty
     if (builderCanvasState.selectedPhotoEl) {
@@ -374,7 +509,7 @@ function bringCanvasPhotoToFront(photoEl) {
  * - select on click
  * - drag on mouse down
  * - resize on handle mouse down
- * - delete on right-click
+ * - delete on right-click (not implemented here, but could be extended)
  */
 function wireCanvasPhotoInteractions(photoEl) {
     // Select + drag (left click on the box, not on handles)
@@ -399,10 +534,19 @@ function wireCanvasPhotoInteractions(photoEl) {
         builderCanvasState.dragging = true;
         builderCanvasState.resizing = false;
 
+        const left = rect.left - canvasRect.left;
+        const top = rect.top - canvasRect.top;
+
         builderCanvasState.dragStartMouseX = event.clientX;
         builderCanvasState.dragStartMouseY = event.clientY;
-        builderCanvasState.dragStartLeft = rect.left - canvasRect.left;
-        builderCanvasState.dragStartTop = rect.top - canvasRect.top;
+        builderCanvasState.dragStartLeft = left;
+        builderCanvasState.dragStartTop = top;
+
+        // Initialize step-based drag state
+        builderCanvasState.lastDragMouseX = event.clientX;
+        builderCanvasState.lastDragMouseY = event.clientY;
+        builderCanvasState.lastDragLeft = left;
+        builderCanvasState.lastDragTop = top;
     });
 
     // Resize handles (corners)
@@ -612,6 +756,7 @@ function initializeBinderLayoutAutosave() {
 
 /**
  * Collect current canvas layout as relative percentages so it scales with A4.
+ * We also store the element's aspectRatio so we can restore without distorting.
  */
 function collectCanvasLayout() {
     const canvas = document.getElementById('builder-canvas');
@@ -632,6 +777,7 @@ function collectCanvasLayout() {
         const heightPct = r.height / canvasRect.height;
 
         const zIndex = parseInt(el.style.zIndex || '1', 10) || 1;
+        const aspectRatio = (r.width && r.height) ? (r.width / r.height) : null;
 
         const src =
             el.dataset.src ||
@@ -645,7 +791,8 @@ function collectCanvasLayout() {
             topPct,
             widthPct,
             heightPct,
-            zIndex
+            zIndex,
+            aspectRatio
         };
     });
 
@@ -844,7 +991,8 @@ async function resolvePhotoSrcFromStorageKey(binderId, storageKey) {
 
 /**
  * Actually rebuild the DOM canvas from a stored layout object.
- * IMPORTANT: we now ignore any stale el.src and use storageKey -> fresh signed URL.
+ * IMPORTANT: we now use stored aspectRatio (if present) so the box matches
+ * the photo shape even if the canvas size changed since the last save.
  */
 async function rebuildCanvasFromLayout(binderId, layout) {
     const canvas = document.getElementById('builder-canvas');
@@ -905,11 +1053,53 @@ async function rebuildCanvasFromLayout(binderId, layout) {
         photoEl.style.top = `${top}px`;
         photoEl.style.width = `${width}px`;
         photoEl.style.height = `${height}px`;
+
+        // Always adjust the box so it matches the image's natural aspect ratio.
+        // This fixes old saved layouts where the box was too tall or too wide.
+        const imgEl = photoEl.querySelector('img');
+        if (imgEl) {
+            if (imgEl.complete && imgEl.naturalWidth) {
+                adjustPhotoSizeFromImage(photoEl, imgEl);
+            } else {
+                imgEl.addEventListener(
+                    'load',
+                    function () {
+                        adjustPhotoSizeFromImage(photoEl, imgEl);
+                    },
+                    { once: true }
+                );
+            }
+        }
     }
 
     log.info('Binder layout: canvas rebuilt from saved layout', {
         elementCount: elements.length
     });
+}
+
+
+/**
+ * For legacy layouts (no aspectRatio stored), resize the box so it matches
+ * the image's natural aspect ratio while preserving the current width.
+ */
+function adjustPhotoSizeFromImage(photoEl, imgEl) {
+    const canvas = builderCanvasState.canvasEl || document.getElementById('builder-canvas');
+    if (!canvas) return;
+
+    const canvasRect = canvas.getBoundingClientRect();
+    if (!canvasRect.width || !canvasRect.height) return;
+
+    const naturalWidth = imgEl.naturalWidth || 1;
+    const naturalHeight = imgEl.naturalHeight || 1;
+    if (!naturalWidth || !naturalHeight) return;
+
+    const aspect = naturalWidth / naturalHeight;
+
+    const currentWidth = parseFloat(photoEl.style.width) || (canvasRect.width * 0.15);
+    const newHeight = Math.max(40, currentWidth / aspect);
+
+    photoEl.style.width = `${currentWidth}px`;
+    photoEl.style.height = `${newHeight}px`;
 }
 
 /**
@@ -1068,9 +1258,18 @@ function createCanvasPhotoElement(canvas, src, photoMeta, options = {}) {
     imgEl.src = src;
     imgEl.alt = photoMeta?.originalname || 'Photo';
     imgEl.draggable = false;
+
+    // Ensure the image visually fills the blue box and stays in sync
+    imgEl.style.width = '100%';
+    imgEl.style.height = '100%';
+    imgEl.style.objectFit = 'contain';
+    imgEl.style.display = 'block';
+    imgEl.style.maxWidth = 'none';
+    imgEl.style.maxHeight = 'none';
+
     photoEl.appendChild(imgEl);
 
-    // Add resize handles
+    // Add resize handles (visuals controlled by CSS)
     const corners = ['top-left', 'top-right', 'bottom-left', 'bottom-right'];
     corners.forEach((pos) => {
         const handle = document.createElement('div');
@@ -1114,9 +1313,6 @@ function createCanvasPhotoElement(canvas, src, photoMeta, options = {}) {
     return photoEl;
 }
 
-/**
- * Size photo to about 15% of canvas (by width/height) and center it.
- */
 /**
  * Size photo to about 15% of canvas (by width/height) and center it.
  */
@@ -1327,7 +1523,7 @@ function initializeDeletePhotoButton() {
     btn.addEventListener('click', function () {
         requestDeleteSelectedPhoto();
     });
-    
+
     log.info('Delete photo button wired');
 }
 
@@ -1337,11 +1533,11 @@ function initializeDeletePhotoButton() {
 function initializeSubmissions() {
     const viewSubmissionsBtn = document.getElementById('viewSubmissionsBtn');
     const submissionsList = document.getElementById('submissionsList');
-    
+
     if (!viewSubmissionsBtn || !submissionsList) {
         return;
     }
-    
+
     viewSubmissionsBtn.addEventListener('click', function() {
         fetchSubmissions();
     });
@@ -1349,11 +1545,11 @@ function initializeSubmissions() {
 
 async function fetchSubmissions() {
     const submissionsList = document.getElementById('submissionsList');
-    
+
     try {
         const response = await fetch('/api/submissions');
         const data = await response.json();
-        
+
         if (data.submissions && data.submissions.length > 0) {
             displaySubmissions(data.submissions);
             submissionsList.classList.remove('hidden');
@@ -1370,7 +1566,7 @@ async function fetchSubmissions() {
 
 function displaySubmissions(submissions) {
     const submissionsList = document.getElementById('submissionsList');
-    
+
     const html = `
         <div class="submissions-header">
             <h3>Recent Submissions</h3>
@@ -1393,9 +1589,9 @@ function displaySubmissions(submissions) {
             `).join('')}
         </div>
     `;
-    
+
     submissionsList.innerHTML = html;
-    
+
     const hideBtn = document.getElementById('hideSubmissionsBtn');
     if (hideBtn) {
         hideBtn.addEventListener('click', function() {

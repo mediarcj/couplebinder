@@ -2414,18 +2414,17 @@ nav ul li a.active {
   padding: 12px 0;
 }
 
-/* ===== Binder canvas workspace ===== */
-
-.builder-canvas {
-    position: relative;
-    overflow: hidden; /* keep photos from spilling out visually */
+/* Canvas photo box */
+.canvas-photo {
+  position: absolute;
+  box-sizing: border-box;
+  /* No border by default (unselected) */
+  border: none;
 }
 
-/* Each photo on the canvas */
-.canvas-photo {
-    position: absolute;
-    cursor: move;
-    box-sizing: border-box;
+/* Show handles only on the selected photo */
+.canvas-photo.canvas-photo-selected .canvas-photo-resize-handle {
+  display: block;
 }
 
 /* The actual image inside the photo box */
@@ -2443,54 +2442,50 @@ nav ul li a.active {
     outline: 2px solid #2563eb; /* blue-ish highlight */
 }
 
-/* Resize handles on the corners */
+/* Resize handles: modern white squares */
 .canvas-photo-resize-handle {
-    position: absolute;
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    background-color: #2563eb;
-    border: 1px solid #ffffff;
-    box-sizing: border-box;
-    pointer-events: auto;
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  background: #ffffff;
+  border: 2px solid #2563eb;
+  border-radius: 2px; /* slightly rounded square */
+  box-sizing: border-box;
+  display: none; /* hidden unless selected */
 }
 
-/* Corners */
+/* Corner positions for handles */
 .canvas-photo-resize-top-left {
-    top: -6px;
-    left: -6px;
-    cursor: nwse-resize;
+  top: -7px;
+  left: -7px;
 }
 
 .canvas-photo-resize-top-right {
-    top: -6px;
-    right: -6px;
-    cursor: nesw-resize;
+  top: -7px;
+  right: -7px;
 }
 
 .canvas-photo-resize-bottom-left {
-    bottom: -6px;
-    left: -6px;
-    cursor: nesw-resize;
+  bottom: -7px;
+  left: -7px;
 }
 
 .canvas-photo-resize-bottom-right {
-    bottom: -6px;
-    right: -6px;
-    cursor: nwse-resize;
+  bottom: -7px;
+  right: -7px;
 }
 
+/* ===== Binder canvas workspace ===== */
 .builder-canvas {
   position: relative;
   width: 100%;
   max-width: 820px;
-  aspect-ratio: 210 / 297;
-  padding-top: calc(100% * 1.414); /* A4 aspect ratio */
+  aspect-ratio: 210 / 297; /* A4 portrait */
   border-radius: 4px;
   background: #fafafa;
   border: 1px solid #ddd;
   box-shadow: 0 2px 8px rgba(0,0,0,0.04);
-  overflow: hidden;
+  overflow: hidden; /* keep photos from spilling out visually */
 }
 
 .builder-canvas-placeholder {

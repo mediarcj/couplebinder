@@ -53,10 +53,40 @@
             <section class="workspace-body workspace-body-editor">
                 <!-- Nonce-protected style element for dynamic layer positioning (CSP-compliant) -->
                 <style nonce="<%= page.nonce %>">
-                  #binder-editor-root {
-                    height: calc(100vh - 200px);
-                    min-height: 600px;
-                  }
+                /* Make the binder editor view as full-bleed as possible inside the dashboard */
+
+                html,
+                body {
+                    margin: 0;
+                    padding: 0;
+                    height: 100%;
+                    background: #ffffff;
+                }
+
+                .dashboard-root {
+                    min-height: 100vh;
+                    margin: 0;
+                    padding: 0;
+                }
+
+                .workspace-shell {
+                    width: 100%;
+                    max-width: none;      /* remove any global max-width/centering */
+                    margin: 0;
+                    padding: 0;
+                }
+
+                /* Let the editor body take nearly all vertical space under the nav + header */
+                .workspace-body.workspace-body-editor {
+                    margin: 0;
+                    padding: 0;
+                    height: calc(100vh - 120px); /* adjust this if nav/header are taller/shorter */
+                }
+
+                #binder-editor-root {
+                    height: 100%;
+                    min-height: 0;
+                }
                 </style>
                 <div
                   id="binder-editor-root"

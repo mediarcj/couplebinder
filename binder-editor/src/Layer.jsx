@@ -14,6 +14,8 @@ function Layer({ layer, selected, onSelect, onUpdate, onRemove, onDragStart, bin
   const fetchAttemptedRef = useRef(false);
 
   const handleMouseDown = (e) => {
+    // IMPORTANT: prevent the browser's default image drag behavior
+    e.preventDefault();
     e.stopPropagation();
     onSelect();
     onDragStart(layer.id, e);
@@ -160,6 +162,8 @@ function Layer({ layer, selected, onSelect, onUpdate, onRemove, onDragStart, bin
               src={imageUrl}
               alt="Binder photo"
               className="layer-photo-image"
+              draggable={false}
+              onDragStart={(e) => e.preventDefault()}
               onError={() => {
                 console.warn('[BinderEditor] Image failed to load:', imageUrl);
                 // Don't set imageUrl to null here - that would trigger the effect again
@@ -214,4 +218,3 @@ function Layer({ layer, selected, onSelect, onUpdate, onRemove, onDragStart, bin
 }
 
 export default Layer;
-

@@ -8,7 +8,12 @@ import Layer from './Layer';
 function Canvas({ page, layers, onUpdateLayer, onAddLayer, onRemoveLayer }) {
   const [selectedLayer, setSelectedLayer] = useState(null);
   const [dragging, setDragging] = useState(false);
-  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const [dragStart, setDragStart] = useState({
+    offsetX: 0,
+    offsetY: 0,
+    canvasLeft: 0,
+    canvasTop: 0
+  });
 
   // Handle canvas click to deselect
   const handleCanvasClick = useCallback((e) => {
@@ -17,28 +22,57 @@ function Canvas({ page, layers, onUpdateLayer, onAddLayer, onRemoveLayer }) {
     }
   }, []);
 
-  // Handle drag start
+  // Start dragging a layer
   const handleDragStart = useCallback((layerId, e) => {
     setSelectedLayer(layerId);
     setDragging(true);
-    const rect = e.currentTarget.getBoundingClientRect();
+
+    const layerEl = e.currentTarget;
+    if (!layerEl) return;
+
+    // Find the canvas element (we use the stage div so coordinates are tighter)
+    const canvasEl =
+      layerEl.closest('.canvas-stage') ||
+      layerEl.closest('.binder-editor-canvas');
+
+    if (!canvasEl) return;
+
+    const canvasRect = canvasEl.getBoundingClientRect();
+    const layerRect = layerEl.getBoundingClientRect();
+
+    // How far inside the layer the pointer is
+    const offsetX = e.clientX - layerRect.left;
+    const offsetY = e.clientY - layerRect.top;
+
     setDragStart({
-      x: e.clientX - rect.left,
-      y: e.clientY - rect.top
+      offsetX,
+      offsetY,
+      canvasLeft: canvasRect.left,
+      canvasTop: canvasRect.top
     });
   }, []);
 
-  // Handle drag move
-  const handleDragMove = useCallback((e) => {
-    if (!dragging || !selectedLayer) return;
-    
-    const canvas = e.currentTarget;
-    const rect = canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left - dragStart.x;
-    const y = e.clientY - rect.top - dragStart.y;
-    
-    onUpdateLayer(selectedLayer, { x: Math.max(0, x), y: Math.max(0, y) });
-  }, [dragging, selectedLayer, dragStart, onUpdateLayer]);
+  // Handle drag move (pointer is over the canvas)
+  const handleDragMove = useCallback(
+    (e) => {
+      if (!dragging || !selectedLayer) return;
+
+      const canvas = e.currentTarget;
+      if (!canvas) return;
+
+      // We use the stored canvasLeft/canvasTop instead of reading again
+      const { offsetX, offsetY, canvasLeft, canvasTop } = dragStart;
+
+      const x = e.clientX - canvasLeft - offsetX;
+      const y = e.clientY - canvasTop - offsetY;
+
+      onUpdateLayer(selectedLayer, {
+        x: Math.max(0, x),
+        y: Math.max(0, y)
+      });
+    },
+    [dragging, selectedLayer, dragStart, onUpdateLayer]
+  );
 
   // Handle drag end
   const handleDragEnd = useCallback(() => {
@@ -80,7 +114,7 @@ function Canvas({ page, layers, onUpdateLayer, onAddLayer, onRemoveLayer }) {
           Add Photo
         </button>
       </div>
-      
+
       <div className="canvas-stage">
         {layers.map((layer) => (
           <Layer
@@ -94,7 +128,7 @@ function Canvas({ page, layers, onUpdateLayer, onAddLayer, onRemoveLayer }) {
             binderId={page.binderId || null}
           />
         ))}
-        
+
         {layers.length === 0 && (
           <div className="canvas-empty">
             <p>No layers on this page. Click "Add Photo" to start.</p>
@@ -106,4 +140,3 @@ function Canvas({ page, layers, onUpdateLayer, onAddLayer, onRemoveLayer }) {
 }
 
 export default Canvas;
-

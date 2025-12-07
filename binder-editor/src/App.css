@@ -2,14 +2,31 @@
    Description: Styles for binder editor React app
    Purpose: Canvas editor UI styles */
 
+/* Make sure the React island can stretch inside the EJS shell */
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+}
+
+/* This root sits inside .workspace-body.workspace-body-editor,
+   which already has height: calc(100vh - 140px) from the EJS page */
+#binder-editor-root {
+  height: 100%;
+  min-height: 0;
+}
+
+/* Top-level React app */
 .binder-editor-app {
   display: flex;
   flex-direction: column;
-  height: 100%;
+  height: 100%;   /* use all of #binder-editor-root, not 100vh */
   width: 100%;
-  background: #f5f5f5;
+  background: #ffffff;
 }
 
+/* Loading / error */
 .binder-editor-loading,
 .binder-editor-error {
   padding: 2rem;
@@ -24,12 +41,12 @@
   border-radius: 4px;
 }
 
+/* Toolbar at the very top of the editor box */
 .binder-editor-toolbar {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  justify-content: space-between;
-  padding: 1rem;
+  padding: 0.75rem 1rem;
   background: #fff;
   border-bottom: 1px solid #ddd;
 }
@@ -45,6 +62,7 @@
   opacity: 0.8;
 }
 
+/* Buttons (editor-local, scoped by CSS order so they won’t hurt main site too much) */
 .btn {
   padding: 0.5rem 1rem;
   border: 1px solid #ccc;
@@ -88,36 +106,40 @@
   font-size: 0.8rem;
 }
 
+/* Workspace: left = page list, right = canvas */
 .binder-editor-workspace {
   display: flex;
-  flex: 1;
+  flex: 1 1 auto;
+  min-height: 0;
   overflow: hidden;
 }
 
+/* Page list (sidebar) */
 .binder-editor-page-list {
-  width: 200px;
+  width: 220px;
   background: #fff;
   border-right: 1px solid #ddd;
   display: flex;
   flex-direction: column;
-  overflow-y: auto;
+  overflow: hidden;
 }
 
 .page-list-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 1rem;
+  padding: 0.85rem 1rem;
   border-bottom: 1px solid #ddd;
 }
 
 .page-list-header h3 {
   margin: 0;
-  font-size: 1rem;
+  font-size: 0.95rem;
 }
 
 .page-list-items {
   padding: 0.5rem;
+  overflow-y: auto;
 }
 
 .page-thumb {
@@ -130,6 +152,7 @@
   background: #fff;
   cursor: pointer;
   text-align: left;
+  font-size: 0.85rem;
 }
 
 .page-thumb:hover {
@@ -155,19 +178,50 @@
   font-size: 0.9rem;
 }
 
+.page-list-actions {
+  display: flex;
+  gap: 0.35rem;
+  align-items: center;
+}
+
+.page-list-icon-btn {
+  padding-inline: 0.55rem;
+  font-size: 0.85rem;
+  line-height: 1;
+  min-width: 0;
+}
+
+.page-list-icon-btn-danger {
+  border-color: #fca5a5;
+  color: #b91c1c;
+}
+
+.page-list-icon-btn-danger:hover:not(:disabled) {
+  background: #fee2e2;
+  border-color: #ef4444;
+}
+
+.page-list-icon-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Canvas column */
 .binder-editor-canvas {
-  flex: 1;
+  flex: 1 1 auto;
   display: flex;
   flex-direction: column;
   background: #fff;
   position: relative;
+  min-width: 0;
 }
 
+/* Header just above the A4 page */
 .canvas-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 1rem;
+  padding: 0.75rem 1rem;
   border-bottom: 1px solid #ddd;
 }
 
@@ -177,27 +231,46 @@
 }
 
 .canvas-stage {
-  flex: 1;
+  flex: 1 1 auto;
   position: relative;
+  /* allow vertical scroll if the A4 page is taller than the viewport */
   overflow: auto;
-  background: #fafafa;
-  background-image: 
-    linear-gradient(45deg, #f0f0f0 25%, transparent 25%),
-    linear-gradient(-45deg, #f0f0f0 25%, transparent 25%),
-    linear-gradient(45deg, transparent 75%, #f0f0f0 75%),
-    linear-gradient(-45deg, transparent 75%, #f0f0f0 75%);
-  background-size: 20px 20px;
-  background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+  background: #ffffff;
+  padding: 1rem 0;
+  display: flex;
+  justify-content: center;   /* center horizontally */
+  align-items: flex-start;   /* anchor page to the top, not dead center */
 }
 
+/* The white “sheet” */
+.canvas-page {
+  position: relative;
+  background: #ffffff;
+  border-radius: 4px;
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.12);
+
+  /* A4 portrait ratio (210 x 297 mm) */
+  aspect-ratio: 210 / 297;
+
+  /* Drive size by width instead of height */
+  width: min(100%, 820px);  /* you can bump 820px to 900px if you want it bigger */
+  height: auto;
+
+  max-width: 100%;
+  overflow: hidden; /* clip anything that slips out a bit */
+}
+
+/* “No layers” message centered on the page */
 .canvas-empty {
   display: flex;
   align-items: center;
   justify-content: center;
   height: 100%;
   color: #999;
+  font-size: 0.9rem;
 }
 
+/* Layer box (positioned absolutely on the page) */
 .binder-editor-layer {
   position: absolute;
   left: var(--layer-x, 0);
@@ -219,13 +292,11 @@
 
 .binder-editor-layer.selected {
   border: 2px solid #007bff;
-}
-
-.binder-editor-layer.selected {
   outline: 2px solid #007bff;
   outline-offset: 2px;
 }
 
+/* Photo content */
 .layer-photo-container {
   width: 100%;
   height: 100%;
@@ -269,6 +340,7 @@
   color: #666;
 }
 
+/* Text layer */
 .layer-text {
   padding: 0.5rem;
   width: 100%;
@@ -276,6 +348,7 @@
   overflow: auto;
 }
 
+/* Remove button */
 .layer-remove-btn {
   position: absolute;
   top: -10px;
@@ -299,6 +372,7 @@
   background: #c82333;
 }
 
+/* Resize handle */
 .layer-resize-handle {
   position: absolute;
   bottom: -5px;
@@ -407,32 +481,58 @@
   }
 }
 
-/* Page list plus / minus buttons */
+/* ===== Mobile / small screens ===== */
+/* On small screens, treat the canvas as the star and move controls around it */
 
-.page-list-actions {
-  display: flex;
-  gap: 0.35rem;
-  align-items: center;
+@media (max-width: 900px) {
+  .binder-editor-workspace {
+    flex-direction: column;
+  }
+
+  .binder-editor-page-list {
+    order: 2;
+    width: 100%;
+    border-right: none;
+    border-top: 1px solid #ddd;
+  }
+
+  .page-list-header {
+    padding-inline: 0.75rem;
+  }
+
+  .page-list-items {
+    display: flex;
+    flex-direction: row;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 0.5rem 0.75rem;
+    gap: 0.5rem;
+  }
+
+  .page-thumb {
+    flex: 0 0 auto;
+    width: auto;
+    min-width: 120px;
+  }
+
+  .binder-editor-canvas {
+    order: 1;
+  }
+
+  .canvas-header {
+    padding-inline: 0.75rem;
+  }
 }
 
-.page-list-icon-btn {
-  padding-inline: 0.55rem;
-  font-size: 0.85rem;
-  line-height: 1;
-  min-width: 0;
-}
+/* Extra-small screens: tighten padding a bit more */
+@media (max-width: 600px) {
+  .binder-editor-toolbar {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
 
-.page-list-icon-btn-danger {
-  border-color: #fca5a5;
-  color: #b91c1c;
-}
-
-.page-list-icon-btn-danger:hover:not(:disabled) {
-  background: #fee2e2;
-  border-color: #ef4444;
-}
-
-.page-list-icon-btn:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
+  .canvas-header h3 {
+    font-size: 0.9rem;
+  }
 }

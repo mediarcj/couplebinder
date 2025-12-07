@@ -190,6 +190,7 @@ document.addEventListener('DOMContentLoaded', function() {
     initializeBuilderWorkspace();
     initializeBinderLayoutAutosave();
     initializeDeletePhotoButton();   // NEW: wire delete button
+    initializeReactEditorButton();   // NEW: wire "New editor (beta)" button
 
     log.info('Dashboard page initialized - logout handled by logout.js module');
 });
@@ -1525,6 +1526,35 @@ function initializeDeletePhotoButton() {
     });
 
     log.info('Delete photo button wired');
+}
+
+/**
+ * Wire up the "New editor (beta)" button to open the React/Vite editor
+ * at /dashboard/binder/:binderId/editor.
+ */
+function initializeReactEditorButton() {
+    const btn = document.getElementById('open-react-editor-btn');
+    if (!btn) {
+        // Button is only rendered when binder exists in the EJS template.
+        log.info('React editor button not found on page; skipping wiring');
+        return;
+    }
+
+    const binderId = getBinderIdFromBody();
+    if (!binderId) {
+        log.warn('React editor button: binderId is missing; disabling button');
+        btn.disabled = true;
+        btn.title = 'Binder is not ready yet. Please refresh or contact support.';
+        return;
+    }
+
+    btn.addEventListener('click', function () {
+        const targetUrl = `/dashboard/binder/${encodeURIComponent(binderId)}/editor`;
+        log.info('Navigating to React binder editor', { binderId, targetUrl });
+        window.location.href = targetUrl; // same-tab navigation
+    });
+
+    log.info('React editor button wired', { binderId });
 }
 
 // -----------------------------------------------------------------------------

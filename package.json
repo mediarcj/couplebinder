@@ -9,6 +9,7 @@
   "scripts": {
     "start": "npm run start --workspace=server",
     "dev": "npm run dev --workspace=server",
+    "build:binder-editor": "cd binder-editor && npm install && npm run build",
     "docker:build": "docker-compose build",
     "docker:up": "docker-compose up",
     "docker:down": "docker-compose down",

@@ -31,7 +31,7 @@
                 <div class="workspace-header-main">
                     <h1 class="workspace-title">Your Binder Workspace</h1>
                     <p class="workspace-subtitle">
-                        Hi <%= user.display_name %>. This is your simple work table to build your proof-of-relationship pages.
+                        Hi <%= user.display_name %>. This is your simple work table.
                     </p>
                 </div>
                 <div class="workspace-header-meta">
@@ -99,6 +99,16 @@
                             >
                                 Export PDF
                             </button>
+
+                            <% if (typeof binder !== 'undefined' && binder && binder.id) { %>
+                            <button
+                                type="button"
+                                class="btn btn-secondary toolbar-btn"
+                                id="open-react-editor-btn"
+                            >
+                                New editor (beta)
+                            </button>
+                            <% } %>
                         </div>
                     </div>
 

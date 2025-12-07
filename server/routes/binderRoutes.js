@@ -112,11 +112,19 @@ router.get(
     try {
       const binderId = req.params.binderId;
       const storageKey = req.query.storageKey;
+      const userId = req.user?.id || req.user?.uid;
 
       if (!storageKey) {
         return res.status(400).json({
           ok: false,
           message: 'storageKey query parameter is required'
+        });
+      }
+
+      if (!userId) {
+        return res.status(401).json({
+          ok: false,
+          message: 'Authentication required'
         });
       }
 
@@ -135,15 +143,75 @@ router.get(
         });
       }
 
-      // Simple safety check: storageKey should include this binderId
-      if (binderId && !String(storageKey).includes(String(binderId))) {
+      // Verify ownership by checking if storageKey belongs to user's photos
+      // This handles both workspace IDs (default-{userId}) and UUID binder IDs
+      const { supabaseAdmin } = require('../utils/supabaseClient');
+      const { data: photo, error: photoErr } = await supabaseAdmin
+        .from('binder_photos')
+        .select('id, binder_id, user_id')
+        .eq('storage_key', storageKey)
+        .eq('user_id', userId)
+        .maybeSingle();
+
+      if (photoErr) {
+        logger.error(
+          {
+            event: 'binder.view_url.photo_lookup_failed',
+            binderId,
+            storageKey,
+            error: photoErr.message
+          },
+          'Failed to verify photo ownership'
+        );
+        return res.status(500).json({
+          ok: false,
+          message: 'Unable to verify photo ownership.'
+        });
+      }
+
+      if (!photo) {
         logger.warn(
           {
-            event: 'binder.view_url.key_mismatch',
+            event: 'binder.view_url.photo_not_found',
             binderId,
-            storageKey
+            storageKey,
+            userId
           },
-          'Requested storageKey does not appear to belong to this binder'
+          'Photo not found or does not belong to user'
+        );
+        return res.status(403).json({
+          ok: false,
+          message: 'Photo does not belong to this binder'
+        });
+      }
+
+      // Additional check: verify the binderId in URL matches the photo's binder
+      // Handle both workspace IDs (default-{userId}) and UUID binder IDs
+      const photoBinderId = String(photo.binder_id);
+      const urlBinderId = String(binderId);
+      
+      // If URL binderId is a workspace ID, we're more lenient (workspace IDs are per-user)
+      // If URL binderId is a UUID, it must match the photo's binder_id
+      let binderMatches = false;
+      
+      if (binderId.startsWith('default-')) {
+        // Workspace ID: if photo belongs to user, it's valid (workspace IDs are user-scoped)
+        binderMatches = true;
+      } else {
+        // UUID: must match photo's binder_id exactly
+        binderMatches = photoBinderId === urlBinderId;
+      }
+
+      if (!binderMatches) {
+        logger.warn(
+          {
+            event: 'binder.view_url.binder_mismatch',
+            binderId,
+            photoBinderId,
+            storageKey,
+            userId
+          },
+          'Photo binder does not match URL binder ID'
         );
         return res.status(403).json({
           ok: false,
@@ -330,6 +398,30 @@ router.delete(
     }
   }
 );
+
+/**
+ * GET /dashboard/binder/:binderId/editor
+ * Render binder editor page with React app
+ */
+router.get('/:binderId/editor', binderController.renderBinderEditor);
+
+/**
+ * GET /dashboard/binder/:binderId/layout
+ * Get current layout JSON for a binder
+ */
+router.get('/:binderId/layout', binderController.getBinderLayout);
+
+/**
+ * POST /dashboard/binder/:binderId/layout/apply
+ * Save layout changes to database
+ */
+router.post('/:binderId/layout/apply', binderController.applyBinderLayout);
+
+/**
+ * POST /dashboard/binder/:binderId/layout/auto
+ * Generate auto layout using server-side algorithm
+ */
+router.post('/:binderId/layout/auto', binderController.autoLayoutBinder);
 
 router.post(
   '/:binderId/export',

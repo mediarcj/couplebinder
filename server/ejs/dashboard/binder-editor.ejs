@@ -1,0 +1,88 @@
+<!-- File: server/ejs/dashboard/binder-editor.ejs
+     Description: Binder editor page with React app mount point
+     Purpose: Canvas editor for proof-of-relationship binder
+     Notes: Uses consistent UI/UX with main dashboard template -->
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="<%= ui.csrfToken || '' %>">
+    <% if (typeof APP_CONFIG !== 'undefined') { %>
+      <meta id="app-config" 
+            data-supabase-url="<%= APP_CONFIG.SUPABASE_URL %>" 
+            data-supabase-anon-key="<%= APP_CONFIG.SUPABASE_ANON_KEY %>">
+    <% } %>
+    <title>Binder Editor - <%= (page && page.title) || (app_info && app_info.name) || 'Application' %></title>
+    <link rel="icon" href="/images/favicon.ico">
+    <link rel="stylesheet" href="/css/style.css?v=<%= (page && page.assetVersion) || assetVersion || '' %>">
+    <link rel="stylesheet" href="/binder-editor/binder-editor.css?v=<%= (page && page.assetVersion) || assetVersion || '' %>">
+</head>
+<body
+  data-auth-hydrate="true"
+  data-binder-id="<%= (typeof binder !== 'undefined' && binder && binder.id) || '' %>"
+>
+    <%- include('../partials/nav', { nav: page.nav, app_info: app_info }) %>
+
+    <main class="dashboard-root">
+        <div class="workspace-shell">
+            <!-- Workspace header -->
+            <header class="workspace-header">
+                <div class="workspace-header-main">
+                    <h1 class="workspace-title">Binder Editor</h1>
+                    <p class="workspace-subtitle">
+                        Edit your binder layout
+                    </p>
+                </div>
+                <div class="workspace-header-meta">
+                    <% if (typeof binder !== 'undefined' && binder) { %>
+                    <div class="workspace-meta-row">
+                        <span class="meta-label">Binder</span>
+                        <span class="meta-value"><%= binder.title || 'Untitled' %></span>
+                    </div>
+                    <div class="workspace-meta-row">
+                        <span class="meta-label">Last Updated</span>
+                        <span class="meta-value"><%= binder.updated_at ? new Date(binder.updated_at).toLocaleDateString() : 'Never' %></span>
+                    </div>
+                    <% } %>
+                </div>
+            </header>
+
+            <!-- React app mount point -->
+            <section class="workspace-body workspace-body-editor">
+                <!-- Nonce-protected style element for dynamic layer positioning (CSP-compliant) -->
+                <style nonce="<%= page.nonce %>">
+                  #binder-editor-root {
+                    height: calc(100vh - 200px);
+                    min-height: 600px;
+                  }
+                </style>
+                <div
+                  id="binder-editor-root"
+                  data-binder-id="<%= (typeof binder !== 'undefined' && binder && binder.id) || '' %>"
+                  data-csrf-token="<%= ui.csrfToken || '' %>"
+                  data-csp-nonce="<%= page.nonce || '' %>"
+                ></div>
+            </section>
+        </div>
+    </main>
+        
+    <footer>
+        <div class="container">
+            <p>&copy; 2024 <%= app_info?.name || 'Application' %>. <%= app_info?.description || 'A modern web application' %>.</p>
+        </div>
+    </footer>
+
+    <!-- Shared core scripts -->
+    <script src="/js/supabase-client.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= page.nonce %>"></script>
+    <script src="/js/sbClient.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= page.nonce %>"></script>
+    <script src="/js/logout.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= page.nonce %>"></script>
+    <script src="/js/modalManager.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= page.nonce %>"></script>
+    <script src="/js/nav-client.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= page.nonce %>"></script>
+    
+    <!-- Binder editor React app -->
+    <script src="/binder-editor/binder-editor.js?v=<%= page.assetVersion || assetVersion || '' %>" defer></script>
+</body>
+</html>
+

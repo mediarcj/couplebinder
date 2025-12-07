@@ -44,3 +44,4 @@ coverage
 **/.DS_Store
 secrets
 .github
+/server/public/binder-editor/

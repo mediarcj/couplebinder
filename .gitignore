@@ -56,3 +56,4 @@ docs/audit/docs/audit/
 .env.development.local
 .env.production.full
 .env.example
+/server/public/binder-editor/

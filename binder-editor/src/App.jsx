@@ -292,6 +292,13 @@ function App({ binderId /*, csrfToken */ }) {
       layers: []
     };
 
+  const statusText = (() => {
+    if (saving) return 'Saving changes…';
+    if (isDirty) return 'Unsaved changes';
+    if (lastSavedAt) return 'All changes saved';
+    return 'Ready';
+  })();
+
   return (
     <div
       className="binder-editor-app flex flex-col min-h-full bg-slate-50"
@@ -305,13 +312,6 @@ function App({ binderId /*, csrfToken */ }) {
           </button>
         </div>
       )}
-
-      <Toolbar
-        onAutoLayout={handleAutoLayout}
-        saving={saving}
-        isDirty={isDirty}
-        lastSavedAt={lastSavedAt}
-      />
 
       <div className="binder-editor-workspace flex-1 bg-white border border-slate-200 shadow-sm rounded-xl overflow-hidden">
         <PageList
@@ -349,13 +349,32 @@ function App({ binderId /*, csrfToken */ }) {
           onDeletePage={handleDeletePage}
         />
 
-        <Canvas
-          page={{ ...currentPage, binderId: layout?.binderId || binderId }}
-          layers={currentPage.layers || []}
-          onUpdateLayer={updateLayer}
-          onAddLayer={addLayer}
-          onRemoveLayer={removeLayer}
-        />
+        <div className="workspace-canvas-wrapper">
+          <Toolbar
+            onAutoLayout={handleAutoLayout}
+            saving={saving}
+            isDirty={isDirty}
+            lastSavedAt={lastSavedAt}
+          />
+
+          <Canvas
+            page={{ ...currentPage, binderId: layout?.binderId || binderId }}
+            layers={currentPage.layers || []}
+            onUpdateLayer={updateLayer}
+            onAddLayer={addLayer}
+            onRemoveLayer={removeLayer}
+          />
+
+          <div className="canvas-photo-strip binder-react-photo-strip">
+            <p className="panel-hint">
+              React editor: photo uploads are managed by layers. Aligns with classic strip styling.
+            </p>
+          </div>
+
+          <div className="canvas-footer">
+            <span className="binder-status-text">{statusText}</span>
+          </div>
+        </div>
       </div>
     </div>
   );

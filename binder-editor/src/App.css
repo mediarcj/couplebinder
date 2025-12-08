@@ -215,6 +215,13 @@ body {
   min-width: 0;
 }
 
+.workspace-canvas-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 0 12px 12px;
+}
+
 /* Header just above the A4 page */
 .canvas-header {
   display: flex;
@@ -409,6 +416,63 @@ body {
 
 .binder-editor-layer.selected .layer-resize-handle {
   display: block;
+}
+
+/* Photo strip placeholder for React editor to mirror legacy panel */
+.binder-react-photo-strip {
+  margin-top: 4px;
+  padding: 8px;
+  border-radius: 6px;
+  background: #f9fafb;
+  border: 1px dashed #d1d5db;
+  display: flex;
+  align-items: center;
+  min-height: 42px;
+  color: #777;
+  font-size: 0.9rem;
+}
+
+.canvas-footer {
+  margin-top: 4px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  color: #4b5563;
+  font-size: 0.9rem;
+}
+
+.binder-status-text {
+  display: inline-block;
+}
+
+.workspace-toolbar.workspace-toolbar-simple {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 12px;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  gap: 12px;
+}
+
+.toolbar-left {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.toolbar-right {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.toolbar-status-text {
+  font-size: 0.9rem;
 }
 
 .layer-resize-handle:hover {

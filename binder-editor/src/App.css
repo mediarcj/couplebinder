@@ -11,17 +11,16 @@ body {
 }
 
 /* This root sits inside .workspace-body.workspace-body-editor,
-   which already has height: calc(100vh - 140px) from the EJS page */
+   which now uses min-height to allow natural growth */
 #binder-editor-root {
-  height: 100%;
-  min-height: 0;
+  min-height: 100%;
 }
 
 /* Top-level React app */
 .binder-editor-app {
   display: flex;
   flex-direction: column;
-  height: 100%;   /* use all of #binder-editor-root, not 100vh */
+  min-height: 100%;   /* allow growth beyond parent container */
   width: 100%;
   background: #ffffff;
 }
@@ -111,7 +110,7 @@ body {
   display: flex;
   flex: 1 1 auto;
   min-height: 0;
-  overflow: hidden;
+  overflow: visible;  /* allow content to flow and use browser scrollbar */
 }
 
 /* Page list (sidebar) */
@@ -233,8 +232,8 @@ body {
 .canvas-stage {
   flex: 1 1 auto;
   position: relative;
-  /* allow vertical scroll if the A4 page is taller than the viewport */
-  overflow: auto;
+  overflow-y: visible;
+  overflow-x: hidden;
   background: #ffffff;
   padding: 1rem 0;
   display: flex;
@@ -375,8 +374,6 @@ body {
 /* Resize handle */
 .layer-resize-handle {
   position: absolute;
-  bottom: -5px;
-  right: -5px;
   width: 16px;
   height: 16px;
   background: #007bff;
@@ -384,6 +381,30 @@ body {
   border-radius: 50%;
   cursor: nwse-resize;
   z-index: 1000;
+}
+
+.layer-resize-top-left {
+  top: -5px;
+  left: -5px;
+  cursor: nwse-resize;
+}
+
+.layer-resize-top-right {
+  top: -5px;
+  right: -5px;
+  cursor: nesw-resize;
+}
+
+.layer-resize-bottom-left {
+  bottom: -5px;
+  left: -5px;
+  cursor: nesw-resize;
+}
+
+.layer-resize-bottom-right {
+  bottom: -5px;
+  right: -5px;
+  cursor: nwse-resize;
 }
 
 .layer-resize-handle:hover {

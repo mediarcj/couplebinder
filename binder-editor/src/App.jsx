@@ -294,13 +294,15 @@ function App({ binderId /*, csrfToken */ }) {
 
   return (
     <div
-      className="binder-editor-app"
+      className="binder-editor-app flex flex-col min-h-full bg-slate-50"
       onContextMenu={(e) => e.preventDefault()}
     >
       {error && (
-        <div className="binder-editor-error">
+        <div className="binder-editor-error max-w-2xl mx-auto mb-3 rounded-lg border border-rose-100 bg-rose-50 text-rose-800 shadow-sm">
           <p>Error: {error}</p>
-          <button onClick={() => setError(null)}>Dismiss</button>
+          <button className="btn btn-small mt-2" onClick={() => setError(null)}>
+            Dismiss
+          </button>
         </div>
       )}
 
@@ -311,7 +313,7 @@ function App({ binderId /*, csrfToken */ }) {
         lastSavedAt={lastSavedAt}
       />
 
-      <div className="binder-editor-workspace">
+      <div className="binder-editor-workspace flex-1 bg-white border border-slate-200 shadow-sm rounded-xl overflow-hidden">
         <PageList
           pages={layout?.pages || []}
           selectedPageIndex={selectedPage}

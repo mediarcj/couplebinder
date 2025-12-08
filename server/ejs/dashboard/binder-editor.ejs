@@ -80,12 +80,11 @@
                 .workspace-body.workspace-body-editor {
                     margin: 0;
                     padding: 0;
-                    height: calc(100vh - 120px); /* adjust this if nav/header are taller/shorter */
+                    min-height: calc(100vh - 120px); /* allow growth beyond viewport */
                 }
 
                 #binder-editor-root {
-                    height: 100%;
-                    min-height: 0;
+                    min-height: 100%;
                 }
                 </style>
                 <div

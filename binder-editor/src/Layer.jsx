@@ -7,7 +7,7 @@ import { getPhotoViewUrl } from './api';
 
 function Layer({ layer, selected, onSelect, onUpdate, onRemove, onDragStart, binderId }) {
   const [resizing, setResizing] = useState(false);
-  const [resizeStart, setResizeStart] = useState({ x: 0, y: 0, width: 0, height: 0 });
+  const resizeRef = useRef(null);
   // Start with any existing URL baked into the layout (legacy EJS binder)
   const [imageUrl, setImageUrl] = useState(layer.src || null);
   const [imageLoading, setImageLoading] = useState(false);
@@ -21,31 +21,112 @@ function Layer({ layer, selected, onSelect, onUpdate, onRemove, onDragStart, bin
     onDragStart(layer.id, e);
   };
 
-  const handleResizeStart = (e) => {
+  const handleResizeStart = (e, corner) => {
+    e.preventDefault();
     e.stopPropagation();
+
+    const layerEl = e.currentTarget.closest('.binder-editor-layer');
+    if (!layerEl) return;
+
+    const canvasEl =
+      layerEl.closest('.canvas-page') ||
+      layerEl.closest('.canvas-stage') ||
+      layerEl.closest('.binder-editor-canvas');
+    const canvasRect = canvasEl?.getBoundingClientRect();
+    const rect = layerEl.getBoundingClientRect();
+
+    if (!canvasRect || !rect) return;
+
+    const left = rect.left - canvasRect.left;
+    const top = rect.top - canvasRect.top;
+    const aspect =
+      rect.width && rect.height ? rect.width / rect.height : 1;
+
+    resizeRef.current = {
+      corner,
+      startMouseX: e.clientX,
+      startMouseY: e.clientY,
+      startRect: {
+        left,
+        top,
+        width: rect.width,
+        height: rect.height
+      },
+      aspect,
+      canvasRect
+    };
     setResizing(true);
-    setResizeStart({
-      x: e.clientX,
-      y: e.clientY,
-      width: layer.width,
-      height: layer.height
-    });
   };
 
   const handleResizeMove = (e) => {
-    if (!resizing) return;
-    
-    const deltaX = e.clientX - resizeStart.x;
-    const deltaY = e.clientY - resizeStart.y;
-    
+    if (!resizing || !resizeRef.current) return;
+
+    const { corner, startMouseX, startMouseY, startRect, aspect, canvasRect } =
+      resizeRef.current;
+
+    const dx = e.clientX - startMouseX;
+    const dy = e.clientY - startMouseY;
+
+    const isLeft = corner.includes('left');
+    const isTop = corner.includes('top');
+
+    let width = isLeft ? startRect.width - dx : startRect.width + dx;
+    width = Math.max(50, width);
+    let height = width / aspect;
+
+    let left = isLeft ? startRect.left + (startRect.width - width) : startRect.left;
+    let top = isTop ? startRect.top + (startRect.height - height) : startRect.top;
+
+    // Clamp inside canvas
+    if (left < 0) {
+      const diff = -left;
+      left = 0;
+      width = Math.max(50, width - diff);
+      height = width / aspect;
+      if (isLeft) {
+        left = 0;
+      }
+      if (isTop) {
+        top = startRect.top + (startRect.height - height);
+      }
+    }
+
+    if (top < 0) {
+      const diff = -top;
+      top = 0;
+      height = Math.max(50, height - diff);
+      width = height * aspect;
+      if (isLeft) {
+        left = startRect.left + (startRect.width - width);
+      }
+    }
+
+    if (left + width > canvasRect.width) {
+      width = canvasRect.width - left;
+      width = Math.max(50, width);
+      height = width / aspect;
+    }
+
+    if (top + height > canvasRect.height) {
+      height = canvasRect.height - top;
+      height = Math.max(50, height);
+      width = height * aspect;
+      if (isLeft) {
+        left = startRect.left + (startRect.width - width);
+      }
+    }
+
     onUpdate(layer.id, {
-      width: Math.max(50, resizeStart.width + deltaX),
-      height: Math.max(50, resizeStart.height + deltaY)
+      width,
+      height,
+      x: left,
+      y: top
     });
   };
 
   const handleResizeEnd = () => {
     setResizing(false);
+    resizeRef.current = null;
   };
 
   React.useEffect(() => {
@@ -65,7 +146,7 @@ function Layer({ layer, selected, onSelect, onUpdate, onRemove, onDragStart, bin
         document.removeEventListener('mouseup', handleEnd);
       };
     }
-  }, [resizing, resizeStart, layer.width, layer.height, onUpdate, layer.id]);
+  }, [resizing, handleResizeMove]);
 
   // Use a nonce-protected style element for dynamic positioning (CSP-compliant)
   // We'll inject CSS rules into a style element with nonce
@@ -204,13 +285,14 @@ function Layer({ layer, selected, onSelect, onUpdate, onRemove, onDragStart, bin
           >
             ×
           </button>
-          <div
-            className="layer-resize-handle"
-            onMouseDown={(e) => {
-              e.stopPropagation();
-              handleResizeStart(e);
-            }}
-          />
+          {['top-left', 'top-right', 'bottom-left', 'bottom-right'].map((pos) => (
+            <div
+              key={pos}
+              className={`layer-resize-handle layer-resize-${pos}`}
+              onMouseDown={(e) => handleResizeStart(e, pos)}
+              role="presentation"
+            />
+          ))}
         </>
       )}
     </div>

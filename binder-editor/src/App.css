@@ -210,7 +210,7 @@ body {
   flex: 1 1 auto;
   display: flex;
   flex-direction: column;
-  background: #fff;
+  background: #fafafa;
   position: relative;
   min-width: 0;
 }
@@ -221,7 +221,7 @@ body {
   justify-content: space-between;
   align-items: center;
   padding: 0.75rem 1rem;
-  border-bottom: 1px solid #ddd;
+  border-bottom: 1px solid #e5e7eb;
 }
 
 .canvas-header h3 {
@@ -234,29 +234,30 @@ body {
   position: relative;
   overflow-y: visible;
   overflow-x: hidden;
-  background: #ffffff;
-  padding: 1rem 0;
+  background: #f8fafc;
+  padding: 12px 0;
   display: flex;
   justify-content: center;   /* center horizontally */
-  align-items: flex-start;   /* anchor page to the top, not dead center */
+  align-items: center;   /* match legacy centering */
 }
 
 /* The white “sheet” */
 .canvas-page {
   position: relative;
-  background: #ffffff;
+  background: #fafafa;
   border-radius: 4px;
-  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.12);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
 
   /* A4 portrait ratio (210 x 297 mm) */
   aspect-ratio: 210 / 297;
 
   /* Drive size by width instead of height */
-  width: min(100%, 820px);  /* you can bump 820px to 900px if you want it bigger */
+  width: min(100%, 820px);
   height: auto;
 
   max-width: 100%;
   overflow: hidden; /* clip anything that slips out a bit */
+  border: 1px solid #ddd;
 }
 
 /* “No layers” message centered on the page */

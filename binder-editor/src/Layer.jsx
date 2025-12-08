@@ -274,17 +274,6 @@ function Layer({ layer, selected, onSelect, onUpdate, onRemove, onDragStart, bin
       
       {selected && (
         <>
-          <button
-            type="button"
-            className="layer-remove-btn"
-            onClick={(e) => {
-              e.stopPropagation();
-              onRemove(layer.id);
-            }}
-            title="Remove layer"
-          >
-            ×
-          </button>
           {['top-left', 'top-right', 'bottom-left', 'bottom-right'].map((pos) => (
             <div
               key={pos}

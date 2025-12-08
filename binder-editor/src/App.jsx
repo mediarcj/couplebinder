@@ -24,6 +24,7 @@ function App({ binderId /*, csrfToken */ }) {
   const [isDirty, setIsDirty] = useState(false);
   const [hasLoadedInitialLayout, setHasLoadedInitialLayout] = useState(false);
   const [lastSavedAt, setLastSavedAt] = useState(null);
+  const [selectedLayerId, setSelectedLayerId] = useState(null);
 
   // Decide which page to land on first:
   // - Prefer the first page that actually has a real photo layer
@@ -221,6 +222,21 @@ function App({ binderId /*, csrfToken */ }) {
     [binderId, selectedPage]
   );
 
+  const handleAddPhoto = useCallback(() => {
+    const newLayer = {
+      id: `layer-${Date.now()}`,
+      type: 'photo',
+      x: 50,
+      y: 50,
+      width: 200,
+      height: 200,
+      rotation: 0,
+      zIndex: (layout?.pages?.[selectedPage]?.layers?.length || 0),
+      photoId: null
+    };
+    addLayer(newLayer);
+  }, [addLayer, layout?.pages, selectedPage]);
+
   // Remove layer from current page (does NOT delete underlying photo from S3/DB)
   const removeLayer = useCallback(
     (layerId) => {
@@ -351,10 +367,17 @@ function App({ binderId /*, csrfToken */ }) {
 
         <div className="workspace-canvas-wrapper">
           <Toolbar
+            onAddPhoto={handleAddPhoto}
+            onDeleteSelected={() => {
+              if (!selectedLayerId) return;
+              removeLayer(selectedLayerId);
+              setSelectedLayerId(null);
+            }}
             onAutoLayout={handleAutoLayout}
             saving={saving}
             isDirty={isDirty}
             lastSavedAt={lastSavedAt}
+            hasSelection={Boolean(selectedLayerId)}
           />
 
           <Canvas
@@ -363,6 +386,9 @@ function App({ binderId /*, csrfToken */ }) {
             onUpdateLayer={updateLayer}
             onAddLayer={addLayer}
             onRemoveLayer={removeLayer}
+            onAddPhoto={handleAddPhoto}
+            selectedLayerId={selectedLayerId}
+            onSelectLayer={setSelectedLayerId}
           />
 
           <div className="canvas-photo-strip binder-react-photo-strip">

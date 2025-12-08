@@ -5,8 +5,16 @@
 import React, { useState, useCallback } from 'react';
 import Layer from './Layer';
 
-function Canvas({ page, layers, onUpdateLayer, onAddLayer, onRemoveLayer }) {
-  const [selectedLayer, setSelectedLayer] = useState(null);
+function Canvas({
+  page,
+  layers,
+  onUpdateLayer,
+  onAddLayer,
+  onRemoveLayer,
+  onAddPhoto,
+  selectedLayerId,
+  onSelectLayer
+}) {
   const [dragging, setDragging] = useState(false);
   const [dragAxis, setDragAxis] = useState(null);
   const [dragStart, setDragStart] = useState({
@@ -96,13 +104,13 @@ function Canvas({ page, layers, onUpdateLayer, onAddLayer, onRemoveLayer }) {
   // Handle canvas click to deselect
   const handleCanvasClick = useCallback((e) => {
     if (e.target === e.currentTarget) {
-      setSelectedLayer(null);
+      onSelectLayer(null);
     }
-  }, []);
+  }, [onSelectLayer]);
 
   // Start dragging a layer
   const handleDragStart = useCallback((layerId, e) => {
-    setSelectedLayer(layerId);
+    onSelectLayer(layerId);
     setDragging(true);
     setDragAxis(null);
 
@@ -139,12 +147,12 @@ function Canvas({ page, layers, onUpdateLayer, onAddLayer, onRemoveLayer }) {
       left: layerRect.left - canvasRect.left,
       top: layerRect.top - canvasRect.top
     });
-  }, []);
+  }, [onSelectLayer]);
 
 // Handle drag move (pointer is over the canvas)
 const handleDragMove = useCallback(
   (e) => {
-    if (!dragging || !selectedLayer) return;
+    if (!dragging || !selectedLayerId) return;
 
     const canvas = e.currentTarget;
     if (!canvas) return;
@@ -169,7 +177,7 @@ const handleDragMove = useCallback(
       setDragAxis(absDx >= absDy ? 'x' : 'y');
     }
 
-    const currentLayer = layers.find((l) => l.id === selectedLayer);
+    const currentLayer = layers.find((l) => l.id === selectedLayerId);
     if (!currentLayer) return;
 
     const layerWidth = currentLayer.width || 0;
@@ -201,7 +209,7 @@ const handleDragMove = useCallback(
         )
       : { left: proposedLeft, top: proposedTop };
 
-    onUpdateLayer(selectedLayer, { x: constrained.left, y: constrained.top });
+    onUpdateLayer(selectedLayerId, { x: constrained.left, y: constrained.top });
 
     setLastDrag({
       mouseX: e.clientX,
@@ -210,7 +218,7 @@ const handleDragMove = useCallback(
       top: constrained.top
     });
   },
-  [dragging, selectedLayer, dragStart, onUpdateLayer, layers, lastDrag, dragAxis]
+  [dragging, selectedLayerId, dragStart, onUpdateLayer, layers, lastDrag, dragAxis]
 );
 
   // Handle drag end
@@ -220,21 +228,6 @@ const handleDragMove = useCallback(
   }, []);
 
   // Add photo layer (placeholder)
-  const handleAddPhoto = useCallback(() => {
-    const newLayer = {
-      id: `layer-${Date.now()}`,
-      type: 'photo',
-      x: 50,
-      y: 50,
-      width: 200,
-      height: 200,
-      rotation: 0,
-      zIndex: layers.length,
-      photoId: null
-    };
-    onAddLayer(newLayer);
-  }, [layers.length, onAddLayer]);
-
   return (
     <div
       className="binder-editor-canvas bg-slate-50"
@@ -251,7 +244,7 @@ const handleDragMove = useCallback(
         <button
           type="button"
           className="btn btn-small shadow-sm"
-          onClick={handleAddPhoto}
+          onClick={onAddPhoto}
         >
           Add Photo
         </button>
@@ -263,8 +256,8 @@ const handleDragMove = useCallback(
             <Layer
               key={layer.id}
               layer={layer}
-              selected={selectedLayer === layer.id}
-              onSelect={() => setSelectedLayer(layer.id)}
+              selected={selectedLayerId === layer.id}
+              onSelect={() => onSelectLayer(layer.id)}
               onUpdate={onUpdateLayer}
               onRemove={onRemoveLayer}
               onDragStart={handleDragStart}

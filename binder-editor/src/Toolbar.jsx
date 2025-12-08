@@ -4,7 +4,15 @@
 
 import React from 'react';
 
-function Toolbar({ onAutoLayout, saving, isDirty, lastSavedAt }) {
+function Toolbar({
+  onAddPhoto,
+  onDeleteSelected,
+  onAutoLayout,
+  saving,
+  isDirty,
+  lastSavedAt,
+  hasSelection
+}) {
   let statusText = '';
 
   if (saving) {
@@ -22,11 +30,50 @@ function Toolbar({ onAutoLayout, saving, isDirty, lastSavedAt }) {
       <div className="toolbar-section toolbar-left gap-3">
         <button
           type="button"
-          className="btn btn-primary shadow-sm"
+          className="btn btn-primary shadow-sm toolbar-btn"
+          onClick={onAddPhoto}
+        >
+          Add photos
+        </button>
+        <button
+          type="button"
+          className="btn btn-secondary shadow-sm toolbar-btn"
+          onClick={onDeleteSelected}
+          disabled={!hasSelection}
+        >
+          Delete selected photo
+        </button>
+        <button
+          type="button"
+          className="btn btn-secondary shadow-sm toolbar-btn"
+          disabled
+          title="Save draft is managed by autosave in React editor"
+        >
+          Save draft
+        </button>
+        <button
+          type="button"
+          className="btn btn-primary shadow-sm toolbar-btn"
+          disabled
+          title="Export PDF handled in legacy flow"
+        >
+          Export PDF
+        </button>
+        <button
+          type="button"
+          className="btn btn-secondary shadow-sm toolbar-btn"
           onClick={onAutoLayout}
           disabled={saving}
         >
           Auto Layout
+        </button>
+        <button
+          type="button"
+          className="btn btn-secondary shadow-sm toolbar-btn"
+          disabled
+          title="Already in React editor"
+        >
+          New editor (beta)
         </button>
       </div>
 

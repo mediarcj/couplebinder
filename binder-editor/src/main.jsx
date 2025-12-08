@@ -6,6 +6,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
 import { ModalProvider } from './ModalProvider';
+import './tailwind.css';
 
 const rootEl = document.getElementById('binder-editor-root');
 

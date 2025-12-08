@@ -45,14 +45,14 @@ function PageList({
   }
 
   return (
-    <aside className="binder-editor-page-list">
+    <aside className="binder-editor-page-list bg-white">
       <div className="page-list-header">
-        <h3>Pages</h3>
+        <h3 className="text-slate-900 font-semibold">Pages</h3>
 
         <div className="page-list-actions">
           <button
             type="button"
-            className="btn btn-small page-list-icon-btn"
+            className="btn btn-small page-list-icon-btn shadow-sm"
             onClick={onAddPage}
             title="Add new page"
           >
@@ -62,7 +62,7 @@ function PageList({
           {/* Always visible; click is safely guarded above */}
           <button
             type="button"
-            className="btn btn-small page-list-icon-btn page-list-icon-btn-danger"
+            className="btn btn-small page-list-icon-btn page-list-icon-btn-danger shadow-sm"
             onClick={handleDeleteClick}
             title={hasPages ? 'Delete selected page' : 'No page to delete'}
           >

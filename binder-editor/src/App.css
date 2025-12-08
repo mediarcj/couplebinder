@@ -278,7 +278,7 @@ body {
   height: var(--layer-height, 100px);
   transform: rotate(var(--layer-rotation, 0deg));
   z-index: var(--layer-z-index, 0);
-  border: 1px solid #ccc;
+  border: none; /* match legacy editor: no border when unselected */
   cursor: move;
   box-sizing: border-box;
   user-select: none;
@@ -290,9 +290,7 @@ body {
 }
 
 .binder-editor-layer.selected {
-  border: 2px solid #007bff;
-  outline: 2px solid #007bff;
-  outline-offset: 2px;
+  outline: 2px solid #2563eb; /* align highlight with legacy canvas-photo */
 }
 
 /* Photo content */
@@ -374,37 +372,42 @@ body {
 /* Resize handle */
 .layer-resize-handle {
   position: absolute;
-  width: 16px;
-  height: 16px;
-  background: #007bff;
-  border: 2px solid #fff;
-  border-radius: 50%;
+  width: 10px;
+  height: 10px;
+  background: #ffffff;
+  border: 2px solid #2563eb;
+  border-radius: 2px;
   cursor: nwse-resize;
   z-index: 1000;
+  display: none; /* hidden unless selected */
 }
 
 .layer-resize-top-left {
-  top: -5px;
-  left: -5px;
+  top: -7px;
+  left: -7px;
   cursor: nwse-resize;
 }
 
 .layer-resize-top-right {
-  top: -5px;
-  right: -5px;
+  top: -7px;
+  right: -7px;
   cursor: nesw-resize;
 }
 
 .layer-resize-bottom-left {
-  bottom: -5px;
-  left: -5px;
+  bottom: -7px;
+  left: -7px;
   cursor: nesw-resize;
 }
 
 .layer-resize-bottom-right {
-  bottom: -5px;
-  right: -5px;
+  bottom: -7px;
+  right: -7px;
   cursor: nwse-resize;
+}
+
+.binder-editor-layer.selected .layer-resize-handle {
+  display: block;
 }
 
 .layer-resize-handle:hover {

@@ -1,0 +1,8 @@
+/* File: binder-editor/src/tailwind.css
+   Description: Tailwind entry for binder editor React app
+   Notes: Must load before App.css so local overrides still win */
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+

@@ -8,6 +8,7 @@ import Layer from './Layer';
 function Canvas({ page, layers, onUpdateLayer, onAddLayer, onRemoveLayer }) {
   const [selectedLayer, setSelectedLayer] = useState(null);
   const [dragging, setDragging] = useState(false);
+  const [dragAxis, setDragAxis] = useState(null);
   const [dragStart, setDragStart] = useState({
     offsetX: 0,
     offsetY: 0,
@@ -16,6 +17,81 @@ function Canvas({ page, layers, onUpdateLayer, onAddLayer, onRemoveLayer }) {
     canvasWidth: 0,
     canvasHeight: 0
   });
+  const [lastDrag, setLastDrag] = useState({
+    mouseX: 0,
+    mouseY: 0,
+    left: 0,
+    top: 0
+  });
+
+  // Simple overlap helper (DOM-based like legacy dashboard)
+  const rectsOverlap = (l1, t1, w1, h1, l2, t2, w2, h2) => {
+    return !(
+      l1 + w1 <= l2 ||
+      l1 >= l2 + w2 ||
+      t1 + h1 <= t2 ||
+      t1 >= t2 + h2
+    );
+  };
+
+  // Collision-aware constraint similar to legacy dashboard.js
+  const constrainDragWithCollisions = (
+    layerEl,
+    proposedLeft,
+    proposedTop,
+    width,
+    height,
+    dx,
+    dy,
+    canvasRect,
+    axis
+  ) => {
+    let left = proposedLeft;
+    let top = proposedTop;
+
+    const canvas = layerEl.closest('.canvas-page') || layerEl.closest('.canvas-stage');
+    if (!canvas) {
+      return { left, top };
+    }
+
+    const others = canvas.querySelectorAll('.binder-editor-layer');
+    others.forEach((other) => {
+      if (other === layerEl) return;
+      const r = other.getBoundingClientRect();
+      const oLeft = r.left - canvasRect.left;
+      const oTop = r.top - canvasRect.top;
+      const oWidth = r.width;
+      const oHeight = r.height;
+
+      if (!rectsOverlap(left, top, width, height, oLeft, oTop, oWidth, oHeight)) {
+        return;
+      }
+
+      const absDx = Math.abs(dx);
+      const absDy = Math.abs(dy);
+      const resolvedAxis = axis || (absDx >= absDy ? 'x' : 'y');
+
+      if (resolvedAxis === 'x') {
+        if (dx > 0) {
+          left = Math.min(left, oLeft - width);
+        } else if (dx < 0) {
+          left = Math.max(left, oLeft + oWidth);
+        }
+      } else if (resolvedAxis === 'y') {
+        if (dy > 0) {
+          top = Math.min(top, oTop - height);
+        } else if (dy < 0) {
+          top = Math.max(top, oTop + oHeight);
+        }
+      }
+    });
+
+    // Clamp within canvas bounds
+    left = Math.max(0, Math.min(left, canvasRect.width - width));
+    top = Math.max(0, Math.min(top, canvasRect.height - height));
+
+    return { left, top };
+  };
 
   // Handle canvas click to deselect
   const handleCanvasClick = useCallback((e) => {
@@ -28,6 +104,7 @@ function Canvas({ page, layers, onUpdateLayer, onAddLayer, onRemoveLayer }) {
   const handleDragStart = useCallback((layerId, e) => {
     setSelectedLayer(layerId);
     setDragging(true);
+    setDragAxis(null);
 
     const layerEl = e.currentTarget;
     if (!layerEl) return;
@@ -55,6 +132,13 @@ function Canvas({ page, layers, onUpdateLayer, onAddLayer, onRemoveLayer }) {
       canvasWidth: canvasRect.width,
       canvasHeight: canvasRect.height
     });
+
+    setLastDrag({
+      mouseX: e.clientX,
+      mouseY: e.clientY,
+      left: layerRect.left - canvasRect.left,
+      top: layerRect.top - canvasRect.top
+    });
   }, []);
 
 // Handle drag move (pointer is over the canvas)
@@ -74,9 +158,16 @@ const handleDragMove = useCallback(
       canvasHeight
     } = dragStart;
 
-    // Raw position relative to the page
-    const rawX = e.clientX - canvasLeft - offsetX;
-    const rawY = e.clientY - canvasTop - offsetY;
+    // Step-based deltas
+    const dx = e.clientX - lastDrag.mouseX;
+    const dy = e.clientY - lastDrag.mouseY;
+
+    const absDx = Math.abs(dx);
+    const absDy = Math.abs(dy);
+
+    if (!dragAxis && (absDx > 0 || absDy > 0)) {
+      setDragAxis(absDx >= absDy ? 'x' : 'y');
+    }
 
     const currentLayer = layers.find((l) => l.id === selectedLayer);
     if (!currentLayer) return;
@@ -84,43 +175,48 @@ const handleDragMove = useCallback(
     const layerWidth = currentLayer.width || 0;
     const layerHeight = currentLayer.height || 0;
 
-    // If the layer is smaller than the page, keep it fully inside.
-    // If the layer is larger than the page, allow negative coords so you can pan.
-    let minX;
-    let maxX;
-    let minY;
-    let maxY;
+    let proposedLeft = lastDrag.left + dx;
+    let proposedTop = lastDrag.top + dy;
 
-    if (layerWidth <= canvasWidth) {
-      // small or equal: keep inside 0..(canvasWidth - layerWidth)
-      minX = 0;
-      maxX = Math.max(0, canvasWidth - layerWidth);
-    } else {
-      // larger than page: allow full panning range
-      minX = canvasWidth - layerWidth; // most left we can go
-      maxX = 0;                        // most right we can go
-    }
+    // Collision-aware constraint
+    const layerEl = e.target.closest('.binder-editor-layer');
+    const canvasRect = {
+      left: canvasLeft,
+      top: canvasTop,
+      width: canvasWidth,
+      height: canvasHeight
+    };
 
-    if (layerHeight <= canvasHeight) {
-      minY = 0;
-      maxY = Math.max(0, canvasHeight - layerHeight);
-    } else {
-      minY = canvasHeight - layerHeight;
-      maxY = 0;
-    }
+    const constrained = layerEl
+      ? constrainDragWithCollisions(
+          layerEl,
+          proposedLeft,
+          proposedTop,
+          layerWidth,
+          layerHeight,
+          dx,
+          dy,
+          canvasRect,
+          dragAxis
+        )
+      : { left: proposedLeft, top: proposedTop };
 
-    // Clamp into [min, max]
-    const x = Math.min(Math.max(rawX, minX), maxX);
-    const y = Math.min(Math.max(rawY, minY), maxY);
+    onUpdateLayer(selectedLayer, { x: constrained.left, y: constrained.top });
 
-    onUpdateLayer(selectedLayer, { x, y });
+    setLastDrag({
+      mouseX: e.clientX,
+      mouseY: e.clientY,
+      left: constrained.left,
+      top: constrained.top
+    });
   },
-  [dragging, selectedLayer, dragStart, onUpdateLayer, layers]
+  [dragging, selectedLayer, dragStart, onUpdateLayer, layers, lastDrag, dragAxis]
 );
 
   // Handle drag end
   const handleDragEnd = useCallback(() => {
     setDragging(false);
+    setDragAxis(null);
   }, []);
 
   // Add photo layer (placeholder)
@@ -141,18 +237,20 @@ const handleDragMove = useCallback(
 
   return (
     <div
-      className="binder-editor-canvas"
+      className="binder-editor-canvas bg-slate-50"
       onClick={handleCanvasClick}
       onMouseMove={handleDragMove}
       onMouseUp={handleDragEnd}
       onMouseLeave={handleDragEnd}
       onContextMenu={(e) => e.preventDefault()}
     >
-      <div className="canvas-header">
-        <h3>Page {page.pageIndex + 1}</h3>
+      <div className="canvas-header bg-white/90 backdrop-blur">
+        <h3 className="text-slate-900 font-semibold">
+          Page {page.pageIndex + 1}
+        </h3>
         <button
           type="button"
-          className="btn btn-small"
+          className="btn btn-small shadow-sm"
           onClick={handleAddPhoto}
         >
           Add Photo
@@ -160,7 +258,7 @@ const handleDragMove = useCallback(
       </div>
 
       <div className="canvas-stage">
-        <div className="canvas-page">
+        <div className="canvas-page shadow-lg">
           {layers.map((layer) => (
             <Layer
               key={layer.id}

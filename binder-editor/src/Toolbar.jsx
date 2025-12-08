@@ -18,11 +18,11 @@ function Toolbar({ onAutoLayout, saving, isDirty, lastSavedAt }) {
   }
 
   return (
-    <div className="binder-editor-toolbar">
-      <div className="toolbar-section">
+    <div className="binder-editor-toolbar sticky top-0 z-10 bg-white/95 backdrop-blur border-b border-slate-200">
+      <div className="toolbar-section gap-3">
         <button
           type="button"
-          className="btn btn-primary"
+          className="btn btn-primary shadow-sm"
           onClick={onAutoLayout}
           disabled={saving}
         >
@@ -30,8 +30,8 @@ function Toolbar({ onAutoLayout, saving, isDirty, lastSavedAt }) {
         </button>
       </div>
 
-      <div className="toolbar-section toolbar-status">
-        <span className="toolbar-status-text">
+      <div className="toolbar-section toolbar-status text-sm text-slate-600">
+        <span className="toolbar-status-text font-medium">
           {statusText}
         </span>
       </div>

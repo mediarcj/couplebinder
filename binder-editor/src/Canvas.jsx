@@ -58,10 +58,11 @@ function Canvas({
   ) => {
     let left = proposedLeft;
     let top = proposedTop;
+    let collided = false;
 
     const canvas = layerEl.closest('.canvas-page') || layerEl.closest('.canvas-stage');
     if (!canvas) {
-      return { left, top };
+      return { left, top, collided };
     }
 
     // Clamp to canvas first
@@ -81,12 +82,13 @@ function Canvas({
         return;
       }
 
-      // Collision: stop movement and keep previous position
+      // Collision: stop movement and keep previous position (sliding-tile behavior)
+      collided = true;
       left = prevLeft;
       top = prevTop;
     });
 
-    return { left, top };
+    return { left, top, collided };
   };
 
   // Handle canvas click to deselect
@@ -207,16 +209,19 @@ const handleDragMove = useCallback(
           lastDrag.left,
           lastDrag.top
         )
-      : { left: proposedLeft, top: proposedTop };
+      : { left: proposedLeft, top: proposedTop, collided: false };
 
     onUpdateLayer(selectedLayerId, { x: constrained.left, y: constrained.top });
 
-    setLastDrag({
-      mouseX: e.clientX,
-      mouseY: e.clientY,
-      left: constrained.left,
-      top: constrained.top
-    });
+    // Only advance drag state when we successfully moved (no collision)
+    if (!constrained.collided) {
+      setLastDrag({
+        mouseX: e.clientX,
+        mouseY: e.clientY,
+        left: constrained.left,
+        top: constrained.top
+      });
+    }
   },
   [dragging, selectedLayerId, dragStart, onUpdateLayer, layers, lastDrag, dragAxis]
 );

@@ -5,6 +5,20 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { getPhotoViewUrl } from './api';
 
+// Simple helpers (same idea as in Canvas.jsx)
+const rectsOverlap = (l1, t1, w1, h1, l2, t2, w2, h2) => {
+  return !(
+    l1 + w1 <= l2 ||
+    l1 >= l2 + w2 ||
+    t1 + h1 <= t2 ||
+    t1 >= t2 + h2
+  );
+};
+
+const clamp = (value, min, max) => {
+  return Math.min(Math.max(value, min), max);
+};
+
 function Layer({ layer, selected, onSelect, onUpdate, onRemove, onDragStart, binderId }) {
   const [resizing, setResizing] = useState(false);
   const resizeRef = useRef(null);
@@ -42,18 +56,24 @@ function Layer({ layer, selected, onSelect, onUpdate, onRemove, onDragStart, bin
     const aspect =
       rect.width && rect.height ? rect.width / rect.height : 1;
 
+    const startRect = {
+      left,
+      top,
+      width: rect.width,
+      height: rect.height
+    };
+
     resizeRef.current = {
       corner,
       startMouseX: e.clientX,
       startMouseY: e.clientY,
-      startRect: {
-        left,
-        top,
-        width: rect.width,
-        height: rect.height
-      },
+      startRect,
+      // lastRect = last collision-free rect during this resize
+      lastRect: { ...startRect },
       aspect,
-      canvasRect
+      canvasRect,
+      canvasEl,
+      layerEl
     };
     setResizing(true);
   };
@@ -61,8 +81,17 @@ function Layer({ layer, selected, onSelect, onUpdate, onRemove, onDragStart, bin
   const handleResizeMove = (e) => {
     if (!resizing || !resizeRef.current) return;
 
-    const { corner, startMouseX, startMouseY, startRect, aspect, canvasRect } =
-      resizeRef.current;
+    const {
+      corner,
+      startMouseX,
+      startMouseY,
+      startRect,
+      lastRect,
+      aspect,
+      canvasRect,
+      canvasEl,
+      layerEl
+    } = resizeRef.current;
 
     const dx = e.clientX - startMouseX;
     const dy = e.clientY - startMouseY;
@@ -70,6 +99,7 @@ function Layer({ layer, selected, onSelect, onUpdate, onRemove, onDragStart, bin
     const isLeft = corner.includes('left');
     const isTop = corner.includes('top');
 
+    // Base geometry (same as before, from startRect + mouse delta)
     let width = isLeft ? startRect.width - dx : startRect.width + dx;
     width = Math.max(50, width);
     let height = width / aspect;
@@ -77,50 +107,71 @@ function Layer({ layer, selected, onSelect, onUpdate, onRemove, onDragStart, bin
     let left = isLeft ? startRect.left + (startRect.width - width) : startRect.left;
     let top = isTop ? startRect.top + (startRect.height - height) : startRect.top;
 
-    // Clamp inside canvas
-    if (left < 0) {
-      const diff = -left;
-      left = 0;
-      width = Math.max(50, width - diff);
-      height = width / aspect;
-      if (isLeft) {
-        left = 0;
-      }
-      if (isTop) {
-        top = startRect.top + (startRect.height - height);
-      }
-    }
+    // Clamp inside canvas first
+    left = clamp(left, 0, canvasRect.width - width);
+    top = clamp(top, 0, canvasRect.height - height);
 
-    if (top < 0) {
-      const diff = -top;
-      top = 0;
-      height = Math.max(50, height - diff);
-      width = height * aspect;
-      if (isLeft) {
-        left = startRect.left + (startRect.width - width);
-      }
-    }
-
+    // If bottom/right overflow after clamping left/top and width/height, adjust
     if (left + width > canvasRect.width) {
-      width = canvasRect.width - left;
-      width = Math.max(50, width);
+      width = Math.max(50, canvasRect.width - left);
       height = width / aspect;
     }
-
     if (top + height > canvasRect.height) {
-      height = canvasRect.height - top;
-      height = Math.max(50, height);
+      height = Math.max(50, canvasRect.height - top);
       width = height * aspect;
-      if (isLeft) {
-        left = startRect.left + (startRect.width - width);
+      if (left + width > canvasRect.width) {
+        left = Math.max(0, canvasRect.width - width);
       }
+    }
+
+    // Now enforce "no overlap with other layers" just like Canvas dragging
+
+    const testRect = { left, top, width, height };
+
+    let collides = false;
+    if (canvasEl && layerEl) {
+      const others = canvasEl.querySelectorAll('.binder-editor-layer');
+      for (const other of others) {
+        if (other === layerEl) continue;
+        const r = other.getBoundingClientRect();
+        const oLeft = r.left - canvasRect.left;
+        const oTop = r.top - canvasRect.top;
+        const oWidth = r.width;
+        const oHeight = r.height;
+
+        if (
+          rectsOverlap(
+            testRect.left,
+            testRect.top,
+            testRect.width,
+            testRect.height,
+            oLeft,
+            oTop,
+            oWidth,
+            oHeight
+          )
+        ) {
+          collides = true;
+          break;
+        }
+      }
+    }
+
+    let finalRect;
+    if (collides) {
+      // Block resize: stay at last non-overlapping rect
+      finalRect = { ...lastRect };
+    } else {
+      // Accept resize: update lastRect
+      finalRect = { ...testRect };
+      resizeRef.current.lastRect = finalRect;
     }
 
     onUpdate(layer.id, {
-      width,
-      height,
-      x: left,
-      y: top
+      width: finalRect.width,
+      height: finalRect.height,
+      x: finalRect.left,
+      y: finalRect.top
     });
   };
 
@@ -137,10 +188,10 @@ function Layer({ layer, selected, onSelect, onUpdate, onRemove, onDragStart, bin
         document.removeEventListener('mousemove', handleMove);
         document.removeEventListener('mouseup', handleEnd);
       };
-      
+
       document.addEventListener('mousemove', handleMove);
       document.addEventListener('mouseup', handleEnd);
-      
+
       return () => {
         document.removeEventListener('mousemove', handleMove);
         document.removeEventListener('mouseup', handleEnd);
@@ -153,21 +204,23 @@ function Layer({ layer, selected, onSelect, onUpdate, onRemove, onDragStart, bin
   React.useEffect(() => {
     const styleId = `layer-style-${layer.id}`;
     let styleEl = document.getElementById(styleId);
-    
+
     if (!styleEl) {
       // Get nonce from the root element's data attribute (set by EJS template)
       const rootEl = document.getElementById('binder-editor-root');
-      const nonce = rootEl?.getAttribute('data-csp-nonce') || 
-                    document.querySelector('style[nonce]')?.getAttribute('nonce') || '';
+      const nonce =
+        rootEl?.getAttribute('data-csp-nonce') ||
+        document.querySelector('style[nonce]')?.getAttribute('nonce') ||
+        '';
       styleEl = document.createElement('style');
       styleEl.id = styleId;
       if (nonce) styleEl.setAttribute('nonce', nonce);
       document.head.appendChild(styleEl);
     }
-    
+
     // Inject CSS rule for this layer
     const selector = `[data-layer-id="${layer.id}"]`;
-    const bgColor = layer.type === 'photo' ? '#f0f0f0' : (layer.backgroundColor || '#fff');
+    const bgColor = layer.type === 'photo' ? '#f0f0f0' : layer.backgroundColor || '#fff';
     styleEl.textContent = `
       ${selector} {
         left: ${layer.x}px !important;
@@ -179,14 +232,24 @@ function Layer({ layer, selected, onSelect, onUpdate, onRemove, onDragStart, bin
         background-color: ${bgColor} !important;
       }
     `;
-    
+
     return () => {
       // Cleanup: remove style element when component unmounts
       if (styleEl && styleEl.parentNode) {
         styleEl.parentNode.removeChild(styleEl);
       }
     };
-  }, [layer.x, layer.y, layer.width, layer.height, layer.rotation, layer.zIndex, layer.type, layer.backgroundColor, layer.id]);
+  }, [
+    layer.x,
+    layer.y,
+    layer.width,
+    layer.height,
+    layer.rotation,
+    layer.zIndex,
+    layer.type,
+    layer.backgroundColor,
+    layer.id
+  ]);
 
   // Fetch signed URL for photo if storageKey exists
   // Only fetch once per storageKey change (not on imageUrl/imageLoading changes)
@@ -201,25 +264,25 @@ function Layer({ layer, selected, onSelect, onUpdate, onRemove, onDragStart, bin
 
     // Only fetch if we haven't attempted yet and have required data
     if (
-      layer.type === 'photo' && 
-      layer.storageKey && 
-      binderId && 
+      layer.type === 'photo' &&
+      layer.storageKey &&
+      binderId &&
       !fetchAttemptedRef.current.attempted
     ) {
       fetchAttemptedRef.current.attempted = true;
       setImageLoading(true);
       getPhotoViewUrl(binderId, layer.storageKey)
-        .then(url => {
+        .then((url) => {
           if (url) {
             // Prefer fresh signed URL from backend; fall back to any baked-in src
             setImageUrl(url || layer.src || null);
           } else {
             // If no URL returned, keep any existing src but mark as attempted
-            setImageUrl(prev => prev || layer.src || null);
+            setImageUrl((prev) => prev || layer.src || null);
             fetchAttemptedRef.current.attempted = true;
           }
         })
-        .catch(err => {
+        .catch((err) => {
           console.error('[BinderEditor] Failed to load photo URL:', err);
           // Mark as attempted on error so we don't retry infinitely
           fetchAttemptedRef.current.attempted = true;
@@ -228,11 +291,13 @@ function Layer({ layer, selected, onSelect, onUpdate, onRemove, onDragStart, bin
           setImageLoading(false);
         });
     }
-  }, [layer.type, layer.storageKey, binderId, layer.src]); // keep src in sync when layout changes
+  }, [layer.type, layer.storageKey, binderId, layer.src]);
 
   return (
     <div
-      className={`binder-editor-layer ${selected ? 'selected' : ''} ${layer.type === 'photo' ? 'layer-type-photo' : 'layer-type-other'}`}
+      className={`binder-editor-layer ${selected ? 'selected' : ''} ${
+        layer.type === 'photo' ? 'layer-type-photo' : 'layer-type-other'
+      }`}
       data-layer-id={layer.id}
       onMouseDown={handleMouseDown}
     >
@@ -247,8 +312,6 @@ function Layer({ layer, selected, onSelect, onUpdate, onRemove, onDragStart, bin
               onDragStart={(e) => e.preventDefault()}
               onError={() => {
                 console.warn('[BinderEditor] Image failed to load:', imageUrl);
-                // Don't set imageUrl to null here - that would trigger the effect again
-                // Just log the error and let the placeholder show
               }}
             />
           ) : imageLoading ? (
@@ -267,11 +330,11 @@ function Layer({ layer, selected, onSelect, onUpdate, onRemove, onDragStart, bin
           )}
         </div>
       )}
-      
+
       {layer.type === 'text' && layer.text && (
         <div className="layer-text">{layer.text}</div>
       )}
-      
+
       {selected && (
         <>
           {['top-left', 'top-right', 'bottom-left', 'bottom-right'].map((pos) => (

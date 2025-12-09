@@ -166,6 +166,16 @@ const handleDragMove = useCallback(
       canvasHeight
     } = dragStart;
 
+    const insideCanvasBounds =
+      e.clientX >= canvasLeft &&
+      e.clientX <= canvasLeft + canvasWidth &&
+      e.clientY >= canvasTop &&
+      e.clientY <= canvasTop + canvasHeight;
+    if (!insideCanvasBounds) {
+      handleDragEnd();
+      return;
+    }
+
     // Step-based deltas
     const dx = e.clientX - lastDrag.mouseX;
     const dy = e.clientY - lastDrag.mouseY;

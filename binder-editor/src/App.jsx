@@ -2,7 +2,7 @@
 // Description: Main React component for binder editor
 // Purpose: Canvas editor with pages, layers, drag/resize + autosave
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { getLayout, applyLayout, autoLayout } from './api';
 import Canvas from './Canvas';
 import PageList from './PageList';
@@ -25,6 +25,7 @@ function App({ binderId /*, csrfToken */ }) {
   const [hasLoadedInitialLayout, setHasLoadedInitialLayout] = useState(false);
   const [lastSavedAt, setLastSavedAt] = useState(null);
   const [selectedLayerId, setSelectedLayerId] = useState(null);
+  const fileInputRef = useRef(null);
 
   // Decide which page to land on first:
   // - Prefer the first page that actually has a real photo layer
@@ -231,11 +232,74 @@ function App({ binderId /*, csrfToken */ }) {
       width: 200,
       height: 200,
       rotation: 0,
-      zIndex: (layout?.pages?.[selectedPage]?.layers?.length || 0),
+      zIndex: layout?.pages?.[selectedPage]?.layers?.length || 0,
       photoId: null
     };
     addLayer(newLayer);
   }, [addLayer, layout?.pages, selectedPage]);
+
+  const handleAddPhotosClick = useCallback(() => {
+    fileInputRef.current?.click();
+  }, []);
+
+  const handleUploadPhotos = useCallback(
+    async (files) => {
+      if (!files || !files.length) return;
+      if (!binderId) return;
+
+      const csrfToken =
+        document.querySelector('#binder-editor-root')?.getAttribute('data-csrf-token') || '';
+
+      const formData = new FormData();
+      files.forEach((file) => formData.append('photos', file));
+
+      const res = await fetch(`/dashboard/binder/${encodeURIComponent(binderId)}/photos`, {
+        method: 'POST',
+        body: formData,
+        headers: csrfToken ? { 'x-csrf-token': csrfToken } : undefined,
+        credentials: 'same-origin'
+      });
+
+      if (!res.ok) {
+        console.error('[BinderEditor] Upload failed', res.status);
+        return;
+      }
+
+      const data = await res.json().catch(() => null);
+      if (!data || !Array.isArray(data.photos)) return;
+
+      data.photos.forEach((photo, idx) => {
+        const url =
+          photo.signedUrl || photo.publicUrl || photo.url || photo.previewUrl || photo.src || null;
+        const newLayer = {
+          id: `layer-upload-${Date.now()}-${idx}`,
+          type: 'photo',
+          x: 50,
+          y: 50,
+          width: 200,
+          height: 200,
+          rotation: 0,
+          zIndex: layout?.pages?.[selectedPage]?.layers?.length || 0,
+          photoId: null,
+          storageKey: photo.storageKey || null,
+          src: url
+        };
+        addLayer(newLayer);
+      });
+    },
+    [addLayer, binderId, layout?.pages, selectedPage]
+  );
+
+  const handleFileChange = useCallback(
+    async (e) => {
+      const files = Array.from(e.target.files || []);
+      await handleUploadPhotos(files);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    },
+    [handleUploadPhotos]
+  );
 
   // Remove layer from current page (does NOT delete underlying photo from S3/DB)
   const removeLayer = useCallback(
@@ -367,7 +431,7 @@ function App({ binderId /*, csrfToken */ }) {
 
         <div className="workspace-canvas-wrapper">
           <Toolbar
-            onAddPhoto={handleAddPhoto}
+            onAddPhoto={handleAddPhotosClick}
             onDeleteSelected={() => {
               if (!selectedLayerId) return;
               removeLayer(selectedLayerId);
@@ -386,7 +450,6 @@ function App({ binderId /*, csrfToken */ }) {
             onUpdateLayer={updateLayer}
             onAddLayer={addLayer}
             onRemoveLayer={removeLayer}
-            onAddPhoto={handleAddPhoto}
             selectedLayerId={selectedLayerId}
             onSelectLayer={setSelectedLayerId}
           />
@@ -402,6 +465,15 @@ function App({ binderId /*, csrfToken */ }) {
           </div>
         </div>
       </div>
+
+      <input
+        type="file"
+        ref={fileInputRef}
+        accept="image/*,.jpg,.jpeg,.png,.webp,.heic,.heif,.avif"
+        multiple
+        hidden
+        onChange={handleFileChange}
+      />
     </div>
   );
 }

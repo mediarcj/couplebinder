@@ -241,13 +241,6 @@ const handleDragMove = useCallback(
         <h3 className="text-slate-900 font-semibold">
           Page {page.pageIndex + 1}
         </h3>
-        <button
-          type="button"
-          className="btn btn-small shadow-sm"
-          onClick={onAddPhoto}
-        >
-          Add Photo
-        </button>
       </div>
 
       <div className="canvas-stage">

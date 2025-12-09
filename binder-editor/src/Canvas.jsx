@@ -52,7 +52,9 @@ function Canvas({
     dx,
     dy,
     canvasRect,
-    axis
+    axis,
+    prevLeft,
+    prevTop
   ) => {
     let left = proposedLeft;
     let top = proposedTop;
@@ -61,6 +63,10 @@ function Canvas({
     if (!canvas) {
       return { left, top };
     }
+
+    // Clamp to canvas first
+    left = Math.max(0, Math.min(left, canvasRect.width - width));
+    top = Math.max(0, Math.min(top, canvasRect.height - height));
 
     const others = canvas.querySelectorAll('.binder-editor-layer');
     others.forEach((other) => {
@@ -75,28 +81,10 @@ function Canvas({
         return;
       }
 
-      const absDx = Math.abs(dx);
-      const absDy = Math.abs(dy);
-      const resolvedAxis = axis || (absDx >= absDy ? 'x' : 'y');
-
-      if (resolvedAxis === 'x') {
-        if (dx > 0) {
-          left = Math.min(left, oLeft - width);
-        } else if (dx < 0) {
-          left = Math.max(left, oLeft + oWidth);
-        }
-      } else if (resolvedAxis === 'y') {
-        if (dy > 0) {
-          top = Math.min(top, oTop - height);
-        } else if (dy < 0) {
-          top = Math.max(top, oTop + oHeight);
-        }
-      }
+      // Collision: stop movement and keep previous position
+      left = prevLeft;
+      top = prevTop;
     });
-
-    // Clamp within canvas bounds
-    left = Math.max(0, Math.min(left, canvasRect.width - width));
-    top = Math.max(0, Math.min(top, canvasRect.height - height));
 
     return { left, top };
   };
@@ -215,7 +203,9 @@ const handleDragMove = useCallback(
           dx,
           dy,
           canvasRect,
-          dragAxis
+          dragAxis,
+          lastDrag.left,
+          lastDrag.top
         )
       : { left: proposedLeft, top: proposedTop };
 

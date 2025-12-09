@@ -301,28 +301,9 @@ function App({ binderId /*, csrfToken */ }) {
     [handleUploadPhotos]
   );
 
-  const handleSelectLayer = useCallback(
-    (layerId) => {
-      setSelectedLayerId(layerId || null);
-      if (!layerId) return;
-
-      setLayout((prev) => {
-        if (!prev || !prev.pages || !prev.pages[selectedPage]) return prev;
-        const pages = [...prev.pages];
-        const page = { ...pages[selectedPage] };
-        const layers = [...(page.layers || [])];
-        const idx = layers.findIndex((l) => l.id === layerId);
-        if (idx === -1) return prev;
-
-        const maxZ = layers.reduce((m, l) => Math.max(m, l.zIndex || 0), 0);
-        layers[idx] = { ...layers[idx], zIndex: maxZ + 1 };
-        page.layers = layers;
-        pages[selectedPage] = page;
-        return { ...prev, pages };
-      });
-    },
-    [selectedPage]
-  );
+  const handleSelectLayer = useCallback((layerId) => {
+    setSelectedLayerId(layerId || null);
+  }, []);
 
   // Remove layer from current page (does NOT delete underlying photo from S3/DB)
   const removeLayer = useCallback(

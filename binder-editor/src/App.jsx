@@ -27,6 +27,32 @@ function App({ binderId /*, csrfToken */ }) {
   const [selectedLayerId, setSelectedLayerId] = useState(null);
   const fileInputRef = useRef(null);
 
+  // Deselect any selected layer when clicking outside the editor
+  // OR clicking anywhere inside the editor that is not on a layer.
+  useEffect(() => {
+    const handleGlobalMouseDown = (e) => {
+      const root = document.getElementById('binder-editor-root');
+      if (!root) return;
+
+      // Click completely outside the React binder editor island
+      if (!root.contains(e.target)) {
+        setSelectedLayerId(null);
+        return;
+      }
+
+      // Click is inside the editor. If it's not on a layer, clear selection.
+      const layerEl = e.target.closest('.binder-editor-layer');
+      if (!layerEl) {
+        setSelectedLayerId(null);
+      }
+    };
+
+    document.addEventListener('mousedown', handleGlobalMouseDown);
+    return () => {
+      document.removeEventListener('mousedown', handleGlobalMouseDown);
+    };
+  }, []);
+  
   // Decide which page to land on first:
   // - Prefer the first page that actually has a real photo layer
   //   (storageKey / src / photoId).

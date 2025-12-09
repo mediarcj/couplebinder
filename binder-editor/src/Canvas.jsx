@@ -2,7 +2,7 @@
 // Description: Canvas component for editing layers
 // Purpose: Display and manipulate layers on a page
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import Layer from './Layer';
 
 function Canvas({
@@ -16,7 +16,6 @@ function Canvas({
   onSelectLayer
 }) {
   const [dragging, setDragging] = useState(false);
-  const [dragAxis, setDragAxis] = useState(null);
   const [dragStart, setDragStart] = useState({
     offsetX: 0,
     offsetY: 0,
@@ -32,7 +31,9 @@ function Canvas({
     top: 0
   });
 
-  // Simple overlap helper (DOM-based like legacy dashboard)
+  // Reference to the DOM element of the layer being dragged.
+  const dragLayerRef = useRef(null);
+
   const rectsOverlap = (l1, t1, w1, h1, l2, t2, w2, h2) => {
     return !(
       l1 + w1 <= l2 ||
@@ -42,7 +43,17 @@ function Canvas({
     );
   };
 
-  // Collision-aware constraint similar to legacy dashboard.js
+  const clamp = (value, min, max) => {
+    return Math.min(Math.max(value, min), max);
+  };
+
+  /**
+   * Smoother collision logic:
+   * 1) Try full move (dx, dy).
+   * 2) If it collides, try horizontal only (dx, 0).
+   * 3) If still collides, try vertical only (0, dy).
+   * 4) If all collide, stay at previous position.
+   */
   const constrainDragWithCollisions = (
     layerEl,
     proposedLeft,
@@ -52,191 +63,191 @@ function Canvas({
     dx,
     dy,
     canvasRect,
-    axis,
     prevLeft,
     prevTop
   ) => {
-    let left = proposedLeft;
-    let top = proposedTop;
-    let collided = false;
-
-    const canvas = layerEl.closest('.canvas-page') || layerEl.closest('.canvas-stage');
-    if (!canvas) {
-      return { left, top, collided };
+    if (!layerEl) {
+      return { left: prevLeft, top: prevTop, collided: false };
     }
 
-    // Clamp to canvas first
-    left = Math.max(0, Math.min(left, canvasRect.width - width));
-    top = Math.max(0, Math.min(top, canvasRect.height - height));
-
-    const others = canvas.querySelectorAll('.binder-editor-layer');
-    others.forEach((other) => {
-      if (other === layerEl) return;
-      const r = other.getBoundingClientRect();
-      const oLeft = r.left - canvasRect.left;
-      const oTop = r.top - canvasRect.top;
-      const oWidth = r.width;
-      const oHeight = r.height;
-
-      if (!rectsOverlap(left, top, width, height, oLeft, oTop, oWidth, oHeight)) {
-        return;
-      }
-
-      // Collision: stop movement and keep previous position (sliding-tile behavior)
-      collided = true;
-      left = prevLeft;
-      top = prevTop;
-    });
-
-    return { left, top, collided };
-  };
-
-  // Handle canvas click to deselect
-  const handleCanvasClick = useCallback((e) => {
-    if (e.target === e.currentTarget) {
-      onSelectLayer(null);
-    }
-  }, [onSelectLayer]);
-
-  // Start dragging a layer
-  const handleDragStart = useCallback((layerId, e) => {
-    onSelectLayer(layerId);
-    setDragging(true);
-    setDragAxis(null);
-
-    const layerEl = e.currentTarget;
-    if (!layerEl) return;
-
-    // Prefer the white page as the coordinate system
-    const canvasEl =
+    const canvas =
       layerEl.closest('.canvas-page') ||
       layerEl.closest('.canvas-stage') ||
       layerEl.closest('.binder-editor-canvas');
 
-    if (!canvasEl) return;
-
-    const canvasRect = canvasEl.getBoundingClientRect();
-    const layerRect = layerEl.getBoundingClientRect();
-
-    // How far inside the layer the pointer is
-    const offsetX = e.clientX - layerRect.left;
-    const offsetY = e.clientY - layerRect.top;
-
-    setDragStart({
-      offsetX,
-      offsetY,
-      canvasLeft: canvasRect.left,
-      canvasTop: canvasRect.top,
-      canvasWidth: canvasRect.width,
-      canvasHeight: canvasRect.height
-    });
-
-    setLastDrag({
-      mouseX: e.clientX,
-      mouseY: e.clientY,
-      left: layerRect.left - canvasRect.left,
-      top: layerRect.top - canvasRect.top
-    });
-  }, [onSelectLayer]);
-
-// Handle drag move (pointer is over the canvas)
-const handleDragMove = useCallback(
-  (e) => {
-    if (!dragging || !selectedLayerId) return;
-
-    const canvas = e.currentTarget;
-    if (!canvas) return;
-
-    const {
-      offsetX,
-      offsetY,
-      canvasLeft,
-      canvasTop,
-      canvasWidth,
-      canvasHeight
-    } = dragStart;
-
-    const insideCanvasBounds =
-      e.clientX >= canvasLeft &&
-      e.clientX <= canvasLeft + canvasWidth &&
-      e.clientY >= canvasTop &&
-      e.clientY <= canvasTop + canvasHeight;
-    if (!insideCanvasBounds) {
-      handleDragEnd();
-      return;
+    if (!canvas) {
+      return { left: prevLeft, top: prevTop, collided: false };
     }
 
-    // Step-based deltas
-    const dx = e.clientX - lastDrag.mouseX;
-    const dy = e.clientY - lastDrag.mouseY;
+    const testPosition = (left, top) => {
+      // Clamp to canvas (cannot leave the board)
+      const clampedLeft = clamp(left, 0, canvasRect.width - width);
+      const clampedTop = clamp(top, 0, canvasRect.height - height);
 
-    const absDx = Math.abs(dx);
-    const absDy = Math.abs(dy);
+      const others = canvas.querySelectorAll('.binder-editor-layer');
 
-    if (!dragAxis && (absDx > 0 || absDy > 0)) {
-      setDragAxis(absDx >= absDy ? 'x' : 'y');
-    }
+      for (const other of others) {
+        if (other === layerEl) continue;
+        const r = other.getBoundingClientRect();
+        const oLeft = r.left - canvasRect.left;
+        const oTop = r.top - canvasRect.top;
+        const oWidth = r.width;
+        const oHeight = r.height;
 
-    const currentLayer = layers.find((l) => l.id === selectedLayerId);
-    if (!currentLayer) return;
+        if (rectsOverlap(clampedLeft, clampedTop, width, height, oLeft, oTop, oWidth, oHeight)) {
+          return null; // invalid position
+        }
+      }
 
-    const layerWidth = currentLayer.width || 0;
-    const layerHeight = currentLayer.height || 0;
-
-    let proposedLeft = lastDrag.left + dx;
-    let proposedTop = lastDrag.top + dy;
-
-    // Collision-aware constraint
-    const layerEl = e.target.closest('.binder-editor-layer');
-    const canvasRect = {
-      left: canvasLeft,
-      top: canvasTop,
-      width: canvasWidth,
-      height: canvasHeight
+      return { left: clampedLeft, top: clampedTop };
     };
 
-    const constrained = layerEl
-      ? constrainDragWithCollisions(
-          layerEl,
-          proposedLeft,
-          proposedTop,
-          layerWidth,
-          layerHeight,
-          dx,
-          dy,
-          canvasRect,
-          dragAxis,
-          lastDrag.left,
-          lastDrag.top
-        )
-      : { left: proposedLeft, top: proposedTop, collided: false };
+    // 1) Full move
+    const full = testPosition(proposedLeft, proposedTop);
+    if (full) {
+      return { ...full, collided: false };
+    }
 
-    onUpdateLayer(selectedLayerId, { x: constrained.left, y: constrained.top });
+    // 2) Horizontal only (slide left/right while "rubbing" vertically)
+    const horiz = testPosition(proposedLeft, prevTop);
+    if (horiz) {
+      return { ...horiz, collided: false };
+    }
 
-    // Only advance drag state when we successfully moved (no collision)
-    if (!constrained.collided) {
+    // 3) Vertical only (slide up/down while "rubbing" horizontally)
+    const vert = testPosition(prevLeft, proposedTop);
+    if (vert) {
+      return { ...vert, collided: false };
+    }
+
+    // 4) Completely blocked: stay put
+    return { left: prevLeft, top: prevTop, collided: true };
+  };
+
+  // Deselect when clicking whitespace inside the canvas (but not on a layer)
+  const handleCanvasMouseDown = useCallback(
+    (e) => {
+      // If the click is not inside a .binder-editor-layer, clear selection
+      const layerEl = e.target.closest('.binder-editor-layer');
+      if (!layerEl) {
+        onSelectLayer(null);
+      }
+    },
+    [onSelectLayer]
+  );
+
+  const handleDragStart = useCallback(
+    (layerId, e) => {
+      onSelectLayer(layerId);
+      setDragging(true);
+
+      const layerEl = e.currentTarget;
+      if (!layerEl) return;
+
+      dragLayerRef.current = layerEl;
+
+      const canvasEl =
+        layerEl.closest('.canvas-page') ||
+        layerEl.closest('.canvas-stage') ||
+        layerEl.closest('.binder-editor-canvas');
+
+      if (!canvasEl) return;
+
+      const canvasRect = canvasEl.getBoundingClientRect();
+      const layerRect = layerEl.getBoundingClientRect();
+
+      const offsetX = e.clientX - layerRect.left;
+      const offsetY = e.clientY - layerRect.top;
+
+      setDragStart({
+        offsetX,
+        offsetY,
+        canvasLeft: canvasRect.left,
+        canvasTop: canvasRect.top,
+        canvasWidth: canvasRect.width,
+        canvasHeight: canvasRect.height
+      });
+
       setLastDrag({
         mouseX: e.clientX,
         mouseY: e.clientY,
-        left: constrained.left,
-        top: constrained.top
+        left: layerRect.left - canvasRect.left,
+        top: layerRect.top - canvasRect.top
       });
-    }
-  },
-  [dragging, selectedLayerId, dragStart, onUpdateLayer, layers, lastDrag, dragAxis]
-);
+    },
+    [onSelectLayer]
+  );
 
-  // Handle drag end
   const handleDragEnd = useCallback(() => {
     setDragging(false);
-    setDragAxis(null);
+    dragLayerRef.current = null;
   }, []);
 
-  // Add photo layer (placeholder)
+  const handleDragMove = useCallback(
+    (e) => {
+      if (!dragging || !selectedLayerId) return;
+
+      const {
+        canvasLeft,
+        canvasTop,
+        canvasWidth,
+        canvasHeight
+      } = dragStart;
+
+      // We keep the drag active even if the pointer leaves the canvas;
+      // positions are still clamped by canvasRect, so tiles never leave.
+      const dx = e.clientX - lastDrag.mouseX;
+      const dy = e.clientY - lastDrag.mouseY;
+
+      const currentLayer = layers.find((l) => l.id === selectedLayerId);
+      if (!currentLayer) return;
+
+      const layerWidth = currentLayer.width || 0;
+      const layerHeight = currentLayer.height || 0;
+
+      const proposedLeft = lastDrag.left + dx;
+      const proposedTop = lastDrag.top + dy;
+
+      const layerEl = dragLayerRef.current;
+      const canvasRect = {
+        left: canvasLeft,
+        top: canvasTop,
+        width: canvasWidth,
+        height: canvasHeight
+      };
+
+      const constrained = constrainDragWithCollisions(
+        layerEl,
+        proposedLeft,
+        proposedTop,
+        layerWidth,
+        layerHeight,
+        dx,
+        dy,
+        canvasRect,
+        lastDrag.left,
+        lastDrag.top
+      );
+
+      onUpdateLayer(selectedLayerId, { x: constrained.left, y: constrained.top });
+
+      // Only treat as "blocked" if there was truly no legal move.
+      if (!constrained.collided) {
+        setLastDrag({
+          mouseX: e.clientX,
+          mouseY: e.clientY,
+          left: constrained.left,
+          top: constrained.top
+        });
+      }
+    },
+    [dragging, selectedLayerId, dragStart, onUpdateLayer, layers, lastDrag]
+  );
+
   return (
     <div
       className="binder-editor-canvas bg-slate-50"
-      onClick={handleCanvasClick}
+      onMouseDown={handleCanvasMouseDown}
       onMouseMove={handleDragMove}
       onMouseUp={handleDragEnd}
       onMouseLeave={handleDragEnd}

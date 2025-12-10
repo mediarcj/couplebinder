@@ -55,6 +55,15 @@ function getContext(req) {
   return { userId, client: supabaseAdmin };
 }
 
+const SECTION_DEFS = {
+  overview: { label: 'Our Story Overview', prefix: 'O' },
+  photos: { label: 'Photos Together', prefix: 'P' },
+  trips: { label: 'Trips & Visits', prefix: 'T' },
+  family: { label: 'Family & Friends', prefix: 'F' },
+  chats: { label: 'Screenshots & Chats', prefix: 'C' },
+  receipts: { label: 'Receipts / Support / Financial', prefix: 'R' }
+};
+
 /**
  * GET /dashboard/binder
  * List binders for the current user (now backed by Supabase)
@@ -527,47 +536,136 @@ async function addPhotos(req, res, next) {
 
 /**
  * POST /dashboard/binder/:binderId/export
- * Generate a simple PDF as a proof-of-life for the pipeline
+ * Generate PDF with index + exhibit labels
  */
-function exportPdf(req, res, next) {
+async function exportPdf(req, res, next) {
   const { binderId } = req.params;
 
   try {
+    const { userId, client } = getContext(req);
+
+    // Verify binder ownership
+    const { data: binder, error: binderErr } = await client
+      .from('binders')
+      .select('id, user_id, title')
+      .eq('id', binderId)
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    if (binderErr || !binder) {
+      return res.status(404).json({ ok: false, message: 'Binder not found' });
+    }
+
+    // Fetch layout pages
+    const { data: layoutRows, error: layoutErr } = await client
+      .from('binder_layouts')
+      .select('page_number, layout_json')
+      .eq('binder_id', String(binder.id))
+      .eq('user_id', userId)
+      .order('page_number', { ascending: true });
+
+    if (layoutErr) {
+      logger.error(
+        { event: 'binder.pdf.layout_query_failed', error: layoutErr.message, binderId, userId },
+        'Layout query failed for PDF'
+      );
+      return res.status(500).json({ ok: false, message: 'Unable to export PDF' });
+    }
+
+    let pages = (layoutRows || []).map((row, idx) => ({
+      pageIndex: typeof row.page_number === 'number' ? row.page_number - 1 : idx,
+      sectionKey: row.layout_json?.sectionKey || null
+    }));
+
+    // Backward compatibility: assign defaults if none present
+    const anySection = pages.some((p) => p.sectionKey);
+    pages = pages.map((p, idx) => {
+      const sectionKey = p.sectionKey
+        ? p.sectionKey
+        : anySection
+          ? null
+          : idx === 0
+            ? 'overview'
+            : 'photos';
+      return { ...p, sectionKey: sectionKey || 'photos' };
+    });
+
+    const contentPages = pages.length;
+    const totalPages = contentPages + 1; // +1 for index page
+
+    // Build exhibits (contiguous runs per section)
+    const sectionCounters = {};
+    const exhibits = [];
+    let current = null;
+    pages.forEach((p, idx) => {
+      const key = p.sectionKey || 'photos';
+      if (!current || current.sectionKey !== key) {
+        sectionCounters[key] = (sectionCounters[key] || 0) + 1;
+        current = {
+          sectionKey: key,
+          exhibitNo: sectionCounters[key],
+          startContentPage: idx + 2, // index page is 1
+          endContentPage: idx + 2
+        };
+        exhibits.push(current);
+      } else {
+        current.endContentPage = idx + 2;
+      }
+    });
+
+    const getExhibitForPage = (contentPageNumber) => {
+      return exhibits.find(
+        (ex) => contentPageNumber >= ex.startContentPage && contentPageNumber <= ex.endContentPage
+      );
+    };
+
     const doc = new PDFDocument({ autoFirstPage: true });
 
-    // Set download headers
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader(
       'Content-Disposition',
       `attachment; filename="relationship-binder-${binderId || 'draft'}.pdf"`
     );
 
-    // Stream PDF directly to response
     doc.pipe(res);
 
-    // Simple placeholder PDF content for now
-    doc.fontSize(22).text('Relationship Evidence Binder (Draft)', { align: 'center' });
-    doc.moveDown(2);
+    // Index page (page 1)
+    doc.fontSize(20).text('Index', { align: 'center' });
+    doc.moveDown(1);
 
-    doc.fontSize(14).text(`Binder ID: ${binderId || 'N/A'}`);
-    if (req.user?.email) {
-      doc.text(`Owner email: ${req.user.email}`);
-    } else if (req.user?.id) {
-      doc.text(`Owner user ID: ${req.user.id}`);
+    if (exhibits.length === 0) {
+      doc.fontSize(12).text('No pages available.', { align: 'left' });
+    } else {
+      exhibits.forEach((ex) => {
+        const def = SECTION_DEFS[ex.sectionKey] || SECTION_DEFS.photos;
+        const code = `${def.prefix}-${ex.exhibitNo}`;
+        doc.fontSize(12).text(
+          `Exhibit ${code} – ${def.label} – Pages ${ex.startContentPage}–${ex.endContentPage}`
+        );
+      });
     }
-    doc.moveDown();
 
-    doc.fontSize(12).text(
-      'This is a temporary PDF export to prove that the binder engine is wired up. ' +
-      'Next steps will add:'
-    );
-    doc.moveDown();
-    doc.list([
-      'Cover page with title and hero couple photo',
-      'Chronological pages with photos and captions',
-      'Layout tuned for USCIS-style submissions',
-      'Clear disclaimer that this is not legal or immigration advice'
-    ]);
+    // Content pages
+    pages.forEach((p, idx) => {
+      doc.addPage();
+      const contentPageNumber = idx + 2;
+      const def = SECTION_DEFS[p.sectionKey] || SECTION_DEFS.photos;
+      const exhibit = getExhibitForPage(contentPageNumber);
+      const exhibitCode = exhibit ? `${(SECTION_DEFS[exhibit.sectionKey] || def).prefix}-${exhibit.exhibitNo}` : `${def.prefix}-1`;
+
+      doc.fontSize(10).text(
+        `${def.label} · Exhibit ${exhibitCode} · Page ${contentPageNumber} of ${totalPages}`,
+        { align: 'center' }
+      );
+      doc.moveDown(1);
+      doc.fontSize(12).text(binder.title ? `Couplebinder – ${binder.title}` : 'Couplebinder', {
+        align: 'center'
+      });
+      doc.moveDown(2);
+      doc.fontSize(12).text(
+        'Page content placeholder. (Layout rendering not implemented in PDF export yet.)'
+      );
+    });
 
     doc.end();
 
@@ -575,9 +673,10 @@ function exportPdf(req, res, next) {
       {
         event: 'binder.pdf_exported',
         binderId,
-        userId: req.user?.id
+        userId,
+        pageCount: contentPages
       },
-      'Binder PDF exported (placeholder)'
+      'Binder PDF exported with index/exhibits'
     );
   } catch (err) {
     logger.error(
@@ -880,7 +979,8 @@ async function getBinderLayout(req, res, next) {
 
         return {
           pageIndex: idx,
-          layers
+          layers,
+          sectionKey: row.layout_json?.sectionKey || null
         };
       });
       layout.updatedAt = layoutRow[0].updated_at || layout.updatedAt;
@@ -998,7 +1098,8 @@ async function applyBinderLayout(req, res, next) {
       binder_id: String(binder.id),
       page_number: idx + 1,
       layout_json: {
-        layers: page.layers || []
+        layers: page.layers || [],
+        sectionKey: page.sectionKey || null
       }
     }));
 

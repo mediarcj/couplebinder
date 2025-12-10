@@ -12,6 +12,11 @@ function Canvas({
   onAddLayer,
   onRemoveLayer,
   onAddPhoto,
+  sectionKey,
+  sectionLabels,
+  sectionOptions,
+  onSectionChange,
+  onTidyLayout,
   selectedLayerId,
   onSelectLayer
 }) {
@@ -254,9 +259,37 @@ function Canvas({
       onContextMenu={(e) => e.preventDefault()}
     >
       <div className="canvas-header bg-white/90 backdrop-blur">
-        <h3 className="text-slate-900 font-semibold">
-          Page {page.pageIndex + 1}
-        </h3>
+        <div className="canvas-header-left">
+          <h3 className="text-slate-900 font-semibold">
+            Page {page.pageIndex + 1}
+          </h3>
+          <div className="canvas-section-label">
+            {sectionLabels?.[sectionKey] || 'Unassigned'}
+          </div>
+        </div>
+        <div className="canvas-header-actions">
+          <label className="section-select-label">
+            Section
+            <select
+              className="section-select"
+              value={sectionKey || ''}
+              onChange={(e) => onSectionChange?.(page.pageIndex, e.target.value)}
+            >
+              {sectionOptions?.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button
+            type="button"
+            className="btn btn-small btn-secondary shadow-sm"
+            onClick={onTidyLayout}
+          >
+            Tidy layout
+          </button>
+        </div>
       </div>
 
       <div className="canvas-stage">

@@ -3,7 +3,7 @@
 // Purpose: Canvas editor with pages, layers, drag/resize + autosave
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { getLayout, applyLayout, autoLayout } from './api';
+import { getLayout, applyLayout, autoLayout, exportBinderPdf } from './api';
 import Canvas from './Canvas';
 import PageList from './PageList';
 import Toolbar from './Toolbar';
@@ -26,6 +26,7 @@ function App({ binderId /*, csrfToken */ }) {
   const [hasLoadedInitialLayout, setHasLoadedInitialLayout] = useState(false);
   const [lastSavedAt, setLastSavedAt] = useState(null);
   const [selectedLayerId, setSelectedLayerId] = useState(null);
+  const [exporting, setExporting] = useState(false);
   const fileInputRef = useRef(null);
 
   const applySectionDefaults = useCallback((pages) => {
@@ -498,6 +499,37 @@ function App({ binderId /*, csrfToken */ }) {
     setIsDirty(true);
   }, []);
 
+  // Export PDF handler
+  const handleExportPdf = useCallback(async () => {
+    if (exporting || !binderId || !layout) return;
+
+    try {
+      // Save any pending changes first
+      if (isDirty) {
+        await applyLayout(binderId, layout);
+        setIsDirty(false);
+      }
+
+      setExporting(true);
+      const blob = await exportBinderPdf(binderId);
+      
+      // Trigger browser download
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `binder-${binderId || 'export'}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(`Export failed: ${err.message}`);
+      console.error('[BinderEditor] Export failed:', err);
+    } finally {
+      setExporting(false);
+    }
+  }, [binderId, layout, isDirty, exporting, applyLayout]);
+
   if (loading) {
     return (
       <div className="binder-editor-loading">
@@ -579,10 +611,13 @@ function App({ binderId /*, csrfToken */ }) {
               setSelectedLayerId(null);
             }}
             onAutoLayout={handleAutoLayout}
+            onExportPdf={handleExportPdf}
             saving={saving}
             isDirty={isDirty}
             lastSavedAt={lastSavedAt}
             hasSelection={Boolean(selectedLayerId)}
+            exporting={exporting}
+            canExport={Boolean(binderId && layout && !loading)}
           />
 
           <Canvas

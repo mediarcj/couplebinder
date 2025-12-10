@@ -47,13 +47,6 @@ function Canvas({
     return Math.min(Math.max(value, min), max);
   };
 
-  /**
-   * Smoother collision logic:
-   * 1) Try full move (dx, dy).
-   * 2) If it collides, try horizontal only (dx, 0).
-   * 3) If still collides, try vertical only (0, dy).
-   * 4) If all collide, stay at previous position.
-   */
   const constrainDragWithCollisions = (
     layerEl,
     proposedLeft,
@@ -79,49 +72,25 @@ function Canvas({
       return { left: prevLeft, top: prevTop, collided: false };
     }
 
-    const testPosition = (left, top) => {
-      // Clamp to canvas (cannot leave the board)
-      const clampedLeft = clamp(left, 0, canvasRect.width - width);
-      const clampedTop = clamp(top, 0, canvasRect.height - height);
+    // Clamp to canvas (cannot leave the board)
+    const clampedLeft = clamp(proposedLeft, 0, canvasRect.width - width);
+    const clampedTop = clamp(proposedTop, 0, canvasRect.height - height);
 
-      const others = canvas.querySelectorAll('.binder-editor-layer');
+    const others = canvas.querySelectorAll('.binder-editor-layer');
+    for (const other of others) {
+      if (other === layerEl) continue;
+      const r = other.getBoundingClientRect();
+      const oLeft = r.left - canvasRect.left;
+      const oTop = r.top - canvasRect.top;
+      const oWidth = r.width;
+      const oHeight = r.height;
 
-      for (const other of others) {
-        if (other === layerEl) continue;
-        const r = other.getBoundingClientRect();
-        const oLeft = r.left - canvasRect.left;
-        const oTop = r.top - canvasRect.top;
-        const oWidth = r.width;
-        const oHeight = r.height;
-
-        if (rectsOverlap(clampedLeft, clampedTop, width, height, oLeft, oTop, oWidth, oHeight)) {
-          return null; // invalid position
-        }
+      if (rectsOverlap(clampedLeft, clampedTop, width, height, oLeft, oTop, oWidth, oHeight)) {
+        return { left: prevLeft, top: prevTop, collided: true };
       }
-
-      return { left: clampedLeft, top: clampedTop };
-    };
-
-    // 1) Full move
-    const full = testPosition(proposedLeft, proposedTop);
-    if (full) {
-      return { ...full, collided: false };
     }
 
-    // 2) Horizontal only (slide left/right while "rubbing" vertically)
-    const horiz = testPosition(proposedLeft, prevTop);
-    if (horiz) {
-      return { ...horiz, collided: false };
-    }
-
-    // 3) Vertical only (slide up/down while "rubbing" horizontally)
-    const vert = testPosition(prevLeft, proposedTop);
-    if (vert) {
-      return { ...vert, collided: false };
-    }
-
-    // 4) Completely blocked: stay put
-    return { left: prevLeft, top: prevTop, collided: true };
+    return { left: clampedLeft, top: clampedTop, collided: false };
   };
 
   // Deselect when clicking whitespace inside the canvas (but not on a layer)
@@ -194,8 +163,17 @@ function Canvas({
         canvasHeight
       } = dragStart;
 
-      // We keep the drag active even if the pointer leaves the canvas;
-      // positions are still clamped by canvasRect, so tiles never leave.
+      const insideCanvasBounds =
+        e.clientX >= canvasLeft &&
+        e.clientX <= canvasLeft + canvasWidth &&
+        e.clientY >= canvasTop &&
+        e.clientY <= canvasTop + canvasHeight;
+
+      if (!insideCanvasBounds) {
+        handleDragEnd();
+        return;
+      }
+
       const dx = e.clientX - lastDrag.mouseX;
       const dy = e.clientY - lastDrag.mouseY;
 

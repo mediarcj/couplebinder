@@ -56,6 +56,132 @@ function getContext(req) {
   return { userId, client: supabaseAdmin };
 }
 
+/**
+ * WHAT:
+ * Resolve workspace ID (default-{userId}) to real binder UUID, or return existing UUID.
+ * Creates binder if missing for workspace IDs.
+ *
+ * WHY:
+ * Workspace IDs are per-user placeholders. We need real binder UUIDs for DB operations.
+ *
+ * HOW:
+ * - If binderIdParam is a workspace ID, find or create the user's default binder.
+ * - If binderIdParam is a UUID, verify ownership and return it.
+ * - Returns { binder, binderId } where binderId is the real UUID.
+ * - Throws errors only for auth/DB failures, not for missing binders (creates them).
+ */
+async function resolveBinder({ client, userId, binderIdParam, createIfMissing = true }) {
+  if (!binderIdParam || !userId) {
+    const err = new Error('Missing binderId or userId');
+    err.status = 400;
+    throw err;
+  }
+
+  // Case 1: Workspace ID (default-{userId})
+  if (binderIdParam.startsWith('default-')) {
+    const { data: existingBinder, error: binderSelectErr } = await client
+      .from('binders')
+      .select('id, user_id, title, created_at, updated_at')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: true })
+      .limit(1)
+      .maybeSingle();
+
+    if (binderSelectErr) {
+      logger.error(
+        {
+          event: 'binder.resolve.lookup_failed',
+          binderId: binderIdParam,
+          userId,
+          error: binderSelectErr.message
+        },
+        'Binder lookup by user_id failed'
+      );
+      const err = new Error('Unable to resolve binder');
+      err.status = 500;
+      throw err;
+    }
+
+    if (existingBinder) {
+      return {
+        binder: existingBinder,
+        binderId: existingBinder.id
+      };
+    }
+
+    // No binder exists - create one if allowed
+    if (!createIfMissing) {
+      const err = new Error('Binder not found');
+      err.status = 404;
+      throw err;
+    }
+
+    const { data: createdBinder, error: binderInsertErr } = await client
+      .from('binders')
+      .insert({
+        user_id: userId,
+        title: 'My relationship story binder',
+        status: 'draft'
+      })
+      .select('id, user_id, title, created_at, updated_at')
+      .single();
+
+    if (binderInsertErr) {
+      logger.error(
+        {
+          event: 'binder.resolve.create_failed',
+          binderId: binderIdParam,
+          userId,
+          error: binderInsertErr.message
+        },
+        'Failed to create default binder'
+      );
+      const err = new Error('Unable to create binder');
+      err.status = 500;
+      throw err;
+    }
+
+    return {
+      binder: createdBinder,
+      binderId: createdBinder.id
+    };
+  }
+
+  // Case 2: Real UUID - verify ownership
+  const { data: binderRow, error: binderErr } = await client
+    .from('binders')
+    .select('id, user_id, title, created_at, updated_at')
+    .eq('id', binderIdParam)
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  if (binderErr) {
+    logger.error(
+      {
+        event: 'binder.resolve.query_failed',
+        binderId: binderIdParam,
+        userId,
+        error: binderErr.message
+      },
+      'Binder query failed'
+    );
+    const err = new Error('Unable to resolve binder');
+    err.status = 500;
+    throw err;
+  }
+
+  if (!binderRow) {
+    const err = new Error('Binder not found');
+    err.status = 404;
+    throw err;
+  }
+
+  return {
+    binder: binderRow,
+    binderId: binderRow.id
+  };
+}
+
 const SECTION_DEFS = {
   overview: { label: 'Our Story Overview', prefix: 'O' },
   photos: { label: 'Photos Together', prefix: 'P' },
@@ -118,14 +244,17 @@ async function fetchImageBufferForLayer(layer) {
   return null;
 }
 
-function renderBinderPageBody({
+async function renderBinderPageBody({
   doc,
   pageLayout,
   exhibitInfo,
   binderTitle,
   totalPages,
   contentPageNumber,
-  marginPt = mmToPt(18)
+  marginPt = mmToPt(18),
+  client = null,
+  userId = null,
+  binderId = null
 }) {
   const sectionDef = SECTION_DEFS[pageLayout.sectionKey] || SECTION_DEFS.photos;
   const exhibitCode = exhibitInfo
@@ -174,14 +303,15 @@ function renderBinderPageBody({
     return za - zb;
   });
 
-  layers.forEach((layer) => {
+  // Process layers sequentially to ensure images are loaded before rendering
+  for (const layer of layers) {
     try {
       const x = Number(layer.x) || 0;
       const y = Number(layer.y) || 0;
       const w = Number(layer.width) || 0;
       const h = Number(layer.height) || 0;
 
-      if (w <= 0 || h <= 0) return;
+      if (w <= 0 || h <= 0) continue;
 
       const pdfX = baseX + x * scale;
       const pdfY = baseY + y * scale;
@@ -189,62 +319,73 @@ function renderBinderPageBody({
       const pdfH = h * scale;
 
       if (layer.type === 'photo') {
-        // Reserve box
-        doc.save().rect(pdfX, pdfY, pdfW, pdfH).stroke('#e5e7eb').restore();
-
-        // Attempt to draw the image with aspect fit
-        fetchImageBufferForLayer(layer)
-          .then((buf) => {
-            if (!buf) {
-              doc
-                .save()
-                .rect(pdfX, pdfY, pdfW, pdfH)
-                .fill('#f3f4f6')
-                .restore();
-              doc
-                .fontSize(9)
-                .fillColor('#6b7280')
-                .text('Photo unavailable', pdfX + 4, pdfY + 4, {
-                  width: pdfW - 8,
-                  height: pdfH - 8
-                })
-                .fillColor('#000000');
-              return;
+        // Get storageKey from layer (preferred) or lookup by photoId
+        let layerWithStorageKey = { ...layer };
+        
+        if (!layerWithStorageKey.storageKey && layerWithStorageKey.photoId && client && userId && binderId) {
+          try {
+            const { data: photo } = await client
+              .from('binder_photos')
+              .select('storage_key')
+              .eq('id', layerWithStorageKey.photoId)
+              .eq('binder_id', binderId)
+              .eq('user_id', userId)
+              .maybeSingle();
+            
+            if (photo && photo.storage_key) {
+              layerWithStorageKey.storageKey = photo.storage_key;
             }
-
-            // Fit image preserving aspect ratio
-            const img = doc.openImage(buf);
-            const imgRatio = img.width / img.height;
-            const boxRatio = pdfW / pdfH;
-
-            let drawW = pdfW;
-            let drawH = pdfH;
-            if (imgRatio > boxRatio) {
-              drawH = pdfW / imgRatio;
-            } else {
-              drawW = pdfH * imgRatio;
-            }
-
-            const drawX = pdfX + (pdfW - drawW) / 2;
-            const drawY = pdfY + (pdfH - drawH) / 2;
-
-            doc.image(img, drawX, drawY, { width: drawW, height: drawH });
-          })
-          .catch((err) => {
+          } catch (lookupErr) {
             logger.warn(
               {
-                event: 'binder.pdf.image_draw_failed',
+                event: 'binder.pdf.photo_lookup_failed',
                 layerId: layer.id,
-                error: err.message
+                photoId: layerWithStorageKey.photoId,
+                error: lookupErr.message
               },
-              'Failed to draw image in PDF'
+              'Failed to lookup photo storageKey'
             );
-            doc
-              .save()
-              .rect(pdfX, pdfY, pdfW, pdfH)
-              .fill('#f3f4f6')
-              .restore();
-          });
+          }
+        }
+
+        // Attempt to fetch and draw the image
+        const buf = await fetchImageBufferForLayer(layerWithStorageKey);
+        
+        if (!buf) {
+          // Placeholder for missing image
+          doc
+            .save()
+            .rect(pdfX, pdfY, pdfW, pdfH)
+            .fill('#f3f4f6')
+            .stroke('#e5e7eb')
+            .restore();
+          doc
+            .fontSize(9)
+            .fillColor('#6b7280')
+            .text('Photo unavailable', pdfX + 4, pdfY + 4, {
+              width: pdfW - 8,
+              height: pdfH - 8
+            })
+            .fillColor('#000000');
+        } else {
+          // Fit image preserving aspect ratio
+          const img = doc.openImage(buf);
+          const imgRatio = img.width / img.height;
+          const boxRatio = pdfW / pdfH;
+
+          let drawW = pdfW;
+          let drawH = pdfH;
+          if (imgRatio > boxRatio) {
+            drawH = pdfW / imgRatio;
+          } else {
+            drawW = pdfH * imgRatio;
+          }
+
+          const drawX = pdfX + (pdfW - drawW) / 2;
+          const drawY = pdfY + (pdfH - drawH) / 2;
+
+          doc.image(img, drawX, drawY, { width: drawW, height: drawH });
+        }
       } else if (layer.type === 'text') {
         doc
           .save()
@@ -271,11 +412,17 @@ function renderBinderPageBody({
       }
     } catch (err) {
       logger.warn(
-        { event: 'binder.pdf.layer_render_failed', layerId: layer?.id, error: err.message },
-        'Layer rendering failed'
+        {
+          event: 'binder.pdf.layer_render_failed',
+          layerId: layer.id,
+          layerType: layer.type,
+          error: err.message
+        },
+        'Failed to render layer in PDF'
       );
+      // Continue with other layers
     }
-  });
+  }
 }
 
 /**
@@ -753,28 +900,24 @@ async function addPhotos(req, res, next) {
  * Generate PDF with index + exhibit labels
  */
 async function exportPdf(req, res, next) {
-  const { binderId } = req.params;
+  const binderIdParam = req.params.binderId;
 
   try {
     const { userId, client } = getContext(req);
 
-    // Verify binder ownership
-    const { data: binder, error: binderErr } = await client
-      .from('binders')
-      .select('id, user_id, title')
-      .eq('id', binderId)
-      .eq('user_id', userId)
-      .maybeSingle();
+    // Resolve workspace ID to real binder UUID
+    const { binder, binderId } = await resolveBinder({
+      client,
+      userId,
+      binderIdParam,
+      createIfMissing: false // Don't create for export
+    });
 
-    if (binderErr || !binder) {
-      return res.status(404).json({ ok: false, message: 'Binder not found' });
-    }
-
-    // Fetch layout pages
+    // Fetch layout pages using real binderId
     const { data: layoutRows, error: layoutErr } = await client
       .from('binder_layouts')
       .select('page_number, layout_json')
-      .eq('binder_id', String(binder.id))
+      .eq('binder_id', String(binderId))
       .eq('user_id', userId)
       .order('page_number', { ascending: true });
 
@@ -786,9 +929,11 @@ async function exportPdf(req, res, next) {
       return res.status(500).json({ ok: false, message: 'Unable to export PDF' });
     }
 
+    // Build pages with section info and layers
     let pages = (layoutRows || []).map((row, idx) => ({
       pageIndex: typeof row.page_number === 'number' ? row.page_number - 1 : idx,
-      sectionKey: row.layout_json?.sectionKey || null
+      sectionKey: row.layout_json?.sectionKey || null,
+      layers: row.layout_json?.layers || [] // Include layers for rendering
     }));
 
     // Backward compatibility: assign defaults if none present
@@ -859,36 +1004,40 @@ async function exportPdf(req, res, next) {
       });
     }
 
-    // Content pages
-    pages.forEach((p, idx) => {
+    // Content pages - render actual layout
+    for (let idx = 0; idx < pages.length; idx++) {
+      const p = pages[idx];
       doc.addPage();
       const contentPageNumber = idx + 2;
       const exhibit = getExhibitForPage(contentPageNumber);
 
-      renderBinderPageBody({
+      await renderBinderPageBody({
         doc,
         pageLayout: p,
         exhibitInfo: exhibit,
         binderTitle: binder.title,
         totalPages,
-        contentPageNumber
+        contentPageNumber,
+        client,
+        userId,
+        binderId
       });
-    });
+    }
 
     doc.end();
 
-    logger.info(
-      {
-        event: 'binder.pdf_exported',
-        binderId,
-        userId,
-        pageCount: contentPages
-      },
-      'Binder PDF exported with index/exhibits'
-    );
+      logger.info(
+        {
+          event: 'binder.pdf_exported',
+          binderId,
+          userId,
+          pageCount: contentPages
+        },
+        'Binder PDF exported with index/exhibits'
+      );
   } catch (err) {
     logger.error(
-      { event: 'binder.export_failed', error: err.message, binderId, userId: req.user?.id },
+      { event: 'binder.export_failed', error: err.message, binderId: binderIdParam, userId: req.user?.id },
       'Binder exportPdf handler failed'
     );
     next(err);
@@ -908,6 +1057,16 @@ async function exportPdf(req, res, next) {
 async function renderBinderEditor(req, res, next) {
   // Define outside try so catch can log it safely
   const binderIdParam = req.params.binderId;
+
+  logger.info(
+    {
+      event: 'binder.editor.handler_called',
+      binderId: binderIdParam,
+      path: req.path,
+      method: req.method
+    },
+    'Binder editor handler invoked'
+  );
 
   try {
     const { userId, client } = getContext(req);
@@ -1088,35 +1247,20 @@ async function getBinderLayout(req, res, next) {
     const { userId, client } = getContext(req);
     const binderIdParam = req.params.binderId;
 
-    // Look up the specific binder by ID and verify ownership
-    const { data: binder, error: binderErr } = await client
-      .from('binders')
-      .select('id, user_id')
-      .eq('id', binderIdParam)
-      .eq('user_id', userId)
-      .maybeSingle();
+    // Resolve workspace ID to real binder UUID
+    const { binder, binderId } = await resolveBinder({
+      client,
+      userId,
+      binderIdParam,
+      createIfMissing: false
+    });
 
-    if (binderErr || !binder || binder.user_id !== userId) {
-      logger.warn(
-        {
-          event: 'binder.layout.get.unauthorized',
-          binderId: binderIdParam,
-          userId
-        },
-        'Unauthorized layout get attempt'
-      );
-      return res.status(404).json({
-        ok: false,
-        message: 'Binder not found'
-      });
-    }
-
-    // Fetch layout from binder_layouts (binder_id is text, use binder.id as string)
+    // Fetch layout from binder_layouts (binder_id is text, use binderId as string)
     const { data: layoutRow, error: layoutErr } = await client
       .from('binder_layouts')
       .select('layout_json, updated_at')
       .eq('user_id', userId)
-      .eq('binder_id', String(binder.id))
+      .eq('binder_id', String(binderId))
       .order('page_number', { ascending: true })
       .limit(100);
 
@@ -1124,7 +1268,7 @@ async function getBinderLayout(req, res, next) {
       logger.error(
         {
           event: 'binder.layout.get.query_failed',
-          binderId: binder.id,
+          binderId: binderId,
           userId,
           error: layoutErr.message
         },
@@ -1138,7 +1282,7 @@ async function getBinderLayout(req, res, next) {
 
     // Build layout structure from rows
     let layout = {
-      binderId: binder.id,
+      binderId: binderId,
       pages: [],
       updatedAt: new Date().toISOString()
     };
@@ -1161,7 +1305,7 @@ async function getBinderLayout(req, res, next) {
         const { data: photos, error: photosErr } = await client
           .from('binder_photos')
           .select('id, storage_key')
-          .eq('binder_id', binder.id)
+          .eq('binder_id', binderId)
           .eq('user_id', userId)
           .in('id', photoIdsToLookup);
 
@@ -1247,33 +1391,19 @@ async function applyBinderLayout(req, res, next) {
       });
     }
 
-    if (layout.binderId && layout.binderId !== binderIdParam) {
+    // Resolve workspace ID to real binder UUID
+    const { binder, binderId } = await resolveBinder({
+      client,
+      userId,
+      binderIdParam,
+      createIfMissing: true // Create binder if missing for workspace IDs
+    });
+
+    // Validate binderId matches if provided in layout
+    if (layout.binderId && layout.binderId !== binderIdParam && layout.binderId !== binderId) {
       return res.status(400).json({
         ok: false,
         message: 'Binder ID mismatch'
-      });
-    }
-
-    // Look up the specific binder by ID and verify ownership
-    const { data: binder, error: binderErr } = await client
-      .from('binders')
-      .select('id, user_id')
-      .eq('id', binderIdParam)
-      .eq('user_id', userId)
-      .maybeSingle();
-
-    if (binderErr || !binder || binder.user_id !== userId) {
-      logger.warn(
-        {
-          event: 'binder.layout.apply.unauthorized',
-          binderId: binderIdParam,
-          userId
-        },
-        'Unauthorized layout apply attempt'
-      );
-      return res.status(404).json({
-        ok: false,
-        message: 'Binder not found'
       });
     }
 
@@ -1282,13 +1412,13 @@ async function applyBinderLayout(req, res, next) {
       .from('binder_layouts')
       .delete()
       .eq('user_id', userId)
-      .eq('binder_id', String(binder.id));
+      .eq('binder_id', String(binderId));
 
     if (deleteErr) {
       logger.error(
         {
           event: 'binder.layout.apply.delete_failed',
-          binderId: binder.id,
+          binderId: binderId,
           userId,
           error: deleteErr.message
         },
@@ -1303,7 +1433,7 @@ async function applyBinderLayout(req, res, next) {
     // Insert new layouts (one row per page, binder_id is text)
     const layoutRows = layout.pages.map((page, idx) => ({
       user_id: userId,
-      binder_id: String(binder.id),
+      binder_id: String(binderId),
       page_number: idx + 1,
       layout_json: {
         layers: page.layers || [],
@@ -1320,7 +1450,7 @@ async function applyBinderLayout(req, res, next) {
         logger.error(
           {
             event: 'binder.layout.apply.insert_failed',
-            binderId: binder.id,
+            binderId: binderId,
             userId,
             error: insertErr.message
           },
@@ -1337,7 +1467,7 @@ async function applyBinderLayout(req, res, next) {
     await client
       .from('binders')
       .update({ updated_at: new Date().toISOString() })
-      .eq('id', binder.id)
+      .eq('id', binderId)
       .eq('user_id', userId);
 
     const updatedAt = new Date().toISOString();

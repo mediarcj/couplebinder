@@ -19,7 +19,7 @@ const clamp = (value, min, max) => {
   return Math.min(Math.max(value, min), max);
 };
 
-function Layer({ layer, selected, onSelect, onUpdate, onRemove, onDragStart, binderId }) {
+function Layer({ layer, selected, onSelect, onUpdate, onRemove, onDragStart, binderId, zoom = 1 }) {
   const [resizing, setResizing] = useState(false);
   const resizeRef = useRef(null);
   // Start with any existing URL baked into the layout (legacy EJS binder)
@@ -51,16 +51,17 @@ function Layer({ layer, selected, onSelect, onUpdate, onRemove, onDragStart, bin
 
     if (!canvasRect || !rect) return;
 
-    const left = rect.left - canvasRect.left;
-    const top = rect.top - canvasRect.top;
+    // Convert from visual (scaled) coordinates to A4 coordinates
+    const left = (rect.left - canvasRect.left) / zoom;
+    const top = (rect.top - canvasRect.top) / zoom;
     const aspect =
       rect.width && rect.height ? rect.width / rect.height : 1;
 
     const startRect = {
       left,
       top,
-      width: rect.width,
-      height: rect.height
+      width: rect.width / zoom,  // Convert to A4 coordinates
+      height: rect.height / zoom // Convert to A4 coordinates
     };
 
     resizeRef.current = {
@@ -73,7 +74,8 @@ function Layer({ layer, selected, onSelect, onUpdate, onRemove, onDragStart, bin
       aspect,
       canvasRect,
       canvasEl,
-      layerEl
+      layerEl,
+      zoom: zoom
     };
     setResizing(true);
   };
@@ -90,11 +92,13 @@ function Layer({ layer, selected, onSelect, onUpdate, onRemove, onDragStart, bin
       aspect,
       canvasRect,
       canvasEl,
-      layerEl
+      layerEl,
+      zoom: storedZoom
     } = resizeRef.current;
 
-    const dx = e.clientX - startMouseX;
-    const dy = e.clientY - startMouseY;
+    // Account for zoom: mouse movement needs to be divided by zoom to get A4 coordinates
+    const dx = (e.clientX - startMouseX) / storedZoom;
+    const dy = (e.clientY - startMouseY) / storedZoom;
 
     const isLeft = corner.includes('left');
     const isTop = corner.includes('top');
@@ -107,20 +111,22 @@ function Layer({ layer, selected, onSelect, onUpdate, onRemove, onDragStart, bin
     let left = isLeft ? startRect.left + (startRect.width - width) : startRect.left;
     let top = isTop ? startRect.top + (startRect.height - height) : startRect.top;
 
-    // Clamp inside canvas first
-    left = clamp(left, 0, canvasRect.width - width);
-    top = clamp(top, 0, canvasRect.height - height);
+    // Clamp inside canvas (convert canvasRect to A4 coordinates)
+    const canvasWidth = canvasRect.width / storedZoom;
+    const canvasHeight = canvasRect.height / storedZoom;
+    left = clamp(left, 0, canvasWidth - width);
+    top = clamp(top, 0, canvasHeight - height);
 
     // If bottom/right overflow after clamping left/top and width/height, adjust
-    if (left + width > canvasRect.width) {
-      width = Math.max(50, canvasRect.width - left);
+    if (left + width > canvasWidth) {
+      width = Math.max(50, canvasWidth - left);
       height = width / aspect;
     }
-    if (top + height > canvasRect.height) {
-      height = Math.max(50, canvasRect.height - top);
+    if (top + height > canvasHeight) {
+      height = Math.max(50, canvasHeight - top);
       width = height * aspect;
-      if (left + width > canvasRect.width) {
-        left = Math.max(0, canvasRect.width - width);
+      if (left + width > canvasWidth) {
+        left = Math.max(0, canvasWidth - width);
       }
     }
 
@@ -134,10 +140,11 @@ function Layer({ layer, selected, onSelect, onUpdate, onRemove, onDragStart, bin
       for (const other of others) {
         if (other === layerEl) continue;
         const r = other.getBoundingClientRect();
-        const oLeft = r.left - canvasRect.left;
-        const oTop = r.top - canvasRect.top;
-        const oWidth = r.width;
-        const oHeight = r.height;
+        // Convert to A4 coordinates
+        const oLeft = (r.left - canvasRect.left) / storedZoom;
+        const oTop = (r.top - canvasRect.top) / storedZoom;
+        const oWidth = r.width / storedZoom;
+        const oHeight = r.height / storedZoom;
 
         if (
           rectsOverlap(

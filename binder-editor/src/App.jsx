@@ -8,6 +8,7 @@ import Canvas from './Canvas';
 import PageList from './PageList';
 import Toolbar from './Toolbar';
 import './App.css';
+import { SECTION_LABELS, SECTION_OPTIONS } from './sections';
 
 const AUTOSAVE_DEBOUNCE_MS = 1500; // 1.5s after last change
 
@@ -26,6 +27,22 @@ function App({ binderId /*, csrfToken */ }) {
   const [lastSavedAt, setLastSavedAt] = useState(null);
   const [selectedLayerId, setSelectedLayerId] = useState(null);
   const fileInputRef = useRef(null);
+
+  const applySectionDefaults = useCallback((pages) => {
+    if (!Array.isArray(pages)) return [];
+    const anyHasSection = pages.some((p) => p && p.sectionKey);
+    return pages.map((page, idx) => {
+      if (!page) return page;
+      const sectionKey = page.sectionKey
+        ? page.sectionKey
+        : anyHasSection
+          ? null
+          : idx === 0
+            ? 'overview'
+            : 'photos';
+      return { ...page, sectionKey };
+    });
+  }, []);
 
   // Deselect any selected layer when clicking outside the editor
   // OR clicking anywhere inside the editor that is not on a layer.
@@ -90,7 +107,9 @@ function App({ binderId /*, csrfToken */ }) {
         if (data.ok && data.layout) {
           const safeLayout = {
             binderId,
-            pages: Array.isArray(data.layout.pages) ? data.layout.pages : [],
+            pages: applySectionDefaults(
+              Array.isArray(data.layout.pages) ? data.layout.pages : []
+            ),
             updatedAt: data.layout.updatedAt || new Date().toISOString()
           };
 
@@ -171,7 +190,9 @@ function App({ binderId /*, csrfToken */ }) {
       if (result.ok && result.layout) {
         const safeLayout = {
           binderId,
-          pages: Array.isArray(result.layout.pages) ? result.layout.pages : [],
+          pages: applySectionDefaults(
+            Array.isArray(result.layout.pages) ? result.layout.pages : []
+          ),
           updatedAt: result.layout.updatedAt || new Date().toISOString()
         };
 
@@ -242,11 +263,11 @@ function App({ binderId /*, csrfToken */ }) {
         page.layers = [...(page.layers || []), layer];
         newPages[selectedPage] = page;
 
-        return { ...prev, pages: newPages };
+        return { ...prev, pages: applySectionDefaults(newPages) };
       });
       setIsDirty(true);
     },
-    [binderId, selectedPage]
+    [binderId, selectedPage, applySectionDefaults]
   );
 
   const handleAddPhoto = useCallback(() => {
@@ -330,6 +351,95 @@ function App({ binderId /*, csrfToken */ }) {
   const handleSelectLayer = useCallback((layerId) => {
     setSelectedLayerId(layerId || null);
   }, []);
+
+  const handleSectionChange = useCallback(
+    (pageIndex, sectionKey) => {
+      setLayout((prev) => {
+        if (!prev || !prev.pages || !prev.pages[pageIndex]) return prev;
+        const pages = [...prev.pages];
+        pages[pageIndex] = { ...pages[pageIndex], sectionKey };
+        return { ...prev, pages };
+      });
+      setIsDirty(true);
+    },
+    []
+  );
+
+  const handleTidyLayout = useCallback(() => {
+    setLayout((prev) => {
+      if (!prev || !prev.pages || !prev.pages[selectedPage]) return prev;
+      const pages = [...prev.pages];
+      const page = { ...pages[selectedPage] };
+      const layers = [...(page.layers || [])];
+
+      const photos = layers.filter((l) => l.type === 'photo');
+      if (photos.length === 0) return prev;
+
+      const PAGE_W = 820;
+      const PAGE_H = 1161; // 820 * (297/210)
+      const gutter = 12;
+
+      const placeLayer = (layer, left, top, width, height) => {
+        layer.x = Math.max(0, Math.min(left, PAGE_W - width));
+        layer.y = Math.max(0, Math.min(top, PAGE_H - height));
+        layer.width = width;
+        layer.height = height;
+        return layer;
+      };
+
+      const updatePhoto = (idx, fn) => {
+        const photo = photos[idx];
+        if (!photo) return;
+        const updated = fn({ ...photo });
+        const pos = layers.findIndex((l) => l.id === photo.id);
+        if (pos >= 0) layers[pos] = updated;
+      };
+
+      if (photos.length === 1) {
+        const w = Math.floor(PAGE_W * 0.7);
+        const h = Math.floor(PAGE_H * 0.7);
+        const x = Math.floor((PAGE_W - w) / 2);
+        const y = Math.floor((PAGE_H - h) / 2);
+        updatePhoto(0, (p) => placeLayer(p, x, y, w, h));
+      } else if (photos.length === 2) {
+        const w = Math.floor(PAGE_W * 0.48);
+        const h = Math.floor(PAGE_H * 0.45);
+        const y = gutter * 2;
+        updatePhoto(0, (p) => placeLayer(p, gutter, y, w, h));
+        updatePhoto(1, (p) => placeLayer(p, PAGE_W - w - gutter, y, w, h));
+      } else if (photos.length === 3 || photos.length === 4) {
+        const w = Math.floor(PAGE_W * 0.45);
+        const h = Math.floor(PAGE_H * 0.35);
+        const positions = [
+          [gutter, gutter * 2],
+          [PAGE_W - w - gutter, gutter * 2],
+          [gutter, h + gutter * 3],
+          [PAGE_W - w - gutter, h + gutter * 3]
+        ];
+        for (let i = 0; i < Math.min(photos.length, 4); i += 1) {
+          const [x, y] = positions[i];
+          updatePhoto(i, (p) => placeLayer(p, x, y, w, h));
+        }
+      } else if (photos.length > 4) {
+        const w = Math.floor(PAGE_W * 0.45);
+        const h = Math.floor(PAGE_H * 0.35);
+        const positions = [
+          [gutter, gutter * 2],
+          [PAGE_W - w - gutter, gutter * 2],
+          [gutter, h + gutter * 3],
+          [PAGE_W - w - gutter, h + gutter * 3]
+        ];
+        for (let i = 0; i < 4; i += 1) {
+          const [x, y] = positions[i];
+          updatePhoto(i, (p) => placeLayer(p, x, y, w, h));
+        }
+      }
+
+      pages[selectedPage] = { ...page, layers };
+      setIsDirty(true);
+      return { ...prev, pages };
+    });
+  }, [selectedPage]);
 
   // Remove layer from current page (does NOT delete underlying photo from S3/DB)
   const removeLayer = useCallback(
@@ -427,13 +537,14 @@ function App({ binderId /*, csrfToken */ }) {
         <PageList
           pages={layout?.pages || []}
           selectedPageIndex={selectedPage}
+          sectionLabels={SECTION_LABELS}
           onSelectPage={setSelectedPage}
           onAddPage={() => {
             setLayout((prev) => {
               if (!prev) {
                 return {
                   binderId,
-                  pages: [{ pageIndex: 0, layers: [] }],
+                  pages: applySectionDefaults([{ pageIndex: 0, layers: [] }]),
                   updatedAt: new Date().toISOString()
                 };
               }
@@ -451,7 +562,7 @@ function App({ binderId /*, csrfToken */ }) {
 
               return {
                 ...prev,
-                pages: newPages
+                pages: applySectionDefaults(newPages)
               };
             });
             setIsDirty(true);
@@ -480,6 +591,11 @@ function App({ binderId /*, csrfToken */ }) {
             onUpdateLayer={updateLayer}
             onAddLayer={addLayer}
             onRemoveLayer={removeLayer}
+            sectionKey={currentPage.sectionKey}
+            sectionLabels={SECTION_LABELS}
+            sectionOptions={SECTION_OPTIONS}
+            onSectionChange={handleSectionChange}
+            onTidyLayout={handleTidyLayout}
             selectedLayerId={selectedLayerId}
             onSelectLayer={handleSelectLayer}
           />

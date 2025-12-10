@@ -10,7 +10,8 @@ function PageList({
   selectedPageIndex,
   onSelectPage,
   onAddPage,
-  onDeletePage
+  onDeletePage,
+  sectionLabels = {}
 }) {
   const { openModal } = useModal();
 
@@ -83,6 +84,11 @@ function PageList({
               onClick={() => onSelectPage(idx)}
             >
               Page {(page.pageIndex ?? idx) + 1}
+              {page.sectionKey && (
+                <span className="page-thumb-section">
+                  {sectionLabels[page.sectionKey] || page.sectionKey}
+                </span>
+              )}
               {page.layers && page.layers.length > 0 && (
                 <span className="page-thumb-count">
                   {page.layers.length} layers

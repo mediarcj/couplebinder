@@ -27,6 +27,8 @@ function App({ binderId /*, csrfToken */ }) {
   const [lastSavedAt, setLastSavedAt] = useState(null);
   const [selectedLayerId, setSelectedLayerId] = useState(null);
   const [exporting, setExporting] = useState(false);
+  const [zoom, setZoom] = useState(1);
+  const canvasStageRef = useRef(null);
   const fileInputRef = useRef(null);
 
   const applySectionDefaults = useCallback((pages) => {
@@ -147,6 +149,61 @@ function App({ binderId /*, csrfToken */ }) {
 
     load();
   }, [binderId]);
+
+  // Calculate "fit to page" zoom on mount and window resize
+  useEffect(() => {
+    const calculateFitZoom = () => {
+      if (!canvasStageRef.current) return;
+      
+      const stageRect = canvasStageRef.current.getBoundingClientRect();
+      const availableWidth = stageRect.width - 48; // padding
+      const availableHeight = stageRect.height - 48; // padding
+      
+      // Actual A4 dimensions at 96 DPI
+      const a4Width = 794;
+      const a4Height = 1122;
+      
+      // Calculate zoom to fit both dimensions
+      const zoomX = availableWidth / a4Width;
+      const zoomY = availableHeight / a4Height;
+      const fitZoom = Math.min(zoomX, zoomY, 1); // Don't zoom in beyond 100%
+      
+      setZoom(fitZoom);
+    };
+    
+    // Calculate initial fit
+    const timeoutId = setTimeout(calculateFitZoom, 100);
+    
+    const handleResize = () => {
+      clearTimeout(timeoutId);
+      setTimeout(calculateFitZoom, 100);
+    };
+    
+    window.addEventListener('resize', handleResize);
+    
+    return () => {
+      clearTimeout(timeoutId);
+      window.removeEventListener('resize', handleResize);
+    };
+  }, []);
+
+  // Zoom handlers
+  const handleZoomChange = useCallback((newZoom) => {
+    setZoom(Math.max(0.25, Math.min(2, newZoom))); // Clamp between 25% and 200%
+  }, []);
+
+  const handleZoomFit = useCallback(() => {
+    if (!canvasStageRef.current) return;
+    const stageRect = canvasStageRef.current.getBoundingClientRect();
+    const availableWidth = stageRect.width - 48;
+    const availableHeight = stageRect.height - 48;
+    const a4Width = 794;
+    const a4Height = 1122;
+    const zoomX = availableWidth / a4Width;
+    const zoomY = availableHeight / a4Height;
+    const fitZoom = Math.min(zoomX, zoomY, 1);
+    setZoom(fitZoom);
+  }, []);
 
   // Autosave effect – runs when layout changes and isDirty = true
   useEffect(() => {
@@ -376,8 +433,9 @@ function App({ binderId /*, csrfToken */ }) {
       const photos = layers.filter((l) => l.type === 'photo');
       if (photos.length === 0) return prev;
 
-      const PAGE_W = 820;
-      const PAGE_H = 1161; // 820 * (297/210)
+      // Actual A4 at 96 DPI: 794px × 1122px
+      const PAGE_W = 794;
+      const PAGE_H = 1122;
       const gutter = 12;
 
       const placeLayer = (layer, left, top, width, height) => {
@@ -633,6 +691,10 @@ function App({ binderId /*, csrfToken */ }) {
             onTidyLayout={handleTidyLayout}
             selectedLayerId={selectedLayerId}
             onSelectLayer={handleSelectLayer}
+            zoom={zoom}
+            onZoomChange={handleZoomChange}
+            onZoomFit={handleZoomFit}
+            canvasStageRef={canvasStageRef}
           />
 
           <div className="canvas-photo-strip binder-react-photo-strip">

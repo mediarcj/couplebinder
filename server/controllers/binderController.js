@@ -9,6 +9,7 @@ const logger = require('../utils/logger');
 const { supabaseAdmin } = require('../utils/supabaseClient');
 const { supabase } = require('../utils/supabaseClient'); // kept for future use
 const { saveBinderPhoto } = require('../services/storageProvider');
+const { getBinderPhotoViewUrl } = require('../services/storageProvider');
 
 // -----------------------------------------------------------------------------
 // Shared server-side image validation (aligns with binderRoutes + dashboard.js)
@@ -63,6 +64,219 @@ const SECTION_DEFS = {
   chats: { label: 'Screenshots & Chats', prefix: 'C' },
   receipts: { label: 'Receipts / Support / Financial', prefix: 'R' }
 };
+
+// Logical layout space (mirrors React editor: .canvas-page width ~820px, A4 ratio)
+const LAYOUT_LOGICAL_WIDTH = 820;
+const LAYOUT_LOGICAL_HEIGHT = Math.round(LAYOUT_LOGICAL_WIDTH * (297 / 210)); // ~1161
+
+const mmToPt = (v) => (v / 25.4) * 72; // pdfkit uses points
+
+async function fetchImageBufferForLayer(layer) {
+  // Try storageKey first (preferred)
+  if (layer?.storageKey) {
+    try {
+      const url = await getBinderPhotoViewUrl(layer.storageKey);
+      if (url) {
+        const resp = await fetch(url);
+        if (resp.ok) {
+          const arr = await resp.arrayBuffer();
+          return Buffer.from(arr);
+        }
+      }
+    } catch (err) {
+      logger.warn(
+        {
+          event: 'binder.pdf.image_fetch_failed',
+          storageKey: layer.storageKey,
+          error: err.message
+        },
+        'Failed to fetch image buffer for layer'
+      );
+    }
+  }
+
+  // Fallback: try src if it is an absolute URL
+  if (layer?.src && /^https?:\/\//i.test(layer.src)) {
+    try {
+      const resp = await fetch(layer.src);
+      if (resp.ok) {
+        const arr = await resp.arrayBuffer();
+        return Buffer.from(arr);
+      }
+    } catch (err) {
+      logger.warn(
+        {
+          event: 'binder.pdf.image_fetch_failed_src',
+          src: layer.src,
+          error: err.message
+        },
+        'Failed to fetch image buffer from src'
+      );
+    }
+  }
+
+  return null;
+}
+
+function renderBinderPageBody({
+  doc,
+  pageLayout,
+  exhibitInfo,
+  binderTitle,
+  totalPages,
+  contentPageNumber,
+  marginPt = mmToPt(18)
+}) {
+  const sectionDef = SECTION_DEFS[pageLayout.sectionKey] || SECTION_DEFS.photos;
+  const exhibitCode = exhibitInfo
+    ? `${(SECTION_DEFS[exhibitInfo.sectionKey] || sectionDef).prefix}-${exhibitInfo.exhibitNo}`
+    : `${sectionDef.prefix}-1`;
+
+  const pageWidth = doc.page.width;
+  const pageHeight = doc.page.height;
+  const contentWidth = pageWidth - marginPt * 2;
+  const contentHeight = pageHeight - marginPt * 2;
+
+  const scale = Math.min(
+    contentWidth / LAYOUT_LOGICAL_WIDTH,
+    contentHeight / LAYOUT_LOGICAL_HEIGHT
+  );
+
+  const surfaceWidth = LAYOUT_LOGICAL_WIDTH * scale;
+  const surfaceHeight = LAYOUT_LOGICAL_HEIGHT * scale;
+
+  const baseX = marginPt + (contentWidth - surfaceWidth) / 2;
+  const baseY = marginPt;
+
+  // Header (keep existing behavior)
+  doc.fontSize(10).text(
+    `${sectionDef.label} · Exhibit ${exhibitCode} · Page ${contentPageNumber} of ${totalPages}`,
+    { align: 'center' }
+  );
+  doc.moveDown(0.5);
+  doc
+    .fontSize(12)
+    .text(binderTitle ? `Couplebinder – ${binderTitle}` : 'Couplebinder', { align: 'center' });
+  doc.moveDown(0.5);
+
+  // Page surface
+  doc
+    .save()
+    .rect(baseX, baseY, surfaceWidth, surfaceHeight)
+    .fill('#ffffff')
+    .stroke('#dddddd')
+    .restore();
+
+  // Layers
+  const layers = (pageLayout.layers || []).slice().sort((a, b) => {
+    const za = typeof a.zIndex === 'number' ? a.zIndex : 0;
+    const zb = typeof b.zIndex === 'number' ? b.zIndex : 0;
+    return za - zb;
+  });
+
+  layers.forEach((layer) => {
+    try {
+      const x = Number(layer.x) || 0;
+      const y = Number(layer.y) || 0;
+      const w = Number(layer.width) || 0;
+      const h = Number(layer.height) || 0;
+
+      if (w <= 0 || h <= 0) return;
+
+      const pdfX = baseX + x * scale;
+      const pdfY = baseY + y * scale;
+      const pdfW = w * scale;
+      const pdfH = h * scale;
+
+      if (layer.type === 'photo') {
+        // Reserve box
+        doc.save().rect(pdfX, pdfY, pdfW, pdfH).stroke('#e5e7eb').restore();
+
+        // Attempt to draw the image with aspect fit
+        fetchImageBufferForLayer(layer)
+          .then((buf) => {
+            if (!buf) {
+              doc
+                .save()
+                .rect(pdfX, pdfY, pdfW, pdfH)
+                .fill('#f3f4f6')
+                .restore();
+              doc
+                .fontSize(9)
+                .fillColor('#6b7280')
+                .text('Photo unavailable', pdfX + 4, pdfY + 4, {
+                  width: pdfW - 8,
+                  height: pdfH - 8
+                })
+                .fillColor('#000000');
+              return;
+            }
+
+            // Fit image preserving aspect ratio
+            const img = doc.openImage(buf);
+            const imgRatio = img.width / img.height;
+            const boxRatio = pdfW / pdfH;
+
+            let drawW = pdfW;
+            let drawH = pdfH;
+            if (imgRatio > boxRatio) {
+              drawH = pdfW / imgRatio;
+            } else {
+              drawW = pdfH * imgRatio;
+            }
+
+            const drawX = pdfX + (pdfW - drawW) / 2;
+            const drawY = pdfY + (pdfH - drawH) / 2;
+
+            doc.image(img, drawX, drawY, { width: drawW, height: drawH });
+          })
+          .catch((err) => {
+            logger.warn(
+              {
+                event: 'binder.pdf.image_draw_failed',
+                layerId: layer.id,
+                error: err.message
+              },
+              'Failed to draw image in PDF'
+            );
+            doc
+              .save()
+              .rect(pdfX, pdfY, pdfW, pdfH)
+              .fill('#f3f4f6')
+              .restore();
+          });
+      } else if (layer.type === 'text') {
+        doc
+          .save()
+          .rect(pdfX, pdfY, pdfW, pdfH)
+          .fill('#ffffff')
+          .stroke('#e5e7eb')
+          .restore();
+        if (layer.text) {
+          doc
+            .fontSize(11)
+            .fillColor('#111827')
+            .text(layer.text, pdfX + 4, pdfY + 4, {
+              width: pdfW - 8,
+              height: pdfH - 8
+            })
+            .fillColor('#000000');
+        }
+      } else {
+        doc
+          .save()
+          .rect(pdfX, pdfY, pdfW, pdfH)
+          .stroke('#e5e7eb')
+          .restore();
+      }
+    } catch (err) {
+      logger.warn(
+        { event: 'binder.pdf.layer_render_failed', layerId: layer?.id, error: err.message },
+        'Layer rendering failed'
+      );
+    }
+  });
+}
 
 /**
  * GET /dashboard/binder
@@ -619,7 +833,7 @@ async function exportPdf(req, res, next) {
       );
     };
 
-    const doc = new PDFDocument({ autoFirstPage: true });
+    const doc = new PDFDocument({ autoFirstPage: true, size: 'A4', margin: 0 });
 
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader(
@@ -649,22 +863,16 @@ async function exportPdf(req, res, next) {
     pages.forEach((p, idx) => {
       doc.addPage();
       const contentPageNumber = idx + 2;
-      const def = SECTION_DEFS[p.sectionKey] || SECTION_DEFS.photos;
       const exhibit = getExhibitForPage(contentPageNumber);
-      const exhibitCode = exhibit ? `${(SECTION_DEFS[exhibit.sectionKey] || def).prefix}-${exhibit.exhibitNo}` : `${def.prefix}-1`;
 
-      doc.fontSize(10).text(
-        `${def.label} · Exhibit ${exhibitCode} · Page ${contentPageNumber} of ${totalPages}`,
-        { align: 'center' }
-      );
-      doc.moveDown(1);
-      doc.fontSize(12).text(binder.title ? `Couplebinder – ${binder.title}` : 'Couplebinder', {
-        align: 'center'
+      renderBinderPageBody({
+        doc,
+        pageLayout: p,
+        exhibitInfo: exhibit,
+        binderTitle: binder.title,
+        totalPages,
+        contentPageNumber
       });
-      doc.moveDown(2);
-      doc.fontSize(12).text(
-        'Page content placeholder. (Layout rendering not implemented in PDF export yet.)'
-      );
     });
 
     doc.end();

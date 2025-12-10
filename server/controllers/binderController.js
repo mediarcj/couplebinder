@@ -191,9 +191,10 @@ const SECTION_DEFS = {
   receipts: { label: 'Receipts / Support / Financial', prefix: 'R' }
 };
 
-// Logical layout space (mirrors React editor: .canvas-page width ~820px, A4 ratio)
-const LAYOUT_LOGICAL_WIDTH = 820;
-const LAYOUT_LOGICAL_HEIGHT = Math.round(LAYOUT_LOGICAL_WIDTH * (297 / 210)); // ~1161
+// Logical layout space: Actual A4 at 96 DPI (web standard)
+// A4: 210mm × 297mm = 8.27" × 11.69" = 794px × 1122px at 96 DPI
+const LAYOUT_LOGICAL_WIDTH = 794; // Actual A4 width at 96 DPI
+const LAYOUT_LOGICAL_HEIGHT = 1122; // Actual A4 height at 96 DPI
 
 const mmToPt = (v) => (v / 25.4) * 72; // pdfkit uses points
 
@@ -368,23 +369,33 @@ async function renderBinderPageBody({
             })
             .fillColor('#000000');
         } else {
-          // Fit image preserving aspect ratio
+          // Cover behavior: fill box exactly, crop if needed (matches canvas object-fit: cover)
           const img = doc.openImage(buf);
           const imgRatio = img.width / img.height;
           const boxRatio = pdfW / pdfH;
 
-          let drawW = pdfW;
-          let drawH = pdfH;
-          if (imgRatio > boxRatio) {
-            drawH = pdfW / imgRatio;
-          } else {
-            drawW = pdfH * imgRatio;
-          }
+          // Calculate scale factor to cover the box (like object-fit: cover)
+          // Use the larger scale to ensure the box is fully covered
+          const scaleByWidth = pdfW / img.width;
+          const scaleByHeight = pdfH / img.height;
+          const coverScale = Math.max(scaleByWidth, scaleByHeight);
 
-          const drawX = pdfX + (pdfW - drawW) / 2;
-          const drawY = pdfY + (pdfH - drawH) / 2;
+          // Calculate final dimensions (will be >= box in at least one dimension)
+          const scaledWidth = img.width * coverScale;
+          const scaledHeight = img.height * coverScale;
 
-          doc.image(img, drawX, drawY, { width: drawW, height: drawH });
+          // Center the image within the box (will be cropped by clipping)
+          const drawX = pdfX + (pdfW - scaledWidth) / 2;
+          const drawY = pdfY + (pdfH - scaledHeight) / 2;
+
+          // Clip to box and render using transform to preserve aspect ratio
+          doc.save();
+          doc.rect(pdfX, pdfY, pdfW, pdfH).clip();
+          // Use transform to scale, then render at natural size
+          doc.translate(drawX, drawY);
+          doc.scale(coverScale, coverScale);
+          doc.image(img, 0, 0, { width: img.width, height: img.height });
+          doc.restore();
         }
       } else if (layer.type === 'text') {
         doc

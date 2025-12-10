@@ -85,6 +85,45 @@ export async function autoLayout(binderId, options = {}) {
 
 /**
  * WHAT:
+ * Export binder as PDF and trigger browser download.
+ *
+ * WHY:
+ * Users need to download their binder as a PDF file.
+ *
+ * HOW:
+ * POST request to export endpoint, returns blob, triggers download.
+ */
+export async function exportBinderPdf(binderId) {
+  if (!binderId) {
+    throw new Error('Missing binderId for export');
+  }
+
+  const csrfToken = document.querySelector('#binder-editor-root')?.getAttribute('data-csrf-token') || '';
+
+  const url = `/dashboard/binder/${encodeURIComponent(binderId)}/export`;
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Accept': 'application/pdf',
+      ...(csrfToken ? { 'X-CSRF-Token': csrfToken } : {})
+    },
+    credentials: 'same-origin'
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(
+      `Export failed (${res.status}): ${text || 'Server error'}`
+    );
+  }
+
+  const blob = await res.blob();
+  return blob;
+}
+
+/**
+ * WHAT:
  * Get signed S3 URL for a photo storage key.
  *
  * WHY:

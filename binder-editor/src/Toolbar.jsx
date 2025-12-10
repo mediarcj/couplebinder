@@ -8,10 +8,13 @@ function Toolbar({
   onAddPhoto,
   onDeleteSelected,
   onAutoLayout,
+  onExportPdf,
   saving,
   isDirty,
   lastSavedAt,
-  hasSelection
+  hasSelection,
+  exporting,
+  canExport
 }) {
   let statusText = '';
 
@@ -54,10 +57,11 @@ function Toolbar({
         <button
           type="button"
           className="btn btn-primary shadow-sm toolbar-btn"
-          disabled
-          title="Export PDF handled in legacy flow"
+          onClick={onExportPdf}
+          disabled={exporting || saving || !canExport}
+          title={exporting ? 'Exporting...' : (!canExport ? 'Cannot export yet' : 'Export PDF')}
         >
-          Export PDF
+          {exporting ? 'Exporting…' : 'Export PDF'}
         </button>
         <button
           type="button"

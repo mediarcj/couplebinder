@@ -170,6 +170,13 @@ body {
   margin-top: 0.25rem;
 }
 
+.page-thumb-section {
+  display: block;
+  font-size: 0.8rem;
+  color: #6b7280;
+  margin-top: 2px;
+}
+
 .page-list-empty {
   padding: 1rem;
   color: #999;
@@ -229,6 +236,41 @@ body {
   align-items: center;
   padding: 0.75rem 1rem;
   border-bottom: 1px solid #e5e7eb;
+}
+
+.canvas-header-left {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.canvas-section-label {
+  font-size: 0.9rem;
+  color: #6b7280;
+}
+
+.canvas-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.section-select-label {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.85rem;
+  color: #4b5563;
+}
+
+.section-select {
+  min-width: 180px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid #d1d5db;
+  background: #fff;
+  font-size: 0.9rem;
 }
 
 .canvas-header h3 {

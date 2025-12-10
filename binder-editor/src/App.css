@@ -281,32 +281,31 @@ body {
 .canvas-stage {
   flex: 1 1 auto;
   position: relative;
-  overflow-y: visible;
-  overflow-x: hidden;
-  background: #f8fafc;
-  padding: 12px 0;
+  overflow: auto; /* Allow scrolling when zoomed in */
+  background: linear-gradient(to bottom, #f8fafc 0%, #f1f5f9 100%);
+  padding: 24px;
   display: flex;
   justify-content: center;   /* center horizontally */
-  align-items: center;   /* match legacy centering */
+  align-items: flex-start;   /* align to top when zoomed */
+  min-height: 0; /* Allow flex shrinking */
 }
 
-/* The white “sheet” */
+/* The white "sheet" - Actual A4 size at 96 DPI */
 .canvas-page {
   position: relative;
   background: #fafafa;
   border-radius: 4px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
 
-  /* A4 portrait ratio (210 x 297 mm) */
-  aspect-ratio: 210 / 297;
+  /* Actual A4 portrait size at 96 DPI: 210mm × 297mm = 794px × 1122px */
+  width: 794px;
+  height: 1122px;
 
-  /* Drive size by width instead of height */
-  width: min(100%, 820px);
-  height: auto;
-
-  max-width: 100%;
   overflow: hidden; /* clip anything that slips out a bit */
   border: 1px solid #ddd;
+  
+  /* Zoom transform origin */
+  transform-origin: top center;
 }
 
 /* “No layers” message centered on the page */

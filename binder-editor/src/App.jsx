@@ -3,7 +3,8 @@
 // Purpose: Canvas editor with pages, layers, drag/resize + autosave
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { getLayout, applyLayout, autoLayout, exportBinderPdf } from './api';
+import { getLayout, applyLayout, autoLayout, exportBinderPdf, setSessionExpiryHandler } from './api';
+import { useModal } from './ModalProvider';
 import Canvas from './Canvas';
 import PageList from './PageList';
 import ActionSidebar from './ActionSidebar';
@@ -16,10 +17,25 @@ function App({ binderId /*, csrfToken */ }) {
   const [layout, setLayout] = useState(null);
   const [selectedPage, setSelectedPage] = useState(0);
   const [loading, setLoading] = useState(true);
+  const { openModal } = useModal();
 
   // saving = "we are writing layout to Supabase" (autosave OR auto layout)
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
+  
+  // Register session expiry handler with API client
+  useEffect(() => {
+    setSessionExpiryHandler((onConfirm) => {
+      openModal({
+        title: 'Session Expired',
+        body: 'You\'ve been logged out due to inactivity. Please log in again to continue.',
+        confirmLabel: 'OK',
+        cancelLabel: null,
+        onConfirm: onConfirm,
+        onCancel: null
+      });
+    });
+  }, [openModal]);
 
   // Autosave state
   const [isDirty, setIsDirty] = useState(false);

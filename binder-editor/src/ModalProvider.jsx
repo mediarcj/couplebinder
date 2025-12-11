@@ -77,13 +77,15 @@ export function ModalProvider({ children }) {
             )}
 
             <div className="cb-modal-actions">
-              <button
-                type="button"
-                className="cb-modal-btn cb-modal-btn-secondary"
-                onClick={handleCancel}
-              >
-                {modal.cancelLabel || 'Cancel'}
-              </button>
+              {modal.cancelLabel && (
+                <button
+                  type="button"
+                  className="cb-modal-btn cb-modal-btn-secondary"
+                  onClick={handleCancel}
+                >
+                  {modal.cancelLabel}
+                </button>
+              )}
 
               <button
                 type="button"

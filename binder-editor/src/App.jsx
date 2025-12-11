@@ -6,7 +6,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { getLayout, applyLayout, autoLayout, exportBinderPdf } from './api';
 import Canvas from './Canvas';
 import PageList from './PageList';
-import Toolbar from './Toolbar';
+import ActionSidebar from './ActionSidebar';
 import './App.css';
 import { SECTION_LABELS, SECTION_OPTIONS } from './sections';
 
@@ -140,6 +140,10 @@ function App({ binderId /*, csrfToken */ }) {
 
         setHasLoadedInitialLayout(true);
       } catch (err) {
+        // Skip error display for session expiry - redirect is already happening
+        if (err.message === 'SESSION_EXPIRED') {
+          return;
+        }
         setError(err.message);
         console.error('[BinderEditor] Failed to load layout:', err);
       } finally {
@@ -227,6 +231,10 @@ function App({ binderId /*, csrfToken */ }) {
             setLastSavedAt(result.updatedAt || new Date().toISOString());
           }
         } catch (err) {
+          // Skip error display for session expiry - redirect is already happening
+          if (err.message === 'SESSION_EXPIRED') {
+            return;
+          }
           setError(err.message);
           console.error('[BinderEditor] Autosave failed:', err);
         } finally {
@@ -273,6 +281,10 @@ function App({ binderId /*, csrfToken */ }) {
         setLastSavedAt(safeLayout.updatedAt);
       }
     } catch (err) {
+      // Skip error display for session expiry - redirect is already happening
+      if (err.message === 'SESSION_EXPIRED') {
+        return;
+      }
       setError(err.message);
       console.error('[BinderEditor] Failed to auto layout:', err);
     } finally {
@@ -581,6 +593,10 @@ function App({ binderId /*, csrfToken */ }) {
       document.body.removeChild(a);
       window.URL.revokeObjectURL(url);
     } catch (err) {
+      // Skip error display for session expiry - redirect is already happening
+      if (err.message === 'SESSION_EXPIRED') {
+        return;
+      }
       setError(`Export failed: ${err.message}`);
       console.error('[BinderEditor] Export failed:', err);
     } finally {
@@ -623,90 +639,80 @@ function App({ binderId /*, csrfToken */ }) {
         </div>
       )}
 
-      <div className="binder-editor-workspace flex-1 bg-white border border-slate-200 shadow-sm rounded-xl overflow-hidden">
-        <PageList
-          pages={layout?.pages || []}
-          selectedPageIndex={selectedPage}
-          sectionLabels={SECTION_LABELS}
-          onSelectPage={setSelectedPage}
-          onAddPage={() => {
-            setLayout((prev) => {
-              if (!prev) {
-                return {
-                  binderId,
-                  pages: applySectionDefaults([{ pageIndex: 0, layers: [] }]),
-                  updatedAt: new Date().toISOString()
-                };
-              }
-
-              const pages = prev.pages || [];
-              const nextIndex = pages.length;
-
-              const newPages = [
-                ...pages,
-                {
-                  pageIndex: nextIndex,
-                  layers: []
-                }
-              ];
-
-              return {
-                ...prev,
-                pages: applySectionDefaults(newPages)
-              };
-            });
-            setIsDirty(true);
-          }}
-          onDeletePage={handleDeletePage}
-        />
-
-        <div className="workspace-canvas-wrapper">
-          <Toolbar
-            onAddPhoto={handleAddPhotosClick}
-            onDeleteSelected={() => {
-              if (!selectedLayerId) return;
-              removeLayer(selectedLayerId);
-              setSelectedLayerId(null);
-            }}
-            onAutoLayout={handleAutoLayout}
-            onExportPdf={handleExportPdf}
-            saving={saving}
-            isDirty={isDirty}
-            lastSavedAt={lastSavedAt}
-            hasSelection={Boolean(selectedLayerId)}
-            exporting={exporting}
-            canExport={Boolean(binderId && layout && !loading)}
-          />
-
-          <Canvas
-            page={{ ...currentPage, binderId: layout?.binderId || binderId }}
-            layers={currentPage.layers || []}
-            onUpdateLayer={updateLayer}
-            onAddLayer={addLayer}
-            onRemoveLayer={removeLayer}
-            sectionKey={currentPage.sectionKey}
+      <div className="binder-editor-workspace flex-1">
+        <div className="binder-binder-card flex h-full bg-white border border-slate-200 shadow-sm rounded-xl overflow-hidden">
+          <PageList
+            pages={layout?.pages || []}
+            selectedPageIndex={selectedPage}
             sectionLabels={SECTION_LABELS}
-            sectionOptions={SECTION_OPTIONS}
-            onSectionChange={handleSectionChange}
-            onTidyLayout={handleTidyLayout}
-            selectedLayerId={selectedLayerId}
-            onSelectLayer={handleSelectLayer}
-            zoom={zoom}
-            onZoomChange={handleZoomChange}
-            onZoomFit={handleZoomFit}
-            canvasStageRef={canvasStageRef}
+            onSelectPage={setSelectedPage}
+            onAddPage={() => {
+              setLayout((prev) => {
+                if (!prev) {
+                  return {
+                    binderId,
+                    pages: applySectionDefaults([{ pageIndex: 0, layers: [] }]),
+                    updatedAt: new Date().toISOString()
+                  };
+                }
+
+                const pages = prev.pages || [];
+                const nextIndex = pages.length;
+
+                const newPages = [
+                  ...pages,
+                  {
+                    pageIndex: nextIndex,
+                    layers: []
+                  }
+                ];
+
+                return {
+                  ...prev,
+                  pages: applySectionDefaults(newPages)
+                };
+              });
+              setIsDirty(true);
+            }}
+            onDeletePage={handleDeletePage}
           />
 
-          <div className="canvas-photo-strip binder-react-photo-strip">
-            <p className="panel-hint">
-              React editor: photo uploads are managed by layers. Aligns with classic strip styling.
-            </p>
-          </div>
-
-          <div className="canvas-footer">
-            <span className="binder-status-text">{statusText}</span>
+          <div className="workspace-canvas-wrapper">
+            <Canvas
+              page={{ ...currentPage, binderId: layout?.binderId || binderId }}
+              layers={currentPage.layers || []}
+              onUpdateLayer={updateLayer}
+              onAddLayer={addLayer}
+              onRemoveLayer={removeLayer}
+              sectionKey={currentPage.sectionKey}
+              sectionLabels={SECTION_LABELS}
+              sectionOptions={SECTION_OPTIONS}
+              onSectionChange={handleSectionChange}
+              selectedLayerId={selectedLayerId}
+              onSelectLayer={handleSelectLayer}
+              zoom={zoom}
+              onZoomChange={handleZoomChange}
+              onZoomFit={handleZoomFit}
+              canvasStageRef={canvasStageRef}
+            />
           </div>
         </div>
+
+        <ActionSidebar
+          onAddPhoto={handleAddPhotosClick}
+          onDeleteSelected={() => {
+            if (!selectedLayerId) return;
+            removeLayer(selectedLayerId);
+            setSelectedLayerId(null);
+          }}
+          onAutoLayout={handleAutoLayout}
+          onExportPdf={handleExportPdf}
+          onTidyLayout={handleTidyLayout}
+          saving={saving}
+          hasSelection={Boolean(selectedLayerId)}
+          exporting={exporting}
+          canExport={Boolean(binderId && layout && !loading)}
+        />
       </div>
 
       <input

@@ -2,6 +2,79 @@
 // Description: API client for binder layout operations
 // Purpose: Centralized fetch calls with CSRF handling
 
+// Session expiry handler - will be set by App.jsx
+let sessionExpiryHandler = null;
+
+/**
+ * WHAT:
+ * Register a session expiry handler callback.
+ *
+ * WHY:
+ * Allows App.jsx to provide a modal-based handler instead of immediate redirect.
+ *
+ * HOW:
+ * Stores the handler function for use when session expiry is detected.
+ */
+export function setSessionExpiryHandler(handler) {
+  sessionExpiryHandler = handler;
+}
+
+/**
+ * WHAT:
+ * Check if an error indicates session expiry.
+ *
+ * WHY:
+ * Network errors (Failed to fetch) can occur before we get a response status.
+ *
+ * HOW:
+ * Checks error message and type to detect likely session expiry scenarios.
+ * Only treats network errors as session expiry for critical operations (autosave, layout).
+ */
+function isSessionExpiryError(error, isCriticalOperation = false) {
+  if (!error) return false;
+  
+  // Check for explicit SESSION_EXPIRED error
+  if (error.message === 'SESSION_EXPIRED') return true;
+  
+  // For critical operations (autosave, layout), treat network errors as likely session expiry
+  if (isCriticalOperation) {
+    const errorMsg = error.message || String(error);
+    if (errorMsg.includes('Failed to fetch') || errorMsg.includes('NetworkError')) {
+      // These can occur when session expires and server rejects the request
+      return true;
+    }
+  }
+  
+  return false;
+}
+
+/**
+ * WHAT:
+ * Handle session expiry with modal instead of immediate redirect.
+ *
+ * WHY:
+ * Better UX - user sees a friendly message and can acknowledge before redirect.
+ *
+ * HOW:
+ * If handler is registered, use it. Otherwise fall back to immediate redirect.
+ */
+function handleSessionExpiry() {
+  const returnTo = window.location.pathname + window.location.search;
+  const loginUrl = `/login?reason=session_expired&returnTo=${encodeURIComponent(returnTo)}`;
+  
+  if (sessionExpiryHandler) {
+    // Use modal handler from App.jsx
+    sessionExpiryHandler(() => {
+      window.location.href = loginUrl;
+    });
+  } else {
+    // Fallback to immediate redirect if handler not set
+    window.location.href = loginUrl;
+  }
+  
+  throw new Error('SESSION_EXPIRED');
+}
+
 /**
  * WHAT:
  * Make API request with CSRF token and error handling.
@@ -11,7 +84,7 @@
  *
  * HOW:
  * Adds CSRF header, handles JSON, returns parsed response or throws.
- * Detects session expiry (401/403) and redirects to login with returnTo.
+ * Detects session expiry (401/403) and uses modal handler if available.
  */
 async function apiRequest(url, options = {}) {
   const csrfToken = document.querySelector('#binder-editor-root')?.getAttribute('data-csrf-token') || '';
@@ -22,31 +95,32 @@ async function apiRequest(url, options = {}) {
     ...options.headers
   };
 
-  const response = await fetch(url, {
-    ...options,
-    headers,
-    credentials: 'same-origin'
-  });
+  try {
+    const response = await fetch(url, {
+      ...options,
+      headers,
+      credentials: 'same-origin'
+    });
 
-  // Handle session expiry (401 Unauthorized or 403 Forbidden)
-  if (response.status === 401 || response.status === 403) {
-    // Compute returnTo from current location
-    const returnTo = window.location.pathname + window.location.search;
-    const loginUrl = `/login?reason=session_expired&returnTo=${encodeURIComponent(returnTo)}`;
-    
-    // Redirect to login page
-    window.location.href = loginUrl;
-    
-    // Throw special error to stop further work
-    throw new Error('SESSION_EXPIRED');
+    // Handle session expiry (401 Unauthorized or 403 Forbidden)
+    if (response.status === 401 || response.status === 403) {
+      handleSessionExpiry();
+    }
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ ok: false, message: `HTTP ${response.status}` }));
+      throw new Error(error.message || `HTTP ${response.status}`);
+    }
+
+    return response.json();
+  } catch (error) {
+    // Handle network errors that might indicate session expiry (for critical operations)
+    if (isSessionExpiryError(error, true)) {
+      handleSessionExpiry();
+    }
+    // Re-throw other errors
+    throw error;
   }
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ ok: false, message: `HTTP ${response.status}` }));
-    throw new Error(error.message || `HTTP ${response.status}`);
-  }
-
-  return response.json();
 }
 
 /**
@@ -117,21 +191,36 @@ export async function exportBinderPdf(binderId) {
 
   const url = `/dashboard/binder/${encodeURIComponent(binderId)}/export`;
 
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Accept': 'application/pdf',
-      ...(csrfToken ? { 'X-CSRF-Token': csrfToken } : {})
-    },
-    credentials: 'same-origin'
-  });
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Accept': 'application/pdf',
+        ...(csrfToken ? { 'X-CSRF-Token': csrfToken } : {})
+      },
+      credentials: 'same-origin'
+    });
 
-  // Handle session expiry (401 Unauthorized or 403 Forbidden)
-  if (res.status === 401 || res.status === 403) {
-    const returnTo = window.location.pathname + window.location.search;
-    const loginUrl = `/login?reason=session_expired&returnTo=${encodeURIComponent(returnTo)}`;
-    window.location.href = loginUrl;
-    throw new Error('SESSION_EXPIRED');
+    // Handle session expiry (401 Unauthorized or 403 Forbidden)
+    if (res.status === 401 || res.status === 403) {
+      handleSessionExpiry();
+    }
+
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      throw new Error(
+        `Export failed (${res.status}): ${text || 'Server error'}`
+      );
+    }
+
+    const blob = await res.blob();
+    return blob;
+  } catch (error) {
+    // Handle network errors that might indicate session expiry (for critical operations)
+    if (isSessionExpiryError(error, true)) {
+      handleSessionExpiry();
+    }
+    throw error;
   }
 
   if (!res.ok) {
@@ -173,9 +262,7 @@ export async function getPhotoViewUrl(binderId, storageKey) {
 
     // Handle session expiry (401 Unauthorized or 403 Forbidden)
     if (res.status === 401 || res.status === 403) {
-      const returnTo = window.location.pathname + window.location.search;
-      const loginUrl = `/login?reason=session_expired&returnTo=${encodeURIComponent(returnTo)}`;
-      window.location.href = loginUrl;
+      handleSessionExpiry();
       return null; // Stop further processing
     }
 
@@ -209,6 +296,10 @@ export async function getPhotoViewUrl(binderId, storageKey) {
     const text = (await res.text()).trim();
     return text || null;
   } catch (err) {
+    // For photo URL fetching, network errors might be session expiry but could also be network issues
+    // Only treat confirmed 401/403 as session expiry; other errors just return null
+    // (The status check above already handles 401/403)
+    
     console.error('[BinderEditor] Exception while fetching photo URL:', {
       binderId,
       storageKey,

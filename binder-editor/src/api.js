@@ -11,6 +11,7 @@
  *
  * HOW:
  * Adds CSRF header, handles JSON, returns parsed response or throws.
+ * Detects session expiry (401/403) and redirects to login with returnTo.
  */
 async function apiRequest(url, options = {}) {
   const csrfToken = document.querySelector('#binder-editor-root')?.getAttribute('data-csrf-token') || '';
@@ -26,6 +27,19 @@ async function apiRequest(url, options = {}) {
     headers,
     credentials: 'same-origin'
   });
+
+  // Handle session expiry (401 Unauthorized or 403 Forbidden)
+  if (response.status === 401 || response.status === 403) {
+    // Compute returnTo from current location
+    const returnTo = window.location.pathname + window.location.search;
+    const loginUrl = `/login?reason=session_expired&returnTo=${encodeURIComponent(returnTo)}`;
+    
+    // Redirect to login page
+    window.location.href = loginUrl;
+    
+    // Throw special error to stop further work
+    throw new Error('SESSION_EXPIRED');
+  }
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ ok: false, message: `HTTP ${response.status}` }));
@@ -92,6 +106,7 @@ export async function autoLayout(binderId, options = {}) {
  *
  * HOW:
  * POST request to export endpoint, returns blob, triggers download.
+ * Handles session expiry same as other API calls.
  */
 export async function exportBinderPdf(binderId) {
   if (!binderId) {
@@ -110,6 +125,14 @@ export async function exportBinderPdf(binderId) {
     },
     credentials: 'same-origin'
   });
+
+  // Handle session expiry (401 Unauthorized or 403 Forbidden)
+  if (res.status === 401 || res.status === 403) {
+    const returnTo = window.location.pathname + window.location.search;
+    const loginUrl = `/login?reason=session_expired&returnTo=${encodeURIComponent(returnTo)}`;
+    window.location.href = loginUrl;
+    throw new Error('SESSION_EXPIRED');
+  }
 
   if (!res.ok) {
     const text = await res.text().catch(() => '');
@@ -147,6 +170,14 @@ export async function getPhotoViewUrl(binderId, storageKey) {
       method: 'GET',
       credentials: 'same-origin'
     });
+
+    // Handle session expiry (401 Unauthorized or 403 Forbidden)
+    if (res.status === 401 || res.status === 403) {
+      const returnTo = window.location.pathname + window.location.search;
+      const loginUrl = `/login?reason=session_expired&returnTo=${encodeURIComponent(returnTo)}`;
+      window.location.href = loginUrl;
+      return null; // Stop further processing
+    }
 
     if (!res.ok) {
       console.error('[BinderEditor] Error fetching photo URL:', {

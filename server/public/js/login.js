@@ -638,8 +638,8 @@ async function postAuthCookieWithBackoffLocal(payload, opts) {
       if (!body) return;
       
       const reason = body.getAttribute('data-login-reason');
-      if (reason === 'expired') {
-        showLoginError('You were logged out due to inactivity. Please log in again.');
+      if (reason === 'expired' || reason === 'session_expired') {
+        showLoginError('You\'ve been logged out due to inactivity. Please log in again.');
         log.info('Session expiration message displayed');
       }
     } catch (err) {

@@ -9,6 +9,7 @@ function Toolbar({
   onDeleteSelected,
   onAutoLayout,
   onExportPdf,
+  onTidyLayout,
   saving,
   isDirty,
   lastSavedAt,
@@ -40,23 +41,16 @@ function Toolbar({
         </button>
         <button
           type="button"
-          className="btn btn-secondary shadow-sm toolbar-btn"
+          className="btn btn-secondary toolbar-btn"
           onClick={onDeleteSelected}
           disabled={!hasSelection}
+          title="Delete selected photo"
         >
-          Delete selected photo
+          Delete
         </button>
         <button
           type="button"
-          className="btn btn-secondary shadow-sm toolbar-btn"
-          disabled
-          title="Save draft is managed by autosave in React editor"
-        >
-          Save draft
-        </button>
-        <button
-          type="button"
-          className="btn btn-primary shadow-sm toolbar-btn"
+          className="btn btn-primary toolbar-btn"
           onClick={onExportPdf}
           disabled={exporting || saving || !canExport}
           title={exporting ? 'Exporting...' : (!canExport ? 'Cannot export yet' : 'Export PDF')}
@@ -65,24 +59,26 @@ function Toolbar({
         </button>
         <button
           type="button"
-          className="btn btn-secondary shadow-sm toolbar-btn"
+          className="btn btn-secondary toolbar-btn"
           onClick={onAutoLayout}
           disabled={saving}
+          title="Auto layout all pages"
         >
           Auto Layout
         </button>
         <button
           type="button"
-          className="btn btn-secondary shadow-sm toolbar-btn"
-          disabled
-          title="Already in React editor"
+          className="btn btn-secondary toolbar-btn"
+          onClick={onTidyLayout}
+          disabled={saving}
+          title="Tidy layout for current page"
         >
-          New editor (beta)
+          Tidy
         </button>
       </div>
 
-      <div className="toolbar-section toolbar-status text-sm text-slate-600">
-        <span className="toolbar-status-text font-medium">
+      <div className="toolbar-section toolbar-status">
+        <span className="toolbar-status-text">
           {statusText}
         </span>
       </div>

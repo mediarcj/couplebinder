@@ -139,22 +139,35 @@ body {
 /* Page list (sidebar) - Tabbed document style */
 .binder-editor-page-list {
   width: 200px;
-  background: #f8fafc;
+  background: #f8fafc; /* Match canvas stage background */
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  /* No border-right - connection handled by active tab */
   position: relative;
-  /* Ensure tabs can visually connect to canvas */
+  /* Border will be handled by pseudo-element to allow active tab to break it */
+}
+
+.binder-editor-page-list::before {
+  content: '';
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 2px;           /* same visual weight as tab border */
+  background: #e2e8f0;
+  z-index: 1;
+  pointer-events: none;
 }
 
 .page-list-header {
   display: flex;
   justify-content: flex-end;
   align-items: center;
-  padding: 0.5rem 0.75rem;
+  padding: 0.625rem 1rem; /* Match canvas-header padding */
   border-bottom: 1px solid #e2e8f0;
   background: #ffffff;
+  height: 48px; /* Exact height to match canvas-header */
+  box-sizing: border-box;
 }
 
 .page-list-actions {
@@ -198,6 +211,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: 0;
+  position: relative;
 }
 
 /* Tab style - like tabbed paper documents */
@@ -207,7 +221,8 @@ body {
   flex-direction: column;
   align-items: flex-start;
   padding: 0.75rem 1rem;
-  border: 1px solid #e2e8f0;
+  border: 2px solid #e2e8f0;      /* match divider thickness */
+  box-sizing: border-box;          /* keep overall size stable */
   background: #ffffff;
   cursor: pointer;
   text-align: left;
@@ -237,22 +252,40 @@ body {
 /* Active tab - merged into canvas */
 .page-tab-active {
   margin: 0.5rem 0 0.5rem 0.5rem;
-  border-radius: 8px 0 0 0;
-  border-right: none;
-  background: #ffffff;
+  /* Separate rounding: strong on the left, very soft on the right so it “opens” into canvas */
+  border-radius: 12px 4px 4px 12px;
+  border-right: none;          /* open edge toward the canvas */
+  background: #f8fafc;         /* match canvas stage background */
   color: #0f172a;
   font-weight: 600;
-  z-index: 10;
+  z-index: 15;                 /* above the column divider */
   opacity: 1;
-  box-shadow: -2px 0 4px rgba(0, 0, 0, 0.04);
-  /* Small nudge to eliminate hairline gap */
-  transform: translateX(1px);
+  position: relative;
+  margin-right: -1px;          /* slight overlap to cover the divider */
+}
+
+/* Overlay that hides the sidebar's vertical border exactly where the active tab touches the canvas */
+.page-tab-active::before {
+  content: '';
+  position: absolute;
+  right: -2px;
+  top: 0;
+  bottom: 0;
+  width: 6px;       /* fully overlap the divider behind it */
+  background: #f8fafc; /* same as active tab + canvas background */
+  z-index: 16;      /* above the sidebar divider */
+  border-radius: 0 2px 2px 0; /* keep right edge nearly straight to “open” into canvas */
+  pointer-events: none; /* don't interfere with clicks on the button */
 }
 
 .page-tab-active:hover {
-  background: #fafbfc;
-  /* Keep connection intact on hover */
-  transform: translateX(1px);
+  background: #f8fafc;          /* same as normal state */
+  border-color: #e2e8f0;        /* keep top/left/bottom border visible */
+  border-right-color: transparent; /* only the right edge stays “open” into the canvas */
+}
+
+.page-tab-active:hover::before {
+  background: #f8fafc;          /* keep the overlay consistent */
 }
 
 .page-tab-number {
@@ -390,8 +423,7 @@ body {
   background: #ffffff;
   min-width: 0;
   overflow: hidden;
-  border-left: 1px solid #e2e8f0;
-  /* This border becomes the shared edge with the active tab */
+  /* Border removed - active tab now seamlessly connects to canvas */
 }
 
 /* Header just above the A4 page - Compact */
@@ -399,15 +431,18 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 0.625rem 1rem;
+  padding: 0.625rem 1rem; /* Match page-list-header padding */
   border-bottom: 1px solid #e2e8f0;
   background: #ffffff;
+  height: 48px; /* Exact height to match page-list-header */
+  box-sizing: border-box;
 }
 
 .canvas-header-left {
   display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.5rem;
 }
 
 .canvas-header-left h3 {
@@ -432,13 +467,17 @@ body {
 
 .section-select-label {
   display: inline-flex;
-  flex-direction: column;
-  gap: 0.375rem;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.5rem;
   font-size: 0.75rem;
   color: #64748b;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.5px;
+  margin: 0;
+  padding: 0;
+  background: transparent;
 }
 
 .section-select {
@@ -461,7 +500,6 @@ body {
   border-color: #3b82f6;
   box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
 }
-
 
 .canvas-stage {
   flex: 1 1 auto;
@@ -784,8 +822,22 @@ body {
   .binder-editor-page-list {
     order: 2;
     width: 100%;
-    border-right: none;
-    border-top: 1px solid #ddd;
+    border-top: 1px solid #e2e8f0;
+  }
+
+  /* Hide border pseudo-element in stacked layout */
+  .binder-editor-page-list::before {
+    display: none;
+  }
+
+  /* Reset active tab in stacked layout */
+  .page-tab-active {
+    margin-right: 0.5rem; /* No need to cover the border in stacked layout */
+    border-radius: 8px; /* Full border radius in stacked layout */
+  }
+
+  .page-tab-active::before {
+    display: none; /* Hide border cover pseudo-element in stacked layout */
   }
 
   .page-list-header {

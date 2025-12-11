@@ -16,7 +16,6 @@ function Canvas({
   sectionLabels,
   sectionOptions,
   onSectionChange,
-  onTidyLayout,
   selectedLayerId,
   onSelectLayer,
   zoom = 1,
@@ -266,16 +265,8 @@ function Canvas({
     >
       <div className="canvas-header bg-white/90 backdrop-blur">
         <div className="canvas-header-left">
-          <h3 className="text-slate-900 font-semibold">
-            Page {page.pageIndex + 1}
-          </h3>
-          <div className="canvas-section-label">
-            {sectionLabels?.[sectionKey] || 'Unassigned'}
-          </div>
-        </div>
-        <div className="canvas-header-actions flex items-center gap-3">
           <label className="section-select-label">
-            Section
+            SECTION
             <select
               className="section-select"
               value={sectionKey || ''}
@@ -288,14 +279,8 @@ function Canvas({
               ))}
             </select>
           </label>
-          <button
-            type="button"
-            className="btn btn-small btn-secondary shadow-sm"
-            onClick={onTidyLayout}
-          >
-            Tidy layout
-          </button>
-          
+        </div>
+        <div className="canvas-header-actions flex items-center gap-3">
           {/* Modern Zoom Controls */}
           <div className="flex items-center gap-2 px-3 py-1.5 bg-gradient-to-r from-slate-50 to-slate-100 rounded-lg border border-slate-200 shadow-sm">
             <button

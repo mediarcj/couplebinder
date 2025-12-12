@@ -3,7 +3,7 @@
 // Purpose: Canvas editor with pages, layers, drag/resize + autosave
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { getLayout, applyLayout, autoLayout, exportBinderPdf, setSessionExpiryHandler } from './api';
+import { getLayout, applyLayout, autoLayout, exportBinderPdf, setSessionExpiryHandler, isNetworkErrorLikelySessionExpiry } from './api';
 import { useModal } from './ModalProvider';
 import Canvas from './Canvas';
 import PageList from './PageList';
@@ -23,6 +23,30 @@ function App({ binderId /*, csrfToken */ }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   
+  // Helper to handle session expiry errors with modal
+  const handleSessionExpiryError = useCallback((err) => {
+    // Check for session expiry (explicit or network error)
+    if (err.message === 'SESSION_EXPIRED' || isNetworkErrorLikelySessionExpiry(err)) {
+      // Trigger session expiry handler if it's a network error that wasn't caught by api.js
+      if (err.message !== 'SESSION_EXPIRED' && isNetworkErrorLikelySessionExpiry(err)) {
+        const returnTo = window.location.pathname + window.location.search;
+        const loginUrl = `/login?reason=session_expired&returnTo=${encodeURIComponent(returnTo)}`;
+        openModal({
+          title: 'Session Expired',
+          body: 'You\'ve been logged out due to inactivity. Please log in again to continue.',
+          confirmLabel: 'OK',
+          cancelLabel: null,
+          onConfirm: () => {
+            window.location.href = loginUrl;
+          },
+          onCancel: null
+        });
+      }
+      return true; // Indicates session expiry was handled
+    }
+    return false; // Not a session expiry error
+  }, [openModal]);
+
   // Register session expiry handler with API client
   useEffect(() => {
     setSessionExpiryHandler((onConfirm) => {
@@ -156,9 +180,9 @@ function App({ binderId /*, csrfToken */ }) {
 
         setHasLoadedInitialLayout(true);
       } catch (err) {
-        // Skip error display for session expiry - redirect is already happening
-        if (err.message === 'SESSION_EXPIRED') {
-          return;
+        // Handle session expiry with modal
+        if (handleSessionExpiryError(err)) {
+          return; // Skip error display - modal is shown
         }
         setError(err.message);
         console.error('[BinderEditor] Failed to load layout:', err);
@@ -168,7 +192,7 @@ function App({ binderId /*, csrfToken */ }) {
     }
 
     load();
-  }, [binderId]);
+  }, [binderId, handleSessionExpiryError]);
 
   // Calculate "fit to page" zoom on mount and window resize
   useEffect(() => {
@@ -247,9 +271,9 @@ function App({ binderId /*, csrfToken */ }) {
             setLastSavedAt(result.updatedAt || new Date().toISOString());
           }
         } catch (err) {
-          // Skip error display for session expiry - redirect is already happening
-          if (err.message === 'SESSION_EXPIRED') {
-            return;
+          // Handle session expiry with modal
+          if (handleSessionExpiryError(err)) {
+            return; // Skip error display - modal is shown
           }
           setError(err.message);
           console.error('[BinderEditor] Autosave failed:', err);
@@ -261,7 +285,7 @@ function App({ binderId /*, csrfToken */ }) {
 
     // If user keeps editing, cancel previous timer and start a new one
     return () => clearTimeout(timer);
-  }, [binderId, layout, isDirty, hasLoadedInitialLayout]);
+  }, [binderId, layout, isDirty, hasLoadedInitialLayout, handleSessionExpiryError]);
 
   // Auto layout (server algorithm). This already saves to DB.
   const handleAutoLayout = useCallback(async () => {
@@ -297,16 +321,16 @@ function App({ binderId /*, csrfToken */ }) {
         setLastSavedAt(safeLayout.updatedAt);
       }
     } catch (err) {
-      // Skip error display for session expiry - redirect is already happening
-      if (err.message === 'SESSION_EXPIRED') {
-        return;
+      // Handle session expiry with modal
+      if (handleSessionExpiryError(err)) {
+        return; // Skip error display - modal is shown
       }
       setError(err.message);
       console.error('[BinderEditor] Failed to auto layout:', err);
     } finally {
       setSaving(false);
     }
-  }, [binderId]);
+  }, [binderId, handleSessionExpiryError]);
 
   // Update layer in current page
   const updateLayer = useCallback(
@@ -609,16 +633,16 @@ function App({ binderId /*, csrfToken */ }) {
       document.body.removeChild(a);
       window.URL.revokeObjectURL(url);
     } catch (err) {
-      // Skip error display for session expiry - redirect is already happening
-      if (err.message === 'SESSION_EXPIRED') {
-        return;
+      // Handle session expiry with modal
+      if (handleSessionExpiryError(err)) {
+        return; // Skip error display - modal is shown
       }
       setError(`Export failed: ${err.message}`);
       console.error('[BinderEditor] Export failed:', err);
     } finally {
       setExporting(false);
     }
-  }, [binderId, layout, isDirty, exporting, applyLayout]);
+  }, [binderId, layout, isDirty, exporting, applyLayout, handleSessionExpiryError]);
 
   if (loading) {
     return (

@@ -31,7 +31,8 @@ function Layer({ layer, selected, onSelect, onUpdate, onRemove, onDragStart, bin
     // IMPORTANT: prevent the browser's default image drag behavior
     e.preventDefault();
     e.stopPropagation();
-    onSelect();
+    // Select this layer before any drag/resize so sidebar actions work
+    onSelect(layer.id);
     onDragStart(layer.id, e);
   };
 

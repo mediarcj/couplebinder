@@ -111,7 +111,10 @@
     <script src="/js/nav-client.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= page.nonce %>"></script>
     
     <!-- Binder editor React app -->
-    <script src="/binder-editor/binder-editor.js?v=<%= page.assetVersion || assetVersion || '' %>" defer></script>
-</body>
+    <script
+      src="/binder-editor/binder-editor.js?v=<%= page.assetVersion || assetVersion || '' %>"
+      nonce="<%= page.nonce %>"
+      defer
+    ></script></body>
 </html>
 

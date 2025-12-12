@@ -262,7 +262,7 @@ router.delete(
   '/:binderId/photos',
   async (req, res) => {
     try {
-      const binderId = req.params.binderId;
+      const binderIdParam = req.params.binderId;
       const storageKey =
         (req.query && req.query.storageKey) ||
         (req.body && req.body.storageKey) ||
@@ -276,11 +276,36 @@ router.delete(
         });
       }
 
+      if (!userId) {
+        return res.status(401).json({
+          ok: false,
+          message: 'Not authenticated.'
+        });
+      }
+
+      // Resolve binder (workspace ID or UUID) without creating missing binders
+      let resolvedBinderId = null;
+      try {
+        const { binderId: resolvedId } = await binderController.resolveBinder({
+          client: supabaseAdmin,
+          userId,
+          binderIdParam,
+          createIfMissing: false
+        });
+        resolvedBinderId = resolvedId;
+      } catch (err) {
+        const status = err.status || 500;
+        return res.status(status).json({
+          ok: false,
+          message: err.message || 'Unable to resolve binder.'
+        });
+      }
+
       if (!storageProvider || typeof storageProvider.deleteBinderPhoto !== 'function') {
         logger.error(
           {
             event: 'binder.delete.storage_unavailable',
-            binderId,
+            binderId: binderIdParam,
             storageKey
           },
           'Storage provider not configured for delete endpoint'
@@ -291,19 +316,48 @@ router.delete(
         });
       }
 
-      // Safety check: storageKey should include this binderId
-      if (binderId && !String(storageKey).includes(String(binderId))) {
+      // Verify the photo belongs to this user and binder
+      const { data: photoRow, error: photoErr } = await supabaseAdmin
+        .from('binder_photos')
+        .select('id')
+        .eq('binder_id', resolvedBinderId)
+        .eq('storage_key', storageKey)
+        .eq('user_id', userId)
+        .maybeSingle();
+
+      if (photoErr) {
+        logger.error(
+          {
+            event: 'binder.delete.photo_lookup_failed',
+            binderId: binderIdParam,
+            resolvedBinderId,
+            storageKey,
+            userId,
+            error: photoErr.message,
+            code: photoErr.code
+          },
+          'Failed to verify photo ownership for delete'
+        );
+        return res.status(500).json({
+          ok: false,
+          message: 'Unable to verify photo ownership.'
+        });
+      }
+
+      if (!photoRow) {
         logger.warn(
           {
-            event: 'binder.delete.key_mismatch',
-            binderId,
-            storageKey
+            event: 'binder.delete.photo_not_found',
+            binderId: binderIdParam,
+            resolvedBinderId,
+            storageKey,
+            userId
           },
-          'Delete request storageKey does not appear to belong to this binder'
+          'Photo not found for user+binder during delete'
         );
-        return res.status(403).json({
+        return res.status(404).json({
           ok: false,
-          message: 'Photo does not belong to this binder'
+          message: 'Photo not found for this binder.'
         });
       }
 
@@ -313,20 +367,22 @@ router.delete(
       logger.info(
         {
           event: 'binder.photo_file_deleted',
-          binderId,
+          binderId: binderIdParam,
+          resolvedBinderId,
           storageKey,
           userId
         },
         'Binder photo deleted from storage at user request'
       );
 
-      // 2) Delete metadata row from binder_photos via supabaseAdmin
       if (!supabaseAdmin) {
         logger.error(
           {
             event: 'binder.photo_db_delete_client_missing',
-            binderId,
-            storageKey
+            binderIdParam,
+            resolvedBinderId,
+            storageKey,
+            userId
           },
           'Supabase admin client not initialized for binder photo delete'
         );
@@ -339,7 +395,7 @@ router.delete(
       let query = supabaseAdmin
         .from('binder_photos')
         .delete()
-        .eq('binder_id', binderId)
+        .eq('binder_id', resolvedBinderId) // Use resolved UUID
         .eq('storage_key', storageKey);
 
       if (userId) {
@@ -352,7 +408,8 @@ router.delete(
         logger.error(
           {
             event: 'binder.photo_db_delete_failed',
-            binderId,
+            binderIdParam,
+            resolvedBinderId,
             storageKey,
             userId,
             error: dbErr.message,
@@ -371,7 +428,8 @@ router.delete(
       logger.info(
         {
           event: 'binder.photo_db_deleted',
-          binderId,
+          binderIdParam,
+          resolvedBinderId,
           storageKey,
           userId,
           deletedCount

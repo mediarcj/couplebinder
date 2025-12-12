@@ -21,13 +21,27 @@ export function setSessionExpiryHandler(handler) {
 
 /**
  * WHAT:
+ * Check if an error is a network error that might indicate session expiry.
+ *
+ * WHY:
+ * Allows App.jsx to check errors directly and trigger modal if needed.
+ *
+ * HOW:
+ * Exports the same logic used internally for error detection.
+ */
+export function isNetworkErrorLikelySessionExpiry(error) {
+  return isSessionExpiryError(error, true);
+}
+
+/**
+ * WHAT:
  * Check if an error indicates session expiry.
  *
  * WHY:
  * Network errors (Failed to fetch) can occur before we get a response status.
  *
  * HOW:
- * Checks error message and type to detect likely session expiry scenarios.
+ * Checks error message, type, and name to detect likely session expiry scenarios.
  * Only treats network errors as session expiry for critical operations (autosave, layout).
  */
 function isSessionExpiryError(error, isCriticalOperation = false) {
@@ -38,9 +52,21 @@ function isSessionExpiryError(error, isCriticalOperation = false) {
   
   // For critical operations (autosave, layout), treat network errors as likely session expiry
   if (isCriticalOperation) {
+    // Check error type and name (TypeError for "Failed to fetch")
+    if (error instanceof TypeError || error.name === 'TypeError') {
+      const errorMsg = error.message || String(error);
+      if (errorMsg.includes('Failed to fetch') || 
+          errorMsg.includes('NetworkError') ||
+          errorMsg.includes('Network request failed') ||
+          errorMsg.toLowerCase().includes('fetch')) {
+        // These can occur when session expires and server rejects the request
+        return true;
+      }
+    }
+    
+    // Also check error message string directly
     const errorMsg = error.message || String(error);
     if (errorMsg.includes('Failed to fetch') || errorMsg.includes('NetworkError')) {
-      // These can occur when session expires and server rejects the request
       return true;
     }
   }
@@ -116,9 +142,10 @@ async function apiRequest(url, options = {}) {
   } catch (error) {
     // Handle network errors that might indicate session expiry (for critical operations)
     if (isSessionExpiryError(error, true)) {
+      // handleSessionExpiry() throws SESSION_EXPIRED, so this will stop execution
       handleSessionExpiry();
     }
-    // Re-throw other errors
+    // Re-throw other errors (only reached if handleSessionExpiry wasn't called)
     throw error;
   }
 }

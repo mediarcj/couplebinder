@@ -142,7 +142,8 @@ body {
   background: #f8fafc; /* Match canvas stage background */
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow-x: hidden; /* Prevent horizontal scrolling */
+  overflow-y: hidden; /* Container itself doesn't scroll, only inner content */
   position: relative;
   /* Border will be handled by pseudo-element to allow active tab to break it */
 }
@@ -168,12 +169,16 @@ body {
   background: #ffffff;
   height: 48px; /* Exact height to match canvas-header */
   box-sizing: border-box;
+  overflow: hidden; /* Prevent any overflow from header content */
+  min-width: 0; /* Allow flex shrinking */
 }
 
 .page-list-actions {
   display: flex;
   gap: 0.5rem;
   align-items: center;
+  flex-shrink: 0; /* Prevent buttons from shrinking */
+  min-width: 0; /* Allow flex shrinking if needed */
 }
 
 .page-tab-add-btn,
@@ -206,7 +211,8 @@ body {
 
 .page-tabs-container {
   flex: 1;
-  overflow-y: auto;
+  overflow-y: auto; /* Allow vertical scrolling when tabs grow */
+  overflow-x: hidden; /* Prevent horizontal scrolling */
   padding: 0.5rem 0;
   display: flex;
   flex-direction: column;
@@ -229,6 +235,8 @@ body {
   transition: all 0.2s ease;
   min-height: 60px;
   justify-content: center;
+  width: 100%; /* Ensure tabs don't exceed container width */
+  max-width: 100%; /* Prevent overflow */
 }
 
 /* Inactive tabs - separate floating tabs */

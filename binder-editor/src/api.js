@@ -210,38 +210,95 @@ export async function autoLayout(binderId, options = {}) {
  * Handles session expiry same as other API calls.
  */
 export async function exportBinderPdf(binderId) {
-  if (!binderId) {
-    throw new Error('Missing binderId for export');
+    if (!binderId) {
+      throw new Error('Missing binderId for export');
+    }
+  
+    const csrfToken =
+      document
+        .querySelector('#binder-editor-root')
+        ?.getAttribute('data-csrf-token') || '';
+  
+    const url = `/dashboard/binder/${encodeURIComponent(binderId)}/export`;
+  
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          Accept: 'application/pdf',
+          ...(csrfToken ? { 'X-CSRF-Token': csrfToken } : {})
+        },
+        credentials: 'same-origin'
+      });
+  
+      // Handle session expiry (401 Unauthorized or 403 Forbidden)
+      if (res.status === 401 || res.status === 403) {
+        handleSessionExpiry();
+      }
+  
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        throw new Error(
+          `Export failed (${res.status}): ${text || 'Server error'}`
+        );
+      }
+  
+      return await res.blob();
+    } catch (error) {
+      if (isSessionExpiryError(error, true)) {
+        handleSessionExpiry();
+      }
+      throw error;
+    }
+  }
+
+/**
+ * WHAT:
+ * Delete a binder photo from storage and database.
+ *
+ * WHY:
+ * Users need to permanently delete photos from their binders.
+ *
+ * HOW:
+ * DELETE request with storageKey query parameter.
+ * Handles session expiry same as other API calls.
+ */
+export async function deleteBinderPhoto(binderId, storageKey) {
+  if (!binderId || !storageKey) {
+    throw new Error('Missing binderId or storageKey for photo delete');
   }
 
   const csrfToken = document.querySelector('#binder-editor-root')?.getAttribute('data-csrf-token') || '';
-
-  const url = `/dashboard/binder/${encodeURIComponent(binderId)}/export`;
+  const url = `/dashboard/binder/${encodeURIComponent(binderId)}/photos?storageKey=${encodeURIComponent(storageKey)}`;
 
   try {
     const res = await fetch(url, {
-      method: 'POST',
+      method: 'DELETE',
       headers: {
-        'Accept': 'application/pdf',
+        'Accept': 'application/json',
         ...(csrfToken ? { 'X-CSRF-Token': csrfToken } : {})
       },
       credentials: 'same-origin'
     });
 
-    // Handle session expiry (401 Unauthorized or 403 Forbidden)
-    if (res.status === 401 || res.status === 403) {
+    // Handle session expiry (401 Unauthorized only - 403 can mean resource not found)
+    if (res.status === 401) {
       handleSessionExpiry();
     }
 
     if (!res.ok) {
       const text = await res.text().catch(() => '');
       throw new Error(
-        `Export failed (${res.status}): ${text || 'Server error'}`
+        `Delete failed (${res.status}): ${text || 'Server error'}`
       );
     }
 
-    const blob = await res.blob();
-    return blob;
+    const data = await res.json().catch(() => ({ ok: false }));
+    if (!data || !data.ok) {
+      throw new Error('Delete endpoint returned an error response');
+    }
+
+    return data;
   } catch (error) {
     // Handle network errors that might indicate session expiry (for critical operations)
     if (isSessionExpiryError(error, true)) {
@@ -249,16 +306,6 @@ export async function exportBinderPdf(binderId) {
     }
     throw error;
   }
-
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new Error(
-      `Export failed (${res.status}): ${text || 'Server error'}`
-    );
-  }
-
-  const blob = await res.blob();
-  return blob;
 }
 
 /**
@@ -287,18 +334,26 @@ export async function getPhotoViewUrl(binderId, storageKey) {
       credentials: 'same-origin'
     });
 
-    // Handle session expiry (401 Unauthorized or 403 Forbidden)
-    if (res.status === 401 || res.status === 403) {
+    // Handle session expiry (401 Unauthorized only - 403 can mean photo not found)
+    if (res.status === 401) {
       handleSessionExpiry();
       return null; // Stop further processing
     }
 
     if (!res.ok) {
-      console.error('[BinderEditor] Error fetching photo URL:', {
-        binderId,
-        storageKey,
-        status: res.status
-      });
+      // 403 or other errors - photo might not exist, just return null
+      if (res.status === 403) {
+        console.warn('[BinderEditor] Photo not found or access denied:', {
+          binderId,
+          storageKey
+        });
+      } else {
+        console.error('[BinderEditor] Error fetching photo URL:', {
+          binderId,
+          storageKey,
+          status: res.status
+        });
+      }
       return null;
     }
 

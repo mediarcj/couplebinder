@@ -18,7 +18,7 @@ export function ModalProvider({ children }) {
       title: options.title || '',
       body: options.body || '',
       confirmLabel: options.confirmLabel || 'OK',
-      cancelLabel: options.cancelLabel || 'Cancel',
+      cancelLabel: options.cancelLabel !== undefined ? options.cancelLabel : 'Cancel',
       onConfirm: options.onConfirm || null,
       onCancel: options.onCancel || null
     });

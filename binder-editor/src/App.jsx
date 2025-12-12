@@ -3,7 +3,7 @@
 // Purpose: Canvas editor with pages, layers, drag/resize + autosave
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { getLayout, applyLayout, autoLayout, exportBinderPdf, setSessionExpiryHandler, isNetworkErrorLikelySessionExpiry } from './api';
+import { getLayout, applyLayout, autoLayout, exportBinderPdf, setSessionExpiryHandler, isNetworkErrorLikelySessionExpiry, deleteBinderPhoto } from './api';
 import { useModal } from './ModalProvider';
 import Canvas from './Canvas';
 import PageList from './PageList';
@@ -87,31 +87,41 @@ function App({ binderId /*, csrfToken */ }) {
     });
   }, []);
 
-  // Deselect any selected layer when clicking outside the editor
-  // OR clicking anywhere inside the editor that is not on a layer.
-  useEffect(() => {
-    const handleGlobalMouseDown = (e) => {
-      const root = document.getElementById('binder-editor-root');
-      if (!root) return;
+// Deselect any selected layer when clicking on empty canvas area,
+// or anywhere completely outside the editor. Do NOT clear selection
+// when clicking on sidebars/toolbars.
+useEffect(() => {
+  const handleGlobalMouseDown = (e) => {
+    const root = document.getElementById('binder-editor-root');
+    if (!root) return;
 
-      // Click completely outside the React binder editor island
-      if (!root.contains(e.target)) {
-        setSelectedLayerId(null);
-        return;
-      }
+    // 1) Click completely outside the React binder editor island → clear selection
+    if (!root.contains(e.target)) {
+      setSelectedLayerId(null);
+      return;
+    }
 
-      // Click is inside the editor. If it's not on a layer, clear selection.
-      const layerEl = e.target.closest('.binder-editor-layer');
-      if (!layerEl) {
-        setSelectedLayerId(null);
-      }
-    };
+    // 2) Inside the app: only clear when clicking the canvas area, not layers
+    const canvas = root.querySelector('.binder-editor-canvas');
+    if (!canvas) return;
 
-    document.addEventListener('mousedown', handleGlobalMouseDown);
-    return () => {
-      document.removeEventListener('mousedown', handleGlobalMouseDown);
-    };
-  }, []);
+    // If click is not inside the canvas at all, ignore it (keep selection)
+    if (!canvas.contains(e.target)) {
+      return;
+    }
+
+    // Click is in the canvas, but if it's not on a layer, clear selection
+    const layerEl = e.target.closest('.binder-editor-layer');
+    if (!layerEl) {
+      setSelectedLayerId(null);
+    }
+  };
+
+  document.addEventListener('mousedown', handleGlobalMouseDown);
+  return () => {
+    document.removeEventListener('mousedown', handleGlobalMouseDown);
+  };
+}, []);
   
   // Decide which page to land on first:
   // - Prefer the first page that actually has a real photo layer
@@ -410,12 +420,15 @@ function App({ binderId /*, csrfToken */ }) {
       const formData = new FormData();
       files.forEach((file) => formData.append('photos', file));
 
-      const res = await fetch(`/dashboard/binder/${encodeURIComponent(binderId)}/photos`, {
-        method: 'POST',
-        body: formData,
-        headers: csrfToken ? { 'x-csrf-token': csrfToken } : undefined,
-        credentials: 'same-origin'
-      });
+      const res = await fetch(
+        `/dashboard/binder/${encodeURIComponent(binderId)}/photos`,
+        {
+          method: 'POST',
+          body: formData,
+          headers: csrfToken ? { 'X-CSRF-Token': csrfToken } : undefined,
+          credentials: 'same-origin'
+        }
+      );
 
       if (!res.ok) {
         console.error('[BinderEditor] Upload failed', res.status);
@@ -552,11 +565,52 @@ function App({ binderId /*, csrfToken */ }) {
     });
   }, [selectedPage]);
 
-  // Remove layer from current page (does NOT delete underlying photo from S3/DB)
+  // Delete layer and underlying photo from storage/DB if it has a storageKey
   const removeLayer = useCallback(
-    (layerId) => {
+    async (layerId) => {
+      // Find the layer to get its storageKey
+      const currentPage = layout?.pages?.[selectedPage];
+      const layer = currentPage?.layers?.find((l) => l.id === layerId);
+
+      if (!layer) {
+        console.error('[BinderEditor] Layer not found in removeLayer', {
+          layerId,
+          selectedPage,
+          availableLayers: currentPage?.layers?.map((l) => l.id)
+        });
+        throw new Error('Layer not found');
+      }
+
+      // If layer has a storageKey, delete from server first
+      if (layer?.storageKey && binderId) {
+        try {
+          await deleteBinderPhoto(binderId, layer.storageKey);
+        } catch (err) {
+          console.error('[BinderEditor] deleteBinderPhoto API error', err);
+
+          // Handle session expiry
+          if (err.message === 'SESSION_EXPIRED' || isNetworkErrorLikelySessionExpiry(err)) {
+            if (handleSessionExpiryError(err)) {
+              return; // Session expiry handled, don't remove layer
+            }
+          }
+
+          // Show error but still remove from layout so UI stays responsive
+          setError(`Failed to delete photo from storage: ${err.message}`);
+          // Continue to remove from layout even if server delete failed
+        }
+      }
+
+      // Remove layer from layout
       setLayout((prev) => {
-        if (!prev || !prev.pages || !prev.pages[selectedPage]) return prev;
+        if (!prev || !prev.pages || !prev.pages[selectedPage]) {
+          console.error('[BinderEditor] Invalid layout state in removeLayer', {
+            hasPrev: !!prev,
+            hasPages: !!prev?.pages,
+            selectedPage
+          });
+          return prev;
+        }
 
         const newPages = [...prev.pages];
         const page = { ...newPages[selectedPage] };
@@ -565,9 +619,10 @@ function App({ binderId /*, csrfToken */ }) {
 
         return { ...prev, pages: newPages };
       });
+
       setIsDirty(true);
     },
-    [selectedPage]
+    [selectedPage, layout, binderId, handleSessionExpiryError]
   );
 
   // Delete a page (by index) and keep selection sane
@@ -741,9 +796,50 @@ function App({ binderId /*, csrfToken */ }) {
         <ActionSidebar
           onAddPhoto={handleAddPhotosClick}
           onDeleteSelected={() => {
-            if (!selectedLayerId) return;
-            removeLayer(selectedLayerId);
-            setSelectedLayerId(null);
+            if (!selectedLayerId) {
+              openModal({
+                title: 'No photo selected',
+                body: 'Click on a photo on the page first, then try deleting again.',
+                confirmLabel: 'OK',
+                cancelLabel: null,
+                onConfirm: () => {},
+                onCancel: null
+              });
+              return;
+            }
+
+            // Find the layer to get its storageKey for confirmation message
+            const currentPage = layout?.pages?.[selectedPage];
+            const layer = currentPage?.layers?.find((l) => l.id === selectedLayerId);
+
+            if (!layer) {
+              setError('Photo not found. Please refresh the page.');
+              return;
+            }
+
+            const hasStorageKey = layer?.storageKey && binderId;
+
+            const confirmMessage = hasStorageKey
+              ? 'Delete this photo from your binder? This will remove it from this page and from our storage.'
+              : 'Delete this photo from this page?';
+
+            openModal({
+              title: 'Delete photo',
+              body: confirmMessage,
+              confirmLabel: 'Delete photo',
+              cancelLabel: 'Cancel',
+              onConfirm: async () => {
+                try {
+                  await removeLayer(selectedLayerId);
+                  setSelectedLayerId(null);
+                } catch (err) {
+                  setError(`Failed to delete photo: ${err.message}`);
+                }
+              },
+              onCancel: () => {
+                // User cancelled, do nothing
+              }
+            });
           }}
           onAutoLayout={handleAutoLayout}
           onExportPdf={handleExportPdf}

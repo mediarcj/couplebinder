@@ -1701,5 +1701,6 @@ module.exports = {
   renderBinderEditor,
   getBinderLayout,
   applyBinderLayout,
-  autoLayoutBinder
+  autoLayoutBinder,
+  resolveBinder
 };

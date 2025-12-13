@@ -8,8 +8,10 @@ const PDFDocument = require('pdfkit');
 const logger = require('../utils/logger');
 const { supabaseAdmin } = require('../utils/supabaseClient');
 const { supabase } = require('../utils/supabaseClient'); // kept for future use
-const { saveBinderPhoto } = require('../services/storageProvider');
-const { getBinderPhotoViewUrl } = require('../services/storageProvider');
+const {
+  saveBinderPhoto,
+  getBinderPhotoBuffer
+} = require('../services/storageProvider');
 
 // -----------------------------------------------------------------------------
 // Shared server-side image validation (aligns with binderRoutes + dashboard.js)
@@ -60,15 +62,6 @@ function getContext(req) {
  * WHAT:
  * Resolve workspace ID (default-{userId}) to real binder UUID, or return existing UUID.
  * Creates binder if missing for workspace IDs.
- *
- * WHY:
- * Workspace IDs are per-user placeholders. We need real binder UUIDs for DB operations.
- *
- * HOW:
- * - If binderIdParam is a workspace ID, find or create the user's default binder.
- * - If binderIdParam is a UUID, verify ownership and return it.
- * - Returns { binder, binderId } where binderId is the real UUID.
- * - Throws errors only for auth/DB failures, not for missing binders (creates them).
  */
 async function resolveBinder({ client, userId, binderIdParam, createIfMissing = true }) {
   if (!binderIdParam || !userId) {
@@ -198,17 +191,16 @@ const LAYOUT_LOGICAL_HEIGHT = 1122; // Actual A4 height at 96 DPI
 
 const mmToPt = (v) => (v / 25.4) * 72; // pdfkit uses points
 
+// -----------------------------------------------------------------------------
+// Image fetch for PDF export (updated to use getBinderPhotoBuffer)
+// -----------------------------------------------------------------------------
 async function fetchImageBufferForLayer(layer) {
-  // Try storageKey first (preferred)
+  // Prefer storageKey; use the storageProvider to grab bytes directly from S3/local
   if (layer?.storageKey) {
     try {
-      const url = await getBinderPhotoViewUrl(layer.storageKey);
-      if (url) {
-        const resp = await fetch(url);
-        if (resp.ok) {
-          const arr = await resp.arrayBuffer();
-          return Buffer.from(arr);
-        }
+      const { buffer } = await getBinderPhotoBuffer(layer.storageKey);
+      if (buffer && buffer.length > 0) {
+        return buffer;
       }
     } catch (err) {
       logger.warn(
@@ -217,12 +209,12 @@ async function fetchImageBufferForLayer(layer) {
           storageKey: layer.storageKey,
           error: err.message
         },
-        'Failed to fetch image buffer for layer'
+        'Failed to fetch image buffer for layer via storageProvider'
       );
     }
   }
 
-  // Fallback: try src if it is an absolute URL
+  // Fallback: try src if it is an absolute URL (for older layouts)
   if (layer?.src && /^https?:\/\//i.test(layer.src)) {
     try {
       const resp = await fetch(layer.src);
@@ -322,7 +314,7 @@ async function renderBinderPageBody({
       if (layer.type === 'photo') {
         // Get storageKey from layer (preferred) or lookup by photoId
         let layerWithStorageKey = { ...layer };
-        
+
         if (!layerWithStorageKey.storageKey && layerWithStorageKey.photoId && client && userId && binderId) {
           try {
             const { data: photo } = await client
@@ -332,7 +324,7 @@ async function renderBinderPageBody({
               .eq('binder_id', binderId)
               .eq('user_id', userId)
               .maybeSingle();
-            
+
             if (photo && photo.storage_key) {
               layerWithStorageKey.storageKey = photo.storage_key;
             }
@@ -349,9 +341,9 @@ async function renderBinderPageBody({
           }
         }
 
-        // Attempt to fetch and draw the image
+        // Attempt to fetch and draw the image via storageProvider
         const buf = await fetchImageBufferForLayer(layerWithStorageKey);
-        
+
         if (!buf) {
           // Placeholder for missing image
           doc
@@ -375,23 +367,18 @@ async function renderBinderPageBody({
           const boxRatio = pdfW / pdfH;
 
           // Calculate scale factor to cover the box (like object-fit: cover)
-          // Use the larger scale to ensure the box is fully covered
           const scaleByWidth = pdfW / img.width;
           const scaleByHeight = pdfH / img.height;
           const coverScale = Math.max(scaleByWidth, scaleByHeight);
 
-          // Calculate final dimensions (will be >= box in at least one dimension)
           const scaledWidth = img.width * coverScale;
           const scaledHeight = img.height * coverScale;
 
-          // Center the image within the box (will be cropped by clipping)
           const drawX = pdfX + (pdfW - scaledWidth) / 2;
           const drawY = pdfY + (pdfH - scaledHeight) / 2;
 
-          // Clip to box and render using transform to preserve aspect ratio
           doc.save();
           doc.rect(pdfX, pdfY, pdfW, pdfH).clip();
-          // Use transform to scale, then render at natural size
           doc.translate(drawX, drawY);
           doc.scale(coverScale, coverScale);
           doc.image(img, 0, 0, { width: img.width, height: img.height });

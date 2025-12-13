@@ -4,6 +4,9 @@
 // WHAT:
 //  - saveBinderPhoto({ userId, binderId, file }) -> { provider, storageKey, ... }
 //  - storeBinderPhotos({ userId, binderId, files }) -> array for the binder route
+//  - getBinderPhotoViewUrl(storageKey) -> presigned URL (legacy, optional)
+//  - getBinderPhotoStream(storageKey) -> { stream, contentType, contentLength }
+//  - getBinderPhotoBuffer(storageKey) -> { buffer, contentType }
 //  - deleteBinderPhoto(storageKey) -> delete from S3/local
 //
 // HOW:
@@ -18,6 +21,7 @@
 'use strict';
 
 const fs = require('fs/promises');
+const fsNative = require('fs'); // for createReadStream
 const path = require('path');
 const {
   S3Client,
@@ -271,25 +275,6 @@ async function saveBinderPhoto({ userId, binderId, file }) {
  * WHAT:
  *  Helper used by binderRoutes.js. It takes the array of multer files and returns
  *  a normalized array shaped for the binder photo route.
- *
- * INPUT:
- *  - userId: string
- *  - binderId: string
- *  - files: multer file[]
- *
- * OUTPUT (array):
- *  [
- *    {
- *      originalname: string,
- *      size: number | undefined,
- *      storageKey: string,
- *      provider: 's3' | 'local',
- *      bucket: string | null,
- *      publicUrl: string | null,
- *      signedUrl: string | null
- *    },
- *    ...
- *  ]
  */
 async function storeBinderPhotos({ userId, binderId, files }) {
   if (!Array.isArray(files) || files.length === 0) return [];
@@ -330,8 +315,11 @@ async function storeBinderPhotos({ userId, binderId, files }) {
 /**
  * getBinderPhotoViewUrl
  *
- * Given a storageKey (e.g. "binders/userId/binderId/filename.png"),
- * return a fresh, short-lived signed URL so the browser can view it.
+ * Given a storageKey, return a short-lived signed URL so the browser can view it.
+ *
+ * NOTE:
+ *  This is now mostly legacy. The binder editor and PDF pipeline can use
+ *  getBinderPhotoStream/getBinderPhotoBuffer instead to avoid presigned URLs.
  */
 async function getBinderPhotoViewUrl(storageKey) {
   if (!storageKey) {
@@ -387,6 +375,124 @@ async function getBinderPhotoViewUrl(storageKey) {
     );
     throw err;
   }
+}
+
+/**
+ * getBinderPhotoStream
+ *
+ * Given a storageKey, return a readable stream and basic metadata
+ * so routes can pipe the image directly to the browser.
+ */
+async function getBinderPhotoStream(storageKey) {
+  if (!storageKey) {
+    throw new Error('getBinderPhotoStream called without storageKey');
+  }
+
+  const s3 = getS3();
+
+  // S3 provider
+  if (provider === 's3' && s3) {
+    try {
+      const cmd = new GetObjectCommand({
+        Bucket: s3Bucket,
+        Key: storageKey
+      });
+
+      const data = await s3.send(cmd);
+
+      const stream = data.Body; // Readable stream
+      const contentType = data.ContentType || 'application/octet-stream';
+      const contentLength = typeof data.ContentLength === 'number'
+        ? data.ContentLength
+        : undefined;
+
+      logger.info(
+        {
+          event: 'storage.s3.stream_ok',
+          bucket: s3Bucket,
+          storageKey
+        },
+        'Streaming binder photo from S3'
+      );
+
+      return { stream, contentType, contentLength };
+    } catch (err) {
+      logger.error(
+        {
+          event: 'storage.s3.stream_failed',
+          bucket: s3Bucket,
+          storageKey,
+          error: err.message
+        },
+        'Failed to stream binder photo from S3'
+      );
+      throw err;
+    }
+  }
+
+  // Local provider
+  if (provider === 'local') {
+    try {
+      const stream = fsNative.createReadStream(storageKey);
+      // Best-effort content type based on extension
+      let contentType = 'application/octet-stream';
+      const ext = path.extname(storageKey || '').toLowerCase();
+      if (ext === '.jpg' || ext === '.jpeg') contentType = 'image/jpeg';
+      else if (ext === '.png') contentType = 'image/png';
+      else if (ext === '.webp') contentType = 'image/webp';
+      else if (ext === '.heic') contentType = 'image/heic';
+      else if (ext === '.heif') contentType = 'image/heif';
+      else if (ext === '.avif') contentType = 'image/avif';
+
+      logger.info(
+        {
+          event: 'storage.local.stream_ok',
+          path: storageKey
+        },
+        'Streaming binder photo from local filesystem'
+      );
+
+      return { stream, contentType, contentLength: undefined };
+    } catch (err) {
+      logger.error(
+        {
+          event: 'storage.local.stream_failed',
+          path: storageKey,
+          error: err.message
+        },
+        'Failed to stream binder photo from local filesystem'
+      );
+      throw err;
+    }
+  }
+
+  logger.warn(
+    {
+      event: 'storage.stream_unsupported_provider',
+      provider,
+      storageKey
+    },
+    '[storageProvider] getBinderPhotoStream: unsupported provider'
+  );
+  throw new Error('getBinderPhotoStream: unsupported provider');
+}
+
+/**
+ * getBinderPhotoBuffer
+ *
+ * Convenience wrapper on getBinderPhotoStream: reads the whole object
+ * into a Buffer. Used by PDF export.
+ */
+async function getBinderPhotoBuffer(storageKey) {
+  const { stream, contentType } = await getBinderPhotoStream(storageKey);
+
+  const chunks = [];
+  for await (const chunk of stream) {
+    chunks.push(chunk);
+  }
+
+  const buffer = Buffer.concat(chunks);
+  return { buffer, contentType };
 }
 
 /**
@@ -490,6 +596,8 @@ module.exports = {
   provider,
   saveBinderPhoto,
   storeBinderPhotos,
-  getBinderPhotoViewUrl,
+  getBinderPhotoViewUrl,   // legacy, kept for compatibility
+  getBinderPhotoStream,    // NEW
+  getBinderPhotoBuffer,    // NEW
   deleteBinderPhoto
 };

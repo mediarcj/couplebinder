@@ -319,14 +319,18 @@ export async function deleteBinderPhoto(binderId, storageKey) {
  * GET request with storageKey query parameter.
  */
 // Fetch a signed S3 view URL for a given storageKey
-// Handles all legacy variants:
-//   1) Plain text body: "https://..."
-//   2) JSON: { ok: true, url: "https://..." }
-//   3) JSON: { ok: true, signedUrl: "https://..." }
+// Handles all variants, regardless of content-type:
+//
+// 1) Plain text body: "https://..."
+// 2) JSON: { ok: true, url: "https://..." }
+// 3) JSON: { ok: true, signedUrl: "https://..." }
+// 4) JSON string: "https://..." (raw JSON string)
 export async function getPhotoViewUrl(binderId, storageKey) {
-  const url = `/dashboard/binder/${binderId}/photos/view-url?storageKey=${encodeURIComponent(
-    storageKey
-  )}`;
+  if (!binderId || !storageKey) return null;
+
+  const url = `/dashboard/binder/${encodeURIComponent(
+    binderId
+  )}/photos/view-url?storageKey=${encodeURIComponent(storageKey)}`;
 
   try {
     const res = await fetch(url, {
@@ -337,15 +341,15 @@ export async function getPhotoViewUrl(binderId, storageKey) {
     // Handle session expiry (401 Unauthorized only - 403 can mean photo not found)
     if (res.status === 401) {
       handleSessionExpiry();
-      return null; // Stop further processing
+      return null;
     }
 
     if (!res.ok) {
-      // 403 or other errors - photo might not exist, just return null
       if (res.status === 403) {
         console.warn('[BinderEditor] Photo not found or access denied:', {
           binderId,
-          storageKey
+          storageKey,
+          status: res.status
         });
       } else {
         console.error('[BinderEditor] Error fetching photo URL:', {
@@ -357,31 +361,54 @@ export async function getPhotoViewUrl(binderId, storageKey) {
       return null;
     }
 
-    const contentType = res.headers.get('content-type') || '';
+    // Read body as text first – this works for both JSON and plain text
+    const raw = (await res.text()).trim();
 
-    // JSON response: try url first, then signedUrl
-    if (contentType.includes('application/json')) {
-      const data = await res.json();
+    console.log('[view-url raw body]', { binderId, storageKey, raw });  // <--- add this
+    
+    if (!raw) return null;
 
-      // Extremely defensive: in case someone returned a raw string JSON
-      if (typeof data === 'string') {
-        return data || null;
-      }
-
-      if (data?.url) return data.url;
-      if (data?.signedUrl) return data.signedUrl;
-
-      return null;
+    // Try to parse as JSON. If that fails, we'll treat `raw` as plain URL below.
+    let parsed = null;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      parsed = null;
     }
 
-    // Non-JSON response: treat the raw text body as the URL
-    const text = (await res.text()).trim();
-    return text || null;
+    if (parsed !== null) {
+      // 4) JSON string: "https://..."
+      if (typeof parsed === 'string') {
+        return parsed || null;
+      }
+
+      // 2) JSON object with url / signedUrl / data fields
+      if (parsed && typeof parsed === 'object') {
+        if (typeof parsed.url === 'string' && parsed.url) {
+          return parsed.url;
+        }
+        if (typeof parsed.signedUrl === 'string' && parsed.signedUrl) {
+          return parsed.signedUrl;
+        }
+        // Extra safety: some older shapes sometimes nest url in `data`
+        if (typeof parsed.data === 'string' && /^https?:\/\//i.test(parsed.data)) {
+          return parsed.data;
+        }
+      }
+    }
+
+    // Not JSON or no usable fields → treat raw text as URL *if* it looks like one
+    if (/^https?:\/\//i.test(raw)) {
+      return raw;
+    }
+
+    console.warn('[BinderEditor] view-url response did not contain a usable URL', {
+      binderId,
+      storageKey,
+      raw
+    });
+    return null;
   } catch (err) {
-    // For photo URL fetching, network errors might be session expiry but could also be network issues
-    // Only treat confirmed 401/403 as session expiry; other errors just return null
-    // (The status check above already handles 401/403)
-    
     console.error('[BinderEditor] Exception while fetching photo URL:', {
       binderId,
       storageKey,

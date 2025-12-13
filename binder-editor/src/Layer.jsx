@@ -320,6 +320,8 @@ function Layer({ layer, selected, onSelect, onUpdate, onRemove, onDragStart, bin
               onDragStart={(e) => e.preventDefault()}
               onError={() => {
                 console.warn('[BinderEditor] Image failed to load:', imageUrl);
+                // Fall back to placeholder UI instead of a broken image box
+                // setImageUrl(null);
               }}
             />
           ) : imageLoading ? (

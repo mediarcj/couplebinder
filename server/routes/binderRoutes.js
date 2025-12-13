@@ -85,14 +85,6 @@ router.post('/', binderController.create);
 
 /**
  * POST /dashboard/binder/:binderId/photos
- *
- * Flow:
- *  - Multer parses multipart form and writes to temp dir
- *  - binderController.addPhotos:
- *      - Validates safe image types
- *      - Uploads each file via saveBinderPhoto (S3/local)
- *      - Inserts metadata rows into binder_photos
- *      - Logs success/failure per photo
  */
 router.post(
   '/:binderId/photos',
@@ -103,8 +95,12 @@ router.post(
 /**
  * GET /dashboard/binder/:binderId/photos/view-url?storageKey=...
  *
- * Given a storageKey (stored in binder_layouts.layout_json.elements[].storageKey),
- * return a fresh, signed URL the browser can use in <img src="...">.
+ * NEW BEHAVIOR:
+ *  - Still verifies that the photo belongs to this user/binder.
+ *  - Instead of returning a presigned S3 URL, returns an internal URL:
+ *        /dashboard/binder/:binderId/photos/raw?storageKey=...
+ *    The browser then hits that endpoint, and the server streams the image
+ *    bytes from S3/local storage.
  */
 router.get(
   '/:binderId/photos/view-url',
@@ -128,14 +124,14 @@ router.get(
         });
       }
 
-      if (!storageProvider || typeof storageProvider.getBinderPhotoViewUrl !== 'function') {
+      if (!supabaseAdmin) {
         logger.error(
           {
-            event: 'binder.view_url.storage_unavailable',
+            event: 'binder.view_url.supabase_unavailable',
             binderId,
             storageKey
           },
-          'Storage provider not configured for view-url endpoint'
+          'Supabase admin client not configured for view-url endpoint'
         );
         return res.status(500).json({
           ok: false,
@@ -145,7 +141,6 @@ router.get(
 
       // Verify ownership by checking if storageKey belongs to user's photos
       // This handles both workspace IDs (default-{userId}) and UUID binder IDs
-      const { supabaseAdmin } = require('../utils/supabaseClient');
       const { data: photo, error: photoErr } = await supabaseAdmin
         .from('binder_photos')
         .select('id, binder_id, user_id')
@@ -186,14 +181,11 @@ router.get(
       }
 
       // Additional check: verify the binderId in URL matches the photo's binder
-      // Handle both workspace IDs (default-{userId}) and UUID binder IDs
       const photoBinderId = String(photo.binder_id);
       const urlBinderId = String(binderId);
-      
-      // If URL binderId is a workspace ID, we're more lenient (workspace IDs are per-user)
-      // If URL binderId is a UUID, it must match the photo's binder_id
+
       let binderMatches = false;
-      
+
       if (binderId.startsWith('default-')) {
         // Workspace ID: if photo belongs to user, it's valid (workspace IDs are user-scoped)
         binderMatches = true;
@@ -219,17 +211,14 @@ router.get(
         });
       }
 
-      const url = await storageProvider.getBinderPhotoViewUrl(storageKey);
-      if (!url) {
-        return res.status(404).json({
-          ok: false,
-          message: 'No view URL available for this photo.'
-        });
-      }
+      // Instead of returning a presigned S3 URL, return the internal raw-photo endpoint
+      const internalUrl =
+        `/dashboard/binder/${encodeURIComponent(binderId)}` +
+        `/photos/raw?storageKey=${encodeURIComponent(storageKey)}`;
 
       return res.json({
         ok: true,
-        url
+        url: internalUrl
       });
     } catch (err) {
       logger.error(
@@ -249,14 +238,168 @@ router.get(
 );
 
 /**
+ * NEW:
+ * GET /dashboard/binder/:binderId/photos/raw?storageKey=...
+ *
+ * Streams the photo bytes from S3/local to the browser.
+ * This avoids any presigned URLs on the frontend.
+ */
+router.get(
+  '/:binderId/photos/raw',
+  async (req, res) => {
+    try {
+      const binderIdParam = req.params.binderId;
+      const storageKey = req.query.storageKey;
+      const userId = (req.user && (req.user.id || req.user.uid)) || null;
+
+      if (!storageKey) {
+        return res.status(400).send('storageKey is required');
+      }
+
+      if (!userId) {
+        return res.status(401).send('Not authenticated');
+      }
+
+      if (!supabaseAdmin) {
+        logger.error(
+          {
+            event: 'binder.raw.supabase_unavailable',
+            binderIdParam,
+            storageKey
+          },
+          'Supabase admin client not configured for raw photo endpoint'
+        );
+        return res.status(500).send('Photo storage is not configured.');
+      }
+
+      if (!storageProvider || typeof storageProvider.getBinderPhotoStream !== 'function') {
+        logger.error(
+          {
+            event: 'binder.raw.storage_unavailable',
+            binderIdParam,
+            storageKey
+          },
+          'Storage provider not configured for raw photo endpoint'
+        );
+        return res.status(500).send('Photo storage is not configured.');
+      }
+
+      // Resolve binder (workspace ID or UUID) without creating missing binders
+      let resolvedBinderId = null;
+      try {
+        const { binderId } = await binderController.resolveBinder({
+          client: supabaseAdmin,
+          userId,
+          binderIdParam,
+          createIfMissing: false
+        });
+        resolvedBinderId = binderId;
+      } catch (err) {
+        const status = err.status || 500;
+        logger.warn(
+          {
+            event: 'binder.raw.resolve_failed',
+            binderIdParam,
+            userId,
+            error: err.message
+          },
+          'Failed to resolve binder for raw photo endpoint'
+        );
+        return res.status(status).send(err.message || 'Unable to resolve binder.');
+      }
+
+      // Verify the photo belongs to this binder + user
+      const { data: photoRow, error: photoErr } = await supabaseAdmin
+        .from('binder_photos')
+        .select('id, mime_type')
+        .eq('binder_id', resolvedBinderId)
+        .eq('storage_key', storageKey)
+        .eq('user_id', userId)
+        .maybeSingle();
+
+      if (photoErr) {
+        logger.error(
+          {
+            event: 'binder.raw.photo_lookup_failed',
+            binderIdParam,
+            resolvedBinderId,
+            storageKey,
+            userId,
+            error: photoErr.message
+          },
+          'Failed to verify photo ownership for raw endpoint'
+        );
+        return res.status(500).send('Unable to verify photo ownership.');
+      }
+
+      if (!photoRow) {
+        logger.warn(
+          {
+            event: 'binder.raw.photo_not_found',
+            binderIdParam,
+            resolvedBinderId,
+            storageKey,
+            userId
+          },
+          'Photo not found for user+binder during raw view'
+        );
+        return res.status(404).send('Photo not found for this binder.');
+      }
+
+      const { stream, contentType, contentLength } =
+        await storageProvider.getBinderPhotoStream(storageKey);
+
+      // Basic headers
+      const finalContentType =
+        contentType ||
+        photoRow.mime_type ||
+        'application/octet-stream';
+
+      res.setHeader('Content-Type', finalContentType);
+      if (contentLength) {
+        res.setHeader('Content-Length', String(contentLength));
+      }
+      // Short-lived cache for the browser
+      res.setHeader('Cache-Control', 'private, max-age=300');
+
+      stream.on('error', (err) => {
+        logger.error(
+          {
+            event: 'binder.raw.stream_error',
+            binderIdParam,
+            resolvedBinderId,
+            storageKey,
+            userId,
+            error: err.message
+          },
+          'Error while streaming binder photo'
+        );
+        if (!res.headersSent) {
+          res.status(500).end('Error streaming photo');
+        } else {
+          res.end();
+        }
+      });
+
+      stream.pipe(res);
+    } catch (err) {
+      logger.error(
+        {
+          event: 'binder.raw.unhandled_error',
+          error: err.message,
+          stack: err.stack
+        },
+        'Unhandled error in raw photo endpoint'
+      );
+      if (!res.headersSent) {
+        res.status(500).end('Unable to load photo right now.');
+      }
+    }
+  }
+);
+
+/**
  * DELETE /dashboard/binder/:binderId/photos?storageKey=...
- *
- * Full system delete:
- *  - Validates that the storageKey looks like it belongs to this binder
- *  - Calls storageProvider.deleteBinderPhoto(storageKey) to remove from S3/local
- *  - Deletes the matching row from public.binder_photos using supabaseAdmin
- *
- * The canvas/layout is handled client-side and re-saved after delete.
  */
 router.delete(
   '/:binderId/photos',
@@ -459,28 +602,27 @@ router.delete(
 
 /**
  * GET /dashboard/binder/:binderId/editor
- * Render binder editor page with React app
  */
 router.get('/:binderId/editor', binderController.renderBinderEditor);
 
 /**
  * GET /dashboard/binder/:binderId/layout
- * Get current layout JSON for a binder
  */
 router.get('/:binderId/layout', binderController.getBinderLayout);
 
 /**
  * POST /dashboard/binder/:binderId/layout/apply
- * Save layout changes to database
  */
 router.post('/:binderId/layout/apply', binderController.applyBinderLayout);
 
 /**
  * POST /dashboard/binder/:binderId/layout/auto
- * Generate auto layout using server-side algorithm
  */
 router.post('/:binderId/layout/auto', binderController.autoLayoutBinder);
 
+/**
+ * POST /dashboard/binder/:binderId/export
+ */
 router.post(
   '/:binderId/export',
   binderController.exportPdf

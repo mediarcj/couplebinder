@@ -2,29 +2,12 @@
 // Description: API client for binder layout operations
 // Purpose: Centralized fetch calls with CSRF handling
 
-// Session expiry handler - will be set by App.jsx
-let sessionExpiryHandler = null;
-
-/**
- * WHAT:
- * Register a session expiry handler callback.
- *
- * WHY:
- * Allows App.jsx to provide a modal-based handler instead of immediate redirect.
- *
- * HOW:
- * Stores the handler function for use when session expiry is detected.
- */
-export function setSessionExpiryHandler(handler) {
-  sessionExpiryHandler = handler;
-}
-
 /**
  * WHAT:
  * Check if an error is a network error that might indicate session expiry.
  *
  * WHY:
- * Allows App.jsx to check errors directly and trigger modal if needed.
+ * Allows callers to check errors directly if they need to.
  *
  * HOW:
  * Exports the same logic used internally for error detection.
@@ -46,58 +29,73 @@ export function isNetworkErrorLikelySessionExpiry(error) {
  */
 function isSessionExpiryError(error, isCriticalOperation = false) {
   if (!error) return false;
-  
+
   // Check for explicit SESSION_EXPIRED error
   if (error.message === 'SESSION_EXPIRED') return true;
-  
+
   // For critical operations (autosave, layout), treat network errors as likely session expiry
   if (isCriticalOperation) {
     // Check error type and name (TypeError for "Failed to fetch")
     if (error instanceof TypeError || error.name === 'TypeError') {
       const errorMsg = error.message || String(error);
-      if (errorMsg.includes('Failed to fetch') || 
-          errorMsg.includes('NetworkError') ||
-          errorMsg.includes('Network request failed') ||
-          errorMsg.toLowerCase().includes('fetch')) {
+      if (
+        errorMsg.includes('Failed to fetch') ||
+        errorMsg.includes('NetworkError') ||
+        errorMsg.includes('Network request failed') ||
+        errorMsg.toLowerCase().includes('fetch')
+      ) {
         // These can occur when session expires and server rejects the request
         return true;
       }
     }
-    
+
     // Also check error message string directly
     const errorMsg = error.message || String(error);
     if (errorMsg.includes('Failed to fetch') || errorMsg.includes('NetworkError')) {
       return true;
     }
   }
-  
+
   return false;
 }
 
 /**
  * WHAT:
- * Handle session expiry with modal instead of immediate redirect.
+ * Redirect to login on session expiry.
  *
  * WHY:
- * Better UX - user sees a friendly message and can acknowledge before redirect.
+ * We want a single, consistent behavior: user is kicked out and sent to the
+ * dedicated login page, which shows the inactivity banner and can redirect back.
  *
  * HOW:
- * If handler is registered, use it. Otherwise fall back to immediate redirect.
+ * Build /login URL with reason=session_expired and returnTo=current path/query,
+ * then hard-navigate with location.replace() so back button doesn’t bounce.
+ */
+function redirectToLoginForSessionExpiry() {
+  try {
+    const returnTo = window.location.pathname + window.location.search;
+    const loginUrl = `/login?reason=session_expired&returnTo=${encodeURIComponent(returnTo)}`;
+    // replace() so the user doesn't go back into a dead editor state
+    window.location.replace(loginUrl);
+  } catch {
+    // Fallback in very old browsers
+    window.location.href = '/login?reason=session_expired';
+  }
+}
+
+/**
+ * WHAT:
+ * Handle session expiry.
+ *
+ * WHY:
+ * Used whenever we detect 401/403 or network patterns that look like expired
+ * sessions. We centralize the redirect here.
+ *
+ * HOW:
+ * Redirects immediately, then throws a sentinel error so callers can bail out.
  */
 function handleSessionExpiry() {
-  const returnTo = window.location.pathname + window.location.search;
-  const loginUrl = `/login?reason=session_expired&returnTo=${encodeURIComponent(returnTo)}`;
-  
-  if (sessionExpiryHandler) {
-    // Use modal handler from App.jsx
-    sessionExpiryHandler(() => {
-      window.location.href = loginUrl;
-    });
-  } else {
-    // Fallback to immediate redirect if handler not set
-    window.location.href = loginUrl;
-  }
-  
+  redirectToLoginForSessionExpiry();
   throw new Error('SESSION_EXPIRED');
 }
 
@@ -110,11 +108,14 @@ function handleSessionExpiry() {
  *
  * HOW:
  * Adds CSRF header, handles JSON, returns parsed response or throws.
- * Detects session expiry (401/403) and uses modal handler if available.
+ * Detects session expiry (401/403) and redirects to login.
  */
 async function apiRequest(url, options = {}) {
-  const csrfToken = document.querySelector('#binder-editor-root')?.getAttribute('data-csrf-token') || '';
-  
+  const csrfToken =
+    document
+      .querySelector('#binder-editor-root')
+      ?.getAttribute('data-csrf-token') || '';
+
   const headers = {
     'Content-Type': 'application/json',
     'X-CSRF-Token': csrfToken,
@@ -134,7 +135,9 @@ async function apiRequest(url, options = {}) {
     }
 
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ ok: false, message: `HTTP ${response.status}` }));
+      const error = await response
+        .json()
+        .catch(() => ({ ok: false, message: `HTTP ${response.status}` }));
       throw new Error(error.message || `HTTP ${response.status}`);
     }
 
@@ -206,51 +209,51 @@ export async function autoLayout(binderId, options = {}) {
  * Users need to download their binder as a PDF file.
  *
  * HOW:
- * POST request to export endpoint, returns blob, triggers download.
+ * POST request to export endpoint, returns blob.
  * Handles session expiry same as other API calls.
  */
 export async function exportBinderPdf(binderId) {
-    if (!binderId) {
-      throw new Error('Missing binderId for export');
-    }
-  
-    const csrfToken =
-      document
-        .querySelector('#binder-editor-root')
-        ?.getAttribute('data-csrf-token') || '';
-  
-    const url = `/dashboard/binder/${encodeURIComponent(binderId)}/export`;
-  
-    try {
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: {
-          Accept: 'application/pdf',
-          ...(csrfToken ? { 'X-CSRF-Token': csrfToken } : {})
-        },
-        credentials: 'same-origin'
-      });
-  
-      // Handle session expiry (401 Unauthorized or 403 Forbidden)
-      if (res.status === 401 || res.status === 403) {
-        handleSessionExpiry();
-      }
-  
-      if (!res.ok) {
-        const text = await res.text().catch(() => '');
-        throw new Error(
-          `Export failed (${res.status}): ${text || 'Server error'}`
-        );
-      }
-  
-      return await res.blob();
-    } catch (error) {
-      if (isSessionExpiryError(error, true)) {
-        handleSessionExpiry();
-      }
-      throw error;
-    }
+  if (!binderId) {
+    throw new Error('Missing binderId for export');
   }
+
+  const csrfToken =
+    document
+      .querySelector('#binder-editor-root')
+      ?.getAttribute('data-csrf-token') || '';
+
+  const url = `/dashboard/binder/${encodeURIComponent(binderId)}/export`;
+
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        Accept: 'application/pdf',
+        ...(csrfToken ? { 'X-CSRF-Token': csrfToken } : {})
+      },
+      credentials: 'same-origin'
+    });
+
+    // Handle session expiry (401 Unauthorized or 403 Forbidden)
+    if (res.status === 401 || res.status === 403) {
+      handleSessionExpiry();
+    }
+
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      throw new Error(
+        `Export failed (${res.status}): ${text || 'Server error'}`
+      );
+    }
+
+    return await res.blob();
+  } catch (error) {
+    if (isSessionExpiryError(error, true)) {
+      handleSessionExpiry();
+    }
+    throw error;
+  }
+}
 
 /**
  * WHAT:
@@ -268,14 +271,19 @@ export async function deleteBinderPhoto(binderId, storageKey) {
     throw new Error('Missing binderId or storageKey for photo delete');
   }
 
-  const csrfToken = document.querySelector('#binder-editor-root')?.getAttribute('data-csrf-token') || '';
-  const url = `/dashboard/binder/${encodeURIComponent(binderId)}/photos?storageKey=${encodeURIComponent(storageKey)}`;
+  const csrfToken =
+    document
+      .querySelector('#binder-editor-root')
+      ?.getAttribute('data-csrf-token') || '';
+  const url = `/dashboard/binder/${encodeURIComponent(
+    binderId
+  )}/photos?storageKey=${encodeURIComponent(storageKey)}`;
 
   try {
     const res = await fetch(url, {
       method: 'DELETE',
       headers: {
-        'Accept': 'application/json',
+        Accept: 'application/json',
         ...(csrfToken ? { 'X-CSRF-Token': csrfToken } : {})
       },
       credentials: 'same-origin'
@@ -364,8 +372,8 @@ export async function getPhotoViewUrl(binderId, storageKey) {
     // Read body as text first – this works for both JSON and plain text
     const raw = (await res.text()).trim();
 
-    console.log('[view-url raw body]', { binderId, storageKey, raw });  // <--- add this
-    
+    console.log('[view-url raw body]', { binderId, storageKey, raw });
+
     if (!raw) return null;
 
     // Try to parse as JSON. If that fails, we'll treat `raw` as plain URL below.
@@ -391,7 +399,10 @@ export async function getPhotoViewUrl(binderId, storageKey) {
           return parsed.signedUrl;
         }
         // Extra safety: some older shapes sometimes nest url in `data`
-        if (typeof parsed.data === 'string' && /^https?:\/\//i.test(parsed.data)) {
+        if (
+          typeof parsed.data === 'string' &&
+          /^https?:\/\//i.test(parsed.data)
+        ) {
           return parsed.data;
         }
       }
@@ -402,11 +413,14 @@ export async function getPhotoViewUrl(binderId, storageKey) {
       return raw;
     }
 
-    console.warn('[BinderEditor] view-url response did not contain a usable URL', {
-      binderId,
-      storageKey,
-      raw
-    });
+    console.warn(
+      '[BinderEditor] view-url response did not contain a usable URL',
+      {
+        binderId,
+        storageKey,
+        raw
+      }
+    );
     return null;
   } catch (err) {
     console.error('[BinderEditor] Exception while fetching photo URL:', {

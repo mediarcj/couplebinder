@@ -815,8 +815,8 @@ function App({ binderId /*, csrfToken */ }) {
             if (!selectedLayerId) {
               openModal({
                 title: 'No photo selected',
-                body: 'Click on a photo on the page first, then try deleting again.',
-                confirmLabel: 'OK',
+                body: 'To delete a photo, first click a photo on the page to select it, then click "Delete photo" again.',
+                confirmLabel: 'Got it',
                 cancelLabel: null,
                 onConfirm: () => {},
                 onCancel: null
@@ -866,7 +866,6 @@ function App({ binderId /*, csrfToken */ }) {
           onExportPdf={handleExportPdf}
           onTidyLayout={handleTidyLayout}
           saving={saving}
-          hasSelection={Boolean(selectedLayerId)}
           exporting={exporting}
           canExport={Boolean(binderId && layout && !loading)}
         />

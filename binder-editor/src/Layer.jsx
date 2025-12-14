@@ -3,7 +3,7 @@
 // Purpose: Render and edit a single layer on canvas
 
 import React, { useState, useEffect, useRef } from 'react';
-import { getPhotoViewUrl } from './api';
+import { getPhotoViewUrl, updatePhotoCaption } from './api';
 
 // Simple helpers (same idea as in Canvas.jsx)
 const rectsOverlap = (l1, t1, w1, h1, l2, t2, w2, h2) => {
@@ -19,6 +19,16 @@ const clamp = (value, min, max) => {
   return Math.min(Math.max(value, min), max);
 };
 
+function stripEmojiClient(input) {
+  if (!input || typeof input !== 'string') return '';
+  try {
+    return input.replace(/\p{Extended_Pictographic}/gu, '');
+  } catch {
+    // Fallback for older browsers: basic filter of some emoji ranges
+    return input.replace(/[\u{1F300}-\u{1FAFF}]/gu, '');
+  }
+}
+
 function Layer({ layer, selected, onSelect, onUpdate, onRemove, onDragStart, binderId, zoom = 1 }) {
   const [resizing, setResizing] = useState(false);
   const resizeRef = useRef(null);
@@ -26,12 +36,27 @@ function Layer({ layer, selected, onSelect, onUpdate, onRemove, onDragStart, bin
   const [imageUrl, setImageUrl] = useState(layer.src || null);
   const [imageLoading, setImageLoading] = useState(false);
   const fetchAttemptedRef = useRef(false);
+  const [editingCaption, setEditingCaption] = useState(false);
+  const [captionDraft, setCaptionDraft] = useState(layer.caption || '');
+  const [savingCaption, setSavingCaption] = useState(false);
+  const [captionError, setCaptionError] = useState('');
 
   const handleMouseDown = (e) => {
+    const target = e.target;
+    if (
+      target.closest('.layer-caption-input') ||
+      target.tagName === 'TEXTAREA' ||
+      target.tagName === 'INPUT' ||
+      target.tagName === 'BUTTON'
+    ) {
+      // Let interactive elements work normally
+      onSelect(layer.id);
+      return;
+    }
+  
     // IMPORTANT: prevent the browser's default image drag behavior
     e.preventDefault();
     e.stopPropagation();
-    // Select this layer before any drag/resize so sidebar actions work
     onSelect(layer.id);
     onDragStart(layer.id, e);
   };
@@ -301,6 +326,11 @@ function Layer({ layer, selected, onSelect, onUpdate, onRemove, onDragStart, bin
     }
   }, [layer.type, layer.storageKey, binderId, layer.src]);
 
+  // Keep local draft in sync with props when layout is re-loaded
+  useEffect(() => {
+    setCaptionDraft(layer.caption || '');
+  }, [layer.caption]);
+
   return (
     <div
       className={`binder-editor-layer ${selected ? 'selected' : ''} ${
@@ -310,35 +340,136 @@ function Layer({ layer, selected, onSelect, onUpdate, onRemove, onDragStart, bin
       onMouseDown={handleMouseDown}
     >
       {layer.type === 'photo' && (
-        <div className="layer-photo-container">
-          {imageUrl ? (
-            <img
-              src={imageUrl}
-              alt="Binder photo"
-              className="layer-photo-image"
-              draggable={false}
-              onDragStart={(e) => e.preventDefault()}
-              onError={() => {
-                console.warn('[BinderEditor] Image failed to load:', imageUrl);
-                // Fall back to placeholder UI instead of a broken image box
-                // setImageUrl(null);
-              }}
-            />
-          ) : imageLoading ? (
-            <div className="layer-photo-loading">
-              <span>Loading...</span>
-            </div>
-          ) : (
-            <div className="layer-photo-placeholder">
-              <span>Photo</span>
-              {layer.storageKey && (
-                <span className="photo-id" title={layer.storageKey}>
-                  {layer.storageKey.split('/').pop() || 'No image'}
-                </span>
-              )}
-            </div>
-          )}
-        </div>
+        <>
+          <div className="layer-photo-container">
+            {imageUrl ? (
+              <img
+                src={imageUrl}
+                alt="Binder photo"
+                className="layer-photo-image"
+                draggable={false}
+                onDragStart={(e) => e.preventDefault()}
+                onError={() => {
+                  console.warn('[BinderEditor] Image failed to load:', imageUrl);
+                  // Fall back to placeholder UI instead of a broken image box
+                  // setImageUrl(null);
+                }}
+              />
+            ) : imageLoading ? (
+              <div className="layer-photo-loading">
+                <span>Loading...</span>
+              </div>
+            ) : (
+              <div className="layer-photo-placeholder">
+                <span>Photo</span>
+                {layer.storageKey && (
+                  <span className="photo-id" title={layer.storageKey}>
+                    {layer.storageKey.split('/').pop() || 'No image'}
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+          <div className="layer-caption-shell">
+            {editingCaption ? (
+              <div className="layer-caption-edit">
+                <textarea
+                  className="layer-caption-input"
+                  rows={2}
+                  maxLength={300}
+                  value={captionDraft}
+                  placeholder="Describe what is happening in this photo (no emojis)."
+                  onMouseDown={(e) => {
+                    // Let the textarea get focus and be editable.
+                    // This prevents the parent layer's onMouseDown from firing.
+                    e.stopPropagation();
+                  }}                  
+                  onChange={(e) => {
+                    const raw = e.target.value;
+                    const noEmoji = stripEmojiClient(raw);
+                    setCaptionDraft(noEmoji);
+                    if (captionError) setCaptionError('');
+                  }}
+                />
+                <button
+                  type="button"
+                  className="layer-caption-save"
+                  onClick={async (e) => {
+                    e.stopPropagation();
+                    if (!layer.storageKey || !binderId) return;
+
+                    try {
+                      setSavingCaption(true);
+                      setCaptionError('');
+
+                      const result = await updatePhotoCaption(
+                        binderId,
+                        layer.storageKey,
+                        captionDraft
+                      );
+
+                      // Backend returns sanitized caption (no HTML, no emoji)
+                      const newCaption =
+                        (result && typeof result.caption === 'string'
+                          ? result.caption
+                          : '');
+
+                      // Push into layout so autosave sees it
+                      onUpdate(layer.id, { caption: newCaption });
+
+                      setEditingCaption(false);
+                      setCaptionDraft(newCaption);
+                    } catch (err) {
+                      setCaptionError(
+                        err?.message || 'Unable to save caption right now.'
+                      );
+                    } finally {
+                      setSavingCaption(false);
+                    }
+                  }}
+                  disabled={savingCaption}
+                >
+                  <span className="layer-caption-save-icon" aria-hidden="true">
+                    ✓
+                  </span>
+                  <span className="sr-only">Save caption</span>
+                </button>
+              </div>
+            ) : (
+              <div className="layer-caption-display">
+                {layer.caption && layer.caption.trim().length > 0 ? (
+                  <p className="layer-caption-text">{layer.caption}</p>
+                ) : (
+                  <p className="layer-caption-placeholder">
+                    Add a short description for the visa officer
+                  </p>
+                )}
+                <button
+                  type="button"
+                  className="layer-caption-edit-btn"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setEditingCaption(true);
+                    setCaptionError('');
+                  }}
+                >
+                  <span className="layer-caption-edit-icon" aria-hidden="true">
+                    ✎
+                  </span>
+                  <span className="sr-only">
+                    {layer.caption ? 'Edit caption' : 'Add caption'}
+                  </span>
+                </button>
+              </div>
+            )}
+
+            {captionError && (
+              <div className="layer-caption-error">
+                {captionError}
+              </div>
+            )}
+          </div>
+        </>
       )}
 
       {layer.type === 'text' && layer.text && (

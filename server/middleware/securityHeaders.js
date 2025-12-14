@@ -22,6 +22,23 @@ const { config } = require('../config');
 
 const TURNSTILE_ORIGIN = 'https://challenges.cloudflare.com';
 
+let STORAGE_PUBLIC_ORIGIN = '';
+try {
+  const rawPublicBase = (config?.storage?.s3?.publicBaseUrl || '').trim();
+  if (rawPublicBase) {
+    const u = new URL(rawPublicBase);
+    STORAGE_PUBLIC_ORIGIN = u.origin;
+  }
+} catch (err) {
+  logger.warn(
+    {
+      event: 'security_headers.storage_public_origin_parse_failed',
+      error: err.message
+    },
+    'Could not parse storage public base URL for CSP'
+  );
+}
+
 /**
  * Generate CSP nonce middleware
  * MUST run before securityHeaders middleware
@@ -96,7 +113,9 @@ function securityHeaders() {
           'data:',
           'https://files.stripe.com',
           'https://*.stripe.com',
-          'https://couplebinder-uploads.s3.us-west-2.amazonaws.com',
+          // If you configured a specific public S3 base URL, allow that exact origin
+          ...(STORAGE_PUBLIC_ORIGIN ? [STORAGE_PUBLIC_ORIGIN] : []),
+          // Fallback: allow generic S3 if you still need it
           'https://*.amazonaws.com'
         ],
 

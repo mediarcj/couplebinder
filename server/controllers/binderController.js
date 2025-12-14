@@ -12,6 +12,7 @@ const {
   saveBinderPhoto,
   getBinderPhotoBuffer
 } = require('../services/storageProvider');
+const { validateCaptionServerSide } = require('../middleware/security');
 
 // -----------------------------------------------------------------------------
 // Shared server-side image validation (aligns with binderRoutes + dashboard.js)
@@ -247,7 +248,8 @@ async function renderBinderPageBody({
   marginPt = mmToPt(18),
   client = null,
   userId = null,
-  binderId = null
+  binderId = null,
+  captionByStorageKey = null
 }) {
   const sectionDef = SECTION_DEFS[pageLayout.sectionKey] || SECTION_DEFS.photos;
   const exhibitCode = exhibitInfo
@@ -341,6 +343,13 @@ async function renderBinderPageBody({
           }
         }
 
+        // Reserve space for caption at bottom of photo tile
+        const maxCaptionFrac = 0.22;
+        const maxCaptionPts = 80;
+        const captionBand = Math.min(pdfH * maxCaptionFrac, maxCaptionPts);
+        const imgHeight = pdfH - captionBand;
+        const imgY = pdfY;
+
         // Attempt to fetch and draw the image via storageProvider
         const buf = await fetchImageBufferForLayer(layerWithStorageKey);
 
@@ -348,41 +357,65 @@ async function renderBinderPageBody({
           // Placeholder for missing image
           doc
             .save()
-            .rect(pdfX, pdfY, pdfW, pdfH)
+            .rect(pdfX, imgY, pdfW, imgHeight)
             .fill('#f3f4f6')
             .stroke('#e5e7eb')
             .restore();
           doc
             .fontSize(9)
             .fillColor('#6b7280')
-            .text('Photo unavailable', pdfX + 4, pdfY + 4, {
+            .text('Photo unavailable', pdfX + 4, imgY + 4, {
               width: pdfW - 8,
-              height: pdfH - 8
+              height: imgHeight - 8
             })
             .fillColor('#000000');
         } else {
           // Cover behavior: fill box exactly, crop if needed (matches canvas object-fit: cover)
           const img = doc.openImage(buf);
           const imgRatio = img.width / img.height;
-          const boxRatio = pdfW / pdfH;
+          const boxRatio = pdfW / imgHeight;
 
           // Calculate scale factor to cover the box (like object-fit: cover)
           const scaleByWidth = pdfW / img.width;
-          const scaleByHeight = pdfH / img.height;
+          const scaleByHeight = imgHeight / img.height;
           const coverScale = Math.max(scaleByWidth, scaleByHeight);
 
           const scaledWidth = img.width * coverScale;
           const scaledHeight = img.height * coverScale;
 
           const drawX = pdfX + (pdfW - scaledWidth) / 2;
-          const drawY = pdfY + (pdfH - scaledHeight) / 2;
+          const drawY = imgY + (imgHeight - scaledHeight) / 2;
 
           doc.save();
-          doc.rect(pdfX, pdfY, pdfW, pdfH).clip();
+          doc.rect(pdfX, imgY, pdfW, imgHeight).clip();
           doc.translate(drawX, drawY);
           doc.scale(coverScale, coverScale);
           doc.image(img, 0, 0, { width: img.width, height: img.height });
           doc.restore();
+        }
+
+        // Render caption below photo if present
+        let caption = '';
+        if (captionByStorageKey && layerWithStorageKey.storageKey) {
+          const rawCap = captionByStorageKey.get(layerWithStorageKey.storageKey);
+          if (typeof rawCap === 'string') {
+            caption = rawCap.trim();
+          }
+        }
+
+        if (caption) {
+          const captionY = imgY + imgHeight + 4; // small gap
+          const captionHeight = captionBand - 8;
+
+          doc
+            .fontSize(9)
+            .fillColor('#374151') // dark gray
+            .text(caption, pdfX + 4, captionY, {
+              width: pdfW - 8,
+              height: captionHeight,
+              align: 'center'
+            })
+            .fillColor('#000000');
         }
       } else if (layer.type === 'text') {
         doc
@@ -894,6 +927,153 @@ async function addPhotos(req, res, next) {
 }
 
 /**
+ * PATCH /dashboard/binder/:binderId/photos/caption
+ *
+ * Body: { storageKey: string, caption: string }
+ *
+ * - Verifies user is authenticated
+ * - Resolves real binder id (UUID) from :binderId
+ * - Verifies photo belongs to this binder + user
+ * - Validates and sanitizes caption
+ * - Stores sanitized caption in binder_photos.caption
+ */
+async function updatePhotoCaption(req, res, next) {
+  const binderIdParam = req.params.binderId;
+
+  try {
+    const { userId, client } = getContext(req);
+    const storageKey = (req.body && req.body.storageKey) || '';
+    const rawCaption = (req.body && req.body.caption) || '';
+
+    if (!storageKey) {
+      return res.status(400).json({
+        ok: false,
+        message: 'storageKey is required'
+      });
+    }
+
+    // Resolve binder (workspace id or UUID), but do not create new binder here
+    const { binderId } = await resolveBinder({
+      client,
+      userId,
+      binderIdParam,
+      createIfMissing: false
+    });
+
+    // Verify the photo belongs to this binder + user
+    const { data: photoRow, error: photoErr } = await client
+      .from('binder_photos')
+      .select('id, caption')
+      .eq('binder_id', binderId)
+      .eq('storage_key', storageKey)
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    if (photoErr) {
+      logger.error(
+        {
+          event: 'binder.caption.photo_lookup_failed',
+          binderIdParam,
+          binderId,
+          storageKey,
+          userId,
+          error: photoErr.message
+        },
+        'Failed to verify photo ownership before caption update'
+      );
+      return res.status(500).json({
+        ok: false,
+        message: 'Unable to verify photo ownership.'
+      });
+    }
+
+    if (!photoRow) {
+      logger.warn(
+        {
+          event: 'binder.caption.photo_not_found',
+          binderIdParam,
+          binderId,
+          storageKey,
+          userId
+        },
+        'Photo not found for caption update'
+      );
+      return res.status(404).json({
+        ok: false,
+        message: 'Photo not found for this binder.'
+      });
+    }
+
+    // Validate/sanitize caption (no HTML, no emoji)
+    const { valid, error, sanitized } = validateCaptionServerSide(rawCaption);
+
+    if (!valid) {
+      return res.status(400).json({
+        ok: false,
+        message: error || 'Invalid caption'
+      });
+    }
+
+    const captionToStore = sanitized || null; // null = "no caption"
+
+    const { error: updateErr } = await client
+      .from('binder_photos')
+      .update({ caption: captionToStore })
+      .eq('id', photoRow.id)
+      .eq('user_id', userId);
+
+    if (updateErr) {
+      logger.error(
+        {
+          event: 'binder.caption.update_failed',
+          binderIdParam,
+          binderId,
+          storageKey,
+          userId,
+          error: updateErr.message
+        },
+        'Failed to update binder photo caption'
+      );
+      return res.status(500).json({
+        ok: false,
+        message: 'Unable to save caption right now.'
+      });
+    }
+
+    logger.info(
+      {
+        event: 'binder.caption.updated',
+        binderIdParam,
+        binderId,
+        storageKey,
+        photoId: photoRow.id,
+        userId,
+        hasCaption: !!captionToStore
+      },
+      'Binder photo caption updated'
+    );
+
+    return res.json({
+      ok: true,
+      caption: captionToStore || ''
+    });
+  } catch (err) {
+    logger.error(
+      {
+        event: 'binder.caption.unhandled_error',
+        binderIdParam,
+        storageKey: req.body?.storageKey,
+        userId: req.user?.id || req.user?.uid || null,
+        error: err.message,
+        stack: err.stack
+      },
+      'Unhandled error in updatePhotoCaption'
+    );
+    return next(err);
+  }
+}
+
+/**
  * POST /dashboard/binder/:binderId/export
  * Generate PDF with index + exhibit labels
  */
@@ -926,6 +1106,32 @@ async function exportPdf(req, res, next) {
       );
       return res.status(500).json({ ok: false, message: 'Unable to export PDF' });
     }
+
+    // Fetch captions for all photos in this binder
+    const { data: photoRows, error: photosErr } = await client
+      .from('binder_photos')
+      .select('storage_key, caption')
+      .eq('binder_id', binderId)
+      .eq('user_id', userId);
+
+    if (photosErr) {
+      logger.error(
+        {
+          event: 'binder.pdf.captions_query_failed',
+          binderId,
+          userId,
+          error: photosErr.message
+        },
+        'Failed to load binder photo captions for PDF'
+      );
+    }
+
+    const captionByStorageKey = new Map();
+    (photoRows || []).forEach((row) => {
+      if (row.storage_key && typeof row.caption === 'string') {
+        captionByStorageKey.set(row.storage_key, row.caption);
+      }
+    });
 
     // Build pages with section info and layers
     let pages = (layoutRows || []).map((row, idx) => ({
@@ -1018,7 +1224,8 @@ async function exportPdf(req, res, next) {
         contentPageNumber,
         client,
         userId,
-        binderId
+        binderId,
+        captionByStorageKey
       });
     }
 
@@ -1314,17 +1521,55 @@ async function getBinderLayout(req, res, next) {
         }
       }
 
+      // Fetch captions for all photos in this binder
+      const { data: photoRows, error: photosErr } = await client
+        .from('binder_photos')
+        .select('storage_key, caption')
+        .eq('binder_id', binderId)
+        .eq('user_id', userId);
+
+      if (photosErr) {
+        logger.error(
+          {
+            event: 'binder.layout.captions_query_failed',
+            binderId,
+            userId,
+            error: photosErr.message
+          },
+          'Failed to load binder photo captions for layout'
+        );
+      }
+
+      const captionByStorageKey = new Map();
+      (photoRows || []).forEach((row) => {
+        if (row.storage_key && typeof row.caption === 'string') {
+          // Captions were already sanitized on write
+          captionByStorageKey.set(row.storage_key, row.caption);
+        }
+      });
+
       // Build pages with enriched layers
       layout.pages = layoutRow.map((row, idx) => {
         const layers = (row.layout_json?.layers || []).map(layer => {
+          let enrichedLayer = layer;
+
           // Enrich photo layers with storageKey if missing
           if (layer.type === 'photo' && layer.photoId && !layer.storageKey) {
             const storageKey = photoStorageMap[layer.photoId];
             if (storageKey) {
-              return { ...layer, storageKey };
+              enrichedLayer = { ...layer, storageKey };
             }
           }
-          return layer;
+
+          // Attach caption from DB if this is a photo layer with storageKey
+          if (enrichedLayer && enrichedLayer.type === 'photo' && enrichedLayer.storageKey) {
+            const cap = captionByStorageKey.get(enrichedLayer.storageKey);
+            if (typeof cap === 'string' && cap.length > 0) {
+              enrichedLayer = { ...enrichedLayer, caption: cap };
+            }
+          }
+
+          return enrichedLayer;
         });
 
         return {
@@ -1684,6 +1929,7 @@ module.exports = {
   newForm,
   create,
   addPhotos,
+  updatePhotoCaption,
   exportPdf,
   renderBinderEditor,
   getBinderLayout,

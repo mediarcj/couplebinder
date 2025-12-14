@@ -75,6 +75,14 @@ const LOGOUT_MAX         = config.rateLimit.windows.logout.max;
 const COOKIE_SET_WINDOW_S= config.rateLimit.windows.cookieSet.windowMs / 1000;
 const COOKIE_SET_MAX     = config.rateLimit.windows.cookieSet.max;
 
+// Binder-specific rate limits (hardcoded for now; can be moved to config later)
+const BINDER_PHOTO_WINDOW_S = 300;  // 5 minutes
+const BINDER_PHOTO_MAX      = 20;   // 20 upload requests per 5 minutes
+const BINDER_LAYOUT_WINDOW_S = 60;  // 1 minute
+const BINDER_LAYOUT_MAX     = 30;   // 30 layout saves per minute
+const BINDER_EXPORT_WINDOW_S = 600; // 10 minutes
+const BINDER_EXPORT_MAX     = 5;    // 5 exports per 10 minutes
+
 // ============================================================
 // Redis Client Setup
 // Reuse the singleton Redis client from the app
@@ -134,6 +142,9 @@ const limiters = {
   register:  buildLimiter({ keyPrefix: 'rl:register',   points: REGISTER_MAX,  durationSeconds: REGISTER_WINDOW_S }),
   logout:    buildLimiter({ keyPrefix: 'rl:logout',     points: LOGOUT_MAX,    durationSeconds: LOGOUT_WINDOW_S }),
   cookieSet: buildLimiter({ keyPrefix: 'rl:cookieSet',  points: COOKIE_SET_MAX,durationSeconds: COOKIE_SET_WINDOW_S }),
+  binderPhoto: buildLimiter({ keyPrefix: 'rl:binder:photo', points: BINDER_PHOTO_MAX, durationSeconds: BINDER_PHOTO_WINDOW_S }),
+  binderLayout: buildLimiter({ keyPrefix: 'rl:binder:layout', points: BINDER_LAYOUT_MAX, durationSeconds: BINDER_LAYOUT_WINDOW_S }),
+  binderExport: buildLimiter({ keyPrefix: 'rl:binder:export', points: BINDER_EXPORT_MAX, durationSeconds: BINDER_EXPORT_WINDOW_S }),
 };
 
 /**
@@ -334,10 +345,34 @@ function cookieSetLimiter() {
   return limiterMiddleware(limiters.cookieSet, 'cookie_set_rate_limit', COOKIE_SET_MAX, COOKIE_SET_WINDOW_S);
 }
 
+/**
+ * Rate limiter for binder photo uploads
+ */
+function binderPhotoLimiter() {
+  return limiterMiddleware(limiters.binderPhoto, 'binder_photo_rate_limit', BINDER_PHOTO_MAX, BINDER_PHOTO_WINDOW_S);
+}
+
+/**
+ * Rate limiter for binder layout operations (apply and auto)
+ */
+function binderLayoutLimiter() {
+  return limiterMiddleware(limiters.binderLayout, 'binder_layout_rate_limit', BINDER_LAYOUT_MAX, BINDER_LAYOUT_WINDOW_S);
+}
+
+/**
+ * Rate limiter for binder PDF exports
+ */
+function binderExportLimiter() {
+  return limiterMiddleware(limiters.binderExport, 'binder_export_rate_limit', BINDER_EXPORT_MAX, BINDER_EXPORT_WINDOW_S);
+}
+
 module.exports = {
   generalLimiter,
   loginLimiter,
   registerLimiter,
   logoutLimiter,
-  cookieSetLimiter
+  cookieSetLimiter,
+  binderPhotoLimiter,
+  binderLayoutLimiter,
+  binderExportLimiter
 };

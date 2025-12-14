@@ -153,6 +153,92 @@ function validatePasswordServerSide(password) {
 }
 
 /**
+ * WHAT:
+ * Strip emoji and pictographic symbols from text.
+ *
+ * WHY:
+ * Emojis can cause issues in visa documents and are not appropriate for official submissions.
+ *
+ * HOW:
+ * Uses Unicode Extended_Pictographic property to remove emoji characters.
+ *
+ * @param {string} input - Text to strip emoji from
+ * @returns {string} Text with emoji removed
+ */
+function stripEmoji(input) {
+  if (!input || typeof input !== 'string') return '';
+  // Remove emoji and pictographic symbols
+  return input.replace(/\p{Extended_Pictographic}/gu, '');
+}
+
+/**
+ * Server-side caption validation for photo captions
+ *
+ * WHAT:
+ * Validates and sanitizes photo captions with different rules than long-form text.
+ *
+ * WHY:
+ * Captions are short, optional descriptions that should be plain text only.
+ * Different from validateTextServerSide which requires min 20 chars.
+ *
+ * HOW:
+ * - Allows empty string (user may choose no caption)
+ * - Max length kept short (300 characters)
+ * - Strips all HTML and emoji
+ * - Returns sanitized text
+ *
+ * @param {string} caption - Caption to validate
+ * @returns {object} Validation result with sanitized caption
+ */
+function validateCaptionServerSide(caption) {
+  if (caption == null) {
+    return { valid: true, sanitized: '' };
+  }
+
+  if (typeof caption !== 'string') {
+    return { valid: false, error: 'Caption must be text', sanitized: '' };
+  }
+
+  let sanitized = caption.trim();
+
+  // Allow empty after trimming (means "no caption")
+  if (sanitized.length === 0) {
+    return { valid: true, sanitized: '' };
+  }
+
+  // Reasonable max length for visa-friendly caption
+  if (sanitized.length > 300) {
+    return {
+      valid: false,
+      error: 'Caption cannot exceed 300 characters',
+      sanitized: ''
+    };
+  }
+
+  // Strip HTML / script / dangerous patterns (same library as validateTextServerSide)
+  const htmlSanitized = sanitizeHtml(sanitized, {
+    allowedTags: [],
+    allowedAttributes: {},
+    disallowedTagsMode: 'discard',
+    textFilter(text) {
+      return text
+        .replace(/javascript:/gi, '')
+        .replace(/vbscript:/gi, '')
+        .replace(/data:text\/html/gi, '');
+    }
+  });
+
+  // Strip emoji and pictographic symbols
+  const noEmoji = stripEmoji(htmlSanitized);
+
+  return {
+    valid: true,
+    error: null,
+    sanitized: noEmoji
+  };
+}
+
+/**
  * Server-side text validation matching frontend rules
  * 
  * WHAT:
@@ -393,6 +479,7 @@ module.exports = {
     validateEmailServerSide,
     validatePasswordServerSide,
     validateTextServerSide,
+    validateCaptionServerSide,
     checkAccountLockout,
     recordFailedAttempt,
     clearFailedAttempts,

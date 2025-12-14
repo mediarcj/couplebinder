@@ -3,7 +3,13 @@
 // Purpose: Canvas editor with pages, layers, drag/resize + autosave
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { getLayout, applyLayout, autoLayout, exportBinderPdf, setSessionExpiryHandler, isNetworkErrorLikelySessionExpiry, deleteBinderPhoto } from './api';
+import {
+  getLayout,
+  applyLayout,
+  autoLayout,
+  exportBinderPdf,
+  deleteBinderPhoto
+} from './api';
 import { useModal } from './ModalProvider';
 import Canvas from './Canvas';
 import PageList from './PageList';
@@ -12,6 +18,24 @@ import './App.css';
 import { SECTION_LABELS, SECTION_OPTIONS } from './sections';
 
 const AUTOSAVE_DEBOUNCE_MS = 1500; // 1.5s after last change
+
+// Shared helper: compute login URL and redirect on session expiry
+function redirectToLoginForSessionExpiry() {
+  try {
+    const returnTo = window.location.pathname + window.location.search;
+    const loginUrl = `/login?reason=session_expired&returnTo=${encodeURIComponent(
+      returnTo
+    )}`;
+    window.location.replace(loginUrl);
+  } catch {
+    window.location.href = '/login?reason=session_expired';
+  }
+}
+
+// Shared helper: check sentinel error thrown by api.js handleSessionExpiry()
+function isSessionExpiredError(err) {
+  return !!err && err.message === 'SESSION_EXPIRED';
+}
 
 function App({ binderId /*, csrfToken */ }) {
   const [layout, setLayout] = useState(null);
@@ -22,44 +46,6 @@ function App({ binderId /*, csrfToken */ }) {
   // saving = "we are writing layout to Supabase" (autosave OR auto layout)
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
-  
-  // Helper to handle session expiry errors with modal
-  const handleSessionExpiryError = useCallback((err) => {
-    // Check for session expiry (explicit or network error)
-    if (err.message === 'SESSION_EXPIRED' || isNetworkErrorLikelySessionExpiry(err)) {
-      // Trigger session expiry handler if it's a network error that wasn't caught by api.js
-      if (err.message !== 'SESSION_EXPIRED' && isNetworkErrorLikelySessionExpiry(err)) {
-        const returnTo = window.location.pathname + window.location.search;
-        const loginUrl = `/login?reason=session_expired&returnTo=${encodeURIComponent(returnTo)}`;
-        openModal({
-          title: 'Session Expired',
-          body: 'You\'ve been logged out due to inactivity. Please log in again to continue.',
-          confirmLabel: 'OK',
-          cancelLabel: null,
-          onConfirm: () => {
-            window.location.href = loginUrl;
-          },
-          onCancel: null
-        });
-      }
-      return true; // Indicates session expiry was handled
-    }
-    return false; // Not a session expiry error
-  }, [openModal]);
-
-  // Register session expiry handler with API client
-  useEffect(() => {
-    setSessionExpiryHandler((onConfirm) => {
-      openModal({
-        title: 'Session Expired',
-        body: 'You\'ve been logged out due to inactivity. Please log in again to continue.',
-        confirmLabel: 'OK',
-        cancelLabel: null,
-        onConfirm: onConfirm,
-        onCancel: null
-      });
-    });
-  }, [openModal]);
 
   // Autosave state
   const [isDirty, setIsDirty] = useState(false);
@@ -79,50 +65,50 @@ function App({ binderId /*, csrfToken */ }) {
       const sectionKey = page.sectionKey
         ? page.sectionKey
         : anyHasSection
-          ? null
-          : idx === 0
-            ? 'overview'
-            : 'photos';
+        ? null
+        : idx === 0
+        ? 'overview'
+        : 'photos';
       return { ...page, sectionKey };
     });
   }, []);
 
-// Deselect any selected layer when clicking on empty canvas area,
-// or anywhere completely outside the editor. Do NOT clear selection
-// when clicking on sidebars/toolbars.
-useEffect(() => {
-  const handleGlobalMouseDown = (e) => {
-    const root = document.getElementById('binder-editor-root');
-    if (!root) return;
+  // Deselect any selected layer when clicking on empty canvas area,
+  // or anywhere completely outside the editor. Do NOT clear selection
+  // when clicking on sidebars/toolbars.
+  useEffect(() => {
+    const handleGlobalMouseDown = (e) => {
+      const root = document.getElementById('binder-editor-root');
+      if (!root) return;
 
-    // 1) Click completely outside the React binder editor island → clear selection
-    if (!root.contains(e.target)) {
-      setSelectedLayerId(null);
-      return;
-    }
+      // 1) Click completely outside the React binder editor island → clear selection
+      if (!root.contains(e.target)) {
+        setSelectedLayerId(null);
+        return;
+      }
 
-    // 2) Inside the app: only clear when clicking the canvas area, not layers
-    const canvas = root.querySelector('.binder-editor-canvas');
-    if (!canvas) return;
+      // 2) Inside the app: only clear when clicking the canvas area, not layers
+      const canvas = root.querySelector('.binder-editor-canvas');
+      if (!canvas) return;
 
-    // If click is not inside the canvas at all, ignore it (keep selection)
-    if (!canvas.contains(e.target)) {
-      return;
-    }
+      // If click is not inside the canvas at all, ignore it (keep selection)
+      if (!canvas.contains(e.target)) {
+        return;
+      }
 
-    // Click is in the canvas, but if it's not on a layer, clear selection
-    const layerEl = e.target.closest('.binder-editor-layer');
-    if (!layerEl) {
-      setSelectedLayerId(null);
-    }
-  };
+      // Click is in the canvas, but if it's not on a layer, clear selection
+      const layerEl = e.target.closest('.binder-editor-layer');
+      if (!layerEl) {
+        setSelectedLayerId(null);
+      }
+    };
 
-  document.addEventListener('mousedown', handleGlobalMouseDown);
-  return () => {
-    document.removeEventListener('mousedown', handleGlobalMouseDown);
-  };
-}, []);
-  
+    document.addEventListener('mousedown', handleGlobalMouseDown);
+    return () => {
+      document.removeEventListener('mousedown', handleGlobalMouseDown);
+    };
+  }, []);
+
   // Decide which page to land on first:
   // - Prefer the first page that actually has a real photo layer
   //   (storageKey / src / photoId).
@@ -131,14 +117,15 @@ useEffect(() => {
   function pickInitialPage(pages) {
     if (!Array.isArray(pages) || pages.length === 0) return 0;
 
-    const withPhotos = pages.findIndex((page) =>
-      Array.isArray(page.layers) &&
-      page.layers.some(
-        (layer) =>
-          layer &&
-          layer.type === 'photo' &&
-          (layer.storageKey || layer.src || layer.photoId)
-      )
+    const withPhotos = pages.findIndex(
+      (page) =>
+        Array.isArray(page.layers) &&
+        page.layers.some(
+          (layer) =>
+            layer &&
+            layer.type === 'photo' &&
+            (layer.storageKey || layer.src || layer.photoId)
+        )
     );
     if (withPhotos >= 0) return withPhotos;
 
@@ -168,7 +155,8 @@ useEffect(() => {
 
           // Ensure pageIndex is present and sequential
           safeLayout.pages = safeLayout.pages.map((page, index) => ({
-            pageIndex: typeof page.pageIndex === 'number' ? page.pageIndex : index,
+            pageIndex:
+              typeof page.pageIndex === 'number' ? page.pageIndex : index,
             layers: Array.isArray(page.layers) ? page.layers : [],
             ...page
           }));
@@ -190,9 +178,9 @@ useEffect(() => {
 
         setHasLoadedInitialLayout(true);
       } catch (err) {
-        // Handle session expiry with modal
-        if (handleSessionExpiryError(err)) {
-          return; // Skip error display - modal is shown
+        if (isSessionExpiredError(err)) {
+          // api.js already redirected; just bail
+          return;
         }
         setError(err.message);
         console.error('[BinderEditor] Failed to load layout:', err);
@@ -202,39 +190,39 @@ useEffect(() => {
     }
 
     load();
-  }, [binderId, handleSessionExpiryError]);
+  }, [binderId, applySectionDefaults]);
 
   // Calculate "fit to page" zoom on mount and window resize
   useEffect(() => {
     const calculateFitZoom = () => {
       if (!canvasStageRef.current) return;
-      
+
       const stageRect = canvasStageRef.current.getBoundingClientRect();
       const availableWidth = stageRect.width - 48; // padding
       const availableHeight = stageRect.height - 48; // padding
-      
+
       // Actual A4 dimensions at 96 DPI
       const a4Width = 794;
       const a4Height = 1122;
-      
+
       // Calculate zoom to fit both dimensions
       const zoomX = availableWidth / a4Width;
       const zoomY = availableHeight / a4Height;
       const fitZoom = Math.min(zoomX, zoomY, 1); // Don't zoom in beyond 100%
-      
+
       setZoom(fitZoom);
     };
-    
+
     // Calculate initial fit
     const timeoutId = setTimeout(calculateFitZoom, 100);
-    
+
     const handleResize = () => {
       clearTimeout(timeoutId);
       setTimeout(calculateFitZoom, 100);
     };
-    
+
     window.addEventListener('resize', handleResize);
-    
+
     return () => {
       clearTimeout(timeoutId);
       window.removeEventListener('resize', handleResize);
@@ -281,9 +269,9 @@ useEffect(() => {
             setLastSavedAt(result.updatedAt || new Date().toISOString());
           }
         } catch (err) {
-          // Handle session expiry with modal
-          if (handleSessionExpiryError(err)) {
-            return; // Skip error display - modal is shown
+          if (isSessionExpiredError(err)) {
+            // Redirect already handled
+            return;
           }
           setError(err.message);
           console.error('[BinderEditor] Autosave failed:', err);
@@ -295,7 +283,7 @@ useEffect(() => {
 
     // If user keeps editing, cancel previous timer and start a new one
     return () => clearTimeout(timer);
-  }, [binderId, layout, isDirty, hasLoadedInitialLayout, handleSessionExpiryError]);
+  }, [binderId, layout, isDirty, hasLoadedInitialLayout]);
 
   // Auto layout (server algorithm). This already saves to DB.
   const handleAutoLayout = useCallback(async () => {
@@ -313,7 +301,8 @@ useEffect(() => {
         };
 
         safeLayout.pages = safeLayout.pages.map((page, index) => ({
-          pageIndex: typeof page.pageIndex === 'number' ? page.pageIndex : index,
+          pageIndex:
+            typeof page.pageIndex === 'number' ? page.pageIndex : index,
           layers: Array.isArray(page.layers) ? page.layers : [],
           ...page
         }));
@@ -331,16 +320,15 @@ useEffect(() => {
         setLastSavedAt(safeLayout.updatedAt);
       }
     } catch (err) {
-      // Handle session expiry with modal
-      if (handleSessionExpiryError(err)) {
-        return; // Skip error display - modal is shown
+      if (isSessionExpiredError(err)) {
+        return;
       }
       setError(err.message);
       console.error('[BinderEditor] Failed to auto layout:', err);
     } finally {
       setSaving(false);
     }
-  }, [binderId, handleSessionExpiryError]);
+  }, [binderId, applySectionDefaults]);
 
   // Update layer in current page
   const updateLayer = useCallback(
@@ -415,47 +403,66 @@ useEffect(() => {
       if (!binderId) return;
 
       const csrfToken =
-        document.querySelector('#binder-editor-root')?.getAttribute('data-csrf-token') || '';
+        document
+          .querySelector('#binder-editor-root')
+          ?.getAttribute('data-csrf-token') || '';
 
       const formData = new FormData();
       files.forEach((file) => formData.append('photos', file));
 
-      const res = await fetch(
-        `/dashboard/binder/${encodeURIComponent(binderId)}/photos`,
-        {
-          method: 'POST',
-          body: formData,
-          headers: csrfToken ? { 'X-CSRF-Token': csrfToken } : undefined,
-          credentials: 'same-origin'
+      try {
+        const res = await fetch(
+          `/dashboard/binder/${encodeURIComponent(binderId)}/photos`,
+          {
+            method: 'POST',
+            body: formData,
+            headers: csrfToken ? { 'X-CSRF-Token': csrfToken } : undefined,
+            credentials: 'same-origin'
+          }
+        );
+
+        if (res.status === 401 || res.status === 403) {
+          // Session expired while uploading → kick to login
+          redirectToLoginForSessionExpiry();
+          return;
         }
-      );
 
-      if (!res.ok) {
-        console.error('[BinderEditor] Upload failed', res.status);
-        return;
+        if (!res.ok) {
+          console.error('[BinderEditor] Upload failed', res.status);
+          setError('Upload failed. Please try again.');
+          return;
+        }
+
+        const data = await res.json().catch(() => null);
+        if (!data || !Array.isArray(data.photos)) return;
+
+        data.photos.forEach((photo, idx) => {
+          const url =
+            photo.signedUrl ||
+            photo.publicUrl ||
+            photo.url ||
+            photo.previewUrl ||
+            photo.src ||
+            null;
+          const newLayer = {
+            id: `layer-upload-${Date.now()}-${idx}`,
+            type: 'photo',
+            x: 50,
+            y: 50,
+            width: 200,
+            height: 200,
+            rotation: 0,
+            zIndex: layout?.pages?.[selectedPage]?.layers?.length || 0,
+            photoId: null,
+            storageKey: photo.storageKey || null,
+            src: url
+          };
+          addLayer(newLayer);
+        });
+      } catch (err) {
+        console.error('[BinderEditor] Upload exception', err);
+        setError('Upload failed due to a network error. Please try again.');
       }
-
-      const data = await res.json().catch(() => null);
-      if (!data || !Array.isArray(data.photos)) return;
-
-      data.photos.forEach((photo, idx) => {
-        const url =
-          photo.signedUrl || photo.publicUrl || photo.url || photo.previewUrl || photo.src || null;
-        const newLayer = {
-          id: `layer-upload-${Date.now()}-${idx}`,
-          type: 'photo',
-          x: 50,
-          y: 50,
-          width: 200,
-          height: 200,
-          rotation: 0,
-          zIndex: layout?.pages?.[selectedPage]?.layers?.length || 0,
-          photoId: null,
-          storageKey: photo.storageKey || null,
-          src: url
-        };
-        addLayer(newLayer);
-      });
     },
     [addLayer, binderId, layout?.pages, selectedPage]
   );
@@ -475,18 +482,15 @@ useEffect(() => {
     setSelectedLayerId(layerId || null);
   }, []);
 
-  const handleSectionChange = useCallback(
-    (pageIndex, sectionKey) => {
-      setLayout((prev) => {
-        if (!prev || !prev.pages || !prev.pages[pageIndex]) return prev;
-        const pages = [...prev.pages];
-        pages[pageIndex] = { ...pages[pageIndex], sectionKey };
-        return { ...prev, pages };
-      });
-      setIsDirty(true);
-    },
-    []
-  );
+  const handleSectionChange = useCallback((pageIndex, sectionKey) => {
+    setLayout((prev) => {
+      if (!prev || !prev.pages || !prev.pages[pageIndex]) return prev;
+      const pages = [...prev.pages];
+      pages[pageIndex] = { ...pages[pageIndex], sectionKey };
+      return { ...prev, pages };
+    });
+    setIsDirty(true);
+  }, []);
 
   const handleTidyLayout = useCallback(() => {
     setLayout((prev) => {
@@ -530,7 +534,9 @@ useEffect(() => {
         const h = Math.floor(PAGE_H * 0.45);
         const y = gutter * 2;
         updatePhoto(0, (p) => placeLayer(p, gutter, y, w, h));
-        updatePhoto(1, (p) => placeLayer(p, PAGE_W - w - gutter, y, w, h));
+        updatePhoto(1, (p) =>
+          placeLayer(p, PAGE_W - w - gutter, y, w, h)
+        );
       } else if (photos.length === 3 || photos.length === 4) {
         const w = Math.floor(PAGE_W * 0.45);
         const h = Math.floor(PAGE_H * 0.35);
@@ -588,11 +594,9 @@ useEffect(() => {
         } catch (err) {
           console.error('[BinderEditor] deleteBinderPhoto API error', err);
 
-          // Handle session expiry
-          if (err.message === 'SESSION_EXPIRED' || isNetworkErrorLikelySessionExpiry(err)) {
-            if (handleSessionExpiryError(err)) {
-              return; // Session expiry handled, don't remove layer
-            }
+          if (isSessionExpiredError(err)) {
+            // Redirect already handled
+            return;
           }
 
           // Show error but still remove from layout so UI stays responsive
@@ -614,7 +618,9 @@ useEffect(() => {
 
         const newPages = [...prev.pages];
         const page = { ...newPages[selectedPage] };
-        page.layers = (page.layers || []).filter((layer) => layer.id !== layerId);
+        page.layers = (page.layers || []).filter(
+          (layer) => layer.id !== layerId
+        );
         newPages[selectedPage] = page;
 
         return { ...prev, pages: newPages };
@@ -622,7 +628,7 @@ useEffect(() => {
 
       setIsDirty(true);
     },
-    [selectedPage, layout, binderId, handleSessionExpiryError]
+    [selectedPage, layout, binderId]
   );
 
   // Delete a page (by index) and keep selection sane
@@ -665,39 +671,41 @@ useEffect(() => {
   }, []);
 
   // Export PDF handler
-  const handleExportPdf = useCallback(async () => {
-    if (exporting || !binderId || !layout) return;
+  const handleExportPdf = useCallback(
+    async () => {
+      if (exporting || !binderId || !layout) return;
 
-    try {
-      // Save any pending changes first
-      if (isDirty) {
-        await applyLayout(binderId, layout);
-        setIsDirty(false);
-      }
+      try {
+        // Save any pending changes first
+        if (isDirty) {
+          await applyLayout(binderId, layout);
+          setIsDirty(false);
+        }
 
-      setExporting(true);
-      const blob = await exportBinderPdf(binderId);
-      
-      // Trigger browser download
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `binder-${binderId || 'export'}.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      window.URL.revokeObjectURL(url);
-    } catch (err) {
-      // Handle session expiry with modal
-      if (handleSessionExpiryError(err)) {
-        return; // Skip error display - modal is shown
+        setExporting(true);
+        const blob = await exportBinderPdf(binderId);
+
+        // Trigger browser download
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `binder-${binderId || 'export'}.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+      } catch (err) {
+        if (isSessionExpiredError(err)) {
+          return;
+        }
+        setError(`Export failed: ${err.message}`);
+        console.error('[BinderEditor] Export failed:', err);
+      } finally {
+        setExporting(false);
       }
-      setError(`Export failed: ${err.message}`);
-      console.error('[BinderEditor] Export failed:', err);
-    } finally {
-      setExporting(false);
-    }
-  }, [binderId, layout, isDirty, exporting, applyLayout, handleSessionExpiryError]);
+    },
+    [binderId, layout, isDirty, exporting]
+  );
 
   if (loading) {
     return (
@@ -728,7 +736,10 @@ useEffect(() => {
       {error && (
         <div className="binder-editor-error max-w-2xl mx-auto mb-3 rounded-lg border border-rose-100 bg-rose-50 text-rose-800 shadow-sm">
           <p>Error: {error}</p>
-          <button className="btn btn-small mt-2" onClick={() => setError(null)}>
+          <button
+            className="btn btn-small mt-2"
+            onClick={() => setError(null)}
+          >
             Dismiss
           </button>
         </div>
@@ -746,7 +757,9 @@ useEffect(() => {
                 if (!prev) {
                   return {
                     binderId,
-                    pages: applySectionDefaults([{ pageIndex: 0, layers: [] }]),
+                    pages: applySectionDefaults([
+                      { pageIndex: 0, layers: [] }
+                    ]),
                     updatedAt: new Date().toISOString()
                   };
                 }
@@ -774,7 +787,10 @@ useEffect(() => {
 
           <div className="workspace-canvas-wrapper">
             <Canvas
-              page={{ ...currentPage, binderId: layout?.binderId || binderId }}
+              page={{
+                ...currentPage,
+                binderId: layout?.binderId || binderId
+              }}
               layers={currentPage.layers || []}
               onUpdateLayer={updateLayer}
               onAddLayer={addLayer}
@@ -810,7 +826,9 @@ useEffect(() => {
 
             // Find the layer to get its storageKey for confirmation message
             const currentPage = layout?.pages?.[selectedPage];
-            const layer = currentPage?.layers?.find((l) => l.id === selectedLayerId);
+            const layer = currentPage?.layers?.find(
+              (l) => l.id === selectedLayerId
+            );
 
             if (!layer) {
               setError('Photo not found. Please refresh the page.');
@@ -833,6 +851,9 @@ useEffect(() => {
                   await removeLayer(selectedLayerId);
                   setSelectedLayerId(null);
                 } catch (err) {
+                  if (isSessionExpiredError(err)) {
+                    return;
+                  }
                   setError(`Failed to delete photo: ${err.message}`);
                 }
               },

@@ -61,6 +61,8 @@ function Canvas({
    * 2) If it collides, try horizontal only (dx, 0).
    * 3) If still collides, try vertical only (0, dy).
    * 4) If all collide, stay at previous position.
+   * 
+   * All coordinates are in logical A4 units (unscaled).
    */
   const constrainDragWithCollisions = (
     layerEl,
@@ -72,7 +74,8 @@ function Canvas({
     dy,
     canvasRect,
     prevLeft,
-    prevTop
+    prevTop,
+    zoom
   ) => {
     if (!layerEl) {
       return { left: prevLeft, top: prevTop, collided: false };
@@ -88,7 +91,7 @@ function Canvas({
     }
 
     const testPosition = (left, top) => {
-      // Clamp to canvas (cannot leave the board)
+      // `canvasRect.width`/`height` are already logical (unscaled) here
       const clampedLeft = clamp(left, 0, canvasRect.width - width);
       const clampedTop = clamp(top, 0, canvasRect.height - height);
 
@@ -96,13 +99,27 @@ function Canvas({
 
       for (const other of others) {
         if (other === layerEl) continue;
-        const r = other.getBoundingClientRect();
-        const oLeft = r.left - canvasRect.left;
-        const oTop = r.top - canvasRect.top;
-        const oWidth = r.width;
-        const oHeight = r.height;
 
-        if (rectsOverlap(clampedLeft, clampedTop, width, height, oLeft, oTop, oWidth, oHeight)) {
+        const r = other.getBoundingClientRect();
+
+        // Convert other layer from visual → logical coordinates
+        const oLeft = (r.left - canvasRect.left) / zoom;
+        const oTop = (r.top - canvasRect.top) / zoom;
+        const oWidth = r.width / zoom;
+        const oHeight = r.height / zoom;
+
+        if (
+          rectsOverlap(
+            clampedLeft,
+            clampedTop,
+            width,
+            height,
+            oLeft,
+            oTop,
+            oWidth,
+            oHeight
+          )
+        ) {
           return null; // invalid position
         }
       }
@@ -116,13 +133,13 @@ function Canvas({
       return { ...full, collided: false };
     }
 
-    // 2) Horizontal only (slide left/right while "rubbing" vertically)
+    // 2) Horizontal only
     const horiz = testPosition(proposedLeft, prevTop);
     if (horiz) {
       return { ...horiz, collided: false };
     }
 
-    // 3) Vertical only (slide up/down while "rubbing" horizontally)
+    // 3) Vertical only
     const vert = testPosition(prevLeft, proposedTop);
     if (vert) {
       return { ...vert, collided: false };
@@ -161,30 +178,36 @@ function Canvas({
 
       if (!canvasEl) return;
 
-      const canvasRect = canvasEl.getBoundingClientRect();
+      const rawCanvasRect = canvasEl.getBoundingClientRect();
       const layerRect = layerEl.getBoundingClientRect();
 
-      const offsetX = e.clientX - layerRect.left;
-      const offsetY = e.clientY - layerRect.top;
+      const zoomAtStart = zoom || 1;
+
+      // Convert from visual (scaled) pixels back to logical A4 coordinates
+      const logicalCanvasWidth = rawCanvasRect.width / zoomAtStart;
+      const logicalCanvasHeight = rawCanvasRect.height / zoomAtStart;
+
+      const logicalLeft =
+        (layerRect.left - rawCanvasRect.left) / zoomAtStart;
+      const logicalTop =
+        (layerRect.top - rawCanvasRect.top) / zoomAtStart;
 
       setDragStart({
-        offsetX,
-        offsetY,
-        canvasLeft: canvasRect.left,
-        canvasTop: canvasRect.top,
-        canvasWidth: canvasRect.width,
-        canvasHeight: canvasRect.height,
-        zoom: zoom
+        canvasLeft: rawCanvasRect.left,        // still DOM pixels
+        canvasTop: rawCanvasRect.top,          // still DOM pixels
+        canvasWidth: logicalCanvasWidth,       // logical A4 units
+        canvasHeight: logicalCanvasHeight,     // logical A4 units
+        zoom: zoomAtStart
       });
 
       setLastDrag({
         mouseX: e.clientX,
         mouseY: e.clientY,
-        left: layerRect.left - canvasRect.left,
-        top: layerRect.top - canvasRect.top
+        left: logicalLeft,                     // logical A4 units
+        top: logicalTop                        // logical A4 units
       });
     },
-    [onSelectLayer]
+    [onSelectLayer, zoom]
   );
 
   const handleDragEnd = useCallback(() => {
@@ -236,7 +259,8 @@ function Canvas({
         dy,
         canvasRect,
         lastDrag.left,
-        lastDrag.top
+        lastDrag.top,
+        dragStart.zoom
       );
 
       onUpdateLayer(selectedLayerId, { x: constrained.left, y: constrained.top });

@@ -14,6 +14,11 @@ const fs = require('fs');
 const logger = require('../utils/logger');
 const { supabaseAdmin } = require('../utils/supabaseClient');
 const binderController = require('../controllers/binderController');
+const {
+  binderPhotoLimiter,
+  binderLayoutLimiter,
+  binderExportLimiter
+} = require('../middleware/rateLimiter');
 
 let storageProvider = null;
 try {
@@ -71,6 +76,50 @@ const upload = multer({
   }
 });
 
+/**
+ * WHAT:
+ * Enforce total request size limit for binder photo uploads.
+ *
+ * WHY:
+ * Prevents abuse where clients upload massive requests (e.g., 50 files × 10MB = 500MB).
+ * Protects server memory and bandwidth.
+ *
+ * HOW:
+ * Check Content-Length header before multer processes the request.
+ * Reject with 413 (Payload Too Large) if exceeds limit.
+ */
+const MAX_BINDER_UPLOAD_BYTES = 100 * 1024 * 1024; // 100MB total per request
+
+function enforceBinderUploadSizeLimit(req, res, next) {
+  const contentLengthHeader = req.headers['content-length'];
+
+  if (!contentLengthHeader) {
+    return next();
+  }
+
+  const length = Number(contentLengthHeader);
+  if (!Number.isFinite(length)) {
+    return next();
+  }
+
+  if (length > MAX_BINDER_UPLOAD_BYTES) {
+    logger.warn({
+      event: 'binder.upload.too_large',
+      binderId: req.params?.binderId,
+      contentLength: length,
+      maxBytes: MAX_BINDER_UPLOAD_BYTES,
+      requestId: req.requestId
+    }, 'Binder upload rejected: payload too large');
+
+    return res.status(413).json({
+      ok: false,
+      message: 'Upload too large. Maximum total size is 100MB per request.'
+    });
+  }
+
+  return next();
+}
+
 // IMPORTANT:
 // This router is mounted at /dashboard/binder, so:
 //   GET  /dashboard/binder          -> list()
@@ -88,6 +137,8 @@ router.post('/', binderController.create);
  */
 router.post(
   '/:binderId/photos',
+  binderPhotoLimiter(),
+  enforceBinderUploadSizeLimit,
   upload.array('photos', 50), // Multer parses multipart form, field name "photos"
   binderController.addPhotos
 );
@@ -613,18 +664,27 @@ router.get('/:binderId/layout', binderController.getBinderLayout);
 /**
  * POST /dashboard/binder/:binderId/layout/apply
  */
-router.post('/:binderId/layout/apply', binderController.applyBinderLayout);
+router.post(
+  '/:binderId/layout/apply',
+  binderLayoutLimiter(),
+  binderController.applyBinderLayout
+);
 
 /**
  * POST /dashboard/binder/:binderId/layout/auto
  */
-router.post('/:binderId/layout/auto', binderController.autoLayoutBinder);
+router.post(
+  '/:binderId/layout/auto',
+  binderLayoutLimiter(),
+  binderController.autoLayoutBinder
+);
 
 /**
  * POST /dashboard/binder/:binderId/export
  */
 router.post(
   '/:binderId/export',
+  binderExportLimiter(),
   binderController.exportPdf
 );
 

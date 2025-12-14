@@ -11,7 +11,6 @@ function ActionSidebar({
   onExportPdf,
   onTidyLayout,
   saving,
-  hasSelection,
   exporting,
   canExport
 }) {
@@ -28,9 +27,9 @@ function ActionSidebar({
         </button>
         <button
           type="button"
-          className="action-sidebar-btn action-sidebar-btn-secondary"
+          className="action-sidebar-btn action-sidebar-btn-primary"
           onClick={onDeleteSelected}
-          disabled={!hasSelection || saving}
+          disabled={saving}
         >
           DELETE PHOTO
         </button>

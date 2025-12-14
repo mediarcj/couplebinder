@@ -318,6 +318,31 @@ export async function deleteBinderPhoto(binderId, storageKey) {
 
 /**
  * WHAT:
+ * Update the caption for a binder photo.
+ *
+ * WHY:
+ * Users need to add descriptive captions to photos for visa applications.
+ *
+ * HOW:
+ * PATCH request with storageKey and caption in body.
+ * Backend validates and sanitizes caption (no HTML, no emoji).
+ */
+export async function updatePhotoCaption(binderId, storageKey, caption) {
+  if (!binderId || !storageKey) {
+    throw new Error('Missing binderId or storageKey for caption update');
+  }
+
+  return apiRequest(
+    `/dashboard/binder/${encodeURIComponent(binderId)}/photos/caption`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify({ storageKey, caption })
+    }
+  );
+}
+
+/**
+ * WHAT:
  * Get signed S3 URL for a photo storage key.
  *
  * WHY:

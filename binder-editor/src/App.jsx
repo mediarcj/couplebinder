@@ -19,6 +19,146 @@ import { SECTION_LABELS, SECTION_OPTIONS } from './sections';
 
 const AUTOSAVE_DEBOUNCE_MS = 1500; // 1.5s after last change
 
+// A4 at 96 DPI (same as elsewhere)
+const PAGE_WIDTH = 794;
+const PAGE_HEIGHT = 1122;
+const PAGE_GUTTER = 12;
+
+// Simple rectangle overlap helper in page coordinates
+function rectsOverlap(x1, y1, w1, h1, x2, y2, w2, h2) {
+  return !(
+    x1 + w1 <= x2 ||
+    x1 >= x2 + w2 ||
+    y1 + h1 <= y2 ||
+    y1 >= y2 + h2
+  );
+}
+
+function hasCollision(x, y, width, height, rects) {
+  if (!rects || rects.length === 0) return false;
+  for (const r of rects) {
+    if (!r) continue;
+    const rw = typeof r.width === 'number' ? r.width : 0;
+    const rh = typeof r.height === 'number' ? r.height : 0;
+    if (rw <= 0 || rh <= 0) continue;
+    if (rectsOverlap(x, y, width, height, r.x, r.y, rw, rh)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Find the largest available rectangle on the page that:
+ * - Stays inside the page (with a gutter)
+ * - Does not overlap any existing rects
+ * - Uses a roughly square aspect ratio (for now: 1:1, same as previous 200x200)
+ *
+ * Strategy:
+ * - Start from a "max" size (page minus gutters)
+ * - Step scale down until we find a fit
+ * - For each size, scan candidate positions on a grid and pick the first free slot
+ * - If nothing fits, fall back to a centered medium rectangle
+ */
+function findLargestAvailableRect(existingRects, aspectRatio = 1) {
+  const gutter = PAGE_GUTTER;
+  const maxWidth = PAGE_WIDTH - gutter * 2;
+  const maxHeight = PAGE_HEIGHT - gutter * 2;
+
+  const minSize = 150; // do not make new photos tiny
+  const maxScale = 1.0;
+  const minScale = Math.max(minSize / maxWidth, 0.3);
+
+  for (let scale = maxScale; scale >= minScale; scale -= 0.1) {
+    // Base width from horizontal room
+    let width = maxWidth * scale;
+    let height = width / aspectRatio;
+
+    // If that makes it too tall, clamp by vertical room instead
+    if (height > maxHeight * scale) {
+      height = maxHeight * scale;
+      width = height * aspectRatio;
+    }
+
+    if (width < minSize || height < minSize) {
+      continue;
+    }
+
+    const stepX = Math.max(16, width / 4);
+    const stepY = Math.max(16, height / 4);
+
+    for (
+      let y = gutter;
+      y <= PAGE_HEIGHT - height - gutter;
+      y += stepY
+    ) {
+      for (
+        let x = gutter;
+        x <= PAGE_WIDTH - width - gutter;
+        x += stepX
+      ) {
+        if (!hasCollision(x, y, width, height, existingRects)) {
+          return {
+            x: Math.round(x),
+            y: Math.round(y),
+            width: Math.round(width),
+            height: Math.round(height)
+          };
+        }
+      }
+    }
+  }
+
+  // Fallback: centered medium rectangle
+  const fallbackWidth = Math.max(minSize, maxWidth * 0.5);
+  const fallbackHeight = Math.max(
+    minSize,
+    Math.min(maxHeight * 0.5, fallbackWidth / aspectRatio)
+  );
+  const fx = Math.round((PAGE_WIDTH - fallbackWidth) / 2);
+  const fy = Math.round((PAGE_HEIGHT - fallbackHeight) / 2);
+
+  return {
+    x: fx,
+    y: fy,
+    width: Math.round(fallbackWidth),
+    height: Math.round(fallbackHeight)
+  };
+}
+
+/**
+ * Compute an initial frame for a new photo on the current page, based purely
+ * on the existing layout rectangles in memory (no DOM).
+ *
+ * - Keeps the new photo inside the page
+ * - Avoids overlaps with existing layers on that page
+ * - Makes the new photo as large as possible for the available free area
+ */
+function computeInitialPhotoFrame(pages, selectedPageIndex, aspectRatio = 1) {
+  const pagesArray = Array.isArray(pages) ? pages : [];
+  const page =
+    pagesArray[selectedPageIndex] || {
+      pageIndex: selectedPageIndex,
+      layers: []
+    };
+
+  const layers = Array.isArray(page.layers) ? page.layers : [];
+
+  const existingRects = layers.map((l) => ({
+    x: typeof l.x === 'number' ? l.x : 0,
+    y: typeof l.y === 'number' ? l.y : 0,
+    width: typeof l.width === 'number' ? l.width : 0,
+    height: typeof l.height === 'number' ? l.height : 0
+  }));
+
+  const rect = findLargestAvailableRect(existingRects, aspectRatio);
+
+  return {
+    ...rect,
+    zIndex: layers.length // put new photo on top of existing layers
+  };
+}
+
 // Shared helper: compute login URL and redirect on session expiry
 function redirectToLoginForSessionExpiry() {
   try {
@@ -350,48 +490,47 @@ function App({ binderId /*, csrfToken */ }) {
     [selectedPage]
   );
 
-  // Add layer to current page
-  const addLayer = useCallback(
-    (layer) => {
+  // NOTE: handleAddPhoto is currently unused in this setup, but kept for completeness.
+  const handleAddPhoto = useCallback(
+    () => {
       setLayout((prev) => {
-        if (!prev) {
-          return {
-            binderId,
-            pages: [{ pageIndex: 0, layers: [layer] }],
-            updatedAt: new Date().toISOString()
-          };
+        const base = prev || {
+          binderId,
+          pages: [],
+          updatedAt: new Date().toISOString()
+        };
+
+        const pages = [...(base.pages || [])];
+        if (!pages[selectedPage]) {
+          pages[selectedPage] = { pageIndex: selectedPage, layers: [] };
         }
 
-        const newPages = [...(prev.pages || [])];
-        if (!newPages[selectedPage]) {
-          newPages[selectedPage] = { pageIndex: selectedPage, layers: [] };
-        }
+        const frame = computeInitialPhotoFrame(pages, selectedPage, 1);
+        const newLayer = {
+          id: `layer-${Date.now()}`,
+          type: 'photo',
+          x: frame.x,
+          y: frame.y,
+          width: frame.width,
+          height: frame.height,
+          rotation: 0,
+          zIndex: frame.zIndex,
+          photoId: null
+        };
 
-        const page = { ...newPages[selectedPage] };
-        page.layers = [...(page.layers || []), layer];
-        newPages[selectedPage] = page;
+        const page = { ...pages[selectedPage] };
+        page.layers = [...(page.layers || []), newLayer];
+        pages[selectedPage] = page;
 
-        return { ...prev, pages: applySectionDefaults(newPages) };
+        return {
+          ...base,
+          pages: applySectionDefaults(pages)
+        };
       });
       setIsDirty(true);
     },
     [binderId, selectedPage, applySectionDefaults]
   );
-
-  const handleAddPhoto = useCallback(() => {
-    const newLayer = {
-      id: `layer-${Date.now()}`,
-      type: 'photo',
-      x: 50,
-      y: 50,
-      width: 200,
-      height: 200,
-      rotation: 0,
-      zIndex: layout?.pages?.[selectedPage]?.layers?.length || 0,
-      photoId: null
-    };
-    addLayer(newLayer);
-  }, [addLayer, layout?.pages, selectedPage]);
 
   const handleAddPhotosClick = useCallback(() => {
     fileInputRef.current?.click();
@@ -436,35 +575,90 @@ function App({ binderId /*, csrfToken */ }) {
         const data = await res.json().catch(() => null);
         if (!data || !Array.isArray(data.photos)) return;
 
-        data.photos.forEach((photo, idx) => {
-          const url =
-            photo.signedUrl ||
-            photo.publicUrl ||
-            photo.url ||
-            photo.previewUrl ||
-            photo.src ||
-            null;
-          const newLayer = {
-            id: `layer-upload-${Date.now()}-${idx}`,
-            type: 'photo',
-            x: 50,
-            y: 50,
-            width: 200,
-            height: 200,
-            rotation: 0,
-            zIndex: layout?.pages?.[selectedPage]?.layers?.length || 0,
-            photoId: null,
-            storageKey: photo.storageKey || null,
-            src: url
+        // Place all new photos on the current page in memory in one pass,
+        // using collision-aware, "largest that fits" placement for each.
+        setLayout((prev) => {
+          const base = prev || {
+            binderId,
+            pages: [],
+            updatedAt: new Date().toISOString()
           };
-          addLayer(newLayer);
+
+          const pages = [...(base.pages || [])];
+
+          if (!pages[selectedPage]) {
+            pages[selectedPage] = { pageIndex: selectedPage, layers: [] };
+          }
+
+          const page = { ...pages[selectedPage] };
+          page.layers = Array.isArray(page.layers) ? [...page.layers] : [];
+
+          // Build existing rect list once, and extend it as we place new photos
+          const existingRects = page.layers.map((l) => ({
+            x: typeof l.x === 'number' ? l.x : 0,
+            y: typeof l.y === 'number' ? l.y : 0,
+            width: typeof l.width === 'number' ? l.width : 0,
+            height: typeof l.height === 'number' ? l.height : 0
+          }));
+
+          const nextLayers = [...page.layers];
+
+          data.photos.forEach((photo, idx) => {
+            const url =
+              photo.signedUrl ||
+              photo.publicUrl ||
+              photo.url ||
+              photo.previewUrl ||
+              photo.src ||
+              null;
+
+            // For now, treat new photos as square; user can resize later.
+            const frame = findLargestAvailableRect(existingRects, 1);
+
+            const newLayer = {
+              id: `layer-upload-${Date.now()}-${idx}`,
+              type: 'photo',
+              x: frame.x,
+              y: frame.y,
+              width: frame.width,
+              height: frame.height,
+              rotation: 0,
+              zIndex: nextLayers.length, // put on top of existing
+              photoId: null,
+              storageKey: photo.storageKey || null,
+              src: url
+            };
+
+            nextLayers.push(newLayer);
+            existingRects.push({
+              x: frame.x,
+              y: frame.y,
+              width: frame.width,
+              height: frame.height
+            });
+          });
+
+          const updatedPage = {
+            ...page,
+            layers: nextLayers
+          };
+
+          pages[selectedPage] = updatedPage;
+
+          return {
+            ...base,
+            pages: applySectionDefaults(pages)
+          };
         });
+
+        setIsDirty(true);
       } catch (err) {
         console.error('[BinderEditor] Upload exception', err);
         setError('Upload failed due to a network error. Please try again.');
       }
     },
-    [addLayer, binderId, layout?.pages, selectedPage]
+    // FIX: remove addLayer and layout?.pages from dependencies
+    [binderId, selectedPage, applySectionDefaults]
   );
 
   const handleFileChange = useCallback(
@@ -793,7 +987,7 @@ function App({ binderId /*, csrfToken */ }) {
               }}
               layers={currentPage.layers || []}
               onUpdateLayer={updateLayer}
-              onAddLayer={addLayer}
+              onAddLayer={handleAddPhoto}
               onRemoveLayer={removeLayer}
               sectionKey={currentPage.sectionKey}
               sectionLabels={SECTION_LABELS}

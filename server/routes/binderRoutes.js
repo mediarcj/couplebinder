@@ -652,6 +652,16 @@ router.delete(
 );
 
 /**
+ * PATCH /dashboard/binder/:binderId/photos/caption
+ * Body: { storageKey, caption }
+ */
+router.patch(
+  '/:binderId/photos/caption',
+  binderLayoutLimiter(),
+  binderController.updatePhotoCaption
+);
+
+/**
  * GET /dashboard/binder/:binderId/editor
  */
 router.get('/:binderId/editor', binderController.renderBinderEditor);

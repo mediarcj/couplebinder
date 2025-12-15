@@ -262,14 +262,44 @@ router.get(
         });
       }
 
-      // Instead of returning a presigned S3 URL, return the internal raw-photo endpoint
+      // Prefer a stable CDN URL when possible (S3 + STORAGE_S3_PUBLIC_BASE_URL).
+      // This gives us a repeatable URL like:
+      //   https://photos.couplebinder.com/binders/.../file.jpg
+      // so the browser + Cloudflare can cache it across page switches.
+      let cdnUrl = null;
+      if (storageProvider && typeof storageProvider.getBinderPhotoPublicUrl === 'function') {
+        try {
+          cdnUrl = storageProvider.getBinderPhotoPublicUrl(storageKey);
+        } catch (e) {
+          logger.warn(
+            {
+              event: 'binder.view_url.cdn_build_failed',
+              binderId,
+              storageKey,
+              error: e.message
+            },
+            'Failed to build CDN URL for binder photo'
+          );
+        }
+      }
+
+      if (cdnUrl) {
+        return res.json({
+          ok: true,
+          url: cdnUrl,
+          via: 'cdn'
+        });
+      }
+
+      // Fallback: internal raw-photo endpoint on the app origin
       const internalUrl =
         `/dashboard/binder/${encodeURIComponent(binderId)}` +
         `/photos/raw?storageKey=${encodeURIComponent(storageKey)}`;
 
       return res.json({
         ok: true,
-        url: internalUrl
+        url: internalUrl,
+        via: 'raw'
       });
     } catch (err) {
       logger.error(

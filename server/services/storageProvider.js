@@ -77,7 +77,6 @@ const s3PublicBaseUrl = (() => {
   return null;
 })();
 
-// Build a stable public CDN URL (photos.couplebinder.com) for a storage key
 function buildS3PublicUrlForKey(storageKey) {
   if (!s3PublicBaseUrl || !storageKey) return null;
 
@@ -208,7 +207,6 @@ async function saveBinderPhoto({ userId, binderId, file }) {
         'Uploaded binder photo to S3'
       );
 
-      // If you configured a public base URL (e.g. https://photos.couplebinder.com),
       // build a stable CDN URL for this object.
       const publicUrl = buildS3PublicUrlForKey(key);
 

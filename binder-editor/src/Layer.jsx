@@ -35,7 +35,6 @@ function Layer({ layer, selected, onSelect, onUpdate, onRemove, onDragStart, bin
   // Start with any existing URL baked into the layout (legacy EJS binder)
   const [imageUrl, setImageUrl] = useState(layer.src || null);
   const [imageLoading, setImageLoading] = useState(false);
-  const fetchAttemptedRef = useRef(false);
   const [editingCaption, setEditingCaption] = useState(false);
   const [captionDraft, setCaptionDraft] = useState(layer.caption || '');
   const [savingCaption, setSavingCaption] = useState(false);
@@ -284,47 +283,53 @@ function Layer({ layer, selected, onSelect, onUpdate, onRemove, onDragStart, bin
     layer.id
   ]);
 
-  // Fetch signed URL for photo if storageKey exists
-  // Only fetch once per storageKey change (not on imageUrl/imageLoading changes)
+  // Fetch signed URL for photo if storageKey exists.
+  // Uses the shared in-memory cache in api.js so we only hit the server
+  // once per (binderId, storageKey) per browser tab.
   useEffect(() => {
-    // Reset fetch attempt when storageKey changes
-    if (layer.storageKey !== fetchAttemptedRef.current?.storageKey) {
-      fetchAttemptedRef.current = { storageKey: layer.storageKey, attempted: false };
-      // When storageKey changes, fall back to any src we already have in the layout
-      setImageUrl(layer.src || null);
-      setImageLoading(false);
+    if (layer.type !== 'photo') return;
+
+    // If we already have a baked-in URL from the layout (e.g. initial EJS),
+    // keep using it until/if the backend gives us a signed URL.
+    if (layer.src && !imageUrl) {
+      setImageUrl(layer.src);
     }
 
-    // Only fetch if we haven't attempted yet and have required data
-    if (
-      layer.type === 'photo' &&
-      layer.storageKey &&
-      binderId &&
-      !fetchAttemptedRef.current.attempted
-    ) {
-      fetchAttemptedRef.current.attempted = true;
-      setImageLoading(true);
-      getPhotoViewUrl(binderId, layer.storageKey)
-        .then((url) => {
-          if (url) {
-            // Prefer fresh signed URL from backend; fall back to any baked-in src
-            setImageUrl(url || layer.src || null);
-          } else {
-            // If no URL returned, keep any existing src but mark as attempted
-            setImageUrl((prev) => prev || layer.src || null);
-            fetchAttemptedRef.current.attempted = true;
-          }
-        })
-        .catch((err) => {
-          console.error('[BinderEditor] Failed to load photo URL:', err);
-          // Mark as attempted on error so we don't retry infinitely
-          fetchAttemptedRef.current.attempted = true;
-        })
-        .finally(() => {
-          setImageLoading(false);
-        });
+    if (!binderId || !layer.storageKey) {
+      return;
     }
-  }, [layer.type, layer.storageKey, binderId, layer.src]);
+
+    let cancelled = false;
+    setImageLoading(true);
+
+    (async () => {
+      const url = await getPhotoViewUrl(binderId, layer.storageKey);
+
+      if (cancelled) return;
+
+      if (url) {
+        // This is a final, signed URL we can feed straight into <img src="...">
+        setImageUrl(url);
+      } else if (layer.src) {
+        // Fallback: at least show whatever URL was baked into the layout
+        setImageUrl(layer.src);
+      } else {
+        setImageUrl(null);
+      }
+    })().catch((err) => {
+      if (cancelled) return;
+      console.error('[BinderEditor] Failed to load photo URL:', err);
+    }).finally(() => {
+      if (!cancelled) {
+        setImageLoading(false);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+    // We only care when binderId / storageKey / type / src change.
+  }, [binderId, layer.storageKey, layer.type, layer.src, imageUrl]);
 
   // Keep local draft in sync with props when layout is re-loaded
   useEffect(() => {

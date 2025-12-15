@@ -351,15 +351,29 @@ export async function updatePhotoCaption(binderId, storageKey, caption) {
  * HOW:
  * GET request with storageKey query parameter.
  */
+
+// Simple in-memory cache for signed photo view URLs (per browser tab)
+const photoViewUrlCache = new Map();
+// cacheKey = `${binderId}:${storageKey}`
+// Value = final URL string we can put directly into <img src="...">
+
 // Fetch a signed S3 view URL for a given storageKey
-// Handles all variants, regardless of content-type:
-//
-// 1) Plain text body: "https://..."
-// 2) JSON: { ok: true, url: "https://..." }
-// 3) JSON: { ok: true, signedUrl: "https://..." }
-// 4) JSON string: "https://..." (raw JSON string)
-export async function getPhotoViewUrl(binderId, storageKey) {
+// Handles plain text and multiple JSON shapes, with a per-tab cache.
+export async function getPhotoViewUrl(
+  binderId,
+  storageKey,
+  options = {}
+) {
+  const { forceRefresh = false } = options;
+
   if (!binderId || !storageKey) return null;
+
+  const cacheKey = `${binderId}:${storageKey}`;
+
+  // 1) Fast path: if we already have a URL in memory, just reuse it.
+  if (!forceRefresh && photoViewUrlCache.has(cacheKey)) {
+    return photoViewUrlCache.get(cacheKey);
+  }
 
   const url = `/dashboard/binder/${encodeURIComponent(
     binderId
@@ -371,7 +385,7 @@ export async function getPhotoViewUrl(binderId, storageKey) {
       credentials: 'same-origin'
     });
 
-    // Handle session expiry (401 Unauthorized only - 403 can mean photo not found)
+    // Session expired → redirect once, then bail
     if (res.status === 401) {
       handleSessionExpiry();
       return null;
@@ -394,59 +408,69 @@ export async function getPhotoViewUrl(binderId, storageKey) {
       return null;
     }
 
-    // Read body as text first – this works for both JSON and plain text
     const raw = (await res.text()).trim();
-
     console.log('[view-url raw body]', { binderId, storageKey, raw });
 
     if (!raw) return null;
 
-    // Try to parse as JSON. If that fails, we'll treat `raw` as plain URL below.
-    let parsed = null;
-    try {
-      parsed = JSON.parse(raw);
-    } catch {
-      parsed = null;
-    }
+    let finalUrl = null;
 
-    if (parsed !== null) {
+    // Try to parse JSON first
+    try {
+      const parsed = JSON.parse(raw);
+
       // 4) JSON string: "https://..."
       if (typeof parsed === 'string') {
-        return parsed || null;
-      }
-
-      // 2) JSON object with url / signedUrl / data fields
-      if (parsed && typeof parsed === 'object') {
+        finalUrl = parsed;
+      } else if (parsed && typeof parsed === 'object') {
+        // 2) JSON object with url / signedUrl
         if (typeof parsed.url === 'string' && parsed.url) {
-          return parsed.url;
-        }
-        if (typeof parsed.signedUrl === 'string' && parsed.signedUrl) {
-          return parsed.signedUrl;
-        }
-        // Extra safety: some older shapes sometimes nest url in `data`
-        if (
+          finalUrl = parsed.url;
+        } else if (
+          typeof parsed.signedUrl === 'string' &&
+          parsed.signedUrl
+        ) {
+          finalUrl = parsed.signedUrl;
+        } else if (
+          parsed.data &&
           typeof parsed.data === 'string' &&
           /^https?:\/\//i.test(parsed.data)
         ) {
-          return parsed.data;
+          // Some older shapes: { ok: true, data: "https://..." }
+          finalUrl = parsed.data;
+        } else if (
+          parsed.data &&
+          typeof parsed.data === 'object' &&
+          typeof parsed.data.signedUrl === 'string' &&
+          parsed.data.signedUrl
+        ) {
+          // Extra safety: { ok: true, data: { signedUrl: "https://..." } }
+          finalUrl = parsed.data.signedUrl;
         }
       }
-    }
-
-    // Not JSON or no usable fields → treat raw text as URL *if* it looks like one
-    if (/^https?:\/\//i.test(raw)) {
-      return raw;
-    }
-
-    console.warn(
-      '[BinderEditor] view-url response did not contain a usable URL',
-      {
-        binderId,
-        storageKey,
-        raw
+    } catch {
+      // Not JSON → might just be a plain URL
+      if (/^https?:\/\//i.test(raw)) {
+        finalUrl = raw;
       }
-    );
-    return null;
+    }
+
+    // Fallback: if it looks like a URL, accept it
+    if (!finalUrl && /^https?:\/\//i.test(raw)) {
+      finalUrl = raw;
+    }
+
+    if (!finalUrl) {
+      console.warn(
+        '[BinderEditor] view-url response did not contain a usable URL',
+        { binderId, storageKey, raw }
+      );
+      return null;
+    }
+
+    // Store in in-memory cache so page switches don't keep hitting the server
+    photoViewUrlCache.set(cacheKey, finalUrl);
+    return finalUrl;
   } catch (err) {
     console.error('[BinderEditor] Exception while fetching photo URL:', {
       binderId,

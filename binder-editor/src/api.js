@@ -366,6 +366,9 @@ export async function getPhotoViewUrl(
 ) {
   const { forceRefresh = false } = options;
 
+  const isUsableUrl = (s) =>
+    typeof s === 'string' && s && (s.startsWith('/') || /^https?:\/\//i.test(s));
+
   if (!binderId || !storageKey) return null;
 
   const cacheKey = `${binderId}:${storageKey}`;
@@ -419,30 +422,24 @@ export async function getPhotoViewUrl(
     try {
       const parsed = JSON.parse(raw);
 
-      // 4) JSON string: "https://..."
+      // 4) JSON string: "https://..."  (or "/dashboard/...")
       if (typeof parsed === 'string') {
-        finalUrl = parsed;
+        if (isUsableUrl(parsed)) finalUrl = parsed;
       } else if (parsed && typeof parsed === 'object') {
-        // 2) JSON object with url / signedUrl
-        if (typeof parsed.url === 'string' && parsed.url) {
+        // Preferred new shape from server: { photoPath: "/dashboard/binder/.../photos/raw?..." }
+        if (isUsableUrl(parsed.photoPath)) {
+          finalUrl = parsed.photoPath;
+        } else if (isUsableUrl(parsed.url)) {
           finalUrl = parsed.url;
-        } else if (
-          typeof parsed.signedUrl === 'string' &&
-          parsed.signedUrl
-        ) {
+        } else if (isUsableUrl(parsed.signedUrl)) {
           finalUrl = parsed.signedUrl;
-        } else if (
-          parsed.data &&
-          typeof parsed.data === 'string' &&
-          /^https?:\/\//i.test(parsed.data)
-        ) {
-          // Some older shapes: { ok: true, data: "https://..." }
+        } else if (parsed.data && isUsableUrl(parsed.data)) {
+          // Some older shapes: { ok: true, data: "https://..." } OR { ok:true, data:"/dashboard/..." }
           finalUrl = parsed.data;
         } else if (
           parsed.data &&
           typeof parsed.data === 'object' &&
-          typeof parsed.data.signedUrl === 'string' &&
-          parsed.data.signedUrl
+          isUsableUrl(parsed.data.signedUrl)
         ) {
           // Extra safety: { ok: true, data: { signedUrl: "https://..." } }
           finalUrl = parsed.data.signedUrl;
@@ -450,13 +447,11 @@ export async function getPhotoViewUrl(
       }
     } catch {
       // Not JSON → might just be a plain URL
-      if (/^https?:\/\//i.test(raw)) {
-        finalUrl = raw;
-      }
+      if (isUsableUrl(raw)) finalUrl = raw;
     }
 
     // Fallback: if it looks like a URL, accept it
-    if (!finalUrl && /^https?:\/\//i.test(raw)) {
+    if (!finalUrl && isUsableUrl(raw)) {
       finalUrl = raw;
     }
 

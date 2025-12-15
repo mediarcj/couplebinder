@@ -755,6 +755,10 @@ function initializeBinderLayoutAutosave() {
     }
 }
 
+// Small in-memory cache so we don't keep re-fetching the same URL for a photo.
+// Key: storageKey (S3 object key), Value: resolved src URL (CDN or raw).
+const PHOTO_SRC_CACHE = new Map();
+
 /**
  * Collect current canvas layout as relative percentages so it scales with A4.
  * We also store the element's aspectRatio so we can restore without distorting.
@@ -950,12 +954,16 @@ async function restoreCanvasLayoutFromSupabase(binderId) {
     }
 }
 
-/**
- * Ask the backend for a fresh signed URL for this storageKey.
- */
 async function resolvePhotoSrcFromStorageKey(binderId, storageKey) {
     if (!binderId || !storageKey) return null;
 
+    // 1) Fast path: per-page in-memory cache
+    const cached = PHOTO_SRC_CACHE.get(storageKey);
+    if (cached) {
+        return cached;
+    }
+
+    // 2) Ask backend once, then cache the CDN/raw URL
     try {
         const url = `/dashboard/binder/${encodeURIComponent(
             binderId
@@ -981,6 +989,7 @@ async function resolvePhotoSrcFromStorageKey(binderId, storageKey) {
             return null;
         }
 
+        PHOTO_SRC_CACHE.set(storageKey, data.url);
         return data.url;
     } catch (e) {
         log.error('Binder layout: failed to resolve photo src from storageKey', {
@@ -1216,11 +1225,16 @@ function addUploadedPhotosToCanvas(data) {
     data.photos.forEach((photo) => {
         // Prefer signed URL (for private buckets), then public URL variants
         const src =
-            photo.signedUrl ||
-            photo.publicUrl ||
+            photo.publicUrl ||   // CDN URL from STORAGE_S3_PUBLIC_BASE_URL when available
+            photo.signedUrl ||   // presigned S3 URL (fallback)
             photo.url ||
             photo.previewUrl ||
             '';
+
+        // Seed cache so future layout restores re-use the same URL
+        if (photo.storageKey && src) {
+            PHOTO_SRC_CACHE.set(photo.storageKey, src);
+        }
 
         if (!src) {
             log.warn('Canvas: photo has no URL, skipping', { photo });

@@ -77,6 +77,27 @@ const s3PublicBaseUrl = (() => {
   return null;
 })();
 
+// Build a stable public CDN URL (photos.couplebinder.com) for a storage key
+function buildS3PublicUrlForKey(storageKey) {
+  if (!s3PublicBaseUrl || !storageKey) return null;
+
+  const safeKey = String(storageKey)
+    .split('/')
+    .map(encodeURIComponent)
+    .join('/');
+
+  return `${s3PublicBaseUrl}/${safeKey}`;
+}
+
+/**
+ * For routes that only know storageKey (no file object), expose a helper
+ * that returns the public CDN URL when S3 + STORAGE_S3_PUBLIC_BASE_URL are set.
+ */
+function getBinderPhotoPublicUrl(storageKey) {
+  if (provider !== 's3') return null;
+  return buildS3PublicUrlForKey(storageKey);
+}
+
 // Lazily created S3 client (only if provider === 's3')
 let s3Client = null;
 
@@ -150,11 +171,16 @@ async function saveBinderPhoto({ userId, binderId, file }) {
     // Read file contents from local temp path written by multer
     const body = await fs.readFile(file.path);
 
+    const cacheControl = s3PublicBaseUrl
+      ? 'public, max-age=31536000, immutable' // long-lived CDN / browser cache
+      : 'private, max-age=300';               // safer default when no CDN base is set
+
     const putCmd = new PutObjectCommand({
       Bucket: s3Bucket,
       Key: key,
       Body: body,
       ContentType: mimeType,
+      CacheControl: cacheControl,
       Metadata: {
         user_id: String(userId || ''),
         binder_id: String(binderId || '')
@@ -182,13 +208,9 @@ async function saveBinderPhoto({ userId, binderId, file }) {
         'Uploaded binder photo to S3'
       );
 
-      // If you configure a public base URL for a public bucket, we can construct a direct-view URL.
-      const publicUrl = s3PublicBaseUrl
-        ? `${s3PublicBaseUrl}/${key
-            .split('/')
-            .map(encodeURIComponent)
-            .join('/')}`
-        : null;
+      // If you configured a public base URL (e.g. https://photos.couplebinder.com),
+      // build a stable CDN URL for this object.
+      const publicUrl = buildS3PublicUrlForKey(key);
 
       // ALWAYS try to generate a short-lived signed URL for private buckets.
       // This works even when bucket-level public access is fully blocked.
@@ -599,5 +621,6 @@ module.exports = {
   getBinderPhotoViewUrl,   // legacy, kept for compatibility
   getBinderPhotoStream,    // NEW
   getBinderPhotoBuffer,    // NEW
-  deleteBinderPhoto
+  deleteBinderPhoto,
+  getBinderPhotoPublicUrl  // NEW: used by binderRoutes for CDN URLs
 };

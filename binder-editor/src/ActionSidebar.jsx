@@ -7,7 +7,6 @@ import React from 'react';
 function ActionSidebar({
   onAddPhoto,
   onDeleteSelected,
-  onAutoLayout,
   onExportPdf,
   onTidyLayout,
   saving,
@@ -32,14 +31,6 @@ function ActionSidebar({
           disabled={saving}
         >
           DELETE PHOTO
-        </button>
-        <button
-          type="button"
-          className="action-sidebar-btn action-sidebar-btn-secondary"
-          onClick={onAutoLayout}
-          disabled={saving}
-        >
-          AUTO LAYOUT
         </button>
         <button
           type="button"

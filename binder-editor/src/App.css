@@ -419,9 +419,9 @@ body {
   background: #ffffff;
   position: relative;
   min-width: 0;
-  /* Border-left handled by workspace-canvas-wrapper for proper connection */
 }
 
+/* Wrapper */
 .workspace-canvas-wrapper {
   flex: 1 1 auto;
   display: flex;
@@ -431,7 +431,6 @@ body {
   background: #ffffff;
   min-width: 0;
   overflow: hidden;
-  /* Border removed - active tab now seamlessly connects to canvas */
 }
 
 /* Header just above the A4 page - Compact */
@@ -439,10 +438,10 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 0.625rem 1rem; /* Match page-list-header padding */
+  padding: 0.625rem 1rem;
   border-bottom: 1px solid #e2e8f0;
   background: #ffffff;
-  height: 48px; /* Exact height to match page-list-header */
+  height: 48px;
   box-sizing: border-box;
 }
 
@@ -512,13 +511,13 @@ body {
 .canvas-stage {
   flex: 1 1 auto;
   position: relative;
-  overflow: auto; /* Allow scrolling when zoomed in */
+  overflow: auto;
   background: linear-gradient(to bottom, #f8fafc 0%, #f1f5f9 100%);
   padding: 24px;
   display: flex;
-  justify-content: center;   /* center horizontally */
-  align-items: flex-start;   /* align to top when zoomed */
-  min-height: 0; /* Allow flex shrinking */
+  justify-content: center;
+  align-items: flex-start;
+  min-height: 0;
 }
 
 /* The white "sheet" - Actual A4 size at 96 DPI */
@@ -527,16 +526,29 @@ body {
   background: #fafafa;
   border-radius: 4px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
-
-  /* Actual A4 portrait size at 96 DPI: 210mm × 297mm = 794px × 1122px */
   width: 794px;
   height: 1122px;
-
-  overflow: hidden; /* clip anything that slips out a bit */
+  overflow: hidden;
   border: 1px solid #ddd;
-  
-  /* Zoom transform origin */
   transform-origin: top center;
+}
+
+/* ===== Smart guides (alignment lines) =====
+   These render INSIDE .canvas-page (so they scale with zoom automatically). */
+
+.canvas-guides {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 10000; /* above layers + resize handles */
+  overflow: visible;
+}
+
+.canvas-guide-line {
+  stroke: rgba(37, 99, 235, 0.55);
+  stroke-width: 1;
+  stroke-dasharray: 4 4;
+  shape-rendering: crispEdges;
 }
 
 /* “No layers” message centered on the page */
@@ -558,25 +570,70 @@ body {
   height: var(--layer-height, 100px);
   transform: rotate(var(--layer-rotation, 0deg));
   z-index: var(--layer-z-index, 0);
-  border: none; /* match legacy editor: no border when unselected */
+  border: none;
   cursor: move;
   box-sizing: border-box;
   user-select: none;
   background-color: var(--layer-bg-color, #fff);
+  will-change: left, top;
+  contain: layout paint style;
 }
+
+/* ===== Snap edge glow (Canva-like) =====
+   We glow ONLY the closest edge being “pulled” by the snap.
+   Canvas.jsx adds classes:
+     snap-glow-x-left | snap-glow-x-right
+     snap-glow-y-top  | snap-glow-y-bottom
+*/
+.binder-editor-layer.snap-glow-x-left::before,
+.binder-editor-layer.snap-glow-x-right::before,
+.binder-editor-layer.snap-glow-y-top::after,
+.binder-editor-layer.snap-glow-y-bottom::after {
+  content: '';
+  position: absolute;
+  inset: -1px; /* small bleed so it looks crisp against photos */
+  pointer-events: none;
+  z-index: 20;
+  border-radius: 2px;
+}
+
+.binder-editor-layer.snap-glow-x-left::before {
+  box-shadow:
+    inset 3px 0 0 rgba(37, 99, 235, 0.65),
+    0 0 10px rgba(37, 99, 235, 0.18);
+}
+
+.binder-editor-layer.snap-glow-x-right::before {
+  box-shadow:
+    inset -3px 0 0 rgba(37, 99, 235, 0.65),
+    0 0 10px rgba(37, 99, 235, 0.18);
+}
+
+.binder-editor-layer.snap-glow-y-top::after {
+  box-shadow:
+    inset 0 3px 0 rgba(37, 99, 235, 0.65),
+    0 0 10px rgba(37, 99, 235, 0.18);
+}
+
+.binder-editor-layer.snap-glow-y-bottom::after {
+  box-shadow:
+    inset 0 -3px 0 rgba(37, 99, 235, 0.65),
+    0 0 10px rgba(37, 99, 235, 0.18);
+}
+/* ===== End snap edge glow ===== */
 
 .binder-editor-layer.layer-type-photo {
   background-color: var(--layer-bg-color, #f0f0f0);
 }
 
 .binder-editor-layer.selected {
-  outline: 2px solid #2563eb; /* align highlight with legacy canvas-photo */
+  outline: 2px solid #2563eb;
 }
 
 /* Photo content */
 .layer-photo-container {
   width: 100%;
-  height: calc(100% - 44px); /* reserve ~44px for caption band */
+  height: calc(100% - 44px);
   position: relative;
   overflow: hidden;
   border-radius: 10px 10px 0 0;
@@ -685,8 +742,8 @@ body {
   background-color: #f9fafb;
   resize: none;
   outline: none;
-  user-select: text;   /* allow selecting text */
-  cursor: text;        /* normal text cursor inside field */
+  user-select: text;
+  cursor: text;
 }
 
 .layer-caption-input:focus {
@@ -735,7 +792,6 @@ body {
   overflow: auto;
 }
 
-/* Remove button */
 /* Resize handle */
 .layer-resize-handle {
   position: absolute;
@@ -746,7 +802,7 @@ body {
   border-radius: 2px;
   cursor: nwse-resize;
   z-index: 1000;
-  display: none; /* hidden unless selected */
+  display: none;
 }
 
 .layer-resize-top-left {
@@ -930,7 +986,6 @@ body {
 }
 
 /* ===== Mobile / small screens ===== */
-/* On small screens, treat the canvas as the star and move controls around it */
 
 @media (max-width: 900px) {
   .binder-editor-workspace {
@@ -943,19 +998,17 @@ body {
     border-top: 1px solid #e2e8f0;
   }
 
-  /* Hide border pseudo-element in stacked layout */
   .binder-editor-page-list::before {
     display: none;
   }
 
-  /* Reset active tab in stacked layout */
   .page-tab-active {
-    margin-right: 0.5rem; /* No need to cover the border in stacked layout */
-    border-radius: 8px; /* Full border radius in stacked layout */
+    margin-right: 0.5rem;
+    border-radius: 8px;
   }
 
   .page-tab-active::before {
-    display: none; /* Hide border cover pseudo-element in stacked layout */
+    display: none;
   }
 
   .page-list-header {
@@ -986,7 +1039,6 @@ body {
   }
 }
 
-/* Extra-small screens: tighten padding a bit more */
 @media (max-width: 600px) {
   .binder-editor-toolbar {
     flex-direction: column;

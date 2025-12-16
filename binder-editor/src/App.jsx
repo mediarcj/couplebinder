@@ -3,13 +3,7 @@
 // Purpose: Canvas editor with pages, layers, drag/resize + autosave
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import {
-  getLayout,
-  applyLayout,
-  autoLayout,
-  exportBinderPdf,
-  deleteBinderPhoto
-} from './api';
+import { getLayout, applyLayout, exportBinderPdf, deleteBinderPhoto } from './api';
 import { useModal } from './ModalProvider';
 import Canvas from './Canvas';
 import PageList from './PageList';
@@ -472,50 +466,6 @@ function App({ binderId /*, csrfToken */ }) {
     return () => clearTimeout(timer);
   }, [binderId, layout, isDirty, hasLoadedInitialLayout]);
 
-  // Auto layout (server algorithm). This already saves to DB.
-  const handleAutoLayout = useCallback(async () => {
-    try {
-      setSaving(true);
-      setError(null);
-      const result = await autoLayout(binderId, {});
-      if (result.ok && result.layout) {
-        const safeLayout = {
-          binderId,
-          pages: applySectionDefaults(
-            Array.isArray(result.layout.pages) ? result.layout.pages : []
-          ),
-          updatedAt: result.layout.updatedAt || new Date().toISOString()
-        };
-
-        safeLayout.pages = safeLayout.pages.map((page, index) => ({
-          pageIndex:
-            typeof page.pageIndex === 'number' ? page.pageIndex : index,
-          layers: Array.isArray(page.layers) ? page.layers : [],
-          ...page
-        }));
-
-        setLayout(safeLayout);
-
-        if (safeLayout.pages.length > 0) {
-          setSelectedPage(pickInitialPage(safeLayout.pages));
-        } else {
-          setSelectedPage(0);
-        }
-
-        // Auto layout wrote to DB, so editor is not dirty
-        setIsDirty(false);
-        setLastSavedAt(safeLayout.updatedAt);
-      }
-    } catch (err) {
-      if (isSessionExpiredError(err)) {
-        return;
-      }
-      setError(err.message);
-      console.error('[BinderEditor] Failed to auto layout:', err);
-    } finally {
-      setSaving(false);
-    }
-  }, [binderId, applySectionDefaults]);
 
   // Update layer in current page
   const updateLayer = useCallback(
@@ -1212,7 +1162,6 @@ function App({ binderId /*, csrfToken */ }) {
               }
             });
           }}
-          onAutoLayout={handleAutoLayout}
           onExportPdf={handleExportPdf}
           onTidyLayout={handleTidyLayout}
           saving={saving}

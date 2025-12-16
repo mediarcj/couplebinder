@@ -4,14 +4,12 @@
 
 'use strict';
 
+const crypto = require('crypto');
 const PDFDocument = require('pdfkit');
 const logger = require('../utils/logger');
 const { supabaseAdmin } = require('../utils/supabaseClient');
 const { supabase } = require('../utils/supabaseClient'); // kept for future use
-const {
-  saveBinderPhoto,
-  getBinderPhotoBuffer
-} = require('../services/storageProvider');
+const { saveBinderPhoto, getBinderPhotoBuffer } = require('../services/storageProvider');
 const { validateCaptionServerSide } = require('../middleware/security');
 
 // -----------------------------------------------------------------------------
@@ -97,10 +95,7 @@ async function resolveBinder({ client, userId, binderIdParam, createIfMissing = 
     }
 
     if (existingBinder) {
-      return {
-        binder: existingBinder,
-        binderId: existingBinder.id
-      };
+      return { binder: existingBinder, binderId: existingBinder.id };
     }
 
     // No binder exists - create one if allowed
@@ -135,10 +130,7 @@ async function resolveBinder({ client, userId, binderIdParam, createIfMissing = 
       throw err;
     }
 
-    return {
-      binder: createdBinder,
-      binderId: createdBinder.id
-    };
+    return { binder: createdBinder, binderId: createdBinder.id };
   }
 
   // Case 2: Real UUID - verify ownership
@@ -170,10 +162,7 @@ async function resolveBinder({ client, userId, binderIdParam, createIfMissing = 
     throw err;
   }
 
-  return {
-    binder: binderRow,
-    binderId: binderRow.id
-  };
+  return { binder: binderRow, binderId: binderRow.id };
 }
 
 const SECTION_DEFS = {
@@ -200,9 +189,7 @@ async function fetchImageBufferForLayer(layer) {
   if (layer?.storageKey) {
     try {
       const { buffer } = await getBinderPhotoBuffer(layer.storageKey);
-      if (buffer && buffer.length > 0) {
-        return buffer;
-      }
+      if (buffer && buffer.length > 0) return buffer;
     } catch (err) {
       logger.warn(
         {
@@ -240,10 +227,7 @@ async function renderBinderPageBody({
   const contentWidth = pageWidth - marginPt * 2;
   const contentHeight = pageHeight - marginPt * 2;
 
-  const scale = Math.min(
-    contentWidth / LAYOUT_LOGICAL_WIDTH,
-    contentHeight / LAYOUT_LOGICAL_HEIGHT
-  );
+  const scale = Math.min(contentWidth / LAYOUT_LOGICAL_WIDTH, contentHeight / LAYOUT_LOGICAL_HEIGHT);
 
   const surfaceWidth = LAYOUT_LOGICAL_WIDTH * scale;
   const surfaceHeight = LAYOUT_LOGICAL_HEIGHT * scale;
@@ -251,7 +235,7 @@ async function renderBinderPageBody({
   const baseX = marginPt + (contentWidth - surfaceWidth) / 2;
   const baseY = marginPt;
 
-  // Header (keep existing behavior)
+  // Header
   doc.fontSize(10).text(
     `${sectionDef.label} · Exhibit ${exhibitCode} · Page ${contentPageNumber} of ${totalPages}`,
     { align: 'center' }
@@ -263,12 +247,7 @@ async function renderBinderPageBody({
   doc.moveDown(0.5);
 
   // Page surface
-  doc
-    .save()
-    .rect(baseX, baseY, surfaceWidth, surfaceHeight)
-    .fill('#ffffff')
-    .stroke('#dddddd')
-    .restore();
+  doc.save().rect(baseX, baseY, surfaceWidth, surfaceHeight).fill('#ffffff').stroke('#dddddd').restore();
 
   // Layers
   const layers = (pageLayout.layers || []).slice().sort((a, b) => {
@@ -277,7 +256,7 @@ async function renderBinderPageBody({
     return za - zb;
   });
 
-  // Process layers sequentially to ensure images are loaded before rendering
+  // Process layers sequentially
   for (const layer of layers) {
     try {
       const x = Number(layer.x) || 0;
@@ -296,7 +275,13 @@ async function renderBinderPageBody({
         // Get storageKey from layer (preferred) or lookup by photoId
         let layerWithStorageKey = { ...layer };
 
-        if (!layerWithStorageKey.storageKey && layerWithStorageKey.photoId && client && userId && binderId) {
+        if (
+          !layerWithStorageKey.storageKey &&
+          layerWithStorageKey.photoId &&
+          client &&
+          userId &&
+          binderId
+        ) {
           try {
             const { data: photo } = await client
               .from('binder_photos')
@@ -329,17 +314,11 @@ async function renderBinderPageBody({
         const imgHeight = pdfH - captionBand;
         const imgY = pdfY;
 
-        // Attempt to fetch and draw the image via storageProvider
+        // Fetch bytes
         const buf = await fetchImageBufferForLayer(layerWithStorageKey);
 
         if (!buf) {
-          // Placeholder for missing image
-          doc
-            .save()
-            .rect(pdfX, imgY, pdfW, imgHeight)
-            .fill('#f3f4f6')
-            .stroke('#e5e7eb')
-            .restore();
+          doc.save().rect(pdfX, imgY, pdfW, imgHeight).fill('#f3f4f6').stroke('#e5e7eb').restore();
           doc
             .fontSize(9)
             .fillColor('#6b7280')
@@ -349,12 +328,8 @@ async function renderBinderPageBody({
             })
             .fillColor('#000000');
         } else {
-          // Cover behavior: fill box exactly, crop if needed (matches canvas object-fit: cover)
+          // object-fit: cover
           const img = doc.openImage(buf);
-          const imgRatio = img.width / img.height;
-          const boxRatio = pdfW / imgHeight;
-
-          // Calculate scale factor to cover the box (like object-fit: cover)
           const scaleByWidth = pdfW / img.width;
           const scaleByHeight = imgHeight / img.height;
           const coverScale = Math.max(scaleByWidth, scaleByHeight);
@@ -373,22 +348,20 @@ async function renderBinderPageBody({
           doc.restore();
         }
 
-        // Render caption below photo if present
+        // Caption below photo
         let caption = '';
         if (captionByStorageKey && layerWithStorageKey.storageKey) {
           const rawCap = captionByStorageKey.get(layerWithStorageKey.storageKey);
-          if (typeof rawCap === 'string') {
-            caption = rawCap.trim();
-          }
+          if (typeof rawCap === 'string') caption = rawCap.trim();
         }
 
         if (caption) {
-          const captionY = imgY + imgHeight + 4; // small gap
+          const captionY = imgY + imgHeight + 4;
           const captionHeight = captionBand - 8;
 
           doc
             .fontSize(9)
-            .fillColor('#374151') // dark gray
+            .fillColor('#374151')
             .text(caption, pdfX + 4, captionY, {
               width: pdfW - 8,
               height: captionHeight,
@@ -397,12 +370,7 @@ async function renderBinderPageBody({
             .fillColor('#000000');
         }
       } else if (layer.type === 'text') {
-        doc
-          .save()
-          .rect(pdfX, pdfY, pdfW, pdfH)
-          .fill('#ffffff')
-          .stroke('#e5e7eb')
-          .restore();
+        doc.save().rect(pdfX, pdfY, pdfW, pdfH).fill('#ffffff').stroke('#e5e7eb').restore();
         if (layer.text) {
           doc
             .fontSize(11)
@@ -414,11 +382,7 @@ async function renderBinderPageBody({
             .fillColor('#000000');
         }
       } else {
-        doc
-          .save()
-          .rect(pdfX, pdfY, pdfW, pdfH)
-          .stroke('#e5e7eb')
-          .restore();
+        doc.save().rect(pdfX, pdfY, pdfW, pdfH).stroke('#e5e7eb').restore();
       }
     } catch (err) {
       logger.warn(
@@ -430,7 +394,6 @@ async function renderBinderPageBody({
         },
         'Failed to render layer in PDF'
       );
-      // Continue with other layers
     }
   }
 }
@@ -450,37 +413,17 @@ async function list(req, res, next) {
       .order('created_at', { ascending: false });
 
     if (error) {
-      logger.error(
-        {
-          event: 'binder.list_query_failed',
-          error: error.message,
-          userId
-        },
-        'Binder list query failed'
-      );
+      logger.error({ event: 'binder.list_query_failed', error: error.message, userId }, 'Binder list query failed');
       const err = new Error('Unable to load binders');
       err.status = 500;
       throw err;
     }
 
-    logger.info(
-      {
-        event: 'binder.list_ok',
-        userId,
-        count: data?.length || 0
-      },
-      'Binder list loaded'
-    );
+    logger.info({ event: 'binder.list_ok', userId, count: data?.length || 0 }, 'Binder list loaded');
 
-    return res.json({
-      ok: true,
-      binders: data || []
-    });
+    return res.json({ ok: true, binders: data || [] });
   } catch (err) {
-    logger.error(
-      { event: 'binder.list_failed', error: err.message, userId: req.user?.id },
-      'Binder list handler failed'
-    );
+    logger.error({ event: 'binder.list_failed', error: err.message, userId: req.user?.id }, 'Binder list handler failed');
     next(err);
   }
 }
@@ -491,16 +434,9 @@ async function list(req, res, next) {
  */
 function newForm(req, res, next) {
   try {
-    // Later we’ll replace this with an EJS view like:
-    //   res.render('binder/new', model)
-    return res.send(
-      'Binder builder placeholder – DB is wired, UI canvas comes next.'
-    );
+    return res.send('Binder builder placeholder – DB is wired, UI canvas comes next.');
   } catch (err) {
-    logger.error(
-      { event: 'binder.new_form_failed', error: err.message, userId: req.user?.id },
-      'Binder newForm handler failed'
-    );
+    logger.error({ event: 'binder.new_form_failed', error: err.message, userId: req.user?.id }, 'Binder newForm handler failed');
     next(err);
   }
 }
@@ -517,37 +453,18 @@ async function create(req, res, next) {
 
     const { data, error } = await client
       .from('binders')
-      .insert({
-        user_id: userId,
-        title
-      })
+      .insert({ user_id: userId, title })
       .select('id, title, created_at, updated_at')
       .single();
 
     if (error) {
-      logger.error(
-        {
-          event: 'binder.create_query_failed',
-          error: error.message,
-          userId,
-          title
-        },
-        'Binder create insert failed'
-      );
+      logger.error({ event: 'binder.create_query_failed', error: error.message, userId, title }, 'Binder create insert failed');
       const err = new Error('Unable to create binder');
       err.status = 500;
       throw err;
     }
 
-    logger.info(
-      {
-        event: 'binder.created',
-        binderId: data.id,
-        userId,
-        title: data.title
-      },
-      'Binder created'
-    );
+    logger.info({ event: 'binder.created', binderId: data.id, userId, title: data.title }, 'Binder created');
 
     return res.status(201).json({
       ok: true,
@@ -556,10 +473,7 @@ async function create(req, res, next) {
       message: 'Binder created successfully'
     });
   } catch (err) {
-    logger.error(
-      { event: 'binder.create_failed', error: err.message, userId: req.user?.id },
-      'Binder create handler failed'
-    );
+    logger.error({ event: 'binder.create_failed', error: err.message, userId: req.user?.id }, 'Binder create handler failed');
     next(err);
   }
 }
@@ -567,53 +481,6 @@ async function create(req, res, next) {
 /**
  * POST /dashboard/binder/:binderId/photos
  * Accept uploaded photos (via multer) and persist to storage + binder_photos
- *
- * Assumptions:
- *  - Multer is configured in binderRoutes to write files under a temp root
- *    like /tmp/couplebinder/binder-photos.
- *  - DB table: binder_photos with at least:
- *      id (uuid, default),
- *      binder_id (uuid or text),
- *      user_id (uuid),
- *      storage_key (text),
- *      original_filename (text),
- *      mime_type (text),
- *      size_bytes (bigint),
- *      status (text),
- *      created_at (timestamptz)
- *
- * NOTE:
- *  This controller is written to match the JSON shape your dashboard expects:
- *  {
- *    ok: true,
- *    binderId,
- *    uploadedCount: <number>,
- *    photos: [
- *      {
- *        storageKey,
- *        originalname,
- *        mimetype,
- *        size,
- *        provider,
- *        bucket,
- *        publicUrl,
- *        signedUrl
- *      },
- *      ...
- *    ]
- *  }
- */
-
-/**
- * POST /dashboard/binder/:binderId/photos
- * Accept uploaded photos (via multer) and persist to storage + binder_photos
- *
- * NOTE:
- *  - :binderId in the URL is a *workspace* id (e.g. "default-<userId>") used by the UI
- *    and for S3 path building.
- *  - The actual DB primary key is binders.id (uuid).
- *  - We now resolve "the binder row for this user" by user_id, not by :binderId,
- *    and use that uuid for binder_photos.binder_id.
  */
 async function addPhotos(req, res, next) {
   const workspaceBinderId = req.params.binderId; // e.g. "default-<userId>"
@@ -622,30 +489,18 @@ async function addPhotos(req, res, next) {
     const userId = req.user?.id || req.user?.uid || null;
 
     if (!userId) {
-      logger.warn(
-        { event: 'binder.add_photos_no_user', workspaceBinderId },
-        'addPhotos called without authenticated user'
-      );
+      logger.warn({ event: 'binder.add_photos_no_user', workspaceBinderId }, 'addPhotos called without authenticated user');
       return res.status(401).json({ ok: false, error: 'Not authenticated' });
     }
 
-    // Raw files from Multer
     const allFiles = Array.isArray(req.files) ? req.files : [];
-    if (!allFiles.length) {
-      return res.status(400).json({ ok: false, error: 'No files uploaded' });
-    }
+    if (!allFiles.length) return res.status(400).json({ ok: false, error: 'No files uploaded' });
 
-    // Server-side image filter (aligns with router + dashboard.js)
     const safeFiles = allFiles.filter(isAllowedImageUpload);
 
     if (!safeFiles.length) {
       logger.warn(
-        {
-          event: 'binder.add_photos.rejected_non_images',
-          workspaceBinderId,
-          userId,
-          totalSelected: allFiles.length
-        },
+        { event: 'binder.add_photos.rejected_non_images', workspaceBinderId, userId, totalSelected: allFiles.length },
         'Binder upload rejected: no valid image files'
       );
       return res.status(400).json({
@@ -668,12 +523,7 @@ async function addPhotos(req, res, next) {
     }
 
     logger.info(
-      {
-        event: 'binder.add_photos_start',
-        workspaceBinderId,
-        userId,
-        fileCount: safeFiles.length
-      },
+      { event: 'binder.add_photos_start', workspaceBinderId, userId, fileCount: safeFiles.length },
       'Starting binder photo upload'
     );
 
@@ -683,10 +533,7 @@ async function addPhotos(req, res, next) {
       throw err;
     }
 
-    // -----------------------------------------------------------------------
-    // 1) Resolve the REAL binder row for this user (DB uuid id)
-    //    We treat the URL :binderId as a UI/workspace id, not as binders.id.
-    // -----------------------------------------------------------------------
+    // Resolve/create binder row for this user
     let binderRow = null;
 
     const { data: existingBinder, error: binderSelectErr } = await supabaseAdmin
@@ -699,13 +546,7 @@ async function addPhotos(req, res, next) {
 
     if (binderSelectErr) {
       logger.error(
-        {
-          event: 'binder.lookup_failed',
-          workspaceBinderId,
-          userId,
-          code: binderSelectErr.code,
-          error: binderSelectErr.message
-        },
+        { event: 'binder.lookup_failed', workspaceBinderId, userId, code: binderSelectErr.code, error: binderSelectErr.message },
         'Binder lookup by user_id failed before upload'
       );
       throw binderSelectErr;
@@ -714,7 +555,6 @@ async function addPhotos(req, res, next) {
     if (existingBinder) {
       binderRow = existingBinder;
     } else {
-      // No binder for this user yet → create a default one
       const { data: createdBinder, error: binderInsertErr } = await supabaseAdmin
         .from('binders')
         .insert({
@@ -744,37 +584,16 @@ async function addPhotos(req, res, next) {
 
     const binderDbId = binderRow.id;
 
-    logger.info(
-      {
-        event: 'binder.lookup_ok',
-        workspaceBinderId,
-        binderDbId,
-        userId
-      },
-      'Binder resolved for photo upload'
-    );
+    logger.info({ event: 'binder.lookup_ok', workspaceBinderId, binderDbId, userId }, 'Binder resolved for photo upload');
 
-    // Extra ownership check in app code (should always match)
     if (binderRow.user_id && binderRow.user_id !== userId) {
       logger.warn(
-        {
-          event: 'binder.not_owned',
-          workspaceBinderId,
-          binderDbId,
-          userId,
-          binderUserId: binderRow.user_id
-        },
+        { event: 'binder.not_owned', workspaceBinderId, binderDbId, userId, binderUserId: binderRow.user_id },
         'User tried to upload photos to binder they do not own'
       );
       return res.status(404).json({ ok: false, error: 'Binder not found' });
     }
 
-    // -----------------------------------------------------------------------
-    // 2) Upload each file via saveBinderPhoto and record in binder_photos
-    //    IMPORTANT:
-    //      - For storage/S3 path we keep using workspaceBinderId (string).
-    //      - For DB binder_photos.binder_id we use binderDbId (uuid).
-    // -----------------------------------------------------------------------
     const uploaded = [];
 
     for (const file of safeFiles) {
@@ -791,8 +610,6 @@ async function addPhotos(req, res, next) {
         'Starting upload for single binder photo'
       );
 
-      // For storage paths and later substring checks in binderRoutes,
-      // we keep the workspace binder id in the key (e.g. "default-<userId>").
       const storageResult = await saveBinderPhoto({
         userId,
         binderId: workspaceBinderId || binderDbId,
@@ -814,11 +631,10 @@ async function addPhotos(req, res, next) {
         'Binder photo stored in provider'
       );
 
-      // Insert metadata row in binder_photos with the REAL uuid binder id
       const { data: photoRows, error: photoErr } = await supabaseAdmin
         .from('binder_photos')
         .insert({
-          binder_id: binderDbId, // <<< uuid FK to binders(id)
+          binder_id: binderDbId,
           user_id: userId,
           storage_key: storageResult.storageKey,
           original_filename: storageResult.originalFilename,
@@ -848,18 +664,10 @@ async function addPhotos(req, res, next) {
       const inserted = Array.isArray(photoRows) && photoRows[0] ? photoRows[0] : null;
 
       logger.info(
-        {
-          event: 'binder.photo_db_insert_ok',
-          workspaceBinderId,
-          binderDbId,
-          userId,
-          storageKey: storageResult.storageKey,
-          photoId: inserted?.id || null
-        },
+        { event: 'binder.photo_db_insert_ok', workspaceBinderId, binderDbId, userId, storageKey: storageResult.storageKey, photoId: inserted?.id || null },
         'Binder photo metadata inserted into DB'
       );
 
-      // Shape JSON for client (dashboard.js expects storageKey + optional URLs)
       uploaded.push({
         storageKey: storageResult.storageKey,
         originalname: storageResult.originalFilename,
@@ -873,19 +681,12 @@ async function addPhotos(req, res, next) {
     }
 
     logger.info(
-      {
-        event: 'binder.photos_uploaded',
-        workspaceBinderId,
-        binderDbId,
-        userId,
-        count: uploaded.length
-      },
+      { event: 'binder.photos_uploaded', workspaceBinderId, binderDbId, userId, count: uploaded.length },
       'Binder photos uploaded successfully'
     );
 
     return res.json({
       ok: true,
-      // For the front-end we keep returning the workspace id so nothing breaks.
       binderId: workspaceBinderId || binderDbId,
       uploadedCount: uploaded.length,
       photos: uploaded
@@ -907,14 +708,6 @@ async function addPhotos(req, res, next) {
 
 /**
  * PATCH /dashboard/binder/:binderId/photos/caption
- *
- * Body: { storageKey: string, caption: string }
- *
- * - Verifies user is authenticated
- * - Resolves real binder id (UUID) from :binderId
- * - Verifies photo belongs to this binder + user
- * - Validates and sanitizes caption
- * - Stores sanitized caption in binder_photos.caption
  */
 async function updatePhotoCaption(req, res, next) {
   const binderIdParam = req.params.binderId;
@@ -925,13 +718,9 @@ async function updatePhotoCaption(req, res, next) {
     const rawCaption = (req.body && req.body.caption) || '';
 
     if (!storageKey) {
-      return res.status(400).json({
-        ok: false,
-        message: 'storageKey is required'
-      });
+      return res.status(400).json({ ok: false, message: 'storageKey is required' });
     }
 
-    // Resolve binder (workspace id or UUID), but do not create new binder here
     const { binderId } = await resolveBinder({
       client,
       userId,
@@ -939,7 +728,24 @@ async function updatePhotoCaption(req, res, next) {
       createIfMissing: false
     });
 
-    // Verify the photo belongs to this binder + user
+    // (kept) pages table load (useful for future response shapes / debugging)
+    const { data: pageRows, error: pagesErr } = await client
+      .from('pages')
+      .select('id, page_number')
+      .eq('binder_id', binderId)
+      .eq('user_id', userId)
+      .order('page_number', { ascending: true });
+
+    if (pagesErr) {
+      logger.warn(
+        { event: 'binder.pages.load_failed_for_layout', binderId, userId, error: pagesErr.message },
+        'Could not load pages table for layout response'
+      );
+    }
+
+    const pagesByIndex = Array.isArray(pageRows) ? pageRows : [];
+    void pagesByIndex; // intentionally unused today
+
     const { data: photoRow, error: photoErr } = await client
       .from('binder_photos')
       .select('id, caption')
@@ -960,40 +766,21 @@ async function updatePhotoCaption(req, res, next) {
         },
         'Failed to verify photo ownership before caption update'
       );
-      return res.status(500).json({
-        ok: false,
-        message: 'Unable to verify photo ownership.'
-      });
+      return res.status(500).json({ ok: false, message: 'Unable to verify photo ownership.' });
     }
 
     if (!photoRow) {
-      logger.warn(
-        {
-          event: 'binder.caption.photo_not_found',
-          binderIdParam,
-          binderId,
-          storageKey,
-          userId
-        },
-        'Photo not found for caption update'
-      );
-      return res.status(404).json({
-        ok: false,
-        message: 'Photo not found for this binder.'
-      });
+      logger.warn({ event: 'binder.caption.photo_not_found', binderIdParam, binderId, storageKey, userId }, 'Photo not found for caption update');
+      return res.status(404).json({ ok: false, message: 'Photo not found for this binder.' });
     }
 
-    // Validate/sanitize caption (no HTML, no emoji)
     const { valid, error, sanitized } = validateCaptionServerSide(rawCaption);
 
     if (!valid) {
-      return res.status(400).json({
-        ok: false,
-        message: error || 'Invalid caption'
-      });
+      return res.status(400).json({ ok: false, message: error || 'Invalid caption' });
     }
 
-    const captionToStore = sanitized || null; // null = "no caption"
+    const captionToStore = sanitized || null;
 
     const { error: updateErr } = await client
       .from('binder_photos')
@@ -1003,39 +790,18 @@ async function updatePhotoCaption(req, res, next) {
 
     if (updateErr) {
       logger.error(
-        {
-          event: 'binder.caption.update_failed',
-          binderIdParam,
-          binderId,
-          storageKey,
-          userId,
-          error: updateErr.message
-        },
+        { event: 'binder.caption.update_failed', binderIdParam, binderId, storageKey, userId, error: updateErr.message },
         'Failed to update binder photo caption'
       );
-      return res.status(500).json({
-        ok: false,
-        message: 'Unable to save caption right now.'
-      });
+      return res.status(500).json({ ok: false, message: 'Unable to save caption right now.' });
     }
 
     logger.info(
-      {
-        event: 'binder.caption.updated',
-        binderIdParam,
-        binderId,
-        storageKey,
-        photoId: photoRow.id,
-        userId,
-        hasCaption: !!captionToStore
-      },
+      { event: 'binder.caption.updated', binderIdParam, binderId, storageKey, photoId: photoRow.id, userId, hasCaption: !!captionToStore },
       'Binder photo caption updated'
     );
 
-    return res.json({
-      ok: true,
-      caption: captionToStore || ''
-    });
+    return res.json({ ok: true, caption: captionToStore || '' });
   } catch (err) {
     logger.error(
       {
@@ -1062,15 +828,13 @@ async function exportPdf(req, res, next) {
   try {
     const { userId, client } = getContext(req);
 
-    // Resolve workspace ID to real binder UUID
     const { binder, binderId } = await resolveBinder({
       client,
       userId,
       binderIdParam,
-      createIfMissing: false // Don't create for export
+      createIfMissing: false
     });
 
-    // Fetch layout pages using real binderId
     const { data: layoutRows, error: layoutErr } = await client
       .from('binder_layouts')
       .select('page_number, layout_json')
@@ -1079,14 +843,10 @@ async function exportPdf(req, res, next) {
       .order('page_number', { ascending: true });
 
     if (layoutErr) {
-      logger.error(
-        { event: 'binder.pdf.layout_query_failed', error: layoutErr.message, binderId, userId },
-        'Layout query failed for PDF'
-      );
+      logger.error({ event: 'binder.pdf.layout_query_failed', error: layoutErr.message, binderId, userId }, 'Layout query failed for PDF');
       return res.status(500).json({ ok: false, message: 'Unable to export PDF' });
     }
 
-    // Fetch captions for all photos in this binder
     const { data: photoRows, error: photosErr } = await client
       .from('binder_photos')
       .select('storage_key, caption')
@@ -1094,15 +854,7 @@ async function exportPdf(req, res, next) {
       .eq('user_id', userId);
 
     if (photosErr) {
-      logger.error(
-        {
-          event: 'binder.pdf.captions_query_failed',
-          binderId,
-          userId,
-          error: photosErr.message
-        },
-        'Failed to load binder photo captions for PDF'
-      );
+      logger.error({ event: 'binder.pdf.captions_query_failed', binderId, userId, error: photosErr.message }, 'Failed to load binder photo captions for PDF');
     }
 
     const captionByStorageKey = new Map();
@@ -1112,33 +864,28 @@ async function exportPdf(req, res, next) {
       }
     });
 
-    // Build pages with section info and layers
-    let pages = (layoutRows || []).map((row, idx) => ({
-      pageIndex: typeof row.page_number === 'number' ? row.page_number - 1 : idx,
-      sectionKey: row.layout_json?.sectionKey || null,
-      layers: row.layout_json?.layers || [] // Include layers for rendering
-    }));
+    let pages = (layoutRows || []).map((row, idx) => {
+      const layoutJson = row.layout_json && typeof row.layout_json === 'string' ? safeJsonParse(row.layout_json) : row.layout_json;
+      return {
+        pageIndex: typeof row.page_number === 'number' ? row.page_number - 1 : idx,
+        sectionKey: layoutJson?.sectionKey || null,
+        layers: layoutJson?.layers || []
+      };
+    });
 
-    // Backward compatibility: assign defaults if none present
     const anySection = pages.some((p) => p.sectionKey);
     pages = pages.map((p, idx) => {
-      const sectionKey = p.sectionKey
-        ? p.sectionKey
-        : anySection
-          ? null
-          : idx === 0
-            ? 'overview'
-            : 'photos';
+      const sectionKey = p.sectionKey ? p.sectionKey : anySection ? null : idx === 0 ? 'overview' : 'photos';
       return { ...p, sectionKey: sectionKey || 'photos' };
     });
 
     const contentPages = pages.length;
-    const totalPages = contentPages + 1; // +1 for index page
+    const totalPages = contentPages + 1;
 
-    // Build exhibits (contiguous runs per section)
     const sectionCounters = {};
     const exhibits = [];
     let current = null;
+
     pages.forEach((p, idx) => {
       const key = p.sectionKey || 'photos';
       if (!current || current.sectionKey !== key) {
@@ -1146,7 +893,7 @@ async function exportPdf(req, res, next) {
         current = {
           sectionKey: key,
           exhibitNo: sectionCounters[key],
-          startContentPage: idx + 2, // index page is 1
+          startContentPage: idx + 2,
           endContentPage: idx + 2
         };
         exhibits.push(current);
@@ -1155,23 +902,16 @@ async function exportPdf(req, res, next) {
       }
     });
 
-    const getExhibitForPage = (contentPageNumber) => {
-      return exhibits.find(
-        (ex) => contentPageNumber >= ex.startContentPage && contentPageNumber <= ex.endContentPage
-      );
-    };
+    const getExhibitForPage = (contentPageNumber) =>
+      exhibits.find((ex) => contentPageNumber >= ex.startContentPage && contentPageNumber <= ex.endContentPage);
 
     const doc = new PDFDocument({ autoFirstPage: true, size: 'A4', margin: 0 });
 
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader(
-      'Content-Disposition',
-      `attachment; filename="relationship-binder-${binderId || 'draft'}.pdf"`
-    );
+    res.setHeader('Content-Disposition', `attachment; filename="relationship-binder-${binderId || 'draft'}.pdf"`);
 
     doc.pipe(res);
 
-    // Index page (page 1)
     doc.fontSize(20).text('Index', { align: 'center' });
     doc.moveDown(1);
 
@@ -1181,13 +921,10 @@ async function exportPdf(req, res, next) {
       exhibits.forEach((ex) => {
         const def = SECTION_DEFS[ex.sectionKey] || SECTION_DEFS.photos;
         const code = `${def.prefix}-${ex.exhibitNo}`;
-        doc.fontSize(12).text(
-          `Exhibit ${code} – ${def.label} – Pages ${ex.startContentPage}–${ex.endContentPage}`
-        );
+        doc.fontSize(12).text(`Exhibit ${code} – ${def.label} – Pages ${ex.startContentPage}–${ex.endContentPage}`);
       });
     }
 
-    // Content pages - render actual layout
     for (let idx = 0; idx < pages.length; idx++) {
       const p = pages[idx];
       doc.addPage();
@@ -1210,20 +947,9 @@ async function exportPdf(req, res, next) {
 
     doc.end();
 
-      logger.info(
-        {
-          event: 'binder.pdf_exported',
-          binderId,
-          userId,
-          pageCount: contentPages
-        },
-        'Binder PDF exported with index/exhibits'
-      );
+    logger.info({ event: 'binder.pdf_exported', binderId, userId, pageCount: contentPages }, 'Binder PDF exported with index/exhibits');
   } catch (err) {
-    logger.error(
-      { event: 'binder.export_failed', error: err.message, binderId: binderIdParam, userId: req.user?.id },
-      'Binder exportPdf handler failed'
-    );
+    logger.error({ event: 'binder.export_failed', error: err.message, binderId: binderIdParam, userId: req.user?.id }, 'Binder exportPdf handler failed');
     next(err);
   }
 }
@@ -1231,24 +957,12 @@ async function exportPdf(req, res, next) {
 /**
  * GET /dashboard/binder/:binderId/editor
  * Render binder editor page with React app
- *
- * Supports two kinds of :binderId:
- *  - "default-<userId>" workspace id (per-user binder workspace)
- *  - real binders.id UUID
- *
- * In both cases, the binder is resolved/created for the currently authenticated user only.
  */
 async function renderBinderEditor(req, res, next) {
-  // Define outside try so catch can log it safely
   const binderIdParam = req.params.binderId;
 
   logger.info(
-    {
-      event: 'binder.editor.handler_called',
-      binderId: binderIdParam,
-      path: req.path,
-      method: req.method
-    },
+    { event: 'binder.editor.handler_called', binderId: binderIdParam, path: req.path, method: req.method },
     'Binder editor handler invoked'
   );
 
@@ -1256,10 +970,6 @@ async function renderBinderEditor(req, res, next) {
     const { userId, client } = getContext(req);
     let binder = null;
 
-    // ---------------------------------------------------------
-    // Case 1: workspace id, e.g. "default-<userId>"
-    // Resolve the per-user default binder or create one.
-    // ---------------------------------------------------------
     if (binderIdParam && binderIdParam.startsWith('default-')) {
       const { data: existingBinder, error: binderSelectErr } = await client
         .from('binders')
@@ -1271,12 +981,7 @@ async function renderBinderEditor(req, res, next) {
 
       if (binderSelectErr) {
         logger.error(
-          {
-            event: 'binder.editor.lookup_failed_default',
-            binderId: binderIdParam,
-            userId,
-            error: binderSelectErr.message
-          },
+          { event: 'binder.editor.lookup_failed_default', binderId: binderIdParam, userId, error: binderSelectErr.message },
           'Binder lookup by user_id failed for editor (workspace id)'
         );
         const err = new Error('Unable to load binder');
@@ -1287,25 +992,15 @@ async function renderBinderEditor(req, res, next) {
       if (existingBinder) {
         binder = existingBinder;
       } else {
-        // No binder row yet for this user → create default one
         const { data: createdBinder, error: binderInsertErr } = await client
           .from('binders')
-          .insert({
-            user_id: userId,
-            title: 'My relationship story binder',
-            status: 'draft'
-          })
+          .insert({ user_id: userId, title: 'My relationship story binder', status: 'draft' })
           .select('id, user_id, title, created_at, updated_at')
           .single();
 
         if (binderInsertErr) {
           logger.error(
-            {
-              event: 'binder.editor.create_default_failed',
-              binderId: binderIdParam,
-              userId,
-              error: binderInsertErr.message
-            },
+            { event: 'binder.editor.create_default_failed', binderId: binderIdParam, userId, error: binderInsertErr.message },
             'Failed to create default binder for editor (workspace id)'
           );
           const err = new Error('Unable to create binder');
@@ -1316,10 +1011,6 @@ async function renderBinderEditor(req, res, next) {
         binder = createdBinder;
       }
     } else {
-      // ---------------------------------------------------------
-      // Case 2: real binders.id UUID
-      // Enforce ownership: id AND user_id must match.
-      // ---------------------------------------------------------
       const { data: binderRow, error: binderErr } = await client
         .from('binders')
         .select('id, user_id, title, created_at, updated_at')
@@ -1328,29 +1019,14 @@ async function renderBinderEditor(req, res, next) {
         .maybeSingle();
 
       if (binderErr) {
-        logger.error(
-          {
-            event: 'binder.editor.lookup_failed',
-            binderId: binderIdParam,
-            userId,
-            error: binderErr.message
-          },
-          'Binder lookup failed for editor'
-        );
+        logger.error({ event: 'binder.editor.lookup_failed', binderId: binderIdParam, userId, error: binderErr.message }, 'Binder lookup failed for editor');
         const err = new Error('Unable to load binder');
         err.status = 500;
         throw err;
       }
 
       if (!binderRow) {
-        logger.warn(
-          {
-            event: 'binder.editor.not_found',
-            binderId: binderIdParam,
-            userId
-          },
-          'Binder not found for editor'
-        );
+        logger.warn({ event: 'binder.editor.not_found', binderId: binderIdParam, userId }, 'Binder not found for editor');
         const err = new Error('Binder not found');
         err.status = 404;
         throw err;
@@ -1358,12 +1034,7 @@ async function renderBinderEditor(req, res, next) {
 
       if (binderRow.user_id !== userId) {
         logger.warn(
-          {
-            event: 'binder.editor.unauthorized',
-            binderId: binderIdParam,
-            userId,
-            binderUserId: binderRow.user_id
-          },
+          { event: 'binder.editor.unauthorized', binderId: binderIdParam, userId, binderUserId: binderRow.user_id },
           'User attempted to access binder editor they do not own'
         );
         const err = new Error('Binder not found');
@@ -1374,17 +1045,12 @@ async function renderBinderEditor(req, res, next) {
       binder = binderRow;
     }
 
-    // ---------------------------------------------------------
-    // Build page model using dashboard presenter
-    // ---------------------------------------------------------
     const { buildDashboardPageModel } = require('../ui_contract/presenters');
     const pageModel = await buildDashboardPageModel(req, res);
 
-    // Ensure page/ui structures exist
     pageModel.page = pageModel.page || {};
     pageModel.ui = pageModel.ui || {};
 
-    // Attach binder info for the template / React app
     pageModel.binder = {
       id: binder.id,
       title: binder.title,
@@ -1392,32 +1058,14 @@ async function renderBinderEditor(req, res, next) {
       updated_at: binder.updated_at
     };
 
-    // Ensure nonce and CSRF token
     pageModel.page.nonce = res.locals.nonce || pageModel.page.nonce || '';
     pageModel.ui.csrfToken = res.locals.csrfToken || pageModel.ui.csrfToken || '';
 
-    logger.info(
-      {
-        event: 'binder.editor.rendered',
-        binderId: binder.id,
-        userId,
-        binderIdParam
-      },
-      'Binder editor page rendered'
-    );
+    logger.info({ event: 'binder.editor.rendered', binderId: binder.id, userId, binderIdParam }, 'Binder editor page rendered');
 
-    // Render the React/Vite binder editor shell
     res.render('dashboard/binder-editor', pageModel);
   } catch (err) {
-    logger.error(
-      {
-        event: 'binder.editor.render_failed',
-        error: err.message,
-        binderId: binderIdParam,
-        userId: req.user?.id
-      },
-      'Binder editor render failed'
-    );
+    logger.error({ event: 'binder.editor.render_failed', error: err.message, binderId: binderIdParam, userId: req.user?.id }, 'Binder editor render failed');
     next(err);
   }
 }
@@ -1427,165 +1075,296 @@ async function renderBinderEditor(req, res, next) {
  * Get current layout JSON for a binder
  */
 async function getBinderLayout(req, res, next) {
+  const binderIdParam = req.params.binderId;
+
   try {
     const { userId, client } = getContext(req);
-    const binderIdParam = req.params.binderId;
 
-    // Resolve workspace ID to real binder UUID
-    const { binder, binderId } = await resolveBinder({
+    const { binderId } = await resolveBinder({
       client,
       userId,
       binderIdParam,
       createIfMissing: false
     });
 
-    // Fetch layout from binder_layouts (binder_id is text, use binderId as string)
-    const { data: layoutRow, error: layoutErr } = await client
+    // Pull layouts
+    const { data: layoutRows, error: layoutErr } = await client
       .from('binder_layouts')
-      .select('layout_json, updated_at')
+      .select('page_number, layout_json, updated_at')
       .eq('user_id', userId)
       .eq('binder_id', String(binderId))
       .order('page_number', { ascending: true })
-      .limit(100);
+      .limit(200);
 
     if (layoutErr) {
-      logger.error(
-        {
-          event: 'binder.layout.get.query_failed',
-          binderId: binderId,
-          userId,
-          error: layoutErr.message
-        },
-        'Layout query failed'
-      );
-      return res.status(500).json({
-        ok: false,
-        message: 'Unable to load layout'
-      });
+      logger.error({ event: 'binder.layout.get.query_failed', binderId, userId, error: layoutErr.message }, 'Layout query failed');
+      return res.status(500).json({ ok: false, message: 'Unable to load layout' });
     }
 
-    // Build layout structure from rows
-    let layout = {
-      binderId: binderId,
+    // Pull pages table (for stable page ids)
+    const { data: pageRows, error: pagesErr } = await client
+      .from('pages')
+      .select('id, page_number')
+      .eq('binder_id', binderId)
+      .eq('user_id', userId)
+      .order('page_number', { ascending: true });
+
+    if (pagesErr) {
+      logger.warn({ event: 'binder.pages.load_failed_for_layout', binderId, userId, error: pagesErr.message }, 'Could not load pages table for layout');
+    }
+
+    const pageIdByNumber = {};
+    (pageRows || []).forEach((p) => {
+      if (p?.page_number && p?.id) pageIdByNumber[Number(p.page_number)] = String(p.id);
+    });
+
+    const layout = {
+      binderId,
       pages: [],
       updatedAt: new Date().toISOString()
     };
 
-    if (layoutRow && layoutRow.length > 0) {
-      // Collect all photoIds from layers that need storageKey lookup
-      const photoIdsToLookup = [];
-      layoutRow.forEach(row => {
-        const layers = row.layout_json?.layers || [];
-        layers.forEach(layer => {
-          if (layer.type === 'photo' && layer.photoId && !layer.storageKey) {
-            photoIdsToLookup.push(layer.photoId);
-          }
-        });
-      });
-
-      // Fetch storageKey for photos that need it
-      const photoStorageMap = {};
-      if (photoIdsToLookup.length > 0) {
-        const { data: photos, error: photosErr } = await client
-          .from('binder_photos')
-          .select('id, storage_key')
-          .eq('binder_id', binderId)
-          .eq('user_id', userId)
-          .in('id', photoIdsToLookup);
-
-        if (!photosErr && photos) {
-          photos.forEach(photo => {
-            photoStorageMap[photo.id] = photo.storage_key;
-          });
-        }
-      }
-
-      // Fetch captions for all photos in this binder
-      const { data: photoRows, error: photosErr } = await client
-        .from('binder_photos')
-        .select('storage_key, caption')
-        .eq('binder_id', binderId)
-        .eq('user_id', userId);
-
-      if (photosErr) {
-        logger.error(
-          {
-            event: 'binder.layout.captions_query_failed',
-            binderId,
-            userId,
-            error: photosErr.message
-          },
-          'Failed to load binder photo captions for layout'
-        );
-      }
-
-      const captionByStorageKey = new Map();
-      (photoRows || []).forEach((row) => {
-        if (row.storage_key && typeof row.caption === 'string') {
-          // Captions were already sanitized on write
-          captionByStorageKey.set(row.storage_key, row.caption);
-        }
-      });
-
-      // Build pages with enriched layers
-      layout.pages = layoutRow.map((row, idx) => {
-        const layers = (row.layout_json?.layers || []).map(layer => {
-          let enrichedLayer = layer;
-
-          // Enrich photo layers with storageKey if missing
-          if (layer.type === 'photo' && layer.photoId && !layer.storageKey) {
-            const storageKey = photoStorageMap[layer.photoId];
-            if (storageKey) {
-              enrichedLayer = { ...layer, storageKey };
-            }
-          }
-
-          // Attach caption from DB if this is a photo layer with storageKey
-          if (enrichedLayer && enrichedLayer.type === 'photo' && enrichedLayer.storageKey) {
-            const cap = captionByStorageKey.get(enrichedLayer.storageKey);
-            if (typeof cap === 'string' && cap.length > 0) {
-              enrichedLayer = { ...enrichedLayer, caption: cap };
-            }
-          }
-
-          return enrichedLayer;
-        });
-
-        return {
-          pageIndex: idx,
-          layers,
-          sectionKey: row.layout_json?.sectionKey || null
-        };
-      });
-      layout.updatedAt = layoutRow[0].updated_at || layout.updatedAt;
+    if (!layoutRows || layoutRows.length === 0) {
+      // No saved layout yet: return one empty page WITH a stable id
+      const newPageId = crypto.randomUUID();
+      layout.pages = [{ id: newPageId, pageId: newPageId, pageIndex: 0, layers: [], sectionKey: 'photos' }];
+      return res.json({ ok: true, layout });
     }
 
-    logger.info(
-      {
-        event: 'binder.layout.get.success',
-        binderId: binder.id,
-        userId,
-        pageCount: layout.pages.length
-      },
-      'Layout retrieved successfully'
-    );
+    // Collect photoIds needing storage_key lookup
+    const photoIdsToLookup = [];
+    for (const row of layoutRows) {
+      const layoutJson = row.layout_json && typeof row.layout_json === 'string' ? safeJsonParse(row.layout_json) : row.layout_json;
+      const layers = layoutJson?.layers || [];
+      for (const layer of layers) {
+        if (layer?.type === 'photo' && layer.photoId && !layer.storageKey) {
+          photoIdsToLookup.push(layer.photoId);
+        }
+      }
+    }
 
-    return res.json({
-      ok: true,
-      layout
+    // Build photoId -> storage_key map
+    const photoStorageMap = {};
+    if (photoIdsToLookup.length > 0) {
+      const { data: photos, error: photosErr } = await client
+        .from('binder_photos')
+        .select('id, storage_key')
+        .eq('binder_id', binderId)
+        .eq('user_id', userId)
+        .in('id', photoIdsToLookup);
+
+      if (photosErr) {
+        logger.warn({ event: 'binder.layout.photo_storage_lookup_failed', binderId, userId, error: photosErr.message }, 'Failed to lookup photo storage_keys for layout');
+      } else if (photos) {
+        for (const p of photos) {
+          if (p?.id && p?.storage_key) photoStorageMap[String(p.id)] = p.storage_key;
+        }
+      }
+    }
+
+    // Load captions for all photos in this binder
+    const { data: photoRows, error: captionsErr } = await client
+      .from('binder_photos')
+      .select('storage_key, caption')
+      .eq('binder_id', binderId)
+      .eq('user_id', userId);
+
+    if (captionsErr) {
+      logger.error({ event: 'binder.layout.captions_query_failed', binderId, userId, error: captionsErr.message }, 'Failed to load binder photo captions for layout');
+    }
+
+    const captionByStorageKey = new Map();
+    (photoRows || []).forEach((row) => {
+      if (row.storage_key && typeof row.caption === 'string') {
+        captionByStorageKey.set(row.storage_key, row.caption);
+      }
     });
+
+    // Build pages from layout rows (and FIX missing pageId issues)
+    const pagesNeedingUpsert = [];
+    const layoutRowsNeedingPatch = [];
+
+    layout.pages = layoutRows.map((row, idx) => {
+      const pageNumber = typeof row.page_number === 'number' ? row.page_number : idx + 1;
+      const pageIndex = pageNumber - 1;
+
+      const layoutJsonRaw = row.layout_json && typeof row.layout_json === 'string' ? safeJsonParse(row.layout_json) : row.layout_json;
+      const layoutJson = layoutJsonRaw && typeof layoutJsonRaw === 'object' ? layoutJsonRaw : {};
+
+      // Stable pageId priority:
+      //  1) layout_json.pageId (new)
+      //  2) pages table id by page_number (backfill)
+      //  3) generate (and upsert into pages + patch layout row)
+      let pageId = layoutJson.pageId ? String(layoutJson.pageId) : null;
+
+      if (!pageId && pageIdByNumber[pageNumber]) {
+        pageId = String(pageIdByNumber[pageNumber]);
+      }
+
+      if (!pageId) {
+        pageId = crypto.randomUUID();
+
+        pagesNeedingUpsert.push({
+          id: pageId,
+          binder_id: binderId,
+          user_id: userId,
+          page_number: pageNumber
+        });
+
+        layoutRowsNeedingPatch.push({
+          page_number: pageNumber,
+          next_layout_json: { ...layoutJson, pageId }
+        });
+      }
+
+      const rawLayers = layoutJson.layers || [];
+      const layers = rawLayers.map((layer) => {
+        let enriched = layer;
+
+        if (enriched?.type === 'photo' && enriched.photoId && !enriched.storageKey) {
+          const storageKey = photoStorageMap[String(enriched.photoId)];
+          if (storageKey) enriched = { ...enriched, storageKey };
+        }
+
+        if (enriched?.type === 'photo' && enriched.storageKey) {
+          const cap = captionByStorageKey.get(enriched.storageKey);
+          if (typeof cap === 'string' && cap.length > 0) {
+            enriched = { ...enriched, caption: cap };
+          }
+        }
+
+        return enriched;
+      });
+
+      return {
+        id: pageId,
+        pageId,
+        pageIndex,
+        layers,
+        sectionKey: layoutJson.sectionKey || null
+      };
+    });
+
+    // Backfill persistence (best-effort)
+    if (pagesNeedingUpsert.length > 0) {
+      const { error: upsertErr } = await client.from('pages').upsert(pagesNeedingUpsert, { onConflict: 'id' });
+      if (upsertErr) {
+        logger.warn({ event: 'binder.pages.backfill_failed', binderId, userId, error: upsertErr.message }, 'Failed to backfill pages table with generated pageIds');
+      }
+    }
+
+    for (const patch of layoutRowsNeedingPatch) {
+      try {
+        const { error: patchErr } = await client
+          .from('binder_layouts')
+          .update({ layout_json: patch.next_layout_json })
+          .eq('user_id', userId)
+          .eq('binder_id', String(binderId))
+          .eq('page_number', patch.page_number);
+
+        if (patchErr) {
+          logger.warn(
+            { event: 'binder.layout.backfill_pageid_failed', binderId, userId, pageNumber: patch.page_number, error: patchErr.message },
+            'Failed to backfill layout_json.pageId'
+          );
+        }
+      } catch (e) {
+        logger.warn(
+          { event: 'binder.layout.backfill_pageid_exception', binderId, userId, pageNumber: patch.page_number, error: e.message },
+          'Exception while backfilling layout_json.pageId'
+        );
+      }
+    }
+
+    // updatedAt: use newest if possible
+    const latestUpdatedAt =
+      (layoutRows || [])
+        .map((r) => r.updated_at)
+        .filter(Boolean)
+        .sort()
+        .slice(-1)[0] || null;
+
+    layout.updatedAt = latestUpdatedAt || layout.updatedAt;
+
+    logger.info({ event: 'binder.layout.get.success', binderId, userId, pageCount: layout.pages.length }, 'Layout retrieved successfully');
+
+    return res.json({ ok: true, layout });
   } catch (err) {
-    logger.error(
-      {
-        event: 'binder.layout.get.failed',
-        error: err.message,
-        binderId: req.params.binderId,
-        userId: req.user?.id
-      },
-      'Binder layout get failed'
-    );
+    logger.error({ event: 'binder.layout.get.failed', error: err.message, binderId: binderIdParam, userId: req.user?.id }, 'Binder layout get failed');
     next(err);
   }
+}
+
+// -----------------------------------------------------------------------------
+// Pages order persistence (writes to Supabase "pages" table)
+// -----------------------------------------------------------------------------
+async function syncPagesTableOrder({ client, userId, binderId, layoutPages }) {
+  if (!Array.isArray(layoutPages)) {
+    const err = new Error('layoutPages must be an array');
+    err.status = 400;
+    throw err;
+  }
+
+  const pageIds = layoutPages
+    .map((p) => String(p?.pageId || p?.id || p?.page_id || ''))
+    .filter(Boolean);
+
+  if (pageIds.length !== layoutPages.length) {
+    const err = new Error('Each page must have a stable pageId/id for reorder');
+    err.status = 400;
+    throw err;
+  }
+
+  const { data: existingById, error: existingErr } = await client
+    .from('pages')
+    .select('id, binder_id, user_id')
+    .in('id', pageIds);
+
+  if (existingErr) {
+    const err = new Error('Unable to load pages for reorder');
+    err.status = 500;
+    throw err;
+  }
+
+  for (const row of existingById || []) {
+    if (String(row.binder_id) !== String(binderId) || String(row.user_id) !== String(userId)) {
+      const err = new Error('Invalid pageId provided (does not belong to this binder)');
+      err.status = 400;
+      throw err;
+    }
+  }
+
+  const TEMP_BASE = 1000000;
+
+  const tempRows = pageIds.map((id, idx) => ({
+    id,
+    binder_id: binderId,
+    user_id: userId,
+    page_number: TEMP_BASE + (idx + 1)
+  }));
+
+  const { error: tempErr } = await client.from('pages').upsert(tempRows, { onConflict: 'id' });
+  if (tempErr) {
+    const err = new Error('Unable to reorder pages (temp step)');
+    err.status = 500;
+    throw err;
+  }
+
+  const finalRows = pageIds.map((id, idx) => ({
+    id,
+    binder_id: binderId,
+    user_id: userId,
+    page_number: idx + 1
+  }));
+
+  const { error: finalErr } = await client.from('pages').upsert(finalRows, { onConflict: 'id' });
+  if (finalErr) {
+    const err = new Error('Unable to reorder pages (final step)');
+    err.status = 500;
+    throw err;
+  }
+
+  return { pageCount: pageIds.length, usedClientIds: true };
 }
 
 /**
@@ -1593,43 +1372,63 @@ async function getBinderLayout(req, res, next) {
  * Save layout changes to database
  */
 async function applyBinderLayout(req, res, next) {
+  const binderIdParam = req.params.binderId;
+
   try {
     const { userId, client } = getContext(req);
-    const binderIdParam = req.params.binderId;
     const layout = req.body;
 
-    // Validate request body
     if (!layout || typeof layout !== 'object') {
-      return res.status(400).json({
-        ok: false,
-        message: 'Invalid layout data'
-      });
+      return res.status(400).json({ ok: false, message: 'Invalid layout data' });
     }
 
     if (!Array.isArray(layout.pages)) {
-      return res.status(400).json({
-        ok: false,
-        message: 'Layout pages must be an array'
-      });
+      return res.status(400).json({ ok: false, message: 'Layout pages must be an array' });
     }
 
-    // Resolve workspace ID to real binder UUID
     const { binder, binderId } = await resolveBinder({
       client,
       userId,
       binderIdParam,
-      createIfMissing: true // Create binder if missing for workspace IDs
+      createIfMissing: true
     });
+
+    // Normalize pages: ensure pageId exists (so pages table + binder_layouts always store it)
+    const normalizedPages = layout.pages.map((page, idx) => {
+      const pageId = String(page?.pageId || page?.id || page?.page_id || crypto.randomUUID());
+      return {
+        ...page,
+        pageId,
+        id: pageId,
+        pageIndex: typeof page.pageIndex === 'number' ? page.pageIndex : idx,
+        layers: Array.isArray(page.layers) ? page.layers : [],
+        sectionKey: page.sectionKey || null
+      };
+    });
+
+    // Persist page reorder into Supabase "pages" table (page_number)
+    try {
+      await syncPagesTableOrder({
+        client,
+        userId,
+        binderId,
+        layoutPages: normalizedPages
+      });
+    } catch (e) {
+      const status = e.status || 500;
+      logger.error(
+        { event: 'binder.pages.reorder_failed', binderId, binderIdParam, userId, error: e.message },
+        'Failed to persist page order to pages table'
+      );
+      return res.status(status).json({ ok: false, message: e.message || 'Unable to reorder pages right now.' });
+    }
 
     // Validate binderId matches if provided in layout
     if (layout.binderId && layout.binderId !== binderIdParam && layout.binderId !== binderId) {
-      return res.status(400).json({
-        ok: false,
-        message: 'Binder ID mismatch'
-      });
+      return res.status(400).json({ ok: false, message: 'Binder ID mismatch' });
     }
 
-    // Delete existing layouts for this binder (binder_id is text)
+    // Delete existing layouts
     const { error: deleteErr } = await client
       .from('binder_layouts')
       .delete()
@@ -1637,55 +1436,30 @@ async function applyBinderLayout(req, res, next) {
       .eq('binder_id', String(binderId));
 
     if (deleteErr) {
-      logger.error(
-        {
-          event: 'binder.layout.apply.delete_failed',
-          binderId: binderId,
-          userId,
-          error: deleteErr.message
-        },
-        'Failed to delete existing layouts'
-      );
-      return res.status(500).json({
-        ok: false,
-        message: 'Unable to save layout'
-      });
+      logger.error({ event: 'binder.layout.apply.delete_failed', binderId, userId, error: deleteErr.message }, 'Failed to delete existing layouts');
+      return res.status(500).json({ ok: false, message: 'Unable to save layout' });
     }
 
-    // Insert new layouts (one row per page, binder_id is text)
-    const layoutRows = layout.pages.map((page, idx) => ({
+    // Insert new layouts (one row per page)
+    const layoutRows = normalizedPages.map((page, idx) => ({
       user_id: userId,
       binder_id: String(binderId),
       page_number: idx + 1,
       layout_json: {
+        pageId: page.pageId,
         layers: page.layers || [],
         sectionKey: page.sectionKey || null
       }
     }));
 
     if (layoutRows.length > 0) {
-      const { error: insertErr } = await client
-        .from('binder_layouts')
-        .insert(layoutRows);
-
+      const { error: insertErr } = await client.from('binder_layouts').insert(layoutRows);
       if (insertErr) {
-        logger.error(
-          {
-            event: 'binder.layout.apply.insert_failed',
-            binderId: binderId,
-            userId,
-            error: insertErr.message
-          },
-          'Failed to insert new layouts'
-        );
-        return res.status(500).json({
-          ok: false,
-          message: 'Unable to save layout'
-        });
+        logger.error({ event: 'binder.layout.apply.insert_failed', binderId, userId, error: insertErr.message }, 'Failed to insert new layouts');
+        return res.status(500).json({ ok: false, message: 'Unable to save layout' });
       }
     }
 
-    // Update binder updated_at
     await client
       .from('binders')
       .update({ updated_at: new Date().toISOString() })
@@ -1694,30 +1468,16 @@ async function applyBinderLayout(req, res, next) {
 
     const updatedAt = new Date().toISOString();
 
-    logger.info(
-      {
-        event: 'binder.layout.apply.success',
-        binderId: binder.id,
-        userId,
-        pageCount: layout.pages.length
-      },
-      'Layout saved successfully'
-    );
+    logger.info({ event: 'binder.layout.apply.success', binderId: binder.id, userId, pageCount: normalizedPages.length }, 'Layout saved successfully');
 
+    // Keep response backward compatible, but include pageIds so client can sync if it needs to
     return res.json({
       ok: true,
-      updatedAt
+      updatedAt,
+      pageIds: normalizedPages.map((p) => p.pageId)
     });
   } catch (err) {
-      logger.error(
-        {
-          event: 'binder.layout.apply.failed',
-          error: err.message,
-          binderId: binderIdParam,
-          userId: req.user?.id
-        },
-        'Binder layout apply failed'
-      );
+    logger.error({ event: 'binder.layout.apply.failed', error: err.message, binderId: binderIdParam, userId: req.user?.id }, 'Binder layout apply failed');
     next(err);
   }
 }
@@ -1727,59 +1487,33 @@ async function applyBinderLayout(req, res, next) {
  * Generate auto layout using server-side algorithm
  */
 async function autoLayoutBinder(req, res, next) {
+  const binderIdParam = req.params.binderId;
+
   try {
     const { userId, client } = getContext(req);
-    const binderIdParam = req.params.binderId;
 
-    // Look up the specific binder by ID and verify ownership
-    const { data: binder, error: binderErr } = await client
-      .from('binders')
-      .select('id, user_id')
-      .eq('id', binderIdParam)
-      .eq('user_id', userId)
-      .maybeSingle();
+    // Support workspace id OR uuid (same as editor/layout endpoints)
+    const { binderId } = await resolveBinder({
+      client,
+      userId,
+      binderIdParam,
+      createIfMissing: false
+    });
 
-    if (binderErr || !binder || binder.user_id !== userId) {
-      logger.warn(
-        {
-          event: 'binder.layout.auto.unauthorized',
-          binderId: binderIdParam,
-          userId
-        },
-        'Unauthorized auto layout attempt'
-      );
-      return res.status(404).json({
-        ok: false,
-        message: 'Binder not found'
-      });
-    }
-
-    // Fetch photos for this binder
     const { data: photos, error: photosErr } = await client
       .from('binder_photos')
-      .select('id, storage_key, position')
-      .eq('binder_id', binder.id)
+      .select('id, storage_key, position, created_at')
+      .eq('binder_id', binderId)
       .eq('user_id', userId)
       .order('position', { ascending: true })
       .order('created_at', { ascending: true });
 
     if (photosErr) {
-      logger.error(
-        {
-          event: 'binder.layout.auto.photos_failed',
-          binderId: binder.id,
-          userId,
-          error: photosErr.message
-        },
-        'Failed to fetch photos for auto layout'
-      );
-      return res.status(500).json({
-        ok: false,
-        message: 'Unable to load photos'
-      });
+      logger.error({ event: 'binder.layout.auto.photos_failed', binderId, userId, error: photosErr.message }, 'Failed to fetch photos for auto layout');
+      return res.status(500).json({ ok: false, message: 'Unable to load photos' });
     }
 
-    // Simple auto layout algorithm: grid layout, 2 photos per page
+    // Simple auto layout algorithm: 2 photos per page
     const photosPerPage = 2;
     const pageWidth = 800;
     const pageHeight = 1000;
@@ -1792,6 +1526,8 @@ async function autoLayoutBinder(req, res, next) {
 
     for (let i = 0; i < photoList.length; i += photosPerPage) {
       const pagePhotos = photoList.slice(i, i + photosPerPage);
+      const pageId = crypto.randomUUID();
+
       const layers = pagePhotos.map((photo, idx) => {
         const row = Math.floor(idx / 2);
         const col = idx % 2;
@@ -1810,96 +1546,82 @@ async function autoLayoutBinder(req, res, next) {
       });
 
       pages.push({
+        id: pageId,
+        pageId,
         pageIndex: pages.length,
+        sectionKey: 'photos',
         layers
       });
     }
 
-    // If no photos, create one empty page
     if (pages.length === 0) {
-      pages.push({
-        pageIndex: 0,
-        layers: []
-      });
+      const pageId = crypto.randomUUID();
+      pages.push({ id: pageId, pageId, pageIndex: 0, sectionKey: 'photos', layers: [] });
     }
 
+    // Persist page order (creates/updates pages table)
+    await syncPagesTableOrder({ client, userId, binderId, layoutPages: pages });
+
     const layout = {
-      binderId: binder.id,
+      binderId,
       pages,
       updatedAt: new Date().toISOString()
     };
 
-    // Save the auto-generated layout
+    // Save layouts
     const { error: deleteErr } = await client
       .from('binder_layouts')
       .delete()
       .eq('user_id', userId)
-      .eq('binder_id', String(binder.id));
+      .eq('binder_id', String(binderId));
 
-    if (!deleteErr && pages.length > 0) {
-      const layoutRows = pages.map((page, idx) => ({
-        user_id: userId,
-        binder_id: String(binder.id),
-        page_number: idx + 1,
-        layout_json: {
-          layers: page.layers
-        }
-      }));
+    if (deleteErr) {
+      logger.error({ event: 'binder.layout.auto.delete_failed', binderId, userId, error: deleteErr.message }, 'Failed to clear existing layout before auto layout');
+      return res.status(500).json({ ok: false, message: 'Unable to save auto layout' });
+    }
 
-      const { error: insertErr } = await client
-        .from('binder_layouts')
-        .insert(layoutRows);
+    const layoutRows = pages.map((page, idx) => ({
+      user_id: userId,
+      binder_id: String(binderId),
+      page_number: idx + 1,
+      layout_json: {
+        pageId: page.pageId,
+        sectionKey: page.sectionKey || 'photos',
+        layers: page.layers || []
+      }
+    }));
 
+    if (layoutRows.length > 0) {
+      const { error: insertErr } = await client.from('binder_layouts').insert(layoutRows);
       if (insertErr) {
-        logger.error(
-          {
-            event: 'binder.layout.auto.save_failed',
-            binderId: binder.id,
-            userId,
-            error: insertErr.message
-          },
-          'Failed to save auto-generated layout'
-        );
-        return res.status(500).json({
-          ok: false,
-          message: 'Unable to save auto layout'
-        });
+        logger.error({ event: 'binder.layout.auto.save_failed', binderId, userId, error: insertErr.message }, 'Failed to save auto-generated layout');
+        return res.status(500).json({ ok: false, message: 'Unable to save auto layout' });
       }
     }
 
-    // Update binder updated_at
     await client
       .from('binders')
       .update({ updated_at: new Date().toISOString() })
-      .eq('id', binder.id)
+      .eq('id', binderId)
       .eq('user_id', userId);
 
     logger.info(
-      {
-        event: 'binder.layout.auto.success',
-        binderId: binder.id,
-        userId,
-        pageCount: pages.length,
-        photoCount: photoList.length
-      },
+      { event: 'binder.layout.auto.success', binderId, userId, pageCount: pages.length, photoCount: photoList.length },
       'Auto layout generated successfully'
     );
 
-    return res.json({
-      ok: true,
-      layout
-    });
+    return res.json({ ok: true, layout });
   } catch (err) {
-      logger.error(
-        {
-          event: 'binder.layout.auto.failed',
-          error: err.message,
-          binderId: binderIdParam,
-          userId: req.user?.id
-        },
-        'Binder auto layout failed'
-      );
+    logger.error({ event: 'binder.layout.auto.failed', error: err.message, binderId: binderIdParam, userId: req.user?.id }, 'Binder auto layout failed');
     next(err);
+  }
+}
+
+function safeJsonParse(v) {
+  try {
+    return JSON.parse(v);
+  } catch (_) {
+    return null;
   }
 }
 

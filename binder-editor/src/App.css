@@ -145,10 +145,14 @@ body {
   overflow-x: hidden; /* Prevent horizontal scrolling */
   overflow-y: hidden; /* Container itself doesn't scroll, only inner content */
   position: relative;
+  /* Lock width to prevent horizontal expansion */
+  min-width: 200px;
+  max-width: 200px;
   /* Border will be handled by pseudo-element to allow active tab to break it */
 }
 
-.binder-editor-page-list::before {
+/* Long horizontal border on right side to close all tabs */
+.binder-editor-page-list::after {
   content: '';
   position: absolute;
   right: 0;
@@ -218,31 +222,97 @@ body {
   flex-direction: column;
   gap: 0;
   position: relative;
+  width: 100%;
+  /* Prevent any horizontal scrollbar from appearing */
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE/Edge */
 }
 
-/* Tab style - like tabbed paper documents */
+/* Hide scrollbar for webkit browsers */
+.page-tabs-container::-webkit-scrollbar {
+  display: none;
+  width: 0;
+}
+
+/* Dnd wrapper - clean and simple */
+.page-tabs-dnd-wrapper {
+  position: relative;
+  width: 100%;
+}
+
+/* Smooth transitions for tabs when not dragging */
+.page-tab:not(.page-tab-dragging) {
+  transition: transform 0.2s ease-out;
+}
+
+/* Tab style - extends all the way to left, no right border */
 .page-tab {
   position: relative;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   padding: 0.75rem 1rem;
-  border: 2px solid #e2e8f0;      /* match divider thickness */
-  box-sizing: border-box;          /* keep overall size stable */
+  border: 2px solid #e2e8f0;
+  border-right: none;              /* No right border - panel border closes it */
+  box-sizing: border-box;
   background: #ffffff;
   cursor: pointer;
   text-align: left;
   transition: all 0.2s ease;
   min-height: 60px;
   justify-content: center;
-  width: 100%; /* Ensure tabs don't exceed container width */
-  max-width: 100%; /* Prevent overflow */
+  width: 100%;
+  max-width: 100%;
+  padding-right: 2.75rem; /* room for drag handle */
+  margin-left: 0;         /* No left margin - extends all the way to left */
+  transform-origin: center center;
 }
 
-/* Inactive tabs - separate floating tabs */
-.page-tab-inactive {
-  margin: 0.5rem 0.5rem 0.5rem 0.5rem;
+/* Drag handle */
+.page-tab-drag-handle {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border-radius: 8px;
+  color: #94a3b8;
+  cursor: grab;
+  transition: background 0.15s ease, color 0.15s ease, transform 0.1s ease;
+}
+
+.page-tab-drag-handle:hover {
+  background: #f1f5f9;
+  color: #475569;
+}
+
+.page-tab-drag-handle:active {
+  cursor: grabbing;
+  transform: scale(0.98);
+}
+
+/* While dragging - visual feedback */
+.page-tab-dragging {
+  opacity: 0.9;
+  border-color: #3b82f6;
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.2);
+  z-index: 10;
+}
+
+/* Active tab stays connected to canvas during drag */
+.page-tab-active.page-tab-dragging {
+  z-index: 20;
+}
+
+/* Overlay removed - tab stays in place during drag */
+
+/* Inactive tabs - no left margin, no right border, no rounded corners */
+.page-tab-inactive {
+  margin: 0.5rem 0 0.5rem 0;  /* No left/right margin - extends to edges */
+  border-radius: 0;           /* No rounded corners - straight edges all around */
   color: #94a3b8;
   opacity: 0.7;
   background: #ffffff;
@@ -257,43 +327,22 @@ body {
   transform: translateY(-1px);
 }
 
-/* Active tab - merged into canvas */
+/* Active tab - no left margin, no right border, no rounded corners */
 .page-tab-active {
-  margin: 0.5rem 0 0.5rem 0.5rem;
-  /* Separate rounding: strong on the left, very soft on the right so it “opens” into canvas */
-  border-radius: 12px 4px 4px 12px;
-  border-right: none;          /* open edge toward the canvas */
+  margin: 0.5rem 0 0.5rem 0;  /* No left/right margin - extends to edges */
+  border-radius: 0;            /* No rounded corners - straight edges all around */
+  border-right: none;          /* No right border - appears open to canvas */
   background: #f8fafc;         /* match canvas stage background */
   color: #0f172a;
   font-weight: 600;
-  z-index: 15;                 /* above the column divider */
+  z-index: 15;
   opacity: 1;
   position: relative;
-  margin-right: -1px;          /* slight overlap to cover the divider */
-}
-
-/* Overlay that hides the sidebar's vertical border exactly where the active tab touches the canvas */
-.page-tab-active::before {
-  content: '';
-  position: absolute;
-  right: -2px;
-  top: 0;
-  bottom: 0;
-  width: 6px;       /* fully overlap the divider behind it */
-  background: #f8fafc; /* same as active tab + canvas background */
-  z-index: 16;      /* above the sidebar divider */
-  border-radius: 0 2px 2px 0; /* keep right edge nearly straight to “open” into canvas */
-  pointer-events: none; /* don't interfere with clicks on the button */
 }
 
 .page-tab-active:hover {
   background: #f8fafc;          /* same as normal state */
   border-color: #e2e8f0;        /* keep top/left/bottom border visible */
-  border-right-color: transparent; /* only the right edge stays “open” into the canvas */
-}
-
-.page-tab-active:hover::before {
-  background: #f8fafc;          /* keep the overlay consistent */
 }
 
 .page-tab-number {
@@ -1024,7 +1073,7 @@ body {
 
   .page-tab-active {
     margin-right: 0.5rem;
-    border-radius: 8px;
+    border-radius: 0;
   }
 
   .page-tab-active::before {

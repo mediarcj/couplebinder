@@ -214,27 +214,6 @@ async function fetchImageBufferForLayer(layer) {
       );
     }
   }
-
-  // Fallback: try src if it is an absolute URL (for older layouts)
-  if (layer?.src && /^https?:\/\//i.test(layer.src)) {
-    try {
-      const resp = await fetch(layer.src);
-      if (resp.ok) {
-        const arr = await resp.arrayBuffer();
-        return Buffer.from(arr);
-      }
-    } catch (err) {
-      logger.warn(
-        {
-          event: 'binder.pdf.image_fetch_failed_src',
-          src: layer.src,
-          error: err.message
-        },
-        'Failed to fetch image buffer from src'
-      );
-    }
-  }
-
   return null;
 }
 

@@ -700,15 +700,6 @@ router.post(
 );
 
 /**
- * POST /dashboard/binder/:binderId/layout/auto
- */
-router.post(
-  '/:binderId/layout/auto',
-  binderLayoutLimiter(),
-  binderController.autoLayoutBinder
-);
-
-/**
  * POST /dashboard/binder/:binderId/export
  */
 router.post(

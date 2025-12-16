@@ -686,6 +686,7 @@ function App({ binderId /*, csrfToken */ }) {
   const handleTidyLayout = useCallback(() => {
     setLayout((prev) => {
       if (!prev || !prev.pages || !prev.pages[selectedPage]) return prev;
+
       const pages = [...prev.pages];
       const page = { ...pages[selectedPage] };
       const layers = [...(page.layers || [])];
@@ -693,66 +694,89 @@ function App({ binderId /*, csrfToken */ }) {
       const photos = layers.filter((l) => l.type === 'photo');
       if (photos.length === 0) return prev;
 
-      // Actual A4 at 96 DPI: 794px × 1122px
       const PAGE_W = 794;
       const PAGE_H = 1122;
       const gutter = 12;
 
-      const placeLayer = (layer, left, top, width, height) => {
-        layer.x = Math.max(0, Math.min(left, PAGE_W - width));
-        layer.y = Math.max(0, Math.min(top, PAGE_H - height));
-        layer.width = width;
-        layer.height = height;
-        return layer;
+      const clamp = (v, min, max) => Math.min(Math.max(v, min), max);
+
+      // Fit a rectangle of aspect ratio `ar` into a cell (cw,ch) without cropping
+      const fitIntoCell = (cw, ch, ar) => {
+        const safeAr = ar && ar > 0 ? ar : 1;
+        let w = cw;
+        let h = w / safeAr;
+        if (h > ch) {
+          h = ch;
+          w = h * safeAr;
+        }
+        return { w: Math.max(50, Math.floor(w)), h: Math.max(50, Math.floor(h)) };
       };
 
-      const updatePhoto = (idx, fn) => {
+      const getPhotoAR = (p) => {
+        if (typeof p.photoAspectRatio === 'number' && p.photoAspectRatio > 0) {
+          return p.photoAspectRatio;
+        }
+        // fallback to current box ratio if present
+        const w = typeof p.width === 'number' ? p.width : 0;
+        const h = typeof p.height === 'number' ? p.height : 0;
+        return w > 0 && h > 0 ? w / h : 1;
+      };
+
+      const placeInCell = (layer, cellX, cellY, cellW, cellH) => {
+        const ar = getPhotoAR(layer);
+        const { w, h } = fitIntoCell(cellW, cellH, ar);
+
+        const x = cellX + Math.floor((cellW - w) / 2);
+        const y = cellY + Math.floor((cellH - h) / 2);
+
+        return {
+          ...layer,
+          x: clamp(x, 0, PAGE_W - w),
+          y: clamp(y, 0, PAGE_H - h),
+          width: w,
+          height: h
+        };
+      };
+
+      const updatePhoto = (idx, nextLayer) => {
         const photo = photos[idx];
         if (!photo) return;
-        const updated = fn({ ...photo });
         const pos = layers.findIndex((l) => l.id === photo.id);
-        if (pos >= 0) layers[pos] = updated;
+        if (pos >= 0) layers[pos] = nextLayer;
       };
 
       if (photos.length === 1) {
-        const w = Math.floor(PAGE_W * 0.7);
-        const h = Math.floor(PAGE_H * 0.7);
-        const x = Math.floor((PAGE_W - w) / 2);
-        const y = Math.floor((PAGE_H - h) / 2);
-        updatePhoto(0, (p) => placeLayer(p, x, y, w, h));
+        const cellW = Math.floor(PAGE_W * 0.85);
+        const cellH = Math.floor(PAGE_H * 0.85);
+        const cellX = Math.floor((PAGE_W - cellW) / 2);
+        const cellY = Math.floor((PAGE_H - cellH) / 2);
+
+        updatePhoto(0, placeInCell(photos[0], cellX, cellY, cellW, cellH));
       } else if (photos.length === 2) {
-        const w = Math.floor(PAGE_W * 0.48);
-        const h = Math.floor(PAGE_H * 0.45);
-        const y = gutter * 2;
-        updatePhoto(0, (p) => placeLayer(p, gutter, y, w, h));
-        updatePhoto(1, (p) =>
-          placeLayer(p, PAGE_W - w - gutter, y, w, h)
+        const cellW = Math.floor((PAGE_W - gutter * 3) / 2);
+        const cellH = Math.floor(PAGE_H * 0.55);
+        const cellY = gutter * 2;
+
+        updatePhoto(0, placeInCell(photos[0], gutter, cellY, cellW, cellH));
+        updatePhoto(
+          1,
+          placeInCell(photos[1], gutter * 2 + cellW, cellY, cellW, cellH)
         );
-      } else if (photos.length === 3 || photos.length === 4) {
-        const w = Math.floor(PAGE_W * 0.45);
-        const h = Math.floor(PAGE_H * 0.35);
+      } else {
+        // 2x2 grid cells for 3+ (we still only place first 4)
+        const cellW = Math.floor((PAGE_W - gutter * 3) / 2);
+        const cellH = Math.floor((PAGE_H - gutter * 5) / 2);
+
         const positions = [
           [gutter, gutter * 2],
-          [PAGE_W - w - gutter, gutter * 2],
-          [gutter, h + gutter * 3],
-          [PAGE_W - w - gutter, h + gutter * 3]
+          [gutter * 2 + cellW, gutter * 2],
+          [gutter, gutter * 3 + cellH],
+          [gutter * 2 + cellW, gutter * 3 + cellH]
         ];
+
         for (let i = 0; i < Math.min(photos.length, 4); i += 1) {
-          const [x, y] = positions[i];
-          updatePhoto(i, (p) => placeLayer(p, x, y, w, h));
-        }
-      } else if (photos.length > 4) {
-        const w = Math.floor(PAGE_W * 0.45);
-        const h = Math.floor(PAGE_H * 0.35);
-        const positions = [
-          [gutter, gutter * 2],
-          [PAGE_W - w - gutter, gutter * 2],
-          [gutter, h + gutter * 3],
-          [PAGE_W - w - gutter, h + gutter * 3]
-        ];
-        for (let i = 0; i < 4; i += 1) {
-          const [x, y] = positions[i];
-          updatePhoto(i, (p) => placeLayer(p, x, y, w, h));
+          const [cellX, cellY] = positions[i];
+          updatePhoto(i, placeInCell(photos[i], cellX, cellY, cellW, cellH));
         }
       }
 

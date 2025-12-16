@@ -352,8 +352,11 @@ export async function updatePhotoCaption(binderId, storageKey, caption) {
  * GET request with storageKey query parameter.
  */
 
-// Simple in-memory cache for signed photo view URLs (per browser tab)
+// Simple in-memory cache for photo view URLs (per browser tab) WITH TTL
+const PHOTO_URL_CACHE_TTL_MS = 3 * 60 * 60 * 1000; // 3 hours
 const photoViewUrlCache = new Map();
+// cacheKey = `${binderId}:${storageKey}`
+// value = { url: string, expiresAt: number }
 // cacheKey = `${binderId}:${storageKey}`
 // Value = final URL string we can put directly into <img src="...">
 
@@ -373,9 +376,14 @@ export async function getPhotoViewUrl(
 
   const cacheKey = `${binderId}:${storageKey}`;
 
-  // 1) Fast path: if we already have a URL in memory, just reuse it.
-  if (!forceRefresh && photoViewUrlCache.has(cacheKey)) {
-    return photoViewUrlCache.get(cacheKey);
+  // 1) Fast path: reuse cached URL if still valid
+  if (!forceRefresh) {
+    const cached = photoViewUrlCache.get(cacheKey);
+    if (cached && cached.url && Date.now() < cached.expiresAt) {
+      return cached.url;
+    }
+    // Expired → remove
+    if (cached) photoViewUrlCache.delete(cacheKey);
   }
 
   const url = `/dashboard/binder/${encodeURIComponent(
@@ -464,7 +472,10 @@ export async function getPhotoViewUrl(
     }
 
     // Store in in-memory cache so page switches don't keep hitting the server
-    photoViewUrlCache.set(cacheKey, finalUrl);
+    photoViewUrlCache.set(cacheKey, {
+      url: finalUrl,
+      expiresAt: Date.now() + PHOTO_URL_CACHE_TTL_MS
+    });
     return finalUrl;
   } catch (err) {
     console.error('[BinderEditor] Exception while fetching photo URL:', {

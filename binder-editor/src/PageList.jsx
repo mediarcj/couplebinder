@@ -2,8 +2,142 @@
 // Description: Page list sidebar component
 // Purpose: Show pages and allow selection, add/remove pages
 
-import React from 'react';
+import React, { useMemo, useState, useRef, useEffect } from 'react';
 import { useModal } from './ModalProvider';
+
+import {
+  DndContext,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  closestCenter
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
+import { restrictToVerticalAxis, restrictToParentElement } from '@dnd-kit/modifiers';
+
+// Ultra-strict modifier that absolutely prevents any horizontal movement
+function restrictToVerticalAxisUltra({ transform }) {
+  if (!transform) {
+    return transform;
+  }
+  // Force X to always be exactly 0, no exceptions
+  return {
+    ...transform,
+    x: 0
+  };
+}
+
+function SortablePageTab({
+  page,
+  idx,
+  isActive,
+  sectionLabels,
+  onSelectPage
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging
+  } = useSortable({ 
+    id: page.id
+    // Allow default animations for smooth transitions
+  });
+
+  // Extract only Y component - modifiers ensure X is 0, but we enforce it here too
+  let finalTransform = CSS.Transform.toString(transform);
+  if (isDragging && transform && typeof transform === 'object') {
+    // Use translateY only - no X component possible
+    const y = transform.y || 0;
+    finalTransform = `translateY(${y}px)`;
+  }
+  
+  const style = {
+    transform: finalTransform,
+    transition: isDragging ? 'none' : transition
+  };
+
+  // Track if we just finished dragging to prevent click handler
+  const justDraggedRef = useRef(false);
+
+  // Reset flag when drag ends
+  useEffect(() => {
+    if (!isDragging && justDraggedRef.current) {
+      // Clear flag after a short delay to allow click handler to check it
+      const timer = setTimeout(() => {
+        justDraggedRef.current = false;
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+    if (isDragging) {
+      justDraggedRef.current = true;
+    }
+  }, [isDragging]);
+
+  return (
+    <button
+      ref={setNodeRef}
+      style={style}
+      type="button"
+      className={`page-tab ${isActive ? 'page-tab-active' : 'page-tab-inactive'} ${
+        isDragging ? 'page-tab-dragging' : ''
+      }`}
+      onClick={(e) => {
+        // Prevent click if we just finished dragging
+        if (justDraggedRef.current) {
+          e.preventDefault();
+          e.stopPropagation();
+          return;
+        }
+        onSelectPage(idx);
+      }}
+      aria-pressed={isActive}
+      aria-current={isActive ? 'page' : undefined}
+    >
+      <span className="page-tab-number">{(page.pageIndex ?? idx) + 1}</span>
+
+      {page.sectionKey && (
+        <span className="page-tab-section">
+          {sectionLabels[page.sectionKey] || page.sectionKey}
+        </span>
+      )}
+
+      {/* Drag handle - only this area initiates drag */}
+      <span
+        className="page-tab-drag-handle"
+        {...attributes}
+        {...listeners}
+        onClick={(e) => {
+          // Stop click from reaching button when dragging from handle
+          e.stopPropagation();
+        }}
+        onDragStart={(e) => {
+          // Prevent default drag image that might cause "lifting" appearance
+          e.dataTransfer.setDragImage(new Image(), 0, 0);
+        }}
+        title="Drag to reorder pages"
+        aria-label="Drag to reorder pages"
+        style={{ touchAction: 'none' }}
+      >
+        <svg
+          className="w-4 h-4"
+          viewBox="0 0 20 20"
+          fill="currentColor"
+          aria-hidden="true"
+        >
+          <path d="M7 4a1 1 0 11-2 0 1 1 0 012 0zm8 0a1 1 0 11-2 0 1 1 0 012 0zM7 10a1 1 0 11-2 0 1 1 0 012 0zm8 0a1 1 0 11-2 0 1 1 0 012 0zM7 16a1 1 0 11-2 0 1 1 0 012 0zm8 0a1 1 0 11-2 0 1 1 0 012 0z" />
+        </svg>
+      </span>
+    </button>
+  );
+}
 
 function PageList({
   pages,
@@ -11,6 +145,7 @@ function PageList({
   onSelectPage,
   onAddPage,
   onDeletePage,
+  onReorderPages,
   sectionLabels = {}
 }) {
   const { openModal } = useModal();
@@ -23,11 +158,19 @@ function PageList({
       ? pages[selectedPageIndex]
       : null;
 
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: 6 } // small drag threshold = nicer UX
+    })
+  );
+
+  const itemIds = useMemo(
+    () => (hasPages ? pages.map((p) => p.id) : []),
+    [hasPages, pages]
+  );
+
   function handleDeleteClick() {
-    // Guard: if there are no pages, do nothing (button still visible though)
-    if (!hasPages || selectedPageIndex == null) {
-      return;
-    }
+    if (!hasPages || selectedPageIndex == null) return;
 
     const label =
       selectedPage && typeof selectedPage.pageIndex === 'number'
@@ -59,6 +202,7 @@ function PageList({
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
             </svg>
           </button>
+
           {hasPages && selectedPageIndex != null && (
             <button
               type="button"
@@ -76,26 +220,41 @@ function PageList({
 
       <div className="page-tabs-container">
         {hasPages ? (
-          pages.map((page, idx) => {
-            const isActive = idx === selectedPageIndex;
-            return (
-              <button
-                key={idx}
-                type="button"
-                className={`page-tab ${isActive ? 'page-tab-active' : 'page-tab-inactive'}`}
-                onClick={() => onSelectPage(idx)}
-                aria-pressed={isActive}
-                aria-current={isActive ? 'page' : undefined}
-              >
-                <span className="page-tab-number">{(page.pageIndex ?? idx) + 1}</span>
-                {page.sectionKey && (
-                  <span className="page-tab-section">
-                    {sectionLabels[page.sectionKey] || page.sectionKey}
-                  </span>
-                )}
-              </button>
-            );
-          })
+          <div className="page-tabs-dnd-wrapper">
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              modifiers={[restrictToVerticalAxis, restrictToParentElement, restrictToVerticalAxisUltra]}
+              onDragEnd={(e) => {
+                const activeId = e.active?.id;
+                const overId = e.over?.id;
+                if (!activeId || !overId) return;
+                if (activeId === overId) return;
+
+                const fromIndex = pages.findIndex((p) => p?.id === activeId);
+                const toIndex = pages.findIndex((p) => p?.id === overId);
+                if (fromIndex < 0 || toIndex < 0) return;
+
+                onReorderPages?.(fromIndex, toIndex);
+              }}
+            >
+              <SortableContext items={itemIds} strategy={verticalListSortingStrategy}>
+                {pages.map((page, idx) => {
+                  const isActive = idx === selectedPageIndex;
+                  return (
+                    <SortablePageTab
+                      key={page.id || idx}
+                      page={page}
+                      idx={idx}
+                      isActive={isActive}
+                      sectionLabels={sectionLabels}
+                      onSelectPage={onSelectPage}
+                    />
+                  );
+                })}
+              </SortableContext>
+            </DndContext>
+          </div>
         ) : (
           <div className="page-tabs-empty">
             <button

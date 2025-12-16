@@ -184,22 +184,7 @@ export async function applyLayout(binderId, layout) {
   });
 }
 
-/**
- * WHAT:
- * Request server-side auto layout.
- *
- * WHY:
- * Automatically arranges photos using server algorithm.
- *
- * HOW:
- * POST request, server returns new layout.
- */
-export async function autoLayout(binderId, options = {}) {
-  return apiRequest(`/dashboard/binder/${binderId}/layout/auto`, {
-    method: 'POST',
-    body: JSON.stringify(options)
-  });
-}
+// Auto layout API removed: layout is now controlled entirely client-side.
 
 /**
  * WHAT:

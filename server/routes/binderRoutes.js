@@ -262,17 +262,32 @@ router.get(
         });
       }
 
-      // Private-bucket rule:
-      // Always return the internal raw-photo endpoint so auth + binder ownership
-      // is enforced by the app (not by S3 / Cloudflare DNS).
-      const photoPath =
+      // If you configured a CDN/public base URL (e.g. https://photos.couplebinder.com),
+      // prefer that URL so page-tab switching hits the CDN cache instead of your app.
+      let cdnUrl = null;
+      if (storageProvider && typeof storageProvider.getBinderPhotoPublicUrl === 'function') {
+        cdnUrl = storageProvider.getBinderPhotoPublicUrl(storageKey);
+      }
+
+      if (cdnUrl) {
+        return res.json({
+          ok: true,
+          photoPath: cdnUrl,
+          url: cdnUrl,
+          via: 'cdn'
+        });
+      }
+
+      // Always return the internal raw-photo endpoint.
+      // (No photos.couplebinder.com CDN domain exists anymore.)
+      const rawPath =
         `/dashboard/binder/${encodeURIComponent(binderId)}` +
         `/photos/raw?storageKey=${encodeURIComponent(storageKey)}`;
 
       return res.json({
         ok: true,
-        photoPath,      // preferred name going forward
-        url: photoPath, // backward-compatible for current frontend parsing
+        photoPath: rawPath,
+        url: rawPath,
         via: 'raw'
       });
     } catch (err) {
@@ -415,7 +430,7 @@ router.get(
         res.setHeader('Content-Length', String(contentLength));
       }
       // Short-lived cache for the browser
-      res.setHeader('Cache-Control', 'private, max-age=300');
+      res.setHeader('Cache-Control', 'private, max-age=10800, immutable');
 
       stream.on('error', (err) => {
         logger.error(

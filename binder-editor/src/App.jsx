@@ -178,6 +178,31 @@ function isSessionExpiredError(err) {
   return !!err && err.message === 'SESSION_EXPIRED';
 }
 
+function uuidv4Fallback() {
+  // RFC4122-ish v4, good enough for IDs
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+function makePageId() {
+  try {
+    if (crypto?.randomUUID) return crypto.randomUUID();
+  } catch {}
+  return uuidv4Fallback();
+}
+
+function ensurePageIds(pages) {
+  const arr = Array.isArray(pages) ? pages : [];
+  return arr.map((p) => ({
+    ...p,
+    id: p?.id || makePageId()
+  }));
+}
+
 function App({ binderId /*, csrfToken */ }) {
   const [layout, setLayout] = useState(null);
   const [selectedPage, setSelectedPage] = useState(0);
@@ -295,12 +320,12 @@ function App({ binderId /*, csrfToken */ }) {
             updatedAt: data.layout.updatedAt || new Date().toISOString()
           };
 
-          // Ensure pageIndex is present and sequential
-          safeLayout.pages = safeLayout.pages.map((page, index) => ({
+          // Ensure each page has a stable id, and pageIndex is present/sequential
+          safeLayout.pages = ensurePageIds(safeLayout.pages).map((page, index) => ({
+            ...page,
             pageIndex:
               typeof page.pageIndex === 'number' ? page.pageIndex : index,
-            layers: Array.isArray(page.layers) ? page.layers : [],
-            ...page
+            layers: Array.isArray(page.layers) ? page.layers : []
           }));
 
           setLayout(safeLayout);
@@ -847,6 +872,75 @@ function App({ binderId /*, csrfToken */ }) {
     [selectedPage, layout, binderId]
   );
 
+  // Reorder pages via drag+drop:
+  // - moves the WHOLE page object (layers/sectionKey/etc stay attached)
+  // - renumbers pageIndex sequentially
+  // - keeps the currently selected page selected (by id)
+  // - saves immediately via applyLayout so Supabase stays in sync
+  const handleReorderPages = useCallback(
+    async (fromIndex, toIndex) => {
+      if (!layout || !Array.isArray(layout.pages)) return;
+      if (fromIndex === toIndex) return;
+      if (fromIndex < 0 || toIndex < 0) return;
+      if (fromIndex >= layout.pages.length || toIndex >= layout.pages.length) return;
+
+      const pagesBefore = layout.pages;
+      const selectedId = pagesBefore?.[selectedPage]?.id || null;
+
+      // Move item in array
+      const moved = [...pagesBefore];
+      const [picked] = moved.splice(fromIndex, 1);
+      moved.splice(toIndex, 0, picked);
+
+      // Renumber pageIndex to match new visual order
+      const normalized = moved.map((p, idx) => ({
+        ...p,
+        pageIndex: idx
+      }));
+
+      // Keep selection attached to the same page (by stable id)
+      const nextSelectedIndex =
+        selectedId != null
+          ? Math.max(0, normalized.findIndex((p) => p?.id === selectedId))
+          : 0;
+
+      const nextLayout = {
+        ...layout,
+        pages: normalized
+      };
+
+      // Update UI immediately
+      setLayout(nextLayout);
+      setSelectedPage(nextSelectedIndex);
+
+      // Persist immediately so DB is aligned even if user refreshes right away
+      try {
+        setSaving(true);
+        setError(null);
+
+        const result = await applyLayout(binderId, nextLayout);
+        if (result?.ok) {
+          setLayout((prev) => ({
+            ...(prev || nextLayout),
+            updatedAt: result.updatedAt
+          }));
+          setIsDirty(false);
+          setLastSavedAt(result.updatedAt || new Date().toISOString());
+        } else {
+          // If server didn't accept it, keep dirty so autosave can retry after next edit
+          setIsDirty(true);
+        }
+      } catch (err) {
+        if (isSessionExpiredError(err)) return;
+        setError(err.message || 'Failed to save page order.');
+        setIsDirty(true);
+      } finally {
+        setSaving(false);
+      }
+    },
+    [layout, selectedPage, binderId]
+  );
+
   // Delete a page (by index) and keep selection sane
   const handleDeletePage = useCallback((pageIndexToDelete) => {
     setLayout((prev) => {
@@ -1006,13 +1100,14 @@ function App({ binderId /*, csrfToken */ }) {
             selectedPageIndex={selectedPage}
             sectionLabels={SECTION_LABELS}
             onSelectPage={setSelectedPage}
+            onReorderPages={handleReorderPages}
             onAddPage={() => {
               setLayout((prev) => {
                 if (!prev) {
                   return {
                     binderId,
                     pages: applySectionDefaults([
-                      { pageIndex: 0, layers: [] }
+                      { id: makePageId(), pageIndex: 0, layers: [] }
                     ]),
                     updatedAt: new Date().toISOString()
                   };
@@ -1024,6 +1119,7 @@ function App({ binderId /*, csrfToken */ }) {
                 const newPages = [
                   ...pages,
                   {
+                    id: makePageId(),
                     pageIndex: nextIndex,
                     layers: []
                   }

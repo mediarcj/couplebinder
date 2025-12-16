@@ -268,32 +268,6 @@ body {
   transform-origin: center center;
 }
 
-/* Drag handle */
-.page-tab-drag-handle {
-  position: absolute;
-  top: 10px;
-  right: 10px;
-  width: 28px;
-  height: 28px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 8px;
-  color: #94a3b8;
-  cursor: grab;
-  transition: background 0.15s ease, color 0.15s ease, transform 0.1s ease;
-}
-
-.page-tab-drag-handle:hover {
-  background: #f1f5f9;
-  color: #475569;
-}
-
-.page-tab-drag-handle:active {
-  cursor: grabbing;
-  transform: scale(0.98);
-}
-
 /* While dragging - visual feedback */
 .page-tab-dragging {
   opacity: 0.9;

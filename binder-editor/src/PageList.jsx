@@ -46,7 +46,7 @@ function SortablePageTab({
     transform,
     transition,
     isDragging
-  } = useSortable({ 
+  } = useSortable({
     id: page.id
     // Allow default animations for smooth transitions
   });
@@ -58,7 +58,7 @@ function SortablePageTab({
     const y = transform.y || 0;
     finalTransform = `translateY(${y}px)`;
   }
-  
+
   const style = {
     transform: finalTransform,
     transition: isDragging ? 'none' : transition
@@ -84,6 +84,8 @@ function SortablePageTab({
   return (
     <button
       ref={setNodeRef}
+      {...attributes}
+      {...listeners}
       style={style}
       type="button"
       className={`page-tab ${isActive ? 'page-tab-active' : 'page-tab-inactive'} ${
@@ -108,33 +110,6 @@ function SortablePageTab({
           {sectionLabels[page.sectionKey] || page.sectionKey}
         </span>
       )}
-
-      {/* Drag handle - only this area initiates drag */}
-      <span
-        className="page-tab-drag-handle"
-        {...attributes}
-        {...listeners}
-        onClick={(e) => {
-          // Stop click from reaching button when dragging from handle
-          e.stopPropagation();
-        }}
-        onDragStart={(e) => {
-          // Prevent default drag image that might cause "lifting" appearance
-          e.dataTransfer.setDragImage(new Image(), 0, 0);
-        }}
-        title="Drag to reorder pages"
-        aria-label="Drag to reorder pages"
-        style={{ touchAction: 'none' }}
-      >
-        <svg
-          className="w-4 h-4"
-          viewBox="0 0 20 20"
-          fill="currentColor"
-          aria-hidden="true"
-        >
-          <path d="M7 4a1 1 0 11-2 0 1 1 0 012 0zm8 0a1 1 0 11-2 0 1 1 0 012 0zM7 10a1 1 0 11-2 0 1 1 0 012 0zm8 0a1 1 0 11-2 0 1 1 0 012 0zM7 16a1 1 0 11-2 0 1 1 0 012 0zm8 0a1 1 0 11-2 0 1 1 0 012 0z" />
-        </svg>
-      </span>
     </button>
   );
 }

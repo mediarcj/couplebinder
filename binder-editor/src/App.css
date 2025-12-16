@@ -576,7 +576,7 @@ body {
   user-select: none;
   background-color: var(--layer-bg-color, #fff);
   will-change: left, top;
-  contain: layout paint style;
+  contain: layout style;
 }
 
 /* ===== Snap edge glow (Canva-like) =====
@@ -626,8 +626,12 @@ body {
   background-color: var(--layer-bg-color, #f0f0f0);
 }
 
+/* ===== Resize handles (bigger + clearly outside) ===== */
+
 .binder-editor-layer.selected {
   outline: 2px solid #2563eb;
+  outline-offset: 0;
+  overflow: visible; /* IMPORTANT: allow handles to render outside the layer box */
 }
 
 /* Photo content */
@@ -636,7 +640,7 @@ body {
   height: calc(100% - 44px);
   position: relative;
   overflow: hidden;
-  border-radius: 10px 10px 0 0;
+  border-radius: 0; /* no rounded edges */
 }
 
 .layer-photo-image {
@@ -644,6 +648,13 @@ body {
   height: 100%;
   object-fit: cover;
   display: block;
+  border-radius: 0; /* keep image edges square */
+}
+
+/* Hard override in case global site CSS rounds all images */
+.binder-editor-app .layer-photo-container,
+.binder-editor-app .layer-photo-image {
+  border-radius: 0 !important;
 }
 
 .layer-photo-placeholder {
@@ -792,45 +803,58 @@ body {
   overflow: auto;
 }
 
-/* Resize handle */
+/* Make handles easy to see + grab */
 .layer-resize-handle {
   position: absolute;
-  width: 10px;
-  height: 10px;
+  width: 14px;
+  height: 14px;
   background: #ffffff;
   border: 2px solid #2563eb;
-  border-radius: 2px;
+  border-radius: 4px;
   cursor: nwse-resize;
-  z-index: 1000;
+  z-index: 20000; /* above images + snap glow */
   display: none;
+
+  /* Make the handle “pop” */
+  box-shadow:
+    0 2px 8px rgba(15, 23, 42, 0.18),
+    0 0 0 2px rgba(255, 255, 255, 0.9);
+
+  /* Better UX: easier to grab */
+  touch-action: none;
 }
 
+/* Push handles OUTSIDE the layer frame so they don't look "inside" */
 .layer-resize-top-left {
-  top: -7px;
-  left: -7px;
+  top: -10px;
+  left: -10px;
   cursor: nwse-resize;
 }
 
 .layer-resize-top-right {
-  top: -7px;
-  right: -7px;
+  top: -10px;
+  right: -10px;
   cursor: nesw-resize;
 }
 
 .layer-resize-bottom-left {
-  bottom: -7px;
-  left: -7px;
+  bottom: -10px;
+  left: -10px;
   cursor: nesw-resize;
 }
 
 .layer-resize-bottom-right {
-  bottom: -7px;
-  right: -7px;
+  bottom: -10px;
+  right: -10px;
   cursor: nwse-resize;
 }
 
 .binder-editor-layer.selected .layer-resize-handle {
   display: block;
+}
+
+.layer-resize-handle:hover {
+  background: #eff6ff;
 }
 
 /* Photo strip placeholder for React editor to mirror legacy panel */
@@ -888,10 +912,6 @@ body {
 
 .toolbar-status-text {
   font-size: 0.9rem;
-}
-
-.layer-resize-handle:hover {
-  background: #0056b3;
 }
 
 /* ===== Binder editor modal system ===== */

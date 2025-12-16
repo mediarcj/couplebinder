@@ -5,7 +5,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { getPhotoViewUrl, updatePhotoCaption } from './api';
 
-// Simple helpers (same idea as in Canvas.jsx)
 const rectsOverlap = (l1, t1, w1, h1, l2, t2, w2, h2) => {
   return !(
     l1 + w1 <= l2 ||
@@ -24,15 +23,25 @@ function stripEmojiClient(input) {
   try {
     return input.replace(/\p{Extended_Pictographic}/gu, '');
   } catch {
-    // Fallback for older browsers: basic filter of some emoji ranges
     return input.replace(/[\u{1F300}-\u{1FAFF}]/gu, '');
   }
 }
 
-function Layer({ layer, selected, onSelect, onUpdate, onRemove, onDragStart, binderId, zoom = 1 }) {
+function Layer({
+  layer,
+  selected,
+  onSelect,
+  onUpdate,
+  onRemove,
+  onDragStart,
+  binderId,
+  zoom = 1,
+  snapGlowX = null, // 'left'|'right'|null
+  snapGlowY = null  // 'top'|'bottom'|null
+}) {
   const [resizing, setResizing] = useState(false);
   const resizeRef = useRef(null);
-  // Start with any existing URL baked into the layout (legacy EJS binder)
+
   const [imageUrl, setImageUrl] = useState(layer.src || null);
   const [imageLoading, setImageLoading] = useState(false);
   const [editingCaption, setEditingCaption] = useState(false);
@@ -48,12 +57,10 @@ function Layer({ layer, selected, onSelect, onUpdate, onRemove, onDragStart, bin
       target.tagName === 'INPUT' ||
       target.tagName === 'BUTTON'
     ) {
-      // Let interactive elements work normally
       onSelect(layer.id);
       return;
     }
-  
-    // IMPORTANT: prevent the browser's default image drag behavior
+
     e.preventDefault();
     e.stopPropagation();
     onSelect(layer.id);
@@ -71,22 +78,21 @@ function Layer({ layer, selected, onSelect, onUpdate, onRemove, onDragStart, bin
       layerEl.closest('.canvas-page') ||
       layerEl.closest('.canvas-stage') ||
       layerEl.closest('.binder-editor-canvas');
+
     const canvasRect = canvasEl?.getBoundingClientRect();
     const rect = layerEl.getBoundingClientRect();
 
     if (!canvasRect || !rect) return;
 
-    // Convert from visual (scaled) coordinates to A4 coordinates
     const left = (rect.left - canvasRect.left) / zoom;
     const top = (rect.top - canvasRect.top) / zoom;
-    const aspect =
-      rect.width && rect.height ? rect.width / rect.height : 1;
+    const aspect = rect.width && rect.height ? rect.width / rect.height : 1;
 
     const startRect = {
       left,
       top,
-      width: rect.width / zoom,  // Convert to A4 coordinates
-      height: rect.height / zoom // Convert to A4 coordinates
+      width: rect.width / zoom,
+      height: rect.height / zoom
     };
 
     resizeRef.current = {
@@ -94,7 +100,6 @@ function Layer({ layer, selected, onSelect, onUpdate, onRemove, onDragStart, bin
       startMouseX: e.clientX,
       startMouseY: e.clientY,
       startRect,
-      // lastRect = last collision-free rect during this resize
       lastRect: { ...startRect },
       aspect,
       canvasRect,
@@ -121,14 +126,12 @@ function Layer({ layer, selected, onSelect, onUpdate, onRemove, onDragStart, bin
       zoom: storedZoom
     } = resizeRef.current;
 
-    // Account for zoom: mouse movement needs to be divided by zoom to get A4 coordinates
     const dx = (e.clientX - startMouseX) / storedZoom;
     const dy = (e.clientY - startMouseY) / storedZoom;
 
     const isLeft = corner.includes('left');
     const isTop = corner.includes('top');
 
-    // Base geometry (same as before, from startRect + mouse delta)
     let width = isLeft ? startRect.width - dx : startRect.width + dx;
     width = Math.max(50, width);
     let height = width / aspect;
@@ -136,13 +139,12 @@ function Layer({ layer, selected, onSelect, onUpdate, onRemove, onDragStart, bin
     let left = isLeft ? startRect.left + (startRect.width - width) : startRect.left;
     let top = isTop ? startRect.top + (startRect.height - height) : startRect.top;
 
-    // Clamp inside canvas (convert canvasRect to A4 coordinates)
     const canvasWidth = canvasRect.width / storedZoom;
     const canvasHeight = canvasRect.height / storedZoom;
+
     left = clamp(left, 0, canvasWidth - width);
     top = clamp(top, 0, canvasHeight - height);
 
-    // If bottom/right overflow after clamping left/top and width/height, adjust
     if (left + width > canvasWidth) {
       width = Math.max(50, canvasWidth - left);
       height = width / aspect;
@@ -155,8 +157,6 @@ function Layer({ layer, selected, onSelect, onUpdate, onRemove, onDragStart, bin
       }
     }
 
-    // Now enforce "no overlap with other layers" just like Canvas dragging
-
     const testRect = { left, top, width, height };
 
     let collides = false;
@@ -165,7 +165,7 @@ function Layer({ layer, selected, onSelect, onUpdate, onRemove, onDragStart, bin
       for (const other of others) {
         if (other === layerEl) continue;
         const r = other.getBoundingClientRect();
-        // Convert to A4 coordinates
+
         const oLeft = (r.left - canvasRect.left) / storedZoom;
         const oTop = (r.top - canvasRect.top) / storedZoom;
         const oWidth = r.width / storedZoom;
@@ -191,10 +191,8 @@ function Layer({ layer, selected, onSelect, onUpdate, onRemove, onDragStart, bin
 
     let finalRect;
     if (collides) {
-      // Block resize: stay at last non-overlapping rect
       finalRect = { ...lastRect };
     } else {
-      // Accept resize: update lastRect
       finalRect = { ...testRect };
       resizeRef.current.lastRect = finalRect;
     }
@@ -229,16 +227,13 @@ function Layer({ layer, selected, onSelect, onUpdate, onRemove, onDragStart, bin
         document.removeEventListener('mouseup', handleEnd);
       };
     }
-  }, [resizing, handleResizeMove]);
+  }, [resizing]);
 
-  // Use a nonce-protected style element for dynamic positioning (CSP-compliant)
-  // We'll inject CSS rules into a style element with nonce
   React.useEffect(() => {
     const styleId = `layer-style-${layer.id}`;
     let styleEl = document.getElementById(styleId);
 
     if (!styleEl) {
-      // Get nonce from the root element's data attribute (set by EJS template)
       const rootEl = document.getElementById('binder-editor-root');
       const nonce =
         rootEl?.getAttribute('data-csp-nonce') ||
@@ -250,9 +245,9 @@ function Layer({ layer, selected, onSelect, onUpdate, onRemove, onDragStart, bin
       document.head.appendChild(styleEl);
     }
 
-    // Inject CSS rule for this layer
     const selector = `[data-layer-id="${layer.id}"]`;
     const bgColor = layer.type === 'photo' ? '#f0f0f0' : layer.backgroundColor || '#fff';
+
     styleEl.textContent = `
       ${selector} {
         left: ${layer.x}px !important;
@@ -266,7 +261,6 @@ function Layer({ layer, selected, onSelect, onUpdate, onRemove, onDragStart, bin
     `;
 
     return () => {
-      // Cleanup: remove style element when component unmounts
       if (styleEl && styleEl.parentNode) {
         styleEl.parentNode.removeChild(styleEl);
       }
@@ -283,14 +277,9 @@ function Layer({ layer, selected, onSelect, onUpdate, onRemove, onDragStart, bin
     layer.id
   ]);
 
-  // Fetch signed URL for photo if storageKey exists.
-  // Uses the shared in-memory cache in api.js so we only hit the server
-  // once per (binderId, storageKey) per browser tab.
   useEffect(() => {
     if (layer.type !== 'photo') return;
 
-    // If we already have a baked-in URL from the layout (e.g. initial EJS),
-    // keep using it until/if the backend gives us a signed URL.
     if (layer.src && !imageUrl) {
       setImageUrl(layer.src);
     }
@@ -308,39 +297,40 @@ function Layer({ layer, selected, onSelect, onUpdate, onRemove, onDragStart, bin
       if (cancelled) return;
 
       if (url) {
-        // This is a final, signed URL we can feed straight into <img src="...">
         setImageUrl(url);
       } else if (layer.src) {
-        // Fallback: at least show whatever URL was baked into the layout
         setImageUrl(layer.src);
       } else {
         setImageUrl(null);
       }
-    })().catch((err) => {
-      if (cancelled) return;
-      console.error('[BinderEditor] Failed to load photo URL:', err);
-    }).finally(() => {
-      if (!cancelled) {
-        setImageLoading(false);
-      }
-    });
+    })()
+      .catch((err) => {
+        if (cancelled) return;
+        console.error('[BinderEditor] Failed to load photo URL:', err);
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setImageLoading(false);
+        }
+      });
 
     return () => {
       cancelled = true;
     };
-    // We only care when binderId / storageKey / type / src change.
   }, [binderId, layer.storageKey, layer.type, layer.src, imageUrl]);
 
-  // Keep local draft in sync with props when layout is re-loaded
   useEffect(() => {
     setCaptionDraft(layer.caption || '');
   }, [layer.caption]);
+
+  const glowXClass = snapGlowX ? `snap-glow-x-${snapGlowX}` : '';
+  const glowYClass = snapGlowY ? `snap-glow-y-${snapGlowY}` : '';
 
   return (
     <div
       className={`binder-editor-layer ${selected ? 'selected' : ''} ${
         layer.type === 'photo' ? 'layer-type-photo' : 'layer-type-other'
-      }`}
+      } ${glowXClass} ${glowYClass}`}
       data-layer-id={layer.id}
       onMouseDown={handleMouseDown}
     >
@@ -356,8 +346,6 @@ function Layer({ layer, selected, onSelect, onUpdate, onRemove, onDragStart, bin
                 onDragStart={(e) => e.preventDefault()}
                 onError={() => {
                   console.warn('[BinderEditor] Image failed to load:', imageUrl);
-                  // Fall back to placeholder UI instead of a broken image box
-                  // setImageUrl(null);
                 }}
               />
             ) : imageLoading ? (
@@ -375,6 +363,7 @@ function Layer({ layer, selected, onSelect, onUpdate, onRemove, onDragStart, bin
               </div>
             )}
           </div>
+
           <div className="layer-caption-shell">
             {editingCaption ? (
               <div className="layer-caption-edit">
@@ -385,10 +374,8 @@ function Layer({ layer, selected, onSelect, onUpdate, onRemove, onDragStart, bin
                   value={captionDraft}
                   placeholder="Describe what is happening in this photo (no emojis)."
                   onMouseDown={(e) => {
-                    // Let the textarea get focus and be editable.
-                    // This prevents the parent layer's onMouseDown from firing.
                     e.stopPropagation();
-                  }}                  
+                  }}
                   onChange={(e) => {
                     const raw = e.target.value;
                     const noEmoji = stripEmojiClient(raw);
@@ -413,13 +400,11 @@ function Layer({ layer, selected, onSelect, onUpdate, onRemove, onDragStart, bin
                         captionDraft
                       );
 
-                      // Backend returns sanitized caption (no HTML, no emoji)
                       const newCaption =
                         (result && typeof result.caption === 'string'
                           ? result.caption
                           : '');
 
-                      // Push into layout so autosave sees it
                       onUpdate(layer.id, { caption: newCaption });
 
                       setEditingCaption(false);

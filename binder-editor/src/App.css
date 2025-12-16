@@ -660,16 +660,20 @@ body {
 /* Photo content */
 .layer-photo-container {
   width: 100%;
-  height: calc(100% - 44px);
+  height: 100%;
   position: relative;
   overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   border-radius: 0; /* no rounded edges */
 }
 
 .layer-photo-image {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
+  object-position: center;
   display: block;
   border-radius: 0; /* keep image edges square */
 }

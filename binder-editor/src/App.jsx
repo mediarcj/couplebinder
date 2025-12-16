@@ -16,6 +16,7 @@ import PageList from './PageList';
 import ActionSidebar from './ActionSidebar';
 import './App.css';
 import { SECTION_LABELS, SECTION_OPTIONS } from './sections';
+import { preloadBinderPhotos } from './preloadPhotos';
 
 const AUTOSAVE_DEBOUNCE_MS = 1500; // 1.5s after last change
 
@@ -181,6 +182,7 @@ function App({ binderId /*, csrfToken */ }) {
   const [layout, setLayout] = useState(null);
   const [selectedPage, setSelectedPage] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [preloadProgress, setPreloadProgress] = useState({ done: 0, total: 0 });
   const { openModal } = useModal();
 
   // saving = "we are writing layout to Supabase" (autosave OR auto layout)
@@ -305,6 +307,26 @@ function App({ binderId /*, csrfToken */ }) {
           setLastSavedAt(safeLayout.updatedAt);
           if (safeLayout.pages.length > 0) {
             setSelectedPage(pickInitialPage(safeLayout.pages));
+          }
+          // Preload ALL photo bytes across ALL pages before unlocking UI
+          // so tab switching feels instant (disk cache warmed).
+          const ac = new AbortController();
+          const result = await preloadBinderPhotos({
+            binderId,
+            layout: safeLayout,
+            signal: ac.signal,
+            onProgress: (p) => {
+              // p.total might be null early; normalize
+              setPreloadProgress({
+                done: Number(p.done || 0),
+                total: Number(p.total || 0)
+              });
+            }
+          });
+
+          // If something aborted, just continue (don’t deadlock loading)
+          if (result?.aborted) {
+            console.warn('[BinderEditor] preload aborted');
           }
         } else {
           const emptyLayout = {
@@ -902,9 +924,47 @@ function App({ binderId /*, csrfToken */ }) {
   );
 
   if (loading) {
+    const done = preloadProgress?.done || 0;
+    const total = preloadProgress?.total || 0;
+    const pct =
+      total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0;
+
     return (
-      <div className="binder-editor-loading">
-        <p>Loading binder editor...</p>
+      <div className="min-h-screen w-full flex items-center justify-center bg-slate-50">
+        <div className="w-full max-w-md mx-auto px-6">
+          <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-6">
+            <div className="flex items-center gap-4">
+              <div className="h-12 w-12 rounded-full border-4 border-slate-200 border-t-blue-600 animate-spin" />
+              <div className="flex-1">
+                <h2 className="text-base font-semibold text-slate-900">
+                  Loading your binder…
+                </h2>
+                <p className="text-sm text-slate-600 mt-1">
+                  Preloading photos so page switching is instant.
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-5">
+              <div className="h-2 w-full rounded-full bg-slate-100 overflow-hidden">
+                <div
+                  className="h-2 rounded-full bg-blue-600 transition-all duration-200"
+                  style={{ width: `${pct}%` }}
+                />
+              </div>
+              <div className="mt-2 flex items-center justify-between text-xs text-slate-600 tabular-nums">
+                <span>{pct}%</span>
+                <span>
+                  {total > 0 ? `${done} / ${total}` : 'Starting…'}
+                </span>
+              </div>
+            </div>
+
+            <p className="mt-4 text-xs text-slate-500">
+              You may see a short delay only when adding new photos or after cache expiry.
+            </p>
+          </div>
+        </div>
       </div>
     );
   }

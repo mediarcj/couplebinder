@@ -1305,28 +1305,44 @@ async function syncPagesTableOrder({ client, userId, binderId, layoutPages }) {
     throw err;
   }
 
-  const pageIds = layoutPages
+  const incomingIds = layoutPages
     .map((p) => String(p?.pageId || p?.id || p?.page_id || ''))
     .filter(Boolean);
 
-  if (pageIds.length !== layoutPages.length) {
+  if (incomingIds.length !== layoutPages.length) {
     const err = new Error('Each page must have a stable pageId/id for reorder');
     err.status = 400;
     throw err;
   }
 
-  const { data: existingById, error: existingErr } = await client
+  // Load ALL existing pages for this binder/user (so we don't collide with "orphan" rows)
+  const { data: existingRows, error: existingErr } = await client
     .from('pages')
-    .select('id, binder_id, user_id')
-    .in('id', pageIds);
+    .select('id, binder_id, user_id, page_number')
+    .eq('binder_id', binderId)
+    .eq('user_id', userId)
+    .order('page_number', { ascending: true })
+    .limit(5000);
 
   if (existingErr) {
-    const err = new Error('Unable to load pages for reorder');
+    const err = new Error(`Unable to load pages for reorder: ${existingErr.message || 'unknown error'}`);
     err.status = 500;
     throw err;
   }
 
-  for (const row of existingById || []) {
+  const existing = Array.isArray(existingRows) ? existingRows : [];
+  const existingIdSet = new Set(existing.map((r) => String(r.id)));
+
+  // Keep any DB pages that aren't in the incoming list (shouldn't happen, but prevents constraint collisions)
+  const incomingSet = new Set(incomingIds);
+  const extraIds = existing
+    .filter((r) => !incomingSet.has(String(r.id)))
+    .map((r) => String(r.id));
+
+  const fullOrder = [...incomingIds, ...extraIds];
+
+  // Safety: verify ownership for any IDs we *think* exist
+  for (const row of existing) {
     if (String(row.binder_id) !== String(binderId) || String(row.user_id) !== String(userId)) {
       const err = new Error('Invalid pageId provided (does not belong to this binder)');
       err.status = 400;
@@ -1334,23 +1350,32 @@ async function syncPagesTableOrder({ client, userId, binderId, layoutPages }) {
     }
   }
 
-  const TEMP_BASE = 1000000;
+  // Choose a temp base above the current max page_number to guarantee no collisions
+  const maxPageNumber = existing.reduce((m, r) => {
+    const n = Number(r.page_number);
+    return Number.isFinite(n) ? Math.max(m, n) : m;
+  }, 0);
 
-  const tempRows = pageIds.map((id, idx) => ({
+  const tempBase = maxPageNumber + 1000;
+
+  // Phase 1: ensure every page in fullOrder exists, and move all to a temp safe range
+  // Use upsert so missing page rows get created (no conflict on (binder_id, page_number) because temp is > max)
+  const tempRows = fullOrder.map((id, idx) => ({
     id,
     binder_id: binderId,
     user_id: userId,
-    page_number: TEMP_BASE + (idx + 1)
+    page_number: tempBase + idx + 1
   }));
 
   const { error: tempErr } = await client.from('pages').upsert(tempRows, { onConflict: 'id' });
   if (tempErr) {
-    const err = new Error('Unable to reorder pages (temp step)');
+    const err = new Error(`Unable to reorder pages (temp step): ${tempErr.message || 'unknown error'}`);
     err.status = 500;
     throw err;
   }
 
-  const finalRows = pageIds.map((id, idx) => ({
+  // Phase 2: write final 1..N numbers (now safe because nothing else uses 1..N anymore)
+  const finalRows = fullOrder.map((id, idx) => ({
     id,
     binder_id: binderId,
     user_id: userId,
@@ -1359,12 +1384,16 @@ async function syncPagesTableOrder({ client, userId, binderId, layoutPages }) {
 
   const { error: finalErr } = await client.from('pages').upsert(finalRows, { onConflict: 'id' });
   if (finalErr) {
-    const err = new Error('Unable to reorder pages (final step)');
+    const err = new Error(`Unable to reorder pages (final step): ${finalErr.message || 'unknown error'}`);
     err.status = 500;
     throw err;
   }
 
-  return { pageCount: pageIds.length, usedClientIds: true };
+  return {
+    pageCount: incomingIds.length,
+    usedClientIds: true,
+    extraDbPagesAppended: extraIds.length
+  };
 }
 
 /**

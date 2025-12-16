@@ -344,6 +344,18 @@ function Layer({
                 className="layer-photo-image"
                 draggable={false}
                 onDragStart={(e) => e.preventDefault()}
+                onLoad={(e) => {
+                  const nw = e.currentTarget?.naturalWidth || 0;
+                  const nh = e.currentTarget?.naturalHeight || 0;
+                  if (nw > 0 && nh > 0) {
+                    const ar = nw / nh;
+                    const prev = typeof layer.photoAspectRatio === 'number' ? layer.photoAspectRatio : null;
+                    // Only write if missing or meaningfully different
+                    if (!prev || Math.abs(prev - ar) > 0.01) {
+                      onUpdate(layer.id, { photoAspectRatio: ar });
+                    }
+                  }
+                }}
                 onError={() => {
                   console.warn('[BinderEditor] Image failed to load:', imageUrl);
                 }}

@@ -41,7 +41,6 @@ function Layer({
 }) {
   const [resizing, setResizing] = useState(false);
   const resizeRef = useRef(null);
-  const textareaRef = useRef(null);
 
   const [imageUrl, setImageUrl] = useState(layer.src || null);
   const [imageLoading, setImageLoading] = useState(false);
@@ -260,6 +259,8 @@ function Layer({
     resizeRef.current = null;
   };
 
+  const textareaRef = useRef(null);
+
   useEffect(() => {
     if (!resizing) return;
 
@@ -369,26 +370,11 @@ function Layer({
     setCaptionDraft(layer.caption || '');
   }, [layer.caption]);
 
-  // Auto-resize textarea based on content
-  const adjustTextareaHeight = useCallback(() => {
-    const textarea = textareaRef.current;
-    if (!textarea) return;
-
-    textarea.style.height = 'auto';
-    const minHeight = 20;
-    const maxHeight = 200;
-    const newHeight = Math.min(
-      Math.max(textarea.scrollHeight, minHeight),
-      maxHeight
-    );
-    textarea.style.height = `${newHeight}px`;
-  }, []);
-
+  // When entering edit mode, focus the textarea (layout is fixed-height now)
   useEffect(() => {
     if (!editingCaption) return;
-    // Ensure textarea is rendered before measuring
-    setTimeout(adjustTextareaHeight, 0);
-  }, [editingCaption, captionDraft, adjustTextareaHeight]);
+    textareaRef.current?.focus?.();
+  }, [editingCaption]);
 
   const glowXClass = snapGlowX ? `snap-glow-x-${snapGlowX}` : '';
   const glowYClass = snapGlowY ? `snap-glow-y-${snapGlowY}` : '';
@@ -469,8 +455,8 @@ function Layer({
                 <textarea
                   ref={textareaRef}
                   className="layer-caption-input"
-                  rows={1}
-                  maxLength={300}
+                  rows={5}
+                  maxLength={100}
                   value={captionDraft}
                   placeholder="Add description."
                   onMouseDown={(e) => e.stopPropagation()}
@@ -479,9 +465,7 @@ function Layer({
                     const noEmoji = stripEmojiClient(raw);
                     setCaptionDraft(noEmoji);
                     if (captionError) setCaptionError('');
-                    setTimeout(adjustTextareaHeight, 0);
                   }}
-                  onInput={adjustTextareaHeight}
                 />
                 <button
                   type="button"
@@ -494,10 +478,11 @@ function Layer({
                       setSavingCaption(true);
                       setCaptionError('');
 
+                      const sanitized = stripEmojiClient(captionDraft).slice(0, 100);
                       const result = await updatePhotoCaption(
                         binderId,
                         layer.storageKey,
-                        captionDraft
+                        sanitized
                       );
 
                       const newCaption =
@@ -508,7 +493,7 @@ function Layer({
                       onUpdate(layer.id, { caption: newCaption });
 
                       setEditingCaption(false);
-                      setCaptionDraft(newCaption);
+                      setCaptionDraft(newCaption.slice(0, 100));
                     } catch (err) {
                       setCaptionError(
                         err?.message || 'Unable to save caption right now.'
@@ -528,7 +513,9 @@ function Layer({
             ) : (
               <div className="layer-caption-display">
                 {layer.caption && layer.caption.trim().length > 0 ? (
-                  <p className="layer-caption-text">{layer.caption}</p>
+                  <p className="layer-caption-text" title={layer.caption}>
+                    {layer.caption}
+                  </p>
                 ) : (
                   <p className="layer-caption-placeholder">Add description.</p>
                 )}

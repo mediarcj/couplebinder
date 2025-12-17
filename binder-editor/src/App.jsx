@@ -19,6 +19,10 @@ const PAGE_WIDTH = 794;
 const PAGE_HEIGHT = 1122;
 const PAGE_GUTTER = 12;
 
+// Photo layers store TOTAL height (image area + caption).
+// This must match the minimum caption height in CSS (.layer-caption-shell).
+const CAPTION_H = 44;
+
 // Simple rectangle overlap helper in page coordinates
 function rectsOverlap(x1, y1, w1, h1, x2, y2, w2, h2) {
   return !(
@@ -572,6 +576,43 @@ function App({ binderId /*, csrfToken */ }) {
         const data = await res.json().catch(() => null);
         if (!data || !Array.isArray(data.photos)) return;
 
+        // Preload all images to get their dimensions before creating frames
+        // This ensures frames match image aspect ratios, eliminating gray space
+        const photoDataWithAspectRatios = await Promise.all(
+          data.photos.map(async (photo) => {
+            const url =
+              photo.signedUrl ||
+              photo.publicUrl ||
+              photo.url ||
+              photo.previewUrl ||
+              photo.src ||
+              null;
+
+            if (!url) {
+              return { ...photo, aspectRatio: 1 }; // fallback to square
+            }
+
+            try {
+              const aspectRatio = await new Promise((resolve) => {
+                const img = new Image();
+                img.onload = () => {
+                  const nw = img.naturalWidth || 1;
+                  const nh = img.naturalHeight || 1;
+                  resolve(nw / nh);
+                };
+                img.onerror = () => {
+                  resolve(1); // fallback to square on error
+                };
+                img.src = url;
+              });
+              return { ...photo, aspectRatio, url };
+            } catch (err) {
+              console.warn('[BinderEditor] Failed to preload image dimensions:', err);
+              return { ...photo, aspectRatio: 1, url }; // fallback to square
+            }
+          })
+        );
+
         // Place all new photos on the current page in memory in one pass,
         // using collision-aware, "largest that fits" placement for each.
         setLayout((prev) => {
@@ -600,38 +641,53 @@ function App({ binderId /*, csrfToken */ }) {
 
           const nextLayers = [...page.layers];
 
-          data.photos.forEach((photo, idx) => {
+          photoDataWithAspectRatios.forEach((photo, idx) => {
             const url =
+              photo.url ||
               photo.signedUrl ||
               photo.publicUrl ||
-              photo.url ||
               photo.previewUrl ||
               photo.src ||
               null;
 
-            // For now, treat new photos as square; user can resize later.
-            const frame = findLargestAvailableRect(existingRects, 1);
+            // Use the preloaded aspect ratio to create a frame that matches the image
+            const imageAspectRatio = typeof photo.aspectRatio === 'number' && photo.aspectRatio > 0
+              ? photo.aspectRatio
+              : 1;
+            
+            // Calculate frame for the image area (without caption)
+            // The image container will use flex: 1 to fill this space
+            const CAPTION_HEIGHT = 44;
+            const imageFrame = findLargestAvailableRect(existingRects, imageAspectRatio);
+            
+            // Total frame height includes the caption
+            // The image container (flex: 1) will be imageFrame.height, caption is 44px
+            const totalFrame = {
+              ...imageFrame,
+              height: imageFrame.height + CAPTION_HEIGHT
+            };
 
             const newLayer = {
               id: `layer-upload-${Date.now()}-${idx}`,
               type: 'photo',
-              x: frame.x,
-              y: frame.y,
-              width: frame.width,
-              height: frame.height,
+              x: totalFrame.x,
+              y: totalFrame.y,
+              width: totalFrame.width,
+              height: totalFrame.height,
               rotation: 0,
               zIndex: nextLayers.length, // put on top of existing
               photoId: null,
               storageKey: photo.storageKey || null,
-              src: url
+              src: url,
+              photoAspectRatio: imageAspectRatio // store for future reference
             };
 
             nextLayers.push(newLayer);
             existingRects.push({
-              x: frame.x,
-              y: frame.y,
-              width: frame.width,
-              height: frame.height
+              x: totalFrame.x,
+              y: totalFrame.y,
+              width: totalFrame.width,
+              height: totalFrame.height
             });
           });
 
@@ -700,41 +756,55 @@ function App({ binderId /*, csrfToken */ }) {
 
       const clamp = (v, min, max) => Math.min(Math.max(v, min), max);
 
-      // Fit a rectangle of aspect ratio `ar` into a cell (cw,ch) without cropping
-      const fitIntoCell = (cw, ch, ar) => {
+      // Fit IMAGE area (not total layer) into a cell without cropping.
+      // For photos: available height is (cellH - CAPTION_H).
+      const fitImageIntoCell = (cellW, cellH, ar, isPhoto) => {
         const safeAr = ar && ar > 0 ? ar : 1;
-        let w = cw;
+        const availableH = isPhoto ? Math.max(50, cellH - CAPTION_H) : cellH;
+
+        let w = cellW;
         let h = w / safeAr;
-        if (h > ch) {
-          h = ch;
+        if (h > availableH) {
+          h = availableH;
           w = h * safeAr;
         }
-        return { w: Math.max(50, Math.floor(w)), h: Math.max(50, Math.floor(h)) };
+
+        return {
+          imageW: Math.max(50, Math.floor(w)),
+          imageH: Math.max(50, Math.floor(h))
+        };
       };
 
       const getPhotoAR = (p) => {
         if (typeof p.photoAspectRatio === 'number' && p.photoAspectRatio > 0) {
           return p.photoAspectRatio;
         }
-        // fallback to current box ratio if present
+        // Fallback: if layer.height includes caption, use imageAreaHeight = (h - CAPTION_H)
         const w = typeof p.width === 'number' ? p.width : 0;
         const h = typeof p.height === 'number' ? p.height : 0;
-        return w > 0 && h > 0 ? w / h : 1;
+        const imageH = Math.max(1, h - CAPTION_H);
+        return w > 0 && imageH > 0 ? w / imageH : 1;
       };
 
       const placeInCell = (layer, cellX, cellY, cellW, cellH) => {
+        const isPhoto = layer?.type === 'photo';
         const ar = getPhotoAR(layer);
-        const { w, h } = fitIntoCell(cellW, cellH, ar);
 
-        const x = cellX + Math.floor((cellW - w) / 2);
-        const y = cellY + Math.floor((cellH - h) / 2);
+        const { imageW, imageH } = fitImageIntoCell(cellW, cellH, ar, isPhoto);
+
+        const totalW = imageW;
+        const totalH = isPhoto ? imageH + CAPTION_H : imageH;
+
+        // Center the TOTAL layer inside the cell
+        const x = cellX + Math.floor((cellW - totalW) / 2);
+        const y = cellY + Math.floor((cellH - totalH) / 2);
 
         return {
           ...layer,
-          x: clamp(x, 0, PAGE_W - w),
-          y: clamp(y, 0, PAGE_H - h),
-          width: w,
-          height: h
+          x: clamp(x, 0, PAGE_W - totalW),
+          y: clamp(y, 0, PAGE_H - totalH),
+          width: totalW,
+          height: totalH
         };
       };
 

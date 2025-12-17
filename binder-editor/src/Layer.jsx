@@ -2,7 +2,7 @@
 // Description: Individual layer component
 // Purpose: Render and edit a single layer on canvas
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { getPhotoViewUrl, updatePhotoCaption } from './api';
 
 const rectsOverlap = (l1, t1, w1, h1, l2, t2, w2, h2) => {
@@ -32,18 +32,20 @@ function Layer({
   selected,
   onSelect,
   onUpdate,
-  onRemove,
+  onRemove, // (kept for compatibility; not used here yet)
   onDragStart,
   binderId,
   zoom = 1,
   snapGlowX = null, // 'left'|'right'|null
-  snapGlowY = null  // 'top'|'bottom'|null
+  snapGlowY = null // 'top'|'bottom'|null
 }) {
   const [resizing, setResizing] = useState(false);
   const resizeRef = useRef(null);
+  const textareaRef = useRef(null);
 
   const [imageUrl, setImageUrl] = useState(layer.src || null);
   const [imageLoading, setImageLoading] = useState(false);
+
   const [editingCaption, setEditingCaption] = useState(false);
   const [captionDraft, setCaptionDraft] = useState(layer.caption || '');
   const [savingCaption, setSavingCaption] = useState(false);
@@ -51,6 +53,8 @@ function Layer({
 
   const handleMouseDown = (e) => {
     const target = e.target;
+
+    // Don't start a drag if interacting with inputs/buttons inside the layer
     if (
       target.closest('.layer-caption-input') ||
       target.tagName === 'TEXTAREA' ||
@@ -74,25 +78,47 @@ function Layer({
     const layerEl = e.currentTarget.closest('.binder-editor-layer');
     if (!layerEl) return;
 
+    // Prefer the actual page as the coordinate space
     const canvasEl =
       layerEl.closest('.canvas-page') ||
       layerEl.closest('.canvas-stage') ||
       layerEl.closest('.binder-editor-canvas');
 
-    const canvasRect = canvasEl?.getBoundingClientRect();
-    const rect = layerEl.getBoundingClientRect();
+    if (!canvasEl) return;
 
-    if (!canvasRect || !rect) return;
+    const canvasRect = canvasEl.getBoundingClientRect();
+    const layerRect = layerEl.getBoundingClientRect();
 
-    const left = (rect.left - canvasRect.left) / zoom;
-    const top = (rect.top - canvasRect.top) / zoom;
-    const aspect = rect.width && rect.height ? rect.width / rect.height : 1;
+    // For photos, measure the image-frame wrapper (not the full layer including caption)
+    const frameEl =
+      layerEl.querySelector('.layer-photo-frame-wrapper') || layerEl;
+
+    const frameRect = frameEl.getBoundingClientRect();
+
+    const storedZoom = zoom || 1;
+
+    const left = (frameRect.left - canvasRect.left) / storedZoom;
+    const top = (frameRect.top - canvasRect.top) / storedZoom;
+
+    // Caption height in logical coords (so total layer height stays correct)
+    const captionHeight =
+      layer.type === 'photo'
+        ? Math.max(0, (layerRect.height - frameRect.height) / storedZoom)
+        : 0;
+
+    // Use true photo aspect ratio if available; otherwise fall back to measured frame rect
+    const aspect =
+      typeof layer.photoAspectRatio === 'number' && layer.photoAspectRatio > 0
+        ? layer.photoAspectRatio
+        : frameRect.width && frameRect.height
+        ? frameRect.width / frameRect.height
+        : 1;
 
     const startRect = {
       left,
       top,
-      width: rect.width / zoom,
-      height: rect.height / zoom
+      width: frameRect.width / storedZoom,
+      height: frameRect.height / storedZoom
     };
 
     resizeRef.current = {
@@ -100,13 +126,19 @@ function Layer({
       startMouseX: e.clientX,
       startMouseY: e.clientY,
       startRect,
-      lastRect: { ...startRect },
+      // lastRect represents TOTAL rect for collision fallback (includes caption for photos)
+      lastRect: {
+        ...startRect,
+        height: startRect.height + captionHeight
+      },
       aspect,
       canvasRect,
       canvasEl,
       layerEl,
-      zoom: zoom
+      zoom: storedZoom,
+      captionHeight
     };
+
     setResizing(true);
   };
 
@@ -123,7 +155,8 @@ function Layer({
       canvasRect,
       canvasEl,
       layerEl,
-      zoom: storedZoom
+      zoom: storedZoom,
+      captionHeight
     } = resizeRef.current;
 
     const dx = (e.clientX - startMouseX) / storedZoom;
@@ -134,38 +167,59 @@ function Layer({
 
     let width = isLeft ? startRect.width - dx : startRect.width + dx;
     width = Math.max(50, width);
-    let height = width / aspect;
+
+    // Keep image aspect ratio for photos; for other layers still keep aspect-based resize as-is
+    let imageHeight = width / aspect;
 
     let left = isLeft ? startRect.left + (startRect.width - width) : startRect.left;
-    let top = isTop ? startRect.top + (startRect.height - height) : startRect.top;
+    let top = isTop ? startRect.top + (startRect.height - imageHeight) : startRect.top;
 
     const canvasWidth = canvasRect.width / storedZoom;
     const canvasHeight = canvasRect.height / storedZoom;
 
-    left = clamp(left, 0, canvasWidth - width);
-    top = clamp(top, 0, canvasHeight - height);
+    const totalHeight =
+      layer.type === 'photo' ? imageHeight + (captionHeight || 0) : imageHeight;
 
+    // Keep inside bounds
+    left = clamp(left, 0, canvasWidth - width);
+    top = clamp(top, 0, canvasHeight - totalHeight);
+
+    // If pushed past right edge, shrink to fit
     if (left + width > canvasWidth) {
       width = Math.max(50, canvasWidth - left);
-      height = width / aspect;
+      imageHeight = width / aspect;
     }
-    if (top + height > canvasHeight) {
-      height = Math.max(50, canvasHeight - top);
-      width = height * aspect;
+
+    // If pushed past bottom edge, shrink to fit
+    if (top + (layer.type === 'photo' ? imageHeight + (captionHeight || 0) : imageHeight) > canvasHeight) {
+      const maxImageHeight =
+        layer.type === 'photo'
+          ? Math.max(50, canvasHeight - top - (captionHeight || 0))
+          : Math.max(50, canvasHeight - top);
+
+      imageHeight = maxImageHeight;
+      width = imageHeight * aspect;
+
       if (left + width > canvasWidth) {
         left = Math.max(0, canvasWidth - width);
       }
     }
 
-    const testRect = { left, top, width, height };
+    const testRect = {
+      left,
+      top,
+      width,
+      height: layer.type === 'photo' ? imageHeight + (captionHeight || 0) : imageHeight
+    };
 
+    // Collision check (DOM rects; good enough for now)
     let collides = false;
     if (canvasEl && layerEl) {
       const others = canvasEl.querySelectorAll('.binder-editor-layer');
       for (const other of others) {
         if (other === layerEl) continue;
-        const r = other.getBoundingClientRect();
 
+        const r = other.getBoundingClientRect();
         const oLeft = (r.left - canvasRect.left) / storedZoom;
         const oTop = (r.top - canvasRect.top) / storedZoom;
         const oWidth = r.width / storedZoom;
@@ -189,14 +243,10 @@ function Layer({
       }
     }
 
-    let finalRect;
-    if (collides) {
-      finalRect = { ...lastRect };
-    } else {
-      finalRect = { ...testRect };
-      resizeRef.current.lastRect = finalRect;
-    }
+    const finalRect = collides ? { ...lastRect } : { ...testRect };
+    if (!collides) resizeRef.current.lastRect = finalRect;
 
+    // Note: for photos we store TOTAL height (image + caption).
     onUpdate(layer.id, {
       width: finalRect.width,
       height: finalRect.height,
@@ -210,26 +260,28 @@ function Layer({
     resizeRef.current = null;
   };
 
-  React.useEffect(() => {
-    if (resizing) {
-      const handleMove = (e) => handleResizeMove(e);
-      const handleEnd = () => {
-        handleResizeEnd();
-        document.removeEventListener('mousemove', handleMove);
-        document.removeEventListener('mouseup', handleEnd);
-      };
+  useEffect(() => {
+    if (!resizing) return;
 
-      document.addEventListener('mousemove', handleMove);
-      document.addEventListener('mouseup', handleEnd);
+    const handleMove = (e) => handleResizeMove(e);
+    const handleEnd = () => {
+      handleResizeEnd();
+      document.removeEventListener('mousemove', handleMove);
+      document.removeEventListener('mouseup', handleEnd);
+    };
 
-      return () => {
-        document.removeEventListener('mousemove', handleMove);
-        document.removeEventListener('mouseup', handleEnd);
-      };
-    }
+    document.addEventListener('mousemove', handleMove);
+    document.addEventListener('mouseup', handleEnd);
+
+    return () => {
+      document.removeEventListener('mousemove', handleMove);
+      document.removeEventListener('mouseup', handleEnd);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resizing]);
 
-  React.useEffect(() => {
+  // Inject per-layer positioning styles with CSP nonce support
+  useEffect(() => {
     const styleId = `layer-style-${layer.id}`;
     let styleEl = document.getElementById(styleId);
 
@@ -239,6 +291,7 @@ function Layer({
         rootEl?.getAttribute('data-csp-nonce') ||
         document.querySelector('style[nonce]')?.getAttribute('nonce') ||
         '';
+
       styleEl = document.createElement('style');
       styleEl.id = styleId;
       if (nonce) styleEl.setAttribute('nonce', nonce);
@@ -246,7 +299,8 @@ function Layer({
     }
 
     const selector = `[data-layer-id="${layer.id}"]`;
-    const bgColor = layer.type === 'photo' ? '#f0f0f0' : layer.backgroundColor || '#fff';
+    const bgColor =
+      layer.type === 'photo' ? 'transparent' : layer.backgroundColor || '#fff';
 
     styleEl.textContent = `
       ${selector} {
@@ -266,6 +320,7 @@ function Layer({
       }
     };
   }, [
+    layer.id,
     layer.x,
     layer.y,
     layer.width,
@@ -273,55 +328,67 @@ function Layer({
     layer.rotation,
     layer.zIndex,
     layer.type,
-    layer.backgroundColor,
-    layer.id
+    layer.backgroundColor
   ]);
 
+  // Resolve photo view URL (signed URL, etc.)
   useEffect(() => {
     if (layer.type !== 'photo') return;
 
-    if (layer.src && !imageUrl) {
-      setImageUrl(layer.src);
-    }
+    // If a direct src exists, show it immediately while we fetch the secure view URL
+    if (layer.src) setImageUrl(layer.src);
 
-    if (!binderId || !layer.storageKey) {
-      return;
-    }
+    if (!binderId || !layer.storageKey) return;
 
     let cancelled = false;
     setImageLoading(true);
 
     (async () => {
       const url = await getPhotoViewUrl(binderId, layer.storageKey);
-
       if (cancelled) return;
 
-      if (url) {
-        setImageUrl(url);
-      } else if (layer.src) {
-        setImageUrl(layer.src);
-      } else {
-        setImageUrl(null);
-      }
+      if (url) setImageUrl(url);
+      else if (layer.src) setImageUrl(layer.src);
+      else setImageUrl(null);
     })()
       .catch((err) => {
-        if (cancelled) return;
-        console.error('[BinderEditor] Failed to load photo URL:', err);
+        if (!cancelled) {
+          console.error('[BinderEditor] Failed to load photo URL:', err);
+        }
       })
       .finally(() => {
-        if (!cancelled) {
-          setImageLoading(false);
-        }
+        if (!cancelled) setImageLoading(false);
       });
 
     return () => {
       cancelled = true;
     };
-  }, [binderId, layer.storageKey, layer.type, layer.src, imageUrl]);
+  }, [binderId, layer.storageKey, layer.type, layer.src]);
 
   useEffect(() => {
     setCaptionDraft(layer.caption || '');
   }, [layer.caption]);
+
+  // Auto-resize textarea based on content
+  const adjustTextareaHeight = useCallback(() => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+
+    textarea.style.height = 'auto';
+    const minHeight = 20;
+    const maxHeight = 200;
+    const newHeight = Math.min(
+      Math.max(textarea.scrollHeight, minHeight),
+      maxHeight
+    );
+    textarea.style.height = `${newHeight}px`;
+  }, []);
+
+  useEffect(() => {
+    if (!editingCaption) return;
+    // Ensure textarea is rendered before measuring
+    setTimeout(adjustTextareaHeight, 0);
+  }, [editingCaption, captionDraft, adjustTextareaHeight]);
 
   const glowXClass = snapGlowX ? `snap-glow-x-${snapGlowX}` : '';
   const glowYClass = snapGlowY ? `snap-glow-y-${snapGlowY}` : '';
@@ -336,41 +403,61 @@ function Layer({
     >
       {layer.type === 'photo' && (
         <>
-          <div className="layer-photo-container">
-            {imageUrl ? (
-              <img
-                src={imageUrl}
-                alt="Binder photo"
-                className="layer-photo-image"
-                draggable={false}
-                onDragStart={(e) => e.preventDefault()}
-                onLoad={(e) => {
-                  const nw = e.currentTarget?.naturalWidth || 0;
-                  const nh = e.currentTarget?.naturalHeight || 0;
-                  if (nw > 0 && nh > 0) {
-                    const ar = nw / nh;
-                    const prev = typeof layer.photoAspectRatio === 'number' ? layer.photoAspectRatio : null;
-                    // Only write if missing or meaningfully different
-                    if (!prev || Math.abs(prev - ar) > 0.01) {
-                      onUpdate(layer.id, { photoAspectRatio: ar });
+          <div className="layer-photo-frame-wrapper">
+            <div className="layer-photo-frame">
+              {imageUrl ? (
+                <img
+                  src={imageUrl}
+                  alt="Binder photo"
+                  className="layer-photo-image"
+                  draggable={false}
+                  onDragStart={(e) => e.preventDefault()}
+                  onLoad={(e) => {
+                    const nw = e.currentTarget?.naturalWidth || 0;
+                    const nh = e.currentTarget?.naturalHeight || 0;
+                    if (nw > 0 && nh > 0) {
+                      const ar = nw / nh;
+                      const prev =
+                        typeof layer.photoAspectRatio === 'number'
+                          ? layer.photoAspectRatio
+                          : null;
+
+                      if (!prev || Math.abs(prev - ar) > 0.01) {
+                        onUpdate(layer.id, { photoAspectRatio: ar });
+                      }
                     }
-                  }
-                }}
-                onError={() => {
-                  console.warn('[BinderEditor] Image failed to load:', imageUrl);
-                }}
-              />
-            ) : imageLoading ? (
-              <div className="layer-photo-loading">
-                <span>Loading...</span>
-              </div>
-            ) : (
-              <div className="layer-photo-placeholder">
-                <span>Photo</span>
-                {layer.storageKey && (
-                  <span className="photo-id" title={layer.storageKey}>
-                    {layer.storageKey.split('/').pop() || 'No image'}
-                  </span>
+                  }}
+                  onError={() => {
+                    console.warn('[BinderEditor] Image failed to load:', imageUrl);
+                  }}
+                />
+              ) : imageLoading ? (
+                <div className="layer-photo-loading">
+                  <span>Loading...</span>
+                </div>
+              ) : (
+                <div className="layer-photo-placeholder">
+                  <span>Photo</span>
+                  {layer.storageKey && (
+                    <span className="photo-id" title={layer.storageKey}>
+                      {layer.storageKey.split('/').pop() || 'No image'}
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {selected && (
+              <div className="layer-photo-selection" aria-hidden="true">
+                {['top-left', 'top-right', 'bottom-left', 'bottom-right'].map(
+                  (pos) => (
+                    <div
+                      key={pos}
+                      className={`layer-resize-handle layer-resize-${pos}`}
+                      onMouseDown={(e) => handleResizeStart(e, pos)}
+                      role="presentation"
+                    />
+                  )
                 )}
               </div>
             )}
@@ -380,20 +467,21 @@ function Layer({
             {editingCaption ? (
               <div className="layer-caption-edit">
                 <textarea
+                  ref={textareaRef}
                   className="layer-caption-input"
-                  rows={2}
+                  rows={1}
                   maxLength={300}
                   value={captionDraft}
-                  placeholder="Describe what is happening in this photo (no emojis)."
-                  onMouseDown={(e) => {
-                    e.stopPropagation();
-                  }}
+                  placeholder="Add description."
+                  onMouseDown={(e) => e.stopPropagation()}
                   onChange={(e) => {
                     const raw = e.target.value;
                     const noEmoji = stripEmojiClient(raw);
                     setCaptionDraft(noEmoji);
                     if (captionError) setCaptionError('');
+                    setTimeout(adjustTextareaHeight, 0);
                   }}
+                  onInput={adjustTextareaHeight}
                 />
                 <button
                   type="button"
@@ -413,9 +501,9 @@ function Layer({
                       );
 
                       const newCaption =
-                        (result && typeof result.caption === 'string'
+                        result && typeof result.caption === 'string'
                           ? result.caption
-                          : '');
+                          : '';
 
                       onUpdate(layer.id, { caption: newCaption });
 
@@ -442,9 +530,7 @@ function Layer({
                 {layer.caption && layer.caption.trim().length > 0 ? (
                   <p className="layer-caption-text">{layer.caption}</p>
                 ) : (
-                  <p className="layer-caption-placeholder">
-                    Add a short description for the visa officer
-                  </p>
+                  <p className="layer-caption-placeholder">Add description.</p>
                 )}
                 <button
                   type="button"
@@ -466,9 +552,7 @@ function Layer({
             )}
 
             {captionError && (
-              <div className="layer-caption-error">
-                {captionError}
-              </div>
+              <div className="layer-caption-error">{captionError}</div>
             )}
           </div>
         </>
@@ -478,7 +562,7 @@ function Layer({
         <div className="layer-text">{layer.text}</div>
       )}
 
-      {selected && (
+      {selected && layer.type !== 'photo' && (
         <>
           {['top-left', 'top-right', 'bottom-left', 'bottom-right'].map((pos) => (
             <div

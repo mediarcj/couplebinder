@@ -735,43 +735,57 @@ body {
 /* Caption shell sits at bottom of tile */
 .layer-caption-shell {
   width: 100%; /* Match image width */
-  min-height: 44px; /* Minimum height, but can grow */
+  height: 88px;      /* LOCK: never grow (prevents pushing image) */
+  max-height: 88px;
   flex-shrink: 0; /* Prevent caption from shrinking */
   display: flex;
   flex-direction: column;
-  justify-content: center;
+  justify-content: flex-start; /* push text to top (near photo) */
   padding: 4px 8px;
   box-sizing: border-box;
+  overflow: hidden;  /* prevent caption from changing layout */
+  position: relative; /* anchor error if needed */
 }
 
 /* Read-only display state */
 .layer-caption-display {
   display: flex;
-  align-items: center;
+  align-items: flex-start;  /* top align within the 88px box */
   gap: 3px;
+  height: 100%;
 }
 
 .layer-caption-text {
   flex: 1;
+  min-width: 0;              /* important in flex so text can wrap */
   font-size: 12px;
-  line-height: 1;
+  line-height: 1.2;
   text-align: center;
   color: #111827;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;   /* break long strings (your 123456 test) */
+  word-break: break-word;    /* fallback */  
   overflow: hidden;
-  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 5; /* show more lines in display mode */
+  -webkit-box-orient: vertical;
 }
 
 .layer-caption-placeholder {
   flex: 1;
+  min-width: 0;
   font-size: 12px;
-  line-height: 1;
+  line-height: 1.2;
   text-align: center;
   color: #9ca3af;
   font-style: italic;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;  
   overflow: hidden;
-  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 5;
+  -webkit-box-orient: vertical;
 }
 
 /* Small edit button (pencil) */
@@ -794,15 +808,16 @@ body {
 /* Editing state: dashed field + check icon */
 .layer-caption-edit {
   display: flex;
-  align-items: center;
+  align-items: stretch;  /* textarea fills caption height */
   gap: 3px;
+  height: 100%;
 }
 
 .layer-caption-input {
   width: 100%; /* Match caption shell width */
   flex: 1;
   font-size: 12px;
-  line-height: 1;
+  line-height: 1.2;
   padding: 4px 6px;
   border-radius: 6px;
   border: 1px dashed #9ca3af;
@@ -811,8 +826,9 @@ body {
   outline: none;
   user-select: text;
   cursor: text;
-  overflow: hidden; /* Hide scrollbar, textarea will auto-resize */
-  min-height: 20px; /* Minimum height for one line */
+  height: 100%;      /* LOCK height to caption area */
+  max-height: 100%;
+  overflow: hidden;  /* no scrollbar in edit mode */
   box-sizing: border-box;
 }
 

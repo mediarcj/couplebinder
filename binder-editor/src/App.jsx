@@ -21,7 +21,7 @@ const PAGE_GUTTER = 12;
 
 // Photo layers store TOTAL height (image area + caption).
 // This must match the minimum caption height in CSS (.layer-caption-shell).
-const CAPTION_H = 44;
+const CAPTION_H = 88;
 
 // Simple rectangle overlap helper in page coordinates
 function rectsOverlap(x1, y1, w1, h1, x2, y2, w2, h2) {
@@ -655,16 +655,13 @@ function App({ binderId /*, csrfToken */ }) {
               ? photo.aspectRatio
               : 1;
             
-            // Calculate frame for the image area (without caption)
-            // The image container will use flex: 1 to fill this space
-            const CAPTION_HEIGHT = 44;
             const imageFrame = findLargestAvailableRect(existingRects, imageAspectRatio);
             
             // Total frame height includes the caption
             // The image container (flex: 1) will be imageFrame.height, caption is 44px
             const totalFrame = {
               ...imageFrame,
-              height: imageFrame.height + CAPTION_HEIGHT
+              height: imageFrame.height + CAPTION_H
             };
 
             const newLayer = {

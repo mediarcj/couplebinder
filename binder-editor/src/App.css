@@ -596,6 +596,8 @@ body {
   border: none;
   cursor: move;
   box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
   user-select: none;
   background-color: var(--layer-bg-color, #fff);
   will-change: left, top;
@@ -646,40 +648,63 @@ body {
 /* ===== End snap edge glow ===== */
 
 .binder-editor-layer.layer-type-photo {
-  background-color: var(--layer-bg-color, #f0f0f0);
+  background-color: transparent;
 }
 
 /* ===== Resize handles (bigger + clearly outside) ===== */
 
 .binder-editor-layer.selected {
+  /* Keep handles visible outside the layer box */
+  overflow: visible;
+}
+
+/* Keep the old "blue box" behavior for NON-photo layers only */
+.binder-editor-layer.selected:not(.layer-type-photo) {
   outline: 2px solid #2563eb;
   outline-offset: 0;
-  overflow: visible; /* IMPORTANT: allow handles to render outside the layer box */
 }
 
-/* Photo content */
-.layer-photo-container {
-  width: 100%;
-  height: 100%;
+/* Photo frame area (image-only region). Caption sits below this. */
+.layer-photo-frame-wrapper {
   position: relative;
-  overflow: hidden;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 0; /* no rounded edges */
+  width: 100%;
+  flex: 1;
+  min-height: 0;
 }
 
+/* The masked viewport that holds the image/placeholder/loading */
+.layer-photo-frame {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+/* Selection box that wraps ONLY the image area (not the caption) */
+.layer-photo-selection {
+  position: absolute;
+  inset: 0;
+  outline: 2px solid #2563eb;
+  outline-offset: 0;
+  pointer-events: none; /* handles will re-enable pointer events */
+  overflow: visible;
+}
+
+.layer-photo-selection .layer-resize-handle {
+  pointer-events: auto;
+  display: block; /* show handles only when overlay is rendered */
+}
+
+/* Photo content - image fills the flex space directly, no container wrapper */
 .layer-photo-image {
   width: 100%;
   height: 100%;
-  object-fit: contain;
+  object-fit: contain; /* Maintain image aspect ratio, fit within container */
   object-position: center;
   display: block;
   border-radius: 0; /* keep image edges square */
 }
 
 /* Hard override in case global site CSS rounds all images */
-.binder-editor-app .layer-photo-container,
 .binder-editor-app .layer-photo-image {
   border-radius: 0 !important;
 }
@@ -709,24 +734,27 @@ body {
 
 /* Caption shell sits at bottom of tile */
 .layer-caption-shell {
-  height: 44px;
+  width: 100%; /* Match image width */
+  min-height: 44px; /* Minimum height, but can grow */
+  flex-shrink: 0; /* Prevent caption from shrinking */
   display: flex;
   flex-direction: column;
   justify-content: center;
   padding: 4px 8px;
+  box-sizing: border-box;
 }
 
 /* Read-only display state */
 .layer-caption-display {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 3px;
 }
 
 .layer-caption-text {
   flex: 1;
-  font-size: 11px;
-  line-height: 1.3;
+  font-size: 12px;
+  line-height: 1;
   text-align: center;
   color: #111827;
   white-space: nowrap;
@@ -736,8 +764,8 @@ body {
 
 .layer-caption-placeholder {
   flex: 1;
-  font-size: 11px;
-  line-height: 1.3;
+  font-size: 12px;
+  line-height: 1;
   text-align: center;
   color: #9ca3af;
   font-style: italic;
@@ -767,13 +795,14 @@ body {
 .layer-caption-edit {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 3px;
 }
 
 .layer-caption-input {
+  width: 100%; /* Match caption shell width */
   flex: 1;
-  font-size: 11px;
-  line-height: 1.3;
+  font-size: 12px;
+  line-height: 1;
   padding: 4px 6px;
   border-radius: 6px;
   border: 1px dashed #9ca3af;
@@ -782,6 +811,9 @@ body {
   outline: none;
   user-select: text;
   cursor: text;
+  overflow: hidden; /* Hide scrollbar, textarea will auto-resize */
+  min-height: 20px; /* Minimum height for one line */
+  box-sizing: border-box;
 }
 
 .layer-caption-input:focus {
@@ -1045,7 +1077,7 @@ body {
     border-top: 1px solid #e2e8f0;
   }
 
-  .binder-editor-page-list::before {
+  .binder-editor-page-list::after {
     display: none;
   }
 

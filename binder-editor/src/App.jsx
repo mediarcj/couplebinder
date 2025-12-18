@@ -505,8 +505,47 @@ function App({ binderId /*, csrfToken */ }) {
     [selectedPage, layout, binderId]
   );
 
-  const handleReorderPages = useCallback(async () => {
-    // unchanged (kept as-is in your original)
+  const handleReorderPages = useCallback((fromIndex, toIndex) => {
+    if (typeof fromIndex !== 'number' || typeof toIndex !== 'number') return;
+    if (fromIndex === toIndex) return;
+
+    // Update selected page index so selection "follows" the moved tab
+    setSelectedPage((prevSelected) => {
+      if (prevSelected === fromIndex) return toIndex;
+
+      // If a page is moved down, pages between shift up by 1
+      if (fromIndex < toIndex && prevSelected > fromIndex && prevSelected <= toIndex) {
+        return prevSelected - 1;
+      }
+
+      // If a page is moved up, pages between shift down by 1
+      if (toIndex < fromIndex && prevSelected >= toIndex && prevSelected < fromIndex) {
+        return prevSelected + 1;
+      }
+
+      return prevSelected;
+    });
+
+    // Reorder the pages array in layout
+    setLayout((prev) => {
+      if (!prev || !Array.isArray(prev.pages)) return prev;
+
+      const pages = [...prev.pages];
+      if (!pages[fromIndex] || toIndex < 0 || toIndex >= pages.length) return prev;
+
+      const [moved] = pages.splice(fromIndex, 1);
+      pages.splice(toIndex, 0, moved);
+
+      // Keep pageIndex consistent with the visual order
+      const normalizedPages = pages.map((p, idx) => ({
+        ...p,
+        pageIndex: idx
+      }));
+
+      return { ...prev, pages: normalizedPages };
+    });
+
+    setIsDirty(true);
   }, []);
 
   const handleDeletePage = useCallback(() => {

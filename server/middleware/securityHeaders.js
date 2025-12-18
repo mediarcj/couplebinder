@@ -5,14 +5,19 @@
  * WHAT:
  * Applies hardened security headers via Helmet with strict CSP that eliminates unsafe-inline.
  * Uses nonce-based approach for scripts and styles to prevent XSS attacks.
+ * Exception: style-src-attr allows 'unsafe-inline' for Chrome PDF viewer compatibility.
  *
  * WHY:
  * unsafe-inline weakens CSP protection. Nonce-based policies provide strong XSS defense
  * while allowing necessary inline code that we control.
+ * Chrome's built-in PDF viewer (used in blob: iframes) requires inline style attributes
+ * to resize itself, so we allow style-src-attr 'unsafe-inline' globally.
+ * This only affects style attributes (style="..."), not <style> tags, which remain protected.
  *
  * HOW:
  * Generates a unique nonce per request and configures Helmet with strict CSP directives.
  * Templates must use <%= cspNonce %> for inline scripts/styles.
+ * styleSrcAttr is set to allow 'unsafe-inline' to support Chrome PDF viewer in blob: iframes.
  */
 
 const helmet = require('helmet');
@@ -107,6 +112,12 @@ function securityHeaders() {
           (req, res) => `'nonce-${res.locals.cspNonce}'`
         ],
         
+        // Style attributes: allow unsafe-inline so Chrome PDF viewer can resize
+        // This affects only style attributes (style="..."), not <style> tags.
+        // <style> tags are still protected by the nonce-based styleSrc above.
+        // This is needed for Chrome's built-in PDF viewer in blob: iframes.
+        styleSrcAttr: ["'unsafe-inline'"],
+        
         // Images: self-hosted + data URIs + Stripe product images + S3 uploads
         imgSrc: [
           "'self'",
@@ -125,7 +136,7 @@ function securityHeaders() {
         // AJAX/WebSocket: self + Supabase (HTTPS and WSS)
         connectSrc: ["'self'", supabaseOrigin, supabaseWss, TURNSTILE_ORIGIN].filter(Boolean),
 
-        frameSrc: ["'self'", TURNSTILE_ORIGIN],
+        frameSrc: ["'self'", "blob:", TURNSTILE_ORIGIN],
         
         // No iframes allowed
         frameAncestors: ["'none'"],

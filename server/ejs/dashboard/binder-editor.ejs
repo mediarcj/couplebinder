@@ -115,6 +115,21 @@
       src="/binder-editor/binder-editor.js?v=<%= page.assetVersion || assetVersion || '' %>"
       nonce="<%= page.nonce %>"
       defer
-    ></script></body>
+    ></script>
+    
+    <!-- Temporary CSP violation logger (remove after confirming fix) -->
+    <script nonce="<%= page.nonce %>">
+      document.addEventListener('securitypolicyviolation', (e) => {
+        console.log('[CSP violation]', {
+          violatedDirective: e.violatedDirective,
+          blockedURI: e.blockedURI,
+          sourceFile: e.sourceFile,
+          lineNumber: e.lineNumber,
+          effectiveDirective: e.effectiveDirective,
+          originalPolicy: e.originalPolicy
+        });
+      });
+    </script>
+</body>
 </html>
 

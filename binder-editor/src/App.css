@@ -265,17 +265,22 @@
     margin-left: 0;
     transform-origin: center center;
   }
+
+/* Helps dnd-kit reliably start drag (especially on touch/trackpads) */
+.page-tab {
+  touch-action: none;
+}
   
-  .page-tab-dragging {
-    opacity: 0.9;
-    border-color: #3b82f6;
-    box-shadow: 0 2px 8px rgba(59, 130, 246, 0.2);
-    z-index: 10;
-  }
-  
-  .page-tab-active.page-tab-dragging {
-    z-index: 20;
-  }
+ .page-tab-dragging {
+   opacity: 0.9;
+   border-color: #3b82f6;
+   box-shadow: 0 2px 8px rgba(59, 130, 246, 0.2);
+   z-index: 10;
+ }
+ 
+ .page-tab-active.page-tab-dragging {
+   z-index: 20;
+ }
   
   .page-tab-inactive {
     margin: 0.5rem 0 0.5rem 0;

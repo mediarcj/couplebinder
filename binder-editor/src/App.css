@@ -1129,6 +1129,198 @@ body {
   }
 }
 
+/* ===== PDF Preview Modal (viewport-height, iframe fills available space) ===== */
+
+.cb-preview-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.65);
+  z-index: 20000;
+
+  display: flex;
+  justify-content: center;
+  align-items: stretch;
+
+  padding: 24px;
+  backdrop-filter: blur(6px);
+
+  /* modal handles its own scrolling; body is locked in JS */
+  overflow: hidden;
+}
+
+.cb-preview-modal {
+  background: rgba(2, 6, 23, 0.72);
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 14px;
+  box-shadow:
+    0 22px 65px rgba(15, 23, 42, 0.55),
+    0 0 0 1px rgba(148, 163, 184, 0.12);
+
+  /* Key: take up the viewport height */
+  width: min(900px, calc(100vw - 48px));
+  height: calc(100vh - 48px);
+  max-height: calc(100vh - 48px);
+
+  display: flex;
+  flex-direction: column;
+
+  overflow: hidden;
+}
+
+.cb-preview-header {
+  height: 52px;
+  flex: 0 0 auto;
+
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 10px 0 14px;
+
+  background: rgba(2, 6, 23, 0.85);
+  border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+.cb-preview-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #e2e8f0;
+  letter-spacing: 0.2px;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.cb-preview-subtitle {
+  font-weight: 600;
+  font-size: 12px;
+  color: rgba(226, 232, 240, 0.65);
+}
+
+.cb-preview-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.cb-preview-action-btn {
+  padding: 7px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  background: rgba(15, 23, 42, 0.35);
+  color: rgba(226, 232, 240, 0.92);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.cb-preview-action-btn:hover:not(:disabled) {
+  background: rgba(15, 23, 42, 0.55);
+}
+
+.cb-preview-action-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.cb-preview-close {
+  width: 40px;
+  height: 36px;
+  border-radius: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  background: rgba(15, 23, 42, 0.35);
+  color: #e2e8f0;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.cb-preview-close:hover {
+  background: rgba(15, 23, 42, 0.6);
+}
+
+.cb-preview-body {
+  /* Key: this becomes the “viewport” for the PDF */
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+
+  background: rgba(2, 6, 23, 0.72);
+  padding: 12px;
+
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.cb-preview-paper {
+  /* Key: fill remaining height using flex, not height:100% */
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  /* Remove height: 100% - let flex handle it */
+  position: relative !important;
+
+  background: #0b1220;
+  border-radius: 10px;
+  overflow: hidden;
+
+  box-shadow:
+    0 12px 30px rgba(0, 0, 0, 0.35),
+    0 0 0 1px rgba(148, 163, 184, 0.14);
+}
+
+.cb-preview-paper-inner {
+  position: absolute !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  transform: none !important;
+  background: #0b1220;
+}
+
+.cb-preview-iframe {
+  width: 100% !important;
+  height: 100% !important;
+  min-height: 100% !important;
+  border: none !important;
+  display: block !important;
+  background: #0b1220;
+  /* Force iframe to fill container - override any browser defaults */
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+}
+
+.cb-preview-empty {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(226, 232, 240, 0.85);
+  font-size: 14px;
+}
+
+.cb-preview-footnote {
+  flex: 0 0 auto;
+  font-size: 11px;
+  color: rgba(226, 232, 240, 0.55);
+  text-align: center;
+}
+
+/* On small screens, keep padding smaller */
+@media (max-width: 600px) {
+  .cb-preview-backdrop {
+    padding: 12px;
+  }
+  .cb-preview-body {
+    padding: 10px;
+  }
+}
+
 /* ===== Mobile / small screens ===== */
 
 @media (max-width: 900px) {

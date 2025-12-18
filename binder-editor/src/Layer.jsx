@@ -5,6 +5,9 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { getPhotoViewUrl, updatePhotoCaption } from './api';
 
+const PAGE_WIDTH = 794;
+const PAGE_HEIGHT = 1122;
+
 const rectsOverlap = (l1, t1, w1, h1, l2, t2, w2, h2) => {
   return !(
     l1 + w1 <= l2 ||
@@ -37,7 +40,11 @@ function Layer({
   binderId,
   zoom = 1,
   snapGlowX = null, // 'left'|'right'|null
-  snapGlowY = null // 'top'|'bottom'|null
+  snapGlowY = null, // 'top'|'bottom'|null
+  isDragging = false,
+  isOverlapping = false,
+  isOverlapped = false,
+  isOutside = false
 }) {
   const [resizing, setResizing] = useState(false);
   const resizeRef = useRef(null);
@@ -50,7 +57,10 @@ function Layer({
   const [savingCaption, setSavingCaption] = useState(false);
   const [captionError, setCaptionError] = useState('');
 
-  const handleMouseDown = (e) => {
+  const [resizeOverlap, setResizeOverlap] = useState(false);
+  const [resizeOutside, setResizeOutside] = useState(false);  
+
+  const handlePointerDown = (e) => {
     const target = e.target;
 
     // Don't start a drag if interacting with inputs/buttons inside the layer
@@ -67,6 +77,9 @@ function Layer({
     e.preventDefault();
     e.stopPropagation();
     onSelect(layer.id);
+    try {
+      e.currentTarget.setPointerCapture?.(e.pointerId);
+    } catch {}
     onDragStart(layer.id, e);
   };
 
@@ -211,40 +224,35 @@ function Layer({
       height: layer.type === 'photo' ? imageHeight + (captionHeight || 0) : imageHeight
     };
 
-    // Collision check (DOM rects; good enough for now)
-    let collides = false;
+    // Feedback only (no blocking)
+    let overlapped = false;
     if (canvasEl && layerEl) {
       const others = canvasEl.querySelectorAll('.binder-editor-layer');
       for (const other of others) {
         if (other === layerEl) continue;
-
         const r = other.getBoundingClientRect();
         const oLeft = (r.left - canvasRect.left) / storedZoom;
         const oTop = (r.top - canvasRect.top) / storedZoom;
         const oWidth = r.width / storedZoom;
         const oHeight = r.height / storedZoom;
-
-        if (
-          rectsOverlap(
-            testRect.left,
-            testRect.top,
-            testRect.width,
-            testRect.height,
-            oLeft,
-            oTop,
-            oWidth,
-            oHeight
-          )
-        ) {
-          collides = true;
+        if (rectsOverlap(testRect.left, testRect.top, testRect.width, testRect.height, oLeft, oTop, oWidth, oHeight)) {
+          overlapped = true;
           break;
         }
       }
     }
 
-    const finalRect = collides ? { ...lastRect } : { ...testRect };
-    if (!collides) resizeRef.current.lastRect = finalRect;
+    const outside =
+      testRect.left < 0 ||
+      testRect.top < 0 ||
+      testRect.left + testRect.width > PAGE_WIDTH ||
+      testRect.top + testRect.height > PAGE_HEIGHT;
 
+    if (overlapped !== resizeOverlap) setResizeOverlap(overlapped);
+    if (outside !== resizeOutside) setResizeOutside(outside);
+
+    const finalRect = { ...testRect };
+    resizeRef.current.lastRect = finalRect;
     // Note: for photos we store TOTAL height (image + caption).
     onUpdate(layer.id, {
       width: finalRect.width,
@@ -257,6 +265,8 @@ function Layer({
   const handleResizeEnd = () => {
     setResizing(false);
     resizeRef.current = null;
+    setResizeOverlap(false);
+    setResizeOutside(false);    
   };
 
   const textareaRef = useRef(null);
@@ -267,16 +277,16 @@ function Layer({
     const handleMove = (e) => handleResizeMove(e);
     const handleEnd = () => {
       handleResizeEnd();
-      document.removeEventListener('mousemove', handleMove);
-      document.removeEventListener('mouseup', handleEnd);
+      document.removeEventListener('pointermove', handleMove);
+      document.removeEventListener('pointerup', handleEnd);
     };
 
-    document.addEventListener('mousemove', handleMove);
-    document.addEventListener('mouseup', handleEnd);
+    document.addEventListener('pointermove', handleMove);
+    document.addEventListener('pointerup', handleEnd);
 
     return () => {
-      document.removeEventListener('mousemove', handleMove);
-      document.removeEventListener('mouseup', handleEnd);
+      document.removeEventListener('pointermove', handleMove);
+      document.removeEventListener('pointerup', handleEnd);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resizing]);
@@ -378,14 +388,18 @@ function Layer({
 
   const glowXClass = snapGlowX ? `snap-glow-x-${snapGlowX}` : '';
   const glowYClass = snapGlowY ? `snap-glow-y-${snapGlowY}` : '';
+  const overlapClass = (isOverlapping || resizeOverlap) ? 'is-overlapping' : '';
+  const overlappedClass = isOverlapped ? 'is-overlapped' : '';
+  const outsideClass = (isOutside || resizeOutside) ? 'is-outside' : '';
+  const draggingClass = isDragging ? 'is-dragging' : '';
 
   return (
     <div
       className={`binder-editor-layer ${selected ? 'selected' : ''} ${
         layer.type === 'photo' ? 'layer-type-photo' : 'layer-type-other'
-      } ${glowXClass} ${glowYClass}`}
+      } ${glowXClass} ${glowYClass} ${draggingClass} ${overlapClass} ${overlappedClass} ${outsideClass}`}
       data-layer-id={layer.id}
-      onMouseDown={handleMouseDown}
+      onPointerDown={handlePointerDown}
     >
       {layer.type === 'photo' && (
         <>
@@ -440,7 +454,7 @@ function Layer({
                     <div
                       key={pos}
                       className={`layer-resize-handle layer-resize-${pos}`}
-                      onMouseDown={(e) => handleResizeStart(e, pos)}
+                      onPointerDown={(e) => handleResizeStart(e, pos)}
                       role="presentation"
                     />
                   )

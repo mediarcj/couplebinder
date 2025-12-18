@@ -39,12 +39,16 @@ function Layer({
   onDragStart,
   binderId,
   zoom = 1,
-  snapGlowX = null, // 'left'|'right'|null
-  snapGlowY = null, // 'top'|'bottom'|null
+  snapGlowX = null,
+  snapGlowY = null,
   isDragging = false,
   isOverlapping = false,
   isOverlapped = false,
-  isOutside = false
+  isOutside = false,
+
+  // NEW:
+  snapAnimating = false,
+  isFullyOutside = false
 }) {
   const [resizing, setResizing] = useState(false);
   const resizeRef = useRef(null);
@@ -58,12 +62,11 @@ function Layer({
   const [captionError, setCaptionError] = useState('');
 
   const [resizeOverlap, setResizeOverlap] = useState(false);
-  const [resizeOutside, setResizeOutside] = useState(false);  
+  const [resizeOutside, setResizeOutside] = useState(false);
 
   const handlePointerDown = (e) => {
     const target = e.target;
 
-    // Don't start a drag if interacting with inputs/buttons inside the layer
     if (
       target.closest('.layer-caption-input') ||
       target.tagName === 'TEXTAREA' ||
@@ -90,7 +93,6 @@ function Layer({
     const layerEl = e.currentTarget.closest('.binder-editor-layer');
     if (!layerEl) return;
 
-    // Prefer the actual page as the coordinate space
     const canvasEl =
       layerEl.closest('.canvas-page') ||
       layerEl.closest('.canvas-stage') ||
@@ -101,7 +103,6 @@ function Layer({
     const canvasRect = canvasEl.getBoundingClientRect();
     const layerRect = layerEl.getBoundingClientRect();
 
-    // For photos, measure the image-frame wrapper (not the full layer including caption)
     const frameEl =
       layerEl.querySelector('.layer-photo-frame-wrapper') || layerEl;
 
@@ -112,13 +113,11 @@ function Layer({
     const left = (frameRect.left - canvasRect.left) / storedZoom;
     const top = (frameRect.top - canvasRect.top) / storedZoom;
 
-    // Caption height in logical coords (so total layer height stays correct)
     const captionHeight =
       layer.type === 'photo'
         ? Math.max(0, (layerRect.height - frameRect.height) / storedZoom)
         : 0;
 
-    // Use true photo aspect ratio if available; otherwise fall back to measured frame rect
     const aspect =
       typeof layer.photoAspectRatio === 'number' && layer.photoAspectRatio > 0
         ? layer.photoAspectRatio
@@ -138,7 +137,6 @@ function Layer({
       startMouseX: e.clientX,
       startMouseY: e.clientY,
       startRect,
-      // lastRect represents TOTAL rect for collision fallback (includes caption for photos)
       lastRect: {
         ...startRect,
         height: startRect.height + captionHeight
@@ -162,7 +160,6 @@ function Layer({
       startMouseX,
       startMouseY,
       startRect,
-      lastRect,
       aspect,
       canvasRect,
       canvasEl,
@@ -180,7 +177,6 @@ function Layer({
     let width = isLeft ? startRect.width - dx : startRect.width + dx;
     width = Math.max(50, width);
 
-    // Keep image aspect ratio for photos; for other layers still keep aspect-based resize as-is
     let imageHeight = width / aspect;
 
     let left = isLeft ? startRect.left + (startRect.width - width) : startRect.left;
@@ -192,17 +188,14 @@ function Layer({
     const totalHeight =
       layer.type === 'photo' ? imageHeight + (captionHeight || 0) : imageHeight;
 
-    // Keep inside bounds
     left = clamp(left, 0, canvasWidth - width);
     top = clamp(top, 0, canvasHeight - totalHeight);
 
-    // If pushed past right edge, shrink to fit
     if (left + width > canvasWidth) {
       width = Math.max(50, canvasWidth - left);
       imageHeight = width / aspect;
     }
 
-    // If pushed past bottom edge, shrink to fit
     if (top + (layer.type === 'photo' ? imageHeight + (captionHeight || 0) : imageHeight) > canvasHeight) {
       const maxImageHeight =
         layer.type === 'photo'
@@ -224,7 +217,6 @@ function Layer({
       height: layer.type === 'photo' ? imageHeight + (captionHeight || 0) : imageHeight
     };
 
-    // Feedback only (no blocking)
     let overlapped = false;
     if (canvasEl && layerEl) {
       const others = canvasEl.querySelectorAll('.binder-editor-layer');
@@ -251,14 +243,13 @@ function Layer({
     if (overlapped !== resizeOverlap) setResizeOverlap(overlapped);
     if (outside !== resizeOutside) setResizeOutside(outside);
 
-    const finalRect = { ...testRect };
-    resizeRef.current.lastRect = finalRect;
-    // Note: for photos we store TOTAL height (image + caption).
+    resizeRef.current.lastRect = { ...testRect };
+
     onUpdate(layer.id, {
-      width: finalRect.width,
-      height: finalRect.height,
-      x: finalRect.left,
-      y: finalRect.top
+      width: testRect.width,
+      height: testRect.height,
+      x: testRect.left,
+      y: testRect.top
     });
   };
 
@@ -266,7 +257,7 @@ function Layer({
     setResizing(false);
     resizeRef.current = null;
     setResizeOverlap(false);
-    setResizeOutside(false);    
+    setResizeOutside(false);
   };
 
   const textareaRef = useRef(null);
@@ -342,11 +333,10 @@ function Layer({
     layer.backgroundColor
   ]);
 
-  // Resolve photo view URL (signed URL, etc.)
+  // Resolve photo view URL
   useEffect(() => {
     if (layer.type !== 'photo') return;
 
-    // If a direct src exists, show it immediately while we fetch the secure view URL
     if (layer.src) setImageUrl(layer.src);
 
     if (!binderId || !layer.storageKey) return;
@@ -380,7 +370,6 @@ function Layer({
     setCaptionDraft(layer.caption || '');
   }, [layer.caption]);
 
-  // When entering edit mode, focus the textarea (layout is fixed-height now)
   useEffect(() => {
     if (!editingCaption) return;
     textareaRef.current?.focus?.();
@@ -392,12 +381,14 @@ function Layer({
   const overlappedClass = isOverlapped ? 'is-overlapped' : '';
   const outsideClass = (isOutside || resizeOutside) ? 'is-outside' : '';
   const draggingClass = isDragging ? 'is-dragging' : '';
+  const snappingClass = snapAnimating ? 'is-snapping' : '';
+  const fullyOutsideClass = isFullyOutside ? 'is-fully-outside' : '';
 
   return (
     <div
       className={`binder-editor-layer ${selected ? 'selected' : ''} ${
         layer.type === 'photo' ? 'layer-type-photo' : 'layer-type-other'
-      } ${glowXClass} ${glowYClass} ${draggingClass} ${overlapClass} ${overlappedClass} ${outsideClass}`}
+      } ${glowXClass} ${glowYClass} ${draggingClass} ${snappingClass} ${overlapClass} ${overlappedClass} ${outsideClass} ${fullyOutsideClass}`}
       data-layer-id={layer.id}
       onPointerDown={handlePointerDown}
     >
@@ -405,7 +396,9 @@ function Layer({
         <>
           <div className="layer-photo-frame-wrapper">
             <div className="layer-photo-frame">
-              {imageUrl ? (
+              {isFullyOutside ? (
+                <div className="layer-photo-outside-placeholder" />
+              ) : imageUrl ? (
                 <img
                   src={imageUrl}
                   alt="Binder photo"

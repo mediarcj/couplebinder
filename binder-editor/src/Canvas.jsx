@@ -9,6 +9,9 @@ import Layer from './Layer';
 const PAGE_WIDTH = 794;
 const PAGE_HEIGHT = 1122;
 
+// Photo caption height in your CSS (.layer-caption-shell)
+const CAPTION_H = 88;
+
 // Snap distance in *screen* pixels; we convert to logical using current zoom.
 const SNAP_SCREEN_PX = 8;
 
@@ -69,6 +72,52 @@ function buildGuideCandidates(allLayers, movingLayerId) {
   });
 
   return { x, y };
+}
+
+/**
+ * Compute how much of the PHOTO FRAME is outside the page, as 4 bands (top/left/right/bottom).
+ * These values are in *layer-frame local pixels* and will drive the stripe overlay.
+ *
+ * NOTE: This is for photo layers only, and uses (height - CAPTION_H) as the frame height.
+ */
+function computePhotoOutsideBands(layer) {
+  if (!layer || layer.type !== 'photo') {
+    return { top: 0, left: 0, right: 0, bottom: 0, alpha: 0 };
+  }
+
+  const x = typeof layer.x === 'number' ? layer.x : 0;
+  const y = typeof layer.y === 'number' ? layer.y : 0;
+  const w = Math.max(0, typeof layer.width === 'number' ? layer.width : 0);
+  const totalH = Math.max(0, typeof layer.height === 'number' ? layer.height : 0);
+  const frameH = Math.max(0, totalH - CAPTION_H);
+
+  if (w <= 0 || frameH <= 0) {
+    return { top: 0, left: 0, right: 0, bottom: 0, alpha: 0 };
+  }
+
+  // Intersection of the photo-frame rect with the page rect
+  const ix1 = Math.max(x, 0);
+  const iy1 = Math.max(y, 0);
+  const ix2 = Math.min(x + w, PAGE_WIDTH);
+  const iy2 = Math.min(y + frameH, PAGE_HEIGHT);
+
+  const insideW = Math.max(0, ix2 - ix1);
+  const insideH = Math.max(0, iy2 - iy1);
+  const insideArea = insideW * insideH;
+
+  const frameArea = Math.max(1, w * frameH);
+  const outsideArea = Math.max(0, frameArea - insideArea);
+
+  // Alpha 0..1: 0 when fully inside, 1 when fully outside
+  const alpha = clamp(outsideArea / frameArea, 0, 1);
+
+  // Bands in frame-local coords
+  const top = Math.max(0, Math.round(iy1 - y));
+  const left = Math.max(0, Math.round(ix1 - x));
+  const right = Math.max(0, Math.round((x + w) - ix2));
+  const bottom = Math.max(0, Math.round((y + frameH) - iy2));
+
+  return { top, left, right, bottom, alpha };
 }
 
 /**
@@ -638,6 +687,7 @@ function Canvas({
         </div>
 
         <div className="canvas-header-actions flex items-center gap-3">
+          {/* (unchanged zoom UI) */}
           <div className="flex items-center gap-2 px-3 py-1.5 bg-gradient-to-r from-slate-50 to-slate-100 rounded-lg border border-slate-200 shadow-sm">
             <button
               type="button"
@@ -661,10 +711,6 @@ function Canvas({
             </button>
 
             <div className="flex items-center gap-2 min-w-[140px]">
-              <svg className="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM13 10V7m0 3h3m-3 0H10" />
-              </svg>
-
               <input
                 type="range"
                 min="0.25"
@@ -675,10 +721,6 @@ function Canvas({
                 className="flex-1 h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-blue-600 hover:accent-blue-700 transition-all"
                 title={`Zoom: ${Math.round(zoom * 100)}%`}
               />
-
-              <svg className="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" />
-              </svg>
             </div>
 
             <span className="text-sm font-medium text-slate-700 min-w-[45px] text-right tabular-nums">
@@ -714,7 +756,17 @@ function Canvas({
             const isSnapAnimating = snapAnimatingLayerId === layer.id;
 
             const dragInsidePct = isDraggingLayer ? (dragFeedback.insidePct ?? 100) : null;
-            const isFullyOutside = isDraggingLayer && (dragInsidePct != null ? dragInsidePct <= 0.1 : false);
+            const isFullyOutside =
+              isDraggingLayer && (dragInsidePct != null ? dragInsidePct <= 0.1 : false);
+
+            const isPartiallyOutside =
+              isDraggingLayer && (dragInsidePct != null ? dragInsidePct < 99.9 : false);
+
+            // NEW: outside stripe bands only matter while dragging photo layers
+            const outsideBands =
+              isDraggingLayer && layer?.type === 'photo'
+                ? computePhotoOutsideBands(layer)
+                : { top: 0, left: 0, right: 0, bottom: 0, alpha: 0 };
 
             return (
               <Layer
@@ -731,10 +783,12 @@ function Canvas({
                 snapGlowY={isDraggingLayer ? activeGlowEdges.y : null}
                 isDragging={isDraggingLayer}
                 isOverlapping={isDraggingLayer && (dragFeedback.ids?.length || 0) > 0}
-                isOutside={isDraggingLayer && !!dragFeedback.outside}
+                isOutside={isPartiallyOutside}
                 isOverlapped={!isDraggingLayer && overlapSet.has(layer.id)}
                 snapAnimating={isSnapAnimating}
                 isFullyOutside={isFullyOutside}
+                insidePct={isDraggingLayer ? (dragInsidePct ?? 100) : 100}
+                outsideBands={outsideBands} // NEW
               />
             );
           })}

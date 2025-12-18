@@ -7,6 +7,8 @@ import React from 'react';
 function ActionSidebar({
   onAddPhoto,
   onDeleteSelected,
+  onPreviewPdf,
+  previewing,
   onExportPdf,
   onTidyLayout,
   saving,
@@ -24,6 +26,7 @@ function ActionSidebar({
         >
           ADD PHOTO
         </button>
+
         <button
           type="button"
           className="action-sidebar-btn action-sidebar-btn-primary"
@@ -32,6 +35,7 @@ function ActionSidebar({
         >
           DELETE PHOTO
         </button>
+
         <button
           type="button"
           className="action-sidebar-btn action-sidebar-btn-secondary"
@@ -40,6 +44,16 @@ function ActionSidebar({
         >
           TIDY
         </button>
+
+        <button
+          type="button"
+          className="action-sidebar-btn action-sidebar-btn-secondary"
+          onClick={onPreviewPdf}
+          disabled={previewing || exporting || saving || !canExport}
+        >
+          {previewing ? 'PREVIEWING…' : 'PREVIEW PDF'}
+        </button>
+
         <button
           type="button"
           className="action-sidebar-btn action-sidebar-btn-primary"
@@ -54,4 +68,3 @@ function ActionSidebar({
 }
 
 export default ActionSidebar;
-

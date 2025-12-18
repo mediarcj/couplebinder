@@ -23,139 +23,32 @@ const PAGE_GUTTER = 12;
 // This must match the minimum caption height in CSS (.layer-caption-shell).
 const CAPTION_H = 88;
 
-// Simple rectangle overlap helper in page coordinates
-function rectsOverlap(x1, y1, w1, h1, x2, y2, w2, h2) {
-  return !(
-    x1 + w1 <= x2 ||
-    x1 >= x2 + w2 ||
-    y1 + h1 <= y2 ||
-    y1 >= y2 + h2
-  );
-}
+function computeCascadingPhotoFrame({ index, aspectRatio = 1 }) {
+  const safeAr = typeof aspectRatio === 'number' && aspectRatio > 0 ? aspectRatio : 1;
 
-function hasCollision(x, y, width, height, rects) {
-  if (!rects || rects.length === 0) return false;
-  for (const r of rects) {
-    if (!r) continue;
-    const rw = typeof r.width === 'number' ? r.width : 0;
-    const rh = typeof r.height === 'number' ? r.height : 0;
-    if (rw <= 0 || rh <= 0) continue;
-    if (rectsOverlap(x, y, width, height, r.x, r.y, rw, rh)) {
-      return true;
-    }
-  }
-  return false;
-}
+  // Size feels “platform-like”: big enough, but not full page.
+  let w = Math.round(PAGE_WIDTH * 0.55);
+  let imageH = Math.round(w / safeAr);
+  const maxImageH = Math.round(PAGE_HEIGHT * 0.55);
 
-/**
- * Find the largest available rectangle on the page that:
- * - Stays inside the page (with a gutter)
- * - Does not overlap any existing rects
- * - Uses a roughly square aspect ratio (for now: 1:1, same as previous 200x200)
- *
- * Strategy:
- * - Start from a "max" size (page minus gutters)
- * - Step scale down until we find a fit
- * - For each size, scan candidate positions on a grid and pick the first free slot
- * - If nothing fits, fall back to a centered medium rectangle
- */
-function findLargestAvailableRect(existingRects, aspectRatio = 1) {
-  const gutter = PAGE_GUTTER;
-  const maxWidth = PAGE_WIDTH - gutter * 2;
-  const maxHeight = PAGE_HEIGHT - gutter * 2;
-
-  const minSize = 150; // do not make new photos tiny
-  const maxScale = 1.0;
-  const minScale = Math.max(minSize / maxWidth, 0.3);
-
-  for (let scale = maxScale; scale >= minScale; scale -= 0.1) {
-    // Base width from horizontal room
-    let width = maxWidth * scale;
-    let height = width / aspectRatio;
-
-    // If that makes it too tall, clamp by vertical room instead
-    if (height > maxHeight * scale) {
-      height = maxHeight * scale;
-      width = height * aspectRatio;
-    }
-
-    if (width < minSize || height < minSize) {
-      continue;
-    }
-
-    const stepX = Math.max(16, width / 4);
-    const stepY = Math.max(16, height / 4);
-
-    for (
-      let y = gutter;
-      y <= PAGE_HEIGHT - height - gutter;
-      y += stepY
-    ) {
-      for (
-        let x = gutter;
-        x <= PAGE_WIDTH - width - gutter;
-        x += stepX
-      ) {
-        if (!hasCollision(x, y, width, height, existingRects)) {
-          return {
-            x: Math.round(x),
-            y: Math.round(y),
-            width: Math.round(width),
-            height: Math.round(height)
-          };
-        }
-      }
-    }
+  if (imageH > maxImageH) {
+    imageH = maxImageH;
+    w = Math.round(imageH * safeAr);
   }
 
-  // Fallback: centered medium rectangle
-  const fallbackWidth = Math.max(minSize, maxWidth * 0.5);
-  const fallbackHeight = Math.max(
-    minSize,
-    Math.min(maxHeight * 0.5, fallbackWidth / aspectRatio)
-  );
-  const fx = Math.round((PAGE_WIDTH - fallbackWidth) / 2);
-  const fy = Math.round((PAGE_HEIGHT - fallbackHeight) / 2);
+  const totalH = imageH + CAPTION_H;
 
-  return {
-    x: fx,
-    y: fy,
-    width: Math.round(fallbackWidth),
-    height: Math.round(fallbackHeight)
-  };
-}
+  // Center + gentle cascade so multiple uploads don't stack perfectly.
+  const baseX = Math.round((PAGE_WIDTH - w) / 2);
+  const baseY = Math.round((PAGE_HEIGHT - totalH) / 2);
+  const step = 24;
+  const offset = (index % 8) * step;
 
-/**
- * Compute an initial frame for a new photo on the current page, based purely
- * on the existing layout rectangles in memory (no DOM).
- *
- * - Keeps the new photo inside the page
- * - Avoids overlaps with existing layers on that page
- * - Makes the new photo as large as possible for the available free area
- */
-function computeInitialPhotoFrame(pages, selectedPageIndex, aspectRatio = 1) {
-  const pagesArray = Array.isArray(pages) ? pages : [];
-  const page =
-    pagesArray[selectedPageIndex] || {
-      pageIndex: selectedPageIndex,
-      layers: []
-    };
+  // Keep initial placement inside page (user can drag out after).
+  const x = Math.min(Math.max(baseX + offset, 0), PAGE_WIDTH - w);
+  const y = Math.min(Math.max(baseY + offset, 0), PAGE_HEIGHT - totalH);
 
-  const layers = Array.isArray(page.layers) ? page.layers : [];
-
-  const existingRects = layers.map((l) => ({
-    x: typeof l.x === 'number' ? l.x : 0,
-    y: typeof l.y === 'number' ? l.y : 0,
-    width: typeof l.width === 'number' ? l.width : 0,
-    height: typeof l.height === 'number' ? l.height : 0
-  }));
-
-  const rect = findLargestAvailableRect(existingRects, aspectRatio);
-
-  return {
-    ...rect,
-    zIndex: layers.length // put new photo on top of existing layers
-  };
+  return { x, y, width: w, height: totalH };
 }
 
 // Shared helper: compute login URL and redirect on session expiry
@@ -631,14 +524,6 @@ function App({ binderId /*, csrfToken */ }) {
           const page = { ...pages[selectedPage] };
           page.layers = Array.isArray(page.layers) ? [...page.layers] : [];
 
-          // Build existing rect list once, and extend it as we place new photos
-          const existingRects = page.layers.map((l) => ({
-            x: typeof l.x === 'number' ? l.x : 0,
-            y: typeof l.y === 'number' ? l.y : 0,
-            width: typeof l.width === 'number' ? l.width : 0,
-            height: typeof l.height === 'number' ? l.height : 0
-          }));
-
           const nextLayers = [...page.layers];
 
           photoDataWithAspectRatios.forEach((photo, idx) => {
@@ -654,15 +539,11 @@ function App({ binderId /*, csrfToken */ }) {
             const imageAspectRatio = typeof photo.aspectRatio === 'number' && photo.aspectRatio > 0
               ? photo.aspectRatio
               : 1;
-            
-            const imageFrame = findLargestAvailableRect(existingRects, imageAspectRatio);
-            
-            // Total frame height includes the caption
-            // The image container (flex: 1) will be imageFrame.height, caption is 44px
-            const totalFrame = {
-              ...imageFrame,
-              height: imageFrame.height + CAPTION_H
-            };
+
+            const totalFrame = computeCascadingPhotoFrame({
+              index: nextLayers.length + idx,
+              aspectRatio: imageAspectRatio
+            });
 
             const newLayer = {
               id: `layer-upload-${Date.now()}-${idx}`,
@@ -680,12 +561,6 @@ function App({ binderId /*, csrfToken */ }) {
             };
 
             nextLayers.push(newLayer);
-            existingRects.push({
-              x: totalFrame.x,
-              y: totalFrame.y,
-              width: totalFrame.width,
-              height: totalFrame.height
-            });
           });
 
           const updatedPage = {

@@ -179,6 +179,8 @@ const SECTION_DEFS = {
 const LAYOUT_LOGICAL_WIDTH = 794; // Actual A4 width at 96 DPI
 const LAYOUT_LOGICAL_HEIGHT = 1122; // Actual A4 height at 96 DPI
 
+// Must match client CAPTION_H (binder-editor/src/App.jsx and CSS .layer-caption-shell)
+const CAPTION_LOGICAL_PX = 88;
 const mmToPt = (v) => (v / 25.4) * 72; // pdfkit uses points
 
 // -----------------------------------------------------------------------------
@@ -211,7 +213,7 @@ async function renderBinderPageBody({
   binderTitle,
   totalPages,
   contentPageNumber,
-  marginPt = mmToPt(18),
+  marginPt = 0,
   client = null,
   userId = null,
   binderId = null,
@@ -224,27 +226,22 @@ async function renderBinderPageBody({
 
   const pageWidth = doc.page.width;
   const pageHeight = doc.page.height;
-  const contentWidth = pageWidth - marginPt * 2;
-  const contentHeight = pageHeight - marginPt * 2;
+  // Full-bleed rendering: no automatic margins/insets.
+  // We fit the logical A4 canvas (794x1122) to the PDF page size.
+  const contentWidth = pageWidth;
+  const contentHeight = pageHeight;
 
-  const scale = Math.min(contentWidth / LAYOUT_LOGICAL_WIDTH, contentHeight / LAYOUT_LOGICAL_HEIGHT);
+  const scale = Math.min(
+    contentWidth / LAYOUT_LOGICAL_WIDTH,
+    contentHeight / LAYOUT_LOGICAL_HEIGHT
+  );
 
   const surfaceWidth = LAYOUT_LOGICAL_WIDTH * scale;
   const surfaceHeight = LAYOUT_LOGICAL_HEIGHT * scale;
 
-  const baseX = marginPt + (contentWidth - surfaceWidth) / 2;
-  const baseY = marginPt;
-
-  // Header
-  doc.fontSize(10).text(
-    `${sectionDef.label} · Exhibit ${exhibitCode} · Page ${contentPageNumber} of ${totalPages}`,
-    { align: 'center' }
-  );
-  doc.moveDown(0.5);
-  doc
-    .fontSize(12)
-    .text(binderTitle ? `Couplebinder – ${binderTitle}` : 'Couplebinder', { align: 'center' });
-  doc.moveDown(0.5);
+  // Center the logical surface on the PDF page (usually ends up at ~0,0 for A4)
+  const baseX = (contentWidth - surfaceWidth) / 2;
+  const baseY = (contentHeight - surfaceHeight) / 2;
 
   // Page surface
   doc.save().rect(baseX, baseY, surfaceWidth, surfaceHeight).fill('#ffffff').stroke('#dddddd').restore();
@@ -308,9 +305,7 @@ async function renderBinderPageBody({
         }
 
         // Reserve space for caption at bottom of photo tile
-        const maxCaptionFrac = 0.22;
-        const maxCaptionPts = 80;
-        const captionBand = Math.min(pdfH * maxCaptionFrac, maxCaptionPts);
+        const captionBand = Math.min(pdfH, CAPTION_LOGICAL_PX * scale);
         const imgHeight = pdfH - captionBand;
         const imgY = pdfY;
 

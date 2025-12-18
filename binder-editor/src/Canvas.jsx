@@ -21,10 +21,6 @@ function easeOutCubic(t) {
   return 1 - Math.pow(1 - tt, 3);
 }
 
-function clamp(value, min, max) {
-  return Math.min(Math.max(value, min), max);
-}
-
 function rectsOverlap(x1, y1, w1, h1, x2, y2, w2, h2) {
   return !(
     x1 + w1 <= x2 ||
@@ -32,6 +28,17 @@ function rectsOverlap(x1, y1, w1, h1, x2, y2, w2, h2) {
     y1 + h1 <= y2 ||
     y1 >= y2 + h2
   );
+}
+
+function intersectionArea(ax, ay, aw, ah, bx, by, bw, bh) {
+  const x1 = Math.max(ax, bx);
+  const y1 = Math.max(ay, by);
+  const x2 = Math.min(ax + aw, bx + bw);
+  const y2 = Math.min(ay + ah, by + bh);
+  const w = x2 - x1;
+  const h = y2 - y1;
+  if (w <= 0 || h <= 0) return 0;
+  return w * h;
 }
 
 function buildGuideCandidates(allLayers, movingLayerId) {
@@ -71,16 +78,16 @@ function buildGuideCandidates(allLayers, movingLayerId) {
  */
 function snapAxis(proposedStart, size, guides, threshold) {
   const candidates = [
-    { kind: 'start', value: proposedStart }, // left/top
-    { kind: 'center', value: proposedStart + size / 2 }, // center
-    { kind: 'end', value: proposedStart + size } // right/bottom
+    { kind: 'start', value: proposedStart },
+    { kind: 'center', value: proposedStart + size / 2 },
+    { kind: 'end', value: proposedStart + size }
   ];
 
   let best = null;
 
   for (const g of guides) {
     for (const c of candidates) {
-      const delta = g - c.value; // shift needed so candidate hits guide
+      const delta = g - c.value;
       const abs = Math.abs(delta);
       if (abs <= threshold && (!best || abs < best.abs)) {
         best = { abs, delta, guidePos: g, kind: c.kind };
@@ -119,114 +126,15 @@ function closestEdgeY(top, height, guidePos) {
   return Math.abs(guidePos - t) <= Math.abs(guidePos - b) ? 'top' : 'bottom';
 }
 
-function collidesWithRects(x, y, w, h, rects) {
-  for (const r of rects) {
-    if (!r) continue;
-    if (
-      rectsOverlap(
-        x,
-        y,
-        w,
-        h,
-        r.x,
-        r.y,
-        r.width,
-        r.height
-      )
-    ) {
-      return true;
-    }
-  }
-  return false;
-}
-
-/**
- * Soft collision resolver:
- * - Instead of “reverting” (sticky), we try to push the moving rect out
- *   along the dominant movement axis (dx/dy), so it “slides” along edges.
- */
-function resolveCollisionsSoft({
-  desiredX,
-  desiredY,
-  w,
-  h,
-  dx,
-  dy,
-  otherRects
-}) {
-  let x = desiredX;
-  let y = desiredY;
-  let collided = false;
-
-  if (!otherRects || otherRects.length === 0) {
-    return { x, y, collided: false };
-  }
-
-  // A couple of passes helps when we push out of one rect into another.
-  for (let pass = 0; pass < 3; pass += 1) {
-    let anyThisPass = false;
-
-    for (const r of otherRects) {
-      if (!r) continue;
-
-      const hit = rectsOverlap(x, y, w, h, r.x, r.y, r.width, r.height);
-      if (!hit) continue;
-
-      collided = true;
-      anyThisPass = true;
-
-      const absDx = Math.abs(dx);
-      const absDy = Math.abs(dy);
-
-      // Prefer resolving along the axis the user is mostly moving.
-      const resolveXFirst = absDx >= absDy;
-
-      if (resolveXFirst) {
-        if (dx > 0) {
-          // moving right: park to the left of obstacle
-          x = Math.min(x, r.x - w);
-        } else if (dx < 0) {
-          // moving left: park to the right of obstacle
-          x = Math.max(x, r.x + r.width);
-        } else {
-          // no dx: fall back to y
-          if (dy > 0) y = Math.min(y, r.y - h);
-          else if (dy < 0) y = Math.max(y, r.y + r.height);
-        }
-      } else {
-        if (dy > 0) {
-          // moving down: park above obstacle
-          y = Math.min(y, r.y - h);
-        } else if (dy < 0) {
-          // moving up: park below obstacle
-          y = Math.max(y, r.y + r.height);
-        } else {
-          // no dy: fall back to x
-          if (dx > 0) x = Math.min(x, r.x - w);
-          else if (dx < 0) x = Math.max(x, r.x + r.width);
-        }
-      }
-
-      // Keep inside page bounds after each adjustment
-      x = clamp(x, 0, PAGE_WIDTH - w);
-      y = clamp(y, 0, PAGE_HEIGHT - h);
-    }
-
-    if (!anyThisPass) break;
-  }
-
-  return { x, y, collided };
-}
-
 function Canvas({
   page,
   layers,
   onUpdateLayer,
-  onAddLayer,
+  onAddLayer, // unused here but kept for compatibility
   onRemoveLayer,
-  onAddPhoto,
+  onAddPhoto, // unused here but kept for compatibility
   sectionKey,
-  sectionLabels,
+  sectionLabels, // unused here but kept for compatibility
   sectionOptions,
   onSectionChange,
   selectedLayerId,
@@ -238,13 +146,19 @@ function Canvas({
 }) {
   const [dragging, setDragging] = useState(false);
 
-  // Guides (for rendering)
-  const [activeGuides, setActiveGuides] = useState({ x: null, y: null });
+  const [dragFeedback, setDragFeedback] = useState({
+    ids: [],
+    pct: 0,
+    outside: false,
+    clientX: 0,
+    clientY: 0
+  });
 
-  // Which edges to glow while snapping (only for the dragging layer)
+  const [activeGuides, setActiveGuides] = useState({ x: null, y: null });
   const [activeGlowEdges, setActiveGlowEdges] = useState({ x: null, y: null });
 
-  // Refs for smooth drag
+  const overlapSet = new Set(dragFeedback.ids || []);
+
   const dragRef = useRef({
     active: false,
     layerId: null,
@@ -260,14 +174,29 @@ function Canvas({
     otherRects: [],
     guides: { x: [], y: [] },
     snapTargets: { x: null, y: null },
-    lastUi: { guideX: null, guideY: null, glowX: null, glowY: null }
+    axisLock: null,
+
+    // pointer capture tracking (for proper release)
+    pointerId: null,
+    pointerEl: null,
+
+    lastUi: {
+      guideX: null,
+      guideY: null,
+      glowX: null,
+      glowY: null,
+      feedbackSig: null
+    }
   });
 
   const rafRef = useRef(0);
   const lastEventRef = useRef(null);
 
-  const docMoveHandlerRef = useRef(null);
-  const docUpHandlerRef = useRef(null);
+  // Store handlers so stopDragging can always detach them
+  const moveHandlerRef = useRef(null);
+  const upHandlerRef = useRef(null);
+  const cancelHandlerRef = useRef(null);
+  const blurHandlerRef = useRef(null);
 
   const setGuidesIfChanged = (x, y) => {
     const last = dragRef.current.lastUi;
@@ -283,15 +212,27 @@ function Canvas({
     setActiveGlowEdges({ x, y });
   };
 
+  const setFeedbackIfChanged = (next) => {
+    const d = dragRef.current;
+    const idsSig = (next.ids || []).slice().sort().join(',');
+    const sig = `${idsSig}|${next.outside ? 1 : 0}|${Math.round(next.pct || 0)}`;
+
+    if (d.lastUi?.feedbackSig === sig) return;
+    d.lastUi = { ...(d.lastUi || {}), feedbackSig: sig };
+    setDragFeedback(next);
+  };
+
   const clearUi = () => {
     dragRef.current.lastUi = {
       guideX: null,
       guideY: null,
       glowX: null,
-      glowY: null
+      glowY: null,
+      feedbackSig: null
     };
     setActiveGuides({ x: null, y: null });
     setActiveGlowEdges({ x: null, y: null });
+    setDragFeedback({ ids: [], pct: 0, outside: false, clientX: 0, clientY: 0 });
   };
 
   const stopDragging = useCallback(() => {
@@ -302,17 +243,36 @@ function Canvas({
 
     lastEventRef.current = null;
 
-    // Remove doc listeners
-    if (docMoveHandlerRef.current) {
-      document.removeEventListener('mousemove', docMoveHandlerRef.current);
-      docMoveHandlerRef.current = null;
+    // Detach listeners (pointer + mouse fallbacks)
+    if (moveHandlerRef.current) {
+      document.removeEventListener('pointermove', moveHandlerRef.current);
+      document.removeEventListener('mousemove', moveHandlerRef.current);
+      moveHandlerRef.current = null;
     }
-    if (docUpHandlerRef.current) {
-      document.removeEventListener('mouseup', docUpHandlerRef.current);
-      docUpHandlerRef.current = null;
+    if (upHandlerRef.current) {
+      document.removeEventListener('pointerup', upHandlerRef.current);
+      document.removeEventListener('mouseup', upHandlerRef.current);
+      upHandlerRef.current = null;
+    }
+    if (cancelHandlerRef.current) {
+      document.removeEventListener('pointercancel', cancelHandlerRef.current);
+      cancelHandlerRef.current = null;
+    }
+    if (blurHandlerRef.current) {
+      window.removeEventListener('blur', blurHandlerRef.current);
+      blurHandlerRef.current = null;
     }
 
-    // Restore selection behavior
+    // Release pointer capture if we took it
+    try {
+      const d = dragRef.current;
+      if (d.pointerEl && d.pointerId != null) {
+        d.pointerEl.releasePointerCapture?.(d.pointerId);
+      }
+    } catch {
+      // ignore
+    }
+
     try {
       document.body.style.userSelect = '';
     } catch {
@@ -321,6 +281,11 @@ function Canvas({
 
     dragRef.current.active = false;
     dragRef.current.layerId = null;
+    dragRef.current.axisLock = null;
+    dragRef.current.pointerId = null;
+    dragRef.current.pointerEl = null;
+    dragRef.current.snapTargets = { x: null, y: null };
+
     setDragging(false);
     clearUi();
   }, []);
@@ -334,27 +299,38 @@ function Canvas({
     const d = dragRef.current;
     if (!d.active || !d.layerId || !d.pageRect) return;
 
-    const snappingEnabled = !ev.altKey;
-    const collisionsEnabled = !ev.shiftKey;
+    // If this is a pointer event, ignore other pointers
+    if (ev.pointerId != null && d.pointerId != null && ev.pointerId !== d.pointerId) {
+      return;
+    }
 
     const zoomAtStart = d.zoom || 1;
 
-    // pointer position in logical page coords
     const px = (ev.clientX - d.pageRect.left) / zoomAtStart;
     const py = (ev.clientY - d.pageRect.top) / zoomAtStart;
 
     const desiredLeftRaw = px - d.offsetX;
     const desiredTopRaw = py - d.offsetY;
 
-    // movement delta (for collision resolver direction)
     const dx = desiredLeftRaw - d.lastX;
     const dy = desiredTopRaw - d.lastY;
 
-    // bounds
-    let proposedLeft = clamp(desiredLeftRaw, 0, PAGE_WIDTH - d.w);
-    let proposedTop = clamp(desiredTopRaw, 0, PAGE_HEIGHT - d.h);
+    let proposedLeft = desiredLeftRaw;
+    let proposedTop = desiredTopRaw;
 
-    // snapping
+    // Shift = axis lock
+    if (ev.shiftKey) {
+      if (!d.axisLock) {
+        d.axisLock = Math.abs(dx) >= Math.abs(dy) ? 'x' : 'y';
+      }
+      if (d.axisLock === 'x') proposedTop = d.lastY;
+      else proposedLeft = d.lastX;
+    } else {
+      d.axisLock = null;
+    }
+
+    const snappingEnabled = !ev.altKey;
+
     const threshold = SNAP_SCREEN_PX / zoomAtStart;
     const magnetRange = MAGNET_SCREEN_PX / zoomAtStart;
 
@@ -376,10 +352,6 @@ function Canvas({
       guideX = sx.guidePos;
       guideY = sy.guidePos;
 
-      // Closest-edge-only glow:
-      // - start snap => that edge
-      // - end snap => that edge
-      // - center snap => closest edge to the guide position
       if (sx.guidePos !== null) {
         if (sx.kind === 'start') glowXEdge = 'left';
         else if (sx.kind === 'end') glowXEdge = 'right';
@@ -391,11 +363,9 @@ function Canvas({
         else glowYEdge = closestEdgeY(proposedTop, d.h, sy.guidePos);
       }
 
-      // Default: snap instantly
       let nextLeft = sx.snappedStart;
       let nextTop = sy.snappedStart;
 
-      // Magnet easing: ease only the final tiny pixels (works for start/center/end)
       if (sx.guidePos !== null && sx.abs <= magnetRange && magnetRange > 0) {
         const t = 1 - sx.abs / magnetRange;
         const eased = easeOutCubic(t);
@@ -415,34 +385,10 @@ function Canvas({
       yTarget = sy.guidePos !== null ? sy.snappedStart : null;
     }
 
-    // clamp again (snap can push slightly out)
-    snappedLeft = clamp(snappedLeft, 0, PAGE_WIDTH - d.w);
-    snappedTop = clamp(snappedTop, 0, PAGE_HEIGHT - d.h);
+    const finalX = snappedLeft;
+    const finalY = snappedTop;
 
-    // collisions (soft slide)
-    let finalX = snappedLeft;
-    let finalY = snappedTop;
-    let collided = false;
-
-    if (collisionsEnabled && d.otherRects && d.otherRects.length > 0) {
-      if (collidesWithRects(finalX, finalY, d.w, d.h, d.otherRects)) {
-        const resolved = resolveCollisionsSoft({
-          desiredX: finalX,
-          desiredY: finalY,
-          w: d.w,
-          h: d.h,
-          dx,
-          dy,
-          otherRects: d.otherRects
-        });
-        finalX = resolved.x;
-        finalY = resolved.y;
-        collided = resolved.collided;
-      }
-    }
-
-    // Update UI (guides/glow) only if we didn't have to push away due to collision.
-    if (snappingEnabled && !collided) {
+    if (snappingEnabled) {
       setGuidesIfChanged(guideX, guideY);
       setGlowIfChanged(glowXEdge, glowYEdge);
       d.snapTargets = { x: xTarget, y: yTarget };
@@ -452,7 +398,34 @@ function Canvas({
       d.snapTargets = { x: null, y: null };
     }
 
-    // Commit only if changed (avoid flooding state)
+    const outside =
+      finalX < 0 ||
+      finalY < 0 ||
+      finalX + d.w > PAGE_WIDTH ||
+      finalY + d.h > PAGE_HEIGHT;
+
+    let ids = [];
+    let maxPct = 0;
+    const movingArea = Math.max(1, d.w * d.h);
+
+    for (const r of d.otherRects || []) {
+      if (!r) continue;
+      if (rectsOverlap(finalX, finalY, d.w, d.h, r.x, r.y, r.width, r.height)) {
+        ids.push(r.id);
+        const a = intersectionArea(finalX, finalY, d.w, d.h, r.x, r.y, r.width, r.height);
+        const pct = (a / movingArea) * 100;
+        if (pct > maxPct) maxPct = pct;
+      }
+    }
+
+    setFeedbackIfChanged({
+      ids,
+      pct: maxPct,
+      outside,
+      clientX: ev.clientX,
+      clientY: ev.clientY
+    });
+
     const changed =
       Math.abs(finalX - d.lastX) > 0.01 || Math.abs(finalY - d.lastY) > 0.01;
 
@@ -503,7 +476,6 @@ function Canvas({
       const lx = typeof layer.x === 'number' ? layer.x : 0;
       const ly = typeof layer.y === 'number' ? layer.y : 0;
 
-      // Pointer offset inside the layer (logical coords)
       const px = (e.clientX - pageRect.left) / zoomAtStart;
       const py = (e.clientY - pageRect.top) / zoomAtStart;
       const offsetX = px - lx;
@@ -525,6 +497,7 @@ function Canvas({
         otherRects: (layers || [])
           .filter((l) => l && l.id !== layerId)
           .map((l) => ({
+            id: l.id,
             x: typeof l.x === 'number' ? l.x : 0,
             y: typeof l.y === 'number' ? l.y : 0,
             width: typeof l.width === 'number' ? l.width : 0,
@@ -533,61 +506,53 @@ function Canvas({
           .filter((r) => r.width > 0 && r.height > 0),
         guides: buildGuideCandidates(layers || [], layerId),
         snapTargets: { x: null, y: null },
-        lastUi: { guideX: null, guideY: null, glowX: null, glowY: null }
+        axisLock: null,
+
+        // Track pointer for reliable release
+        pointerId: e.pointerId != null ? e.pointerId : null,
+        pointerEl: layerEl || null,
+
+        lastUi: {
+          guideX: null,
+          guideY: null,
+          glowX: null,
+          glowY: null,
+          feedbackSig: null
+        }
       };
 
       clearUi();
       setDragging(true);
 
-      // Prevent accidental text selection while dragging
       try {
         document.body.style.userSelect = 'none';
       } catch {
         // ignore
       }
 
-      // Document-level listeners for smooth dragging
       const onMove = (ev) => scheduleMove(ev);
 
-      const onUp = () => {
-        // On release, “settle” to perfect snap target if any
+      const onUp = (ev) => {
         const d = dragRef.current;
+
+        // If this was a pointer drag, ignore other pointers
+        if (ev?.pointerId != null && d.pointerId != null && ev.pointerId !== d.pointerId) {
+          return;
+        }
+
+        // Settle to perfect snap target
         if (d.active && d.layerId) {
           const targetX = d.snapTargets?.x;
           const targetY = d.snapTargets?.y;
 
           if (targetX !== null || targetY !== null) {
-            const nextX = targetX !== null ? clamp(targetX, 0, PAGE_WIDTH - d.w) : d.lastX;
-            const nextY = targetY !== null ? clamp(targetY, 0, PAGE_HEIGHT - d.h) : d.lastY;
+            const nextX = targetX !== null ? targetX : d.lastX;
+            const nextY = targetY !== null ? targetY : d.lastY;
 
-            // Final collision resolve (if user wasn’t holding Shift)
-            // (we can’t know Shift on mouseup reliably, so we keep collision ON here)
-            let finalX = nextX;
-            let finalY = nextY;
-
-            if (d.otherRects && d.otherRects.length > 0) {
-              if (collidesWithRects(finalX, finalY, d.w, d.h, d.otherRects)) {
-                const resolved = resolveCollisionsSoft({
-                  desiredX: finalX,
-                  desiredY: finalY,
-                  w: d.w,
-                  h: d.h,
-                  dx: finalX - d.lastX,
-                  dy: finalY - d.lastY,
-                  otherRects: d.otherRects
-                });
-                finalX = resolved.x;
-                finalY = resolved.y;
-              }
-            }
-
-            if (
-              Math.abs(finalX - d.lastX) > 0.01 ||
-              Math.abs(finalY - d.lastY) > 0.01
-            ) {
-              d.lastX = finalX;
-              d.lastY = finalY;
-              onUpdateLayer(d.layerId, { x: finalX, y: finalY });
+            if (Math.abs(nextX - d.lastX) > 0.01 || Math.abs(nextY - d.lastY) > 0.01) {
+              d.lastX = nextX;
+              d.lastY = nextY;
+              onUpdateLayer(d.layerId, { x: nextX, y: nextY });
             }
           }
         }
@@ -595,16 +560,34 @@ function Canvas({
         stopDragging();
       };
 
-      docMoveHandlerRef.current = onMove;
-      docUpHandlerRef.current = onUp;
+      const onCancel = () => {
+        stopDragging();
+      };
 
+      const onBlur = () => {
+        stopDragging();
+      };
+
+      moveHandlerRef.current = onMove;
+      upHandlerRef.current = onUp;
+      cancelHandlerRef.current = onCancel;
+      blurHandlerRef.current = onBlur;
+
+      // Pointer events (correct for your Layer onPointerDown + pointer capture)
+      document.addEventListener('pointermove', onMove);
+      document.addEventListener('pointerup', onUp);
+      document.addEventListener('pointercancel', onCancel);
+
+      // Mouse fallback (harmless if pointer events are firing)
       document.addEventListener('mousemove', onMove);
       document.addEventListener('mouseup', onUp);
+
+      // If the window loses focus mid-drag, always release
+      window.addEventListener('blur', onBlur);
     },
     [layers, onSelectLayer, onUpdateLayer, scheduleMove, stopDragging, zoom]
   );
 
-  // Cleanup on unmount
   useEffect(() => {
     return () => {
       stopDragging();
@@ -687,6 +670,19 @@ function Canvas({
       </div>
 
       <div className="canvas-stage" ref={canvasStageRef}>
+        {dragging && (dragFeedback.outside || (dragFeedback.ids?.length || 0) > 0) && (
+          <div
+            className="canvas-feedback-badge"
+            style={{ left: dragFeedback.clientX, top: dragFeedback.clientY }}
+            role="status"
+            aria-live="polite"
+          >
+            {dragFeedback.outside
+              ? 'Outside page'
+              : `Overlap: ${Math.max(1, Math.round(dragFeedback.pct || 0))}%`}
+          </div>
+        )}
+
         <div
           className="canvas-page shadow-lg transition-transform duration-200 ease-out"
           style={{
@@ -709,6 +705,10 @@ function Canvas({
                 zoom={zoom}
                 snapGlowX={isDraggingLayer ? activeGlowEdges.x : null}
                 snapGlowY={isDraggingLayer ? activeGlowEdges.y : null}
+                isDragging={isDraggingLayer}
+                isOverlapping={isDraggingLayer && (dragFeedback.ids?.length || 0) > 0}
+                isOutside={isDraggingLayer && !!dragFeedback.outside}
+                isOverlapped={!isDraggingLayer && overlapSet.has(layer.id)}
               />
             );
           })}

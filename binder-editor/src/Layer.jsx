@@ -2,7 +2,7 @@
 // Description: Individual layer component
 // Purpose: Render and edit a single layer on canvas
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { getPhotoViewUrl, updatePhotoCaption } from './api';
 
 const PAGE_WIDTH = 794;
@@ -35,7 +35,7 @@ function Layer({
   selected,
   onSelect,
   onUpdate,
-  onRemove, // (kept for compatibility; not used here yet)
+  onRemove, // kept for compatibility
   onDragStart,
   binderId,
   zoom = 1,
@@ -45,8 +45,6 @@ function Layer({
   isOverlapping = false,
   isOverlapped = false,
   isOutside = false,
-
-  // NEW:
   snapAnimating = false,
   isFullyOutside = false
 }) {
@@ -64,25 +62,44 @@ function Layer({
   const [resizeOverlap, setResizeOverlap] = useState(false);
   const [resizeOutside, setResizeOutside] = useState(false);
 
+  const textareaRef = useRef(null);
+
   const handlePointerDown = (e) => {
     const target = e.target;
 
-    if (
-      target.closest('.layer-caption-input') ||
-      target.tagName === 'TEXTAREA' ||
-      target.tagName === 'INPUT' ||
-      target.tagName === 'BUTTON'
-    ) {
+    // Anything interactive inside the layer should NOT start dragging.
+    // IMPORTANT: use closest('button') because the click target is often a child <span>.
+    const isInteractive =
+      target.closest?.('.layer-caption-shell') ||
+      target.closest?.('button') ||
+      target.closest?.('textarea') ||
+      target.closest?.('input') ||
+      target.closest?.('.layer-caption-input') ||
+      target.closest?.('.layer-resize-handle');
+
+    if (isInteractive) {
       onSelect(layer.id);
       return;
+    }
+
+    // Optional: if it's a photo layer, only allow drag from the photo frame area.
+    // This prevents “grab caption to drag” from ever interfering.
+    if (layer.type === 'photo') {
+      const inPhotoFrame = target.closest?.('.layer-photo-frame-wrapper');
+      if (!inPhotoFrame) {
+        onSelect(layer.id);
+        return;
+      }
     }
 
     e.preventDefault();
     e.stopPropagation();
     onSelect(layer.id);
+
     try {
       e.currentTarget.setPointerCapture?.(e.pointerId);
     } catch {}
+
     onDragStart(layer.id, e);
   };
 
@@ -103,9 +120,7 @@ function Layer({
     const canvasRect = canvasEl.getBoundingClientRect();
     const layerRect = layerEl.getBoundingClientRect();
 
-    const frameEl =
-      layerEl.querySelector('.layer-photo-frame-wrapper') || layerEl;
-
+    const frameEl = layerEl.querySelector('.layer-photo-frame-wrapper') || layerEl;
     const frameRect = frameEl.getBoundingClientRect();
 
     const storedZoom = zoom || 1;
@@ -260,8 +275,6 @@ function Layer({
     setResizeOutside(false);
   };
 
-  const textareaRef = useRef(null);
-
   useEffect(() => {
     if (!resizing) return;
 
@@ -353,9 +366,7 @@ function Layer({
       else setImageUrl(null);
     })()
       .catch((err) => {
-        if (!cancelled) {
-          console.error('[BinderEditor] Failed to load photo URL:', err);
-        }
+        if (!cancelled) console.error('[BinderEditor] Failed to load photo URL:', err);
       })
       .finally(() => {
         if (!cancelled) setImageLoading(false);
@@ -414,7 +425,6 @@ function Layer({
                         typeof layer.photoAspectRatio === 'number'
                           ? layer.photoAspectRatio
                           : null;
-
                       if (!prev || Math.abs(prev - ar) > 0.01) {
                         onUpdate(layer.id, { photoAspectRatio: ar });
                       }
@@ -442,16 +452,14 @@ function Layer({
 
             {selected && (
               <div className="layer-photo-selection" aria-hidden="true">
-                {['top-left', 'top-right', 'bottom-left', 'bottom-right'].map(
-                  (pos) => (
-                    <div
-                      key={pos}
-                      className={`layer-resize-handle layer-resize-${pos}`}
-                      onPointerDown={(e) => handleResizeStart(e, pos)}
-                      role="presentation"
-                    />
-                  )
-                )}
+                {['top-left', 'top-right', 'bottom-left', 'bottom-right'].map((pos) => (
+                  <div
+                    key={pos}
+                    className={`layer-resize-handle layer-resize-${pos}`}
+                    onPointerDown={(e) => handleResizeStart(e, pos)}
+                    role="presentation"
+                  />
+                ))}
               </div>
             )}
           </div>
@@ -466,6 +474,7 @@ function Layer({
                   maxLength={100}
                   value={captionDraft}
                   placeholder="Add description."
+                  onPointerDown={(e) => e.stopPropagation()}
                   onMouseDown={(e) => e.stopPropagation()}
                   onChange={(e) => {
                     const raw = e.target.value;
@@ -477,6 +486,7 @@ function Layer({
                 <button
                   type="button"
                   className="layer-caption-save"
+                  onPointerDown={(e) => e.stopPropagation()}
                   onClick={async (e) => {
                     e.stopPropagation();
                     if (!layer.storageKey || !binderId) return;
@@ -502,9 +512,7 @@ function Layer({
                       setEditingCaption(false);
                       setCaptionDraft(newCaption.slice(0, 100));
                     } catch (err) {
-                      setCaptionError(
-                        err?.message || 'Unable to save caption right now.'
-                      );
+                      setCaptionError(err?.message || 'Unable to save caption right now.');
                     } finally {
                       setSavingCaption(false);
                     }
@@ -529,6 +537,7 @@ function Layer({
                 <button
                   type="button"
                   className="layer-caption-edit-btn"
+                  onPointerDown={(e) => e.stopPropagation()}
                   onClick={(e) => {
                     e.stopPropagation();
                     setEditingCaption(true);
@@ -545,16 +554,12 @@ function Layer({
               </div>
             )}
 
-            {captionError && (
-              <div className="layer-caption-error">{captionError}</div>
-            )}
+            {captionError && <div className="layer-caption-error">{captionError}</div>}
           </div>
         </>
       )}
 
-      {layer.type === 'text' && layer.text && (
-        <div className="layer-text">{layer.text}</div>
-      )}
+      {layer.type === 'text' && layer.text && <div className="layer-text">{layer.text}</div>}
 
       {selected && layer.type !== 'photo' && (
         <>
@@ -562,7 +567,7 @@ function Layer({
             <div
               key={pos}
               className={`layer-resize-handle layer-resize-${pos}`}
-              onMouseDown={(e) => handleResizeStart(e, pos)}
+              onPointerDown={(e) => handleResizeStart(e, pos)}
               role="presentation"
             />
           ))}

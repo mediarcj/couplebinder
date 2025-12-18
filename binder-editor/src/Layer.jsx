@@ -30,6 +30,12 @@ function stripEmojiClient(input) {
   }
 }
 
+function safeBandNumber(n) {
+  const v = Number(n);
+  if (!Number.isFinite(v)) return 0;
+  return Math.max(0, Math.round(v));
+}
+
 function Layer({
   layer,
   selected,
@@ -46,7 +52,9 @@ function Layer({
   isOverlapped = false,
   isOutside = false,
   snapAnimating = false,
-  isFullyOutside = false
+  isFullyOutside = false,
+  insidePct = 100, // kept for compatibility (not used for stripes anymore)
+  outsideBands = { top: 0, left: 0, right: 0, bottom: 0, alpha: 0 }
 }) {
   const [resizing, setResizing] = useState(false);
   const resizeRef = useRef(null);
@@ -64,11 +72,95 @@ function Layer({
 
   const textareaRef = useRef(null);
 
+  // ===== CSP-safe per-layer style element (create once, update often) =====
+  const styleElRef = useRef(null);
+
+  useEffect(() => {
+    const styleId = `layer-style-${layer.id}`;
+    let styleEl = document.getElementById(styleId);
+
+    if (!styleEl) {
+      const rootEl = document.getElementById('binder-editor-root');
+      const nonce =
+        rootEl?.getAttribute('data-csp-nonce') ||
+        document.querySelector('style[nonce]')?.getAttribute('nonce') ||
+        '';
+
+      styleEl = document.createElement('style');
+      styleEl.id = styleId;
+      if (nonce) styleEl.setAttribute('nonce', nonce);
+      document.head.appendChild(styleEl);
+    }
+
+    styleElRef.current = styleEl;
+
+    return () => {
+      try {
+        styleElRef.current?.parentNode?.removeChild(styleElRef.current);
+      } catch {}
+      styleElRef.current = null;
+    };
+  }, [layer.id]);
+
+  useEffect(() => {
+    const styleEl = styleElRef.current;
+    if (!styleEl) return;
+
+    const selector = `[data-layer-id="${layer.id}"]`;
+    const bgColor =
+      layer.type === 'photo' ? 'transparent' : layer.backgroundColor || '#fff';
+
+    // Band sizes come from parent (outsideBands.*)
+    const top = safeBandNumber(outsideBands?.top);
+    const left = safeBandNumber(outsideBands?.left);
+    const right = safeBandNumber(outsideBands?.right);
+    const bottom = safeBandNumber(outsideBands?.bottom);
+
+    // Instant ON the moment anything is outside (no “ramp” that can feel delayed)
+    const hasOutsidePixels = (top + left + right + bottom) > 0;
+    const outsideOn = (hasOutsidePixels || isOutside || resizeOutside) ? 1 : 0;
+
+    styleEl.textContent = `
+      ${selector} {
+        left: ${layer.x}px !important;
+        top: ${layer.y}px !important;
+        width: ${layer.width}px !important;
+        height: ${layer.height}px !important;
+        transform: rotate(${layer.rotation}deg) !important;
+        z-index: ${layer.zIndex || 0} !important;
+        background-color: ${bgColor} !important;
+
+        /* Stripe-band controls (partial outside only) */
+        --cb-outside-top: ${top}px;
+        --cb-outside-left: ${left}px;
+        --cb-outside-right: ${right}px;
+        --cb-outside-bottom: ${bottom}px;
+
+        /* 0 or 1 => stripes appear immediately */
+        --cb-outside-alpha: ${outsideOn};
+      }
+    `;
+  }, [
+    layer.id,
+    layer.x,
+    layer.y,
+    layer.width,
+    layer.height,
+    layer.rotation,
+    layer.zIndex,
+    layer.type,
+    layer.backgroundColor,
+    outsideBands?.top,
+    outsideBands?.left,
+    outsideBands?.right,
+    outsideBands?.bottom,
+    isOutside,
+    resizeOutside
+  ]);
+
   const handlePointerDown = (e) => {
     const target = e.target;
 
-    // Anything interactive inside the layer should NOT start dragging.
-    // IMPORTANT: use closest('button') because the click target is often a child <span>.
     const isInteractive =
       target.closest?.('.layer-caption-shell') ||
       target.closest?.('button') ||
@@ -82,8 +174,6 @@ function Layer({
       return;
     }
 
-    // Optional: if it's a photo layer, only allow drag from the photo frame area.
-    // This prevents “grab caption to drag” from ever interfering.
     if (layer.type === 'photo') {
       const inPhotoFrame = target.closest?.('.layer-photo-frame-wrapper');
       if (!inPhotoFrame) {
@@ -184,7 +274,6 @@ function Layer({
     } = resizeRef.current;
 
     const dx = (e.clientX - startMouseX) / storedZoom;
-    const dy = (e.clientY - startMouseY) / storedZoom;
 
     const isLeft = corner.includes('left');
     const isTop = corner.includes('top');
@@ -211,7 +300,13 @@ function Layer({
       imageHeight = width / aspect;
     }
 
-    if (top + (layer.type === 'photo' ? imageHeight + (captionHeight || 0) : imageHeight) > canvasHeight) {
+    if (
+      top +
+        (layer.type === 'photo'
+          ? imageHeight + (captionHeight || 0)
+          : imageHeight) >
+      canvasHeight
+    ) {
       const maxImageHeight =
         layer.type === 'photo'
           ? Math.max(50, canvasHeight - top - (captionHeight || 0))
@@ -242,7 +337,18 @@ function Layer({
         const oTop = (r.top - canvasRect.top) / storedZoom;
         const oWidth = r.width / storedZoom;
         const oHeight = r.height / storedZoom;
-        if (rectsOverlap(testRect.left, testRect.top, testRect.width, testRect.height, oLeft, oTop, oWidth, oHeight)) {
+        if (
+          rectsOverlap(
+            testRect.left,
+            testRect.top,
+            testRect.width,
+            testRect.height,
+            oLeft,
+            oTop,
+            oWidth,
+            oHeight
+          )
+        ) {
           overlapped = true;
           break;
         }
@@ -294,57 +400,6 @@ function Layer({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resizing]);
-
-  // Inject per-layer positioning styles with CSP nonce support
-  useEffect(() => {
-    const styleId = `layer-style-${layer.id}`;
-    let styleEl = document.getElementById(styleId);
-
-    if (!styleEl) {
-      const rootEl = document.getElementById('binder-editor-root');
-      const nonce =
-        rootEl?.getAttribute('data-csp-nonce') ||
-        document.querySelector('style[nonce]')?.getAttribute('nonce') ||
-        '';
-
-      styleEl = document.createElement('style');
-      styleEl.id = styleId;
-      if (nonce) styleEl.setAttribute('nonce', nonce);
-      document.head.appendChild(styleEl);
-    }
-
-    const selector = `[data-layer-id="${layer.id}"]`;
-    const bgColor =
-      layer.type === 'photo' ? 'transparent' : layer.backgroundColor || '#fff';
-
-    styleEl.textContent = `
-      ${selector} {
-        left: ${layer.x}px !important;
-        top: ${layer.y}px !important;
-        width: ${layer.width}px !important;
-        height: ${layer.height}px !important;
-        transform: rotate(${layer.rotation}deg) !important;
-        z-index: ${layer.zIndex || 0} !important;
-        background-color: ${bgColor} !important;
-      }
-    `;
-
-    return () => {
-      if (styleEl && styleEl.parentNode) {
-        styleEl.parentNode.removeChild(styleEl);
-      }
-    };
-  }, [
-    layer.id,
-    layer.x,
-    layer.y,
-    layer.width,
-    layer.height,
-    layer.rotation,
-    layer.zIndex,
-    layer.type,
-    layer.backgroundColor
-  ]);
 
   // Resolve photo view URL
   useEffect(() => {
@@ -410,30 +465,40 @@ function Layer({
               {isFullyOutside ? (
                 <div className="layer-photo-outside-placeholder" />
               ) : imageUrl ? (
-                <img
-                  src={imageUrl}
-                  alt="Binder photo"
-                  className="layer-photo-image"
-                  draggable={false}
-                  onDragStart={(e) => e.preventDefault()}
-                  onLoad={(e) => {
-                    const nw = e.currentTarget?.naturalWidth || 0;
-                    const nh = e.currentTarget?.naturalHeight || 0;
-                    if (nw > 0 && nh > 0) {
-                      const ar = nw / nh;
-                      const prev =
-                        typeof layer.photoAspectRatio === 'number'
-                          ? layer.photoAspectRatio
-                          : null;
-                      if (!prev || Math.abs(prev - ar) > 0.01) {
-                        onUpdate(layer.id, { photoAspectRatio: ar });
+                <>
+                  <img
+                    src={imageUrl}
+                    alt="Binder photo"
+                    className="layer-photo-image"
+                    draggable={false}
+                    onDragStart={(e) => e.preventDefault()}
+                    onLoad={(e) => {
+                      const nw = e.currentTarget?.naturalWidth || 0;
+                      const nh = e.currentTarget?.naturalHeight || 0;
+                      if (nw > 0 && nh > 0) {
+                        const ar = nw / nh;
+                        const prev =
+                          typeof layer.photoAspectRatio === 'number'
+                            ? layer.photoAspectRatio
+                            : null;
+                        if (!prev || Math.abs(prev - ar) > 0.01) {
+                          onUpdate(layer.id, { photoAspectRatio: ar });
+                        }
                       }
-                    }
-                  }}
-                  onError={() => {
-                    console.warn('[BinderEditor] Image failed to load:', imageUrl);
-                  }}
-                />
+                    }}
+                    onError={() => {
+                      console.warn('[BinderEditor] Image failed to load:', imageUrl);
+                    }}
+                  />
+
+                  {/* 4-band stripes that ONLY cover the part outside the page */}
+                  <div className="layer-photo-outside-bands" aria-hidden="true">
+                    <div className="layer-photo-outside-band layer-photo-outside-band--top" />
+                    <div className="layer-photo-outside-band layer-photo-outside-band--bottom" />
+                    <div className="layer-photo-outside-band layer-photo-outside-band--left" />
+                    <div className="layer-photo-outside-band layer-photo-outside-band--right" />
+                  </div>
+                </>
               ) : imageLoading ? (
                 <div className="layer-photo-loading">
                   <span>Loading...</span>
@@ -464,6 +529,7 @@ function Layer({
             )}
           </div>
 
+          {/* caption area unchanged */}
           <div className="layer-caption-shell">
             {editingCaption ? (
               <div className="layer-caption-edit">

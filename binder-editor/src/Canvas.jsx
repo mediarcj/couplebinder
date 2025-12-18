@@ -41,6 +41,10 @@ function intersectionArea(ax, ay, aw, ah, bx, by, bw, bh) {
   return w * h;
 }
 
+function clamp(v, min, max) {
+  return Math.min(Math.max(v, min), max);
+}
+
 function buildGuideCandidates(allLayers, movingLayerId) {
   const x = [];
   const y = [];
@@ -150,12 +154,17 @@ function Canvas({
     ids: [],
     pct: 0,
     outside: false,
+    insidePct: 100,
     clientX: 0,
     clientY: 0
   });
 
   const [activeGuides, setActiveGuides] = useState({ x: null, y: null });
   const [activeGlowEdges, setActiveGlowEdges] = useState({ x: null, y: null });
+
+  // For smooth “snap back” animation after release
+  const [snapAnimatingLayerId, setSnapAnimatingLayerId] = useState(null);
+  const snapAnimTimerRef = useRef(null);
 
   const overlapSet = new Set(dragFeedback.ids || []);
 
@@ -176,7 +185,7 @@ function Canvas({
     snapTargets: { x: null, y: null },
     axisLock: null,
 
-    // pointer capture tracking (for proper release)
+    // pointer capture tracking
     pointerId: null,
     pointerEl: null,
 
@@ -215,7 +224,8 @@ function Canvas({
   const setFeedbackIfChanged = (next) => {
     const d = dragRef.current;
     const idsSig = (next.ids || []).slice().sort().join(',');
-    const sig = `${idsSig}|${next.outside ? 1 : 0}|${Math.round(next.pct || 0)}`;
+    const insidePctRounded = Math.round(next.insidePct || 0);
+    const sig = `${idsSig}|${next.outside ? 1 : 0}|${Math.round(next.pct || 0)}|${insidePctRounded}`;
 
     if (d.lastUi?.feedbackSig === sig) return;
     d.lastUi = { ...(d.lastUi || {}), feedbackSig: sig };
@@ -232,7 +242,7 @@ function Canvas({
     };
     setActiveGuides({ x: null, y: null });
     setActiveGlowEdges({ x: null, y: null });
-    setDragFeedback({ ids: [], pct: 0, outside: false, clientX: 0, clientY: 0 });
+    setDragFeedback({ ids: [], pct: 0, outside: false, insidePct: 100, clientX: 0, clientY: 0 });
   };
 
   const stopDragging = useCallback(() => {
@@ -243,7 +253,6 @@ function Canvas({
 
     lastEventRef.current = null;
 
-    // Detach listeners (pointer + mouse fallbacks)
     if (moveHandlerRef.current) {
       document.removeEventListener('pointermove', moveHandlerRef.current);
       document.removeEventListener('mousemove', moveHandlerRef.current);
@@ -263,21 +272,16 @@ function Canvas({
       blurHandlerRef.current = null;
     }
 
-    // Release pointer capture if we took it
     try {
       const d = dragRef.current;
       if (d.pointerEl && d.pointerId != null) {
         d.pointerEl.releasePointerCapture?.(d.pointerId);
       }
-    } catch {
-      // ignore
-    }
+    } catch {}
 
     try {
       document.body.style.userSelect = '';
-    } catch {
-      // ignore
-    }
+    } catch {}
 
     dragRef.current.active = false;
     dragRef.current.layerId = null;
@@ -299,7 +303,6 @@ function Canvas({
     const d = dragRef.current;
     if (!d.active || !d.layerId || !d.pageRect) return;
 
-    // If this is a pointer event, ignore other pointers
     if (ev.pointerId != null && d.pointerId != null && ev.pointerId !== d.pointerId) {
       return;
     }
@@ -318,7 +321,6 @@ function Canvas({
     let proposedLeft = desiredLeftRaw;
     let proposedTop = desiredTopRaw;
 
-    // Shift = axis lock
     if (ev.shiftKey) {
       if (!d.axisLock) {
         d.axisLock = Math.abs(dx) >= Math.abs(dy) ? 'x' : 'y';
@@ -398,15 +400,19 @@ function Canvas({
       d.snapTargets = { x: null, y: null };
     }
 
+    // Outside + inside percentage (for “fully outside => empty box” look)
     const outside =
       finalX < 0 ||
       finalY < 0 ||
       finalX + d.w > PAGE_WIDTH ||
       finalY + d.h > PAGE_HEIGHT;
 
+    const movingArea = Math.max(1, d.w * d.h);
+    const insideArea = intersectionArea(finalX, finalY, d.w, d.h, 0, 0, PAGE_WIDTH, PAGE_HEIGHT);
+    const insidePct = (insideArea / movingArea) * 100;
+
     let ids = [];
     let maxPct = 0;
-    const movingArea = Math.max(1, d.w * d.h);
 
     for (const r of d.otherRects || []) {
       if (!r) continue;
@@ -422,6 +428,7 @@ function Canvas({
       ids,
       pct: maxPct,
       outside,
+      insidePct,
       clientX: ev.clientX,
       clientY: ev.clientY
     });
@@ -508,7 +515,6 @@ function Canvas({
         snapTargets: { x: null, y: null },
         axisLock: null,
 
-        // Track pointer for reliable release
         pointerId: e.pointerId != null ? e.pointerId : null,
         pointerEl: layerEl || null,
 
@@ -526,34 +532,46 @@ function Canvas({
 
       try {
         document.body.style.userSelect = 'none';
-      } catch {
-        // ignore
-      }
+      } catch {}
 
       const onMove = (ev) => scheduleMove(ev);
 
       const onUp = (ev) => {
         const d = dragRef.current;
 
-        // If this was a pointer drag, ignore other pointers
         if (ev?.pointerId != null && d.pointerId != null && ev.pointerId !== d.pointerId) {
           return;
         }
 
-        // Settle to perfect snap target
+        // 1) Settle to perfect snap target (if any)
+        let nextX = d.lastX;
+        let nextY = d.lastY;
+
+        const targetX = d.snapTargets?.x;
+        const targetY = d.snapTargets?.y;
+
+        if (targetX !== null) nextX = targetX;
+        if (targetY !== null) nextY = targetY;
+
+        // 2) Always snap back INSIDE bounds on release (clamp to page edge)
+        nextX = clamp(nextX, 0, PAGE_WIDTH - d.w);
+        nextY = clamp(nextY, 0, PAGE_HEIGHT - d.h);
+
+        // 3) Animate the “snap back” (only after release)
         if (d.active && d.layerId) {
-          const targetX = d.snapTargets?.x;
-          const targetY = d.snapTargets?.y;
+          if (snapAnimTimerRef.current) {
+            clearTimeout(snapAnimTimerRef.current);
+            snapAnimTimerRef.current = null;
+          }
+          setSnapAnimatingLayerId(d.layerId);
+          snapAnimTimerRef.current = setTimeout(() => {
+            setSnapAnimatingLayerId(null);
+          }, 220);
 
-          if (targetX !== null || targetY !== null) {
-            const nextX = targetX !== null ? targetX : d.lastX;
-            const nextY = targetY !== null ? targetY : d.lastY;
-
-            if (Math.abs(nextX - d.lastX) > 0.01 || Math.abs(nextY - d.lastY) > 0.01) {
-              d.lastX = nextX;
-              d.lastY = nextY;
-              onUpdateLayer(d.layerId, { x: nextX, y: nextY });
-            }
+          if (Math.abs(nextX - d.lastX) > 0.01 || Math.abs(nextY - d.lastY) > 0.01) {
+            d.lastX = nextX;
+            d.lastY = nextY;
+            onUpdateLayer(d.layerId, { x: nextX, y: nextY });
           }
         }
 
@@ -573,16 +591,13 @@ function Canvas({
       cancelHandlerRef.current = onCancel;
       blurHandlerRef.current = onBlur;
 
-      // Pointer events (correct for your Layer onPointerDown + pointer capture)
       document.addEventListener('pointermove', onMove);
       document.addEventListener('pointerup', onUp);
       document.addEventListener('pointercancel', onCancel);
 
-      // Mouse fallback (harmless if pointer events are firing)
       document.addEventListener('mousemove', onMove);
       document.addEventListener('mouseup', onUp);
 
-      // If the window loses focus mid-drag, always release
       window.addEventListener('blur', onBlur);
     },
     [layers, onSelectLayer, onUpdateLayer, scheduleMove, stopDragging, zoom]
@@ -591,6 +606,10 @@ function Canvas({
   useEffect(() => {
     return () => {
       stopDragging();
+      if (snapAnimTimerRef.current) {
+        clearTimeout(snapAnimTimerRef.current);
+        snapAnimTimerRef.current = null;
+      }
     };
   }, [stopDragging]);
 
@@ -692,6 +711,11 @@ function Canvas({
         >
           {layers.map((layer) => {
             const isDraggingLayer = dragging && dragRef.current.layerId === layer.id;
+            const isSnapAnimating = snapAnimatingLayerId === layer.id;
+
+            const dragInsidePct = isDraggingLayer ? (dragFeedback.insidePct ?? 100) : null;
+            const isFullyOutside = isDraggingLayer && (dragInsidePct != null ? dragInsidePct <= 0.1 : false);
+
             return (
               <Layer
                 key={layer.id}
@@ -709,6 +733,8 @@ function Canvas({
                 isOverlapping={isDraggingLayer && (dragFeedback.ids?.length || 0) > 0}
                 isOutside={isDraggingLayer && !!dragFeedback.outside}
                 isOverlapped={!isDraggingLayer && overlapSet.has(layer.id)}
+                snapAnimating={isSnapAnimating}
+                isFullyOutside={isFullyOutside}
               />
             );
           })}

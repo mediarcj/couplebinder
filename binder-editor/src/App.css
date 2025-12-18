@@ -148,7 +148,6 @@ body {
   /* Lock width to prevent horizontal expansion */
   min-width: 200px;
   max-width: 200px;
-  /* Border will be handled by pseudo-element to allow active tab to break it */
 }
 
 /* Long horizontal border on right side to close all tabs */
@@ -223,7 +222,6 @@ body {
   gap: 0;
   position: relative;
   width: 100%;
-  /* Prevent any horizontal scrollbar from appearing */
   scrollbar-width: none; /* Firefox */
   -ms-overflow-style: none; /* IE/Edge */
 }
@@ -253,7 +251,7 @@ body {
   align-items: flex-start;
   padding: 0.75rem 1rem;
   border: 2px solid #e2e8f0;
-  border-right: none;              /* No right border - panel border closes it */
+  border-right: none;
   box-sizing: border-box;
   background: #ffffff;
   cursor: pointer;
@@ -264,7 +262,7 @@ body {
   width: 100%;
   max-width: 100%;
   padding-right: 2.75rem; /* room for drag handle */
-  margin-left: 0;         /* No left margin - extends all the way to left */
+  margin-left: 0;
   transform-origin: center center;
 }
 
@@ -281,12 +279,10 @@ body {
   z-index: 20;
 }
 
-/* Overlay removed - tab stays in place during drag */
-
-/* Inactive tabs - no left margin, no right border, no rounded corners */
+/* Inactive tabs */
 .page-tab-inactive {
-  margin: 0.5rem 0 0.5rem 0;  /* No left/right margin - extends to edges */
-  border-radius: 0;           /* No rounded corners - straight edges all around */
+  margin: 0.5rem 0 0.5rem 0;
+  border-radius: 0;
   color: #94a3b8;
   opacity: 0.7;
   background: #ffffff;
@@ -301,12 +297,12 @@ body {
   transform: translateY(-1px);
 }
 
-/* Active tab - no left margin, no right border, no rounded corners */
+/* Active tab */
 .page-tab-active {
-  margin: 0.5rem 0 0.5rem 0;  /* No left/right margin - extends to edges */
-  border-radius: 0;            /* No rounded corners - straight edges all around */
-  border-right: none;          /* No right border - appears open to canvas */
-  background: #f8fafc;         /* match canvas stage background */
+  margin: 0.5rem 0 0.5rem 0;
+  border-radius: 0;
+  border-right: none;
+  background: #f8fafc;
   color: #0f172a;
   font-weight: 600;
   z-index: 15;
@@ -315,8 +311,8 @@ body {
 }
 
 .page-tab-active:hover {
-  background: #f8fafc;          /* same as normal state */
-  border-color: #e2e8f0;        /* keep top/left/bottom border visible */
+  background: #f8fafc;
+  border-color: #e2e8f0;
 }
 
 .page-tab-number {
@@ -434,7 +430,7 @@ body {
   border-color: #cbd5e1;
 }
 
-/* Canvas column - Connected to active tab */
+/* Canvas column */
 .binder-editor-canvas {
   flex: 1 1 auto;
   display: flex;
@@ -456,7 +452,7 @@ body {
   overflow: hidden;
 }
 
-/* Header just above the A4 page - Compact */
+/* Header */
 .canvas-header {
   display: flex;
   justify-content: space-between;
@@ -543,7 +539,7 @@ body {
   min-height: 0;
 }
 
-/* The white "sheet" - Actual A4 size at 96 DPI */
+/* The white "sheet" */
 .canvas-page {
   position: relative;
   background: #fafafa;
@@ -551,19 +547,40 @@ body {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
   width: 794px;
   height: 1122px;
-  overflow: visible;
+  overflow: visible; /* allow overlap, but we will visually "dim" outside with overlay */
   border: 1px solid #ddd;
   transform-origin: top center;
+
+  /* Important: ensure overlay stacks correctly */
+  isolation: isolate;
 }
 
-/* ===== Smart guides (alignment lines) =====
-   These render INSIDE .canvas-page (so they scale with zoom automatically). */
+/* ===== Outside-page dimmer overlay =====
+   This makes any pixels outside the sheet look "not part of the page".
+   It also creates a soft transition at the sheet edge. */
+.canvas-page::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 4px;
+  pointer-events: none;
 
+  /* This "fills" everything OUTSIDE the page with a translucent stage-like tint */
+  box-shadow: 0 0 0 9999px rgba(241, 245, 249, 0.88);
+
+  /* Soft edge transition so overlap is visually obvious */
+  filter: drop-shadow(0 0 18px rgba(15, 23, 42, 0.10));
+
+  /* Must sit above layers so it tints overlap outside the sheet */
+  z-index: 25000;
+}
+
+/* ===== Smart guides ===== */
 .canvas-guides {
   position: absolute;
   inset: 0;
   pointer-events: none;
-  z-index: 10000; /* above layers + resize handles */
+  z-index: 10000;
   overflow: visible;
 }
 
@@ -584,7 +601,7 @@ body {
   font-size: 0.9rem;
 }
 
-/* Layer box (positioned absolutely on the page) */
+/* Layer box */
 .binder-editor-layer {
   position: absolute;
   left: var(--layer-x, 0);
@@ -602,14 +619,24 @@ body {
   background-color: var(--layer-bg-color, #fff);
   will-change: left, top;
   contain: layout style;
-  touch-action: none; /* modern pointer-based drag/resize */
+  touch-action: none;
 }
 
+/* During active dragging: NEVER animate (keeps drag crisp) */
 .binder-editor-layer.is-dragging {
   cursor: grabbing;
+  transition: none !important;
 }
 
-/* Universal feedback outline (works even when not selected) */
+/* Snap-back animation ONLY after release */
+.binder-editor-layer.is-snapping {
+  transition:
+    left 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    top 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Universal feedback outline */
 .binder-editor-layer.is-overlapping::after,
 .binder-editor-layer.is-overlapped::after,
 .binder-editor-layer.is-outside::after {
@@ -617,28 +644,25 @@ body {
   position: absolute;
   inset: -2px;
   pointer-events: none;
-  z-index: 30000; /* above content + handles */
+  z-index: 30000;
   border-radius: 2px;
   border: 2px solid transparent;
 }
 
-/* Moving layer overlap = strong red */
 .binder-editor-layer.is-overlapping::after {
   border-color: rgba(239, 68, 68, 0.95);
 }
 
-/* Layers being overlapped = softer red */
 .binder-editor-layer.is-overlapped::after {
   border-color: rgba(239, 68, 68, 0.45);
 }
 
-/* Outside page = amber dashed */
 .binder-editor-layer.is-outside::after {
   border-color: rgba(245, 158, 11, 0.95);
   border-style: dashed;
 }
 
-/* Floating drag badge (Overlap % / Outside) */
+/* Floating drag badge */
 .canvas-feedback-badge {
   position: fixed;
   pointer-events: none;
@@ -654,19 +678,14 @@ body {
   backdrop-filter: blur(6px);
 }
 
-/* ===== Snap edge glow (Canva-like) =====
-   We glow ONLY the closest edge being “pulled” by the snap.
-   Canvas.jsx adds classes:
-     snap-glow-x-left | snap-glow-x-right
-     snap-glow-y-top  | snap-glow-y-bottom
-*/
+/* ===== Snap edge glow ===== */
 .binder-editor-layer.snap-glow-x-left::before,
 .binder-editor-layer.snap-glow-x-right::before,
 .binder-editor-layer.snap-glow-y-top::after,
 .binder-editor-layer.snap-glow-y-bottom::after {
   content: '';
   position: absolute;
-  inset: -1px; /* small bleed so it looks crisp against photos */
+  inset: -1px;
   pointer-events: none;
   z-index: 20;
   border-radius: 2px;
@@ -701,20 +720,17 @@ body {
   background-color: transparent;
 }
 
-/* ===== Resize handles (bigger + clearly outside) ===== */
-
+/* ===== Resize handles ===== */
 .binder-editor-layer.selected {
-  /* Keep handles visible outside the layer box */
   overflow: visible;
 }
 
-/* Keep the old "blue box" behavior for NON-photo layers only */
 .binder-editor-layer.selected:not(.layer-type-photo) {
   outline: 2px solid #2563eb;
   outline-offset: 0;
 }
 
-/* Photo frame area (image-only region). Caption sits below this. */
+/* Photo frame area */
 .layer-photo-frame-wrapper {
   position: relative;
   width: 100%;
@@ -722,102 +738,91 @@ body {
   min-height: 0;
 }
 
-/* The masked viewport that holds the image/placeholder/loading */
 .layer-photo-frame {
   position: absolute;
   inset: 0;
   overflow: hidden;
 }
 
-/* Selection box that wraps ONLY the image area (not the caption) */
+/* Selection box wraps ONLY image area */
 .layer-photo-selection {
   position: absolute;
   inset: 0;
   outline: 2px solid #2563eb;
   outline-offset: 0;
-  pointer-events: none; /* handles will re-enable pointer events */
+  pointer-events: none;
   overflow: visible;
 }
 
 .layer-photo-selection .layer-resize-handle {
   pointer-events: auto;
-  display: block; /* show handles only when overlay is rendered */
+  display: block;
 }
 
-/* Photo content - image fills the flex space directly, no container wrapper */
+/* Photo */
 .layer-photo-image {
   width: 100%;
   height: 100%;
-  object-fit: contain; /* Maintain image aspect ratio, fit within container */
+  object-fit: contain;
   object-position: center;
   display: block;
-  border-radius: 0; /* keep image edges square */
+  border-radius: 0;
 }
 
-/* Hard override in case global site CSS rounds all images */
 .binder-editor-app .layer-photo-image {
   border-radius: 0 !important;
 }
 
-.layer-photo-placeholder {
+/* If the layer is COMPLETELY outside while dragging: show "empty box" look */
+.layer-photo-outside-placeholder {
   width: 100%;
   height: 100%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  color: #999;
-  font-size: 0.9rem;
-  background: #f0f0f0;
+  background: repeating-linear-gradient(
+    45deg,
+    rgba(148, 163, 184, 0.18),
+    rgba(148, 163, 184, 0.18) 10px,
+    rgba(148, 163, 184, 0.10) 10px,
+    rgba(148, 163, 184, 0.10) 20px
+  );
+  border: 1px dashed rgba(148, 163, 184, 0.65);
+  box-sizing: border-box;
 }
 
-.layer-photo-loading {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #666;
-  font-size: 0.85rem;
-  background: #f5f5f5;
-}
-
-/* Caption shell sits at bottom of tile */
+/* Caption shell */
 .layer-caption-shell {
-  width: 100%; /* Match image width */
-  height: 88px;      /* LOCK: never grow (prevents pushing image) */
+  width: 100%;
+  height: 88px;
   max-height: 88px;
-  flex-shrink: 0; /* Prevent caption from shrinking */
+  flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  justify-content: flex-start; /* push text to top (near photo) */
+  justify-content: flex-start;
   padding: 4px 8px;
   box-sizing: border-box;
-  overflow: hidden;  /* prevent caption from changing layout */
-  position: relative; /* anchor error if needed */
+  overflow: hidden;
+  position: relative;
 }
 
-/* Read-only display state */
 .layer-caption-display {
   display: flex;
-  align-items: flex-start;  /* top align within the 88px box */
+  align-items: flex-start;
   gap: 3px;
   height: 100%;
 }
 
 .layer-caption-text {
   flex: 1;
-  min-width: 0;              /* important in flex so text can wrap */
+  min-width: 0;
   font-size: 12px;
   line-height: 1.2;
   text-align: center;
   color: #111827;
   white-space: normal;
-  overflow-wrap: anywhere;   /* break long strings (your 123456 test) */
-  word-break: break-word;    /* fallback */  
+  overflow-wrap: anywhere;
+  word-break: break-word;
   overflow: hidden;
   display: -webkit-box;
-  -webkit-line-clamp: 5; /* show more lines in display mode */
+  -webkit-line-clamp: 5;
   -webkit-box-orient: vertical;
 }
 
@@ -831,14 +836,13 @@ body {
   font-style: italic;
   white-space: normal;
   overflow-wrap: anywhere;
-  word-break: break-word;  
+  word-break: break-word;
   overflow: hidden;
   display: -webkit-box;
   -webkit-line-clamp: 5;
   -webkit-box-orient: vertical;
 }
 
-/* Small edit button (pencil) */
 .layer-caption-edit-btn {
   flex-shrink: 0;
   border: none;
@@ -855,16 +859,15 @@ body {
   color: #111827;
 }
 
-/* Editing state: dashed field + check icon */
 .layer-caption-edit {
   display: flex;
-  align-items: stretch;  /* textarea fills caption height */
+  align-items: stretch;
   gap: 3px;
   height: 100%;
 }
 
 .layer-caption-input {
-  width: 100%; /* Match caption shell width */
+  width: 100%;
   flex: 1;
   font-size: 12px;
   line-height: 1.2;
@@ -876,9 +879,9 @@ body {
   outline: none;
   user-select: text;
   cursor: text;
-  height: 100%;      /* LOCK height to caption area */
+  height: 100%;
   max-height: 100%;
-  overflow: hidden;  /* no scrollbar in edit mode */
+  overflow: hidden;
   box-sizing: border-box;
 }
 
@@ -928,7 +931,7 @@ body {
   overflow: auto;
 }
 
-/* Make handles easy to see + grab */
+/* Handles */
 .layer-resize-handle {
   position: absolute;
   width: 14px;
@@ -937,19 +940,16 @@ body {
   border: 2px solid #2563eb;
   border-radius: 4px;
   cursor: nwse-resize;
-  z-index: 20000; /* above images + snap glow */
+  z-index: 20000;
   display: none;
 
-  /* Make the handle “pop” */
   box-shadow:
     0 2px 8px rgba(15, 23, 42, 0.18),
     0 0 0 2px rgba(255, 255, 255, 0.9);
 
-  /* Better UX: easier to grab */
   touch-action: none;
 }
 
-/* Push handles OUTSIDE the layer frame so they don't look "inside" */
 .layer-resize-top-left {
   top: -10px;
   left: -10px;
@@ -982,7 +982,7 @@ body {
   background: #eff6ff;
 }
 
-/* Photo strip placeholder for React editor to mirror legacy panel */
+/* Photo strip placeholder */
 .binder-react-photo-strip {
   margin-top: 4px;
   padding: 8px;
@@ -1118,7 +1118,6 @@ body {
   background: #e2e8f0;
 }
 
-/* Slide-in + fade animation */
 @keyframes cb-modal-in {
   from {
     opacity: 0;

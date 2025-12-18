@@ -8,6 +8,8 @@ import { useModal } from './ModalProvider';
 import {
   DndContext,
   PointerSensor,
+  MouseSensor,
+  TouchSensor,  
   useSensor,
   useSensors,
   closestCenter
@@ -18,19 +20,7 @@ import {
   verticalListSortingStrategy
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { restrictToVerticalAxis, restrictToParentElement } from '@dnd-kit/modifiers';
-
-// Ultra-strict modifier that absolutely prevents any horizontal movement
-function restrictToVerticalAxisUltra({ transform }) {
-  if (!transform) {
-    return transform;
-  }
-  // Force X to always be exactly 0, no exceptions
-  return {
-    ...transform,
-    x: 0
-  };
-}
+import { restrictToVerticalAxis } from '@dnd-kit/modifiers';
 
 function SortablePageTab({
   page,
@@ -51,17 +41,13 @@ function SortablePageTab({
     // Allow default animations for smooth transitions
   });
 
-  // Extract only Y component - modifiers ensure X is 0, but we enforce it here too
-  let finalTransform = CSS.Transform.toString(transform);
-  if (isDragging && transform && typeof transform === 'object') {
-    // Use translateY only - no X component possible
-    const y = transform.y || 0;
-    finalTransform = `translateY(${y}px)`;
-  }
+  // Keep vertical-only, but let dnd-kit handle transforms normally
+  const safeTransform =
+    transform && typeof transform === 'object' ? { ...transform, x: 0 } : transform;
 
   const style = {
-    transform: finalTransform,
-    transition: isDragging ? 'none' : transition
+    transform: CSS.Transform.toString(safeTransform),
+    transition: isDragging ? undefined : transition
   };
 
   // Track if we just finished dragging to prevent click handler
@@ -136,6 +122,12 @@ function PageList({
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: { distance: 6 } // small drag threshold = nicer UX
+    }),
+    useSensor(MouseSensor, {
+      activationConstraint: { distance: 6 }
+    }),
+    useSensor(TouchSensor, {
+      activationConstraint: { distance: 6 }
     })
   );
 
@@ -199,7 +191,7 @@ function PageList({
             <DndContext
               sensors={sensors}
               collisionDetection={closestCenter}
-              modifiers={[restrictToVerticalAxis, restrictToParentElement, restrictToVerticalAxisUltra]}
+              modifiers={[restrictToVerticalAxis]}
               onDragEnd={(e) => {
                 const activeId = e.active?.id;
                 const overId = e.over?.id;

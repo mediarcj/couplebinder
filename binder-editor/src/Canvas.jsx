@@ -195,7 +195,10 @@ function Canvas({
   zoom = 1,
   onZoomChange,
   onZoomFit,
-  canvasStageRef
+  canvasStageRef,
+  onToggleMobilePageList,
+  onAddPage,
+  onDeletePage
 }) {
   const [dragging, setDragging] = useState(false);
 
@@ -358,6 +361,9 @@ function Canvas({
 
     const zoomAtStart = d.zoom || 1;
 
+    // Convert screen coordinates to logical coordinates
+    // getBoundingClientRect() returns scaled dimensions when transform: scale() is applied
+    // So we divide by zoom to get logical coordinates
     const px = (ev.clientX - d.pageRect.left) / zoomAtStart;
     const py = (ev.clientY - d.pageRect.top) / zoomAtStart;
 
@@ -517,11 +523,8 @@ function Canvas({
       if (!layer) return;
 
       const layerEl = e?.currentTarget;
-      const pageEl =
-        layerEl?.closest('.canvas-page') ||
-        layerEl?.closest('.canvas-stage') ||
-        layerEl?.closest('.binder-editor-canvas');
-
+      // Always use canvas-page for coordinate calculations
+      const pageEl = layerEl?.closest('.canvas-page');
       if (!pageEl) return;
 
       const pageRect = pageEl.getBoundingClientRect();
@@ -532,6 +535,8 @@ function Canvas({
       const lx = typeof layer.x === 'number' ? layer.x : 0;
       const ly = typeof layer.y === 'number' ? layer.y : 0;
 
+      // Convert screen coordinates to logical coordinates
+      // getBoundingClientRect() returns scaled dimensions, so we divide by zoom
       const px = (e.clientX - pageRect.left) / zoomAtStart;
       const py = (e.clientY - pageRect.top) / zoomAtStart;
       const offsetX = px - lx;
@@ -687,6 +692,47 @@ function Canvas({
         </div>
 
         <div className="canvas-header-actions flex items-center gap-3">
+          {/* Mobile pages button - only visible on mobile */}
+          <button
+            type="button"
+            className="mobile-pages-btn"
+            onClick={onToggleMobilePageList}
+            aria-label="Show pages"
+            title="Show pages"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
+          </button>
+          
+          {/* Desktop page controls - hidden on mobile */}
+          <div className="desktop-page-controls">
+            <button
+              type="button"
+              className="page-control-btn page-control-add"
+              onClick={onAddPage}
+              aria-label="Add page"
+              title="Add page"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+            </button>
+            {onDeletePage && (
+              <button
+                type="button"
+                className="page-control-btn page-control-delete"
+                onClick={() => onDeletePage(page.pageIndex)}
+                aria-label="Delete page"
+                title="Delete page"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+              </button>
+            )}
+          </div>
+
           {/* (unchanged zoom UI) */}
           <div className="flex items-center gap-2 px-3 py-1.5 bg-gradient-to-r from-slate-50 to-slate-100 rounded-lg border border-slate-200 shadow-sm">
             <button
@@ -745,10 +791,11 @@ function Canvas({
         )}
 
         <div
-          className="canvas-page shadow-lg transition-transform duration-200 ease-out"
+          className="canvas-page shadow-lg"
           style={{
             transform: `scale(${zoom})`,
-            transformOrigin: 'top center'
+            transformOrigin: 'top center',
+            transition: 'transform 0.2s ease-out'
           }}
         >
           {layers.map((layer) => {

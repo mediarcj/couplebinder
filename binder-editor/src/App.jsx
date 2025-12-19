@@ -548,10 +548,88 @@ function App({ binderId /*, csrfToken */ }) {
     setIsDirty(true);
   }, []);
 
-  const handleDeletePage = useCallback(() => {
-    // unchanged (kept as-is in your original)
-    setIsDirty(true);
-  }, []);
+ const handleDeletePage = useCallback(
+   async (pageIndexToDelete) => {
+     if (!layout || !Array.isArray(layout.pages)) return;
+     if (typeof pageIndexToDelete !== 'number') return;
+     if (pageIndexToDelete < 0 || pageIndexToDelete >= layout.pages.length) return;
+
+     const pagesBefore = layout.pages;
+     const pageToDelete = pagesBefore[pageIndexToDelete];
+     const layers = Array.isArray(pageToDelete?.layers) ? pageToDelete.layers : [];
+
+     // 1) Collect photo storageKeys on the page being deleted
+     const keysOnDeletedPage = new Set(
+       layers
+         .filter((l) => l && l.type === 'photo' && l.storageKey)
+         .map((l) => String(l.storageKey))
+     );
+
+     // 2) Collect photo storageKeys used on OTHER pages (so we don't delete shared photos)
+     const keysUsedElsewhere = new Set();
+     pagesBefore.forEach((p, idx) => {
+       if (!p || idx === pageIndexToDelete) return;
+       const otherLayers = Array.isArray(p.layers) ? p.layers : [];
+       otherLayers.forEach((l) => {
+         if (l && l.type === 'photo' && l.storageKey) {
+           keysUsedElsewhere.add(String(l.storageKey));
+         }
+       });
+     });
+
+     // 3) Only delete photos that are not referenced anywhere else
+     const keysToDelete = [...keysOnDeletedPage].filter((k) => !keysUsedElsewhere.has(k));
+
+     // Best-effort delete from storage+DB (keep going even if some fail)
+     const failures = [];
+     if (binderId && keysToDelete.length > 0) {
+       for (const storageKey of keysToDelete) {
+         try {
+           await deleteBinderPhoto(binderId, storageKey);
+         } catch (err) {
+           if (isSessionExpiredError(err)) return;
+           failures.push(storageKey);
+         }
+       }
+     }
+
+     // 4) Remove the page from local layout + normalize pageIndex
+     const newPages = pagesBefore
+       .filter((_, idx) => idx !== pageIndexToDelete)
+       .map((p, idx) => ({
+         ...p,
+         pageIndex: idx,
+         layers: Array.isArray(p?.layers) ? p.layers : []
+       }));
+
+     setLayout((prev) => {
+       if (!prev) return prev;
+       return { ...prev, pages: applySectionDefaults(newPages) };
+     });
+
+     // 5) Fix selection after deletion
+     const nextLen = newPages.length;
+     let nextSelected = selectedPage;
+     if (selectedPage === pageIndexToDelete) {
+       nextSelected = nextLen > 0 ? Math.min(pageIndexToDelete, nextLen - 1) : 0;
+     } else if (selectedPage > pageIndexToDelete) {
+       nextSelected = selectedPage - 1;
+     }
+     setSelectedPage(nextSelected);
+     setSelectedLayerId(null);
+
+     // 6) Mark dirty so autosave persists the new pages array
+     setIsDirty(true);
+
+     // Optional: surface failures (page still deletes even if some photo deletes fail)
+     if (failures.length > 0) {
+       setError(
+         `Page deleted, but ${failures.length} photo(s) could not be deleted from storage. Please retry deleting those photos later.`
+       );
+     }
+   },
+   [layout, binderId, selectedPage, applySectionDefaults]
+ );
 
   // Preview PDF handler (now opens via ModalProvider)
   const handlePreviewPdf = useCallback(async () => {

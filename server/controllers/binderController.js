@@ -874,8 +874,8 @@ async function exportPdf(req, res, next) {
       return { ...p, sectionKey: sectionKey || 'photos' };
     });
 
-    const contentPages = pages.length;
-    const totalPages = contentPages + 1;
+    const contentPages = pages.length;  
+    const totalPages = contentPages;
 
     const sectionCounters = {};
     const exhibits = [];
@@ -888,51 +888,51 @@ async function exportPdf(req, res, next) {
         current = {
           sectionKey: key,
           exhibitNo: sectionCounters[key],
-          startContentPage: idx + 2,
-          endContentPage: idx + 2
+          startContentPage: idx + 1,  
+          endContentPage: idx + 1
         };
         exhibits.push(current);
       } else {
-        current.endContentPage = idx + 2;
+        current.endContentPage = idx + 1;
       }
     });
 
     const getExhibitForPage = (contentPageNumber) =>
       exhibits.find((ex) => contentPageNumber >= ex.startContentPage && contentPageNumber <= ex.endContentPage);
 
-    const doc = new PDFDocument({ autoFirstPage: true, size: 'A4', margin: 0 });
+    const doc = new PDFDocument({ autoFirstPage: false, size: 'A4', margin: 0 });
 
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="relationship-binder-${binderId || 'draft'}.pdf"`);
 
     doc.pipe(res);
 
-    doc.fontSize(20).text('Index', { align: 'center' });
-    doc.moveDown(1);
-
-    if (exhibits.length === 0) {
-      doc.fontSize(12).text('No pages available.', { align: 'left' });
-    } else {
-      exhibits.forEach((ex) => {
-        const def = SECTION_DEFS[ex.sectionKey] || SECTION_DEFS.photos;
-        const code = `${def.prefix}-${ex.exhibitNo}`;
-        doc.fontSize(12).text(`Exhibit ${code} – ${def.label} – Pages ${ex.startContentPage}–${ex.endContentPage}`);
-      });
+    // NOTE: Index page disabled for now.  
+    // If there are no pages, output a single informational page so the PDF is still valid.  
+    if (pages.length === 0) {  
+      doc.addPage();  
+      doc.fontSize(12).text('No pages available.', { align: 'center' });  
+      doc.end();  
+      logger.info({ event: 'binder.pdf_exported', binderId, userId, pageCount: 0 }, 'Binder PDF exported (no pages)');  
+      return;  
     }
 
+    // Render each saved layout page into the PDF (no index page for now)
     for (let idx = 0; idx < pages.length; idx++) {
-      const p = pages[idx];
-      doc.addPage();
-      const contentPageNumber = idx + 2;
-      const exhibit = getExhibitForPage(contentPageNumber);
+      const pageLayout = pages[idx];
+      const contentPageNumber = idx + 1;
+      const exhibitInfo = getExhibitForPage(contentPageNumber);
+
+      doc.addPage({ size: 'A4', margin: 0 });
 
       await renderBinderPageBody({
         doc,
-        pageLayout: p,
-        exhibitInfo: exhibit,
-        binderTitle: binder.title,
+        pageLayout,
+        exhibitInfo,
+        binderTitle: binder.title || 'Relationship Binder',
         totalPages,
         contentPageNumber,
+        marginPt: 0,
         client,
         userId,
         binderId,
@@ -942,7 +942,10 @@ async function exportPdf(req, res, next) {
 
     doc.end();
 
-    logger.info({ event: 'binder.pdf_exported', binderId, userId, pageCount: contentPages }, 'Binder PDF exported with index/exhibits');
+    logger.info(
+      { event: 'binder.pdf_exported', binderId, userId, pageCount: contentPages },
+      'Binder PDF exported with index/exhibits'
+    );
   } catch (err) {
     logger.error({ event: 'binder.export_failed', error: err.message, binderId: binderIdParam, userId: req.user?.id }, 'Binder exportPdf handler failed');
     next(err);

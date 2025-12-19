@@ -66,25 +66,67 @@
                 .dashboard-root {
                     min-height: 100vh;
                     margin: 0;
-                    padding: 0;
+                    padding: 0 !important; /* Override global padding */
+                    background-color: #ffffff !important; /* Match React app background */
                 }
 
                 .workspace-shell {
                     width: 100%;
-                    max-width: none;      /* remove any global max-width/centering */
+                    max-width: none !important; /* Remove global max-width */
                     margin: 0;
                     padding: 0;
                 }
 
-                /* Let the editor body take nearly all vertical space under the nav + header */
+                /* Override global workspace-body styles for editor */
                 .workspace-body.workspace-body-editor {
                     margin: 0;
-                    padding: 0;
+                    padding: 0 !important; /* Override global padding */
                     min-height: calc(100vh - 120px); /* allow growth beyond viewport */
+                    background: transparent !important; /* Remove white background */
+                    border-radius: 0 !important; /* Remove rounded corners */
+                    box-shadow: none !important; /* Remove shadow */
+                }
+
+                /* Ensure workspace-header doesn't interfere */
+                .workspace-header {
+                    margin-bottom: 0; /* Remove default margin */
+                    padding: 16px 24px; /* Add padding for header content */
+                    background: #ffffff;
+                    border-bottom: 1px solid #e2e8f0;
+                }
+
+                /* Mobile responsive overrides */
+                @media (max-width: 768px) {
+                    .dashboard-root {
+                        padding: 0 !important; /* Override global mobile padding */
+                    }
+                    
+                    .workspace-header {
+                        padding: 12px 16px;
+                    }
+                    
+                    .workspace-body.workspace-body-editor {
+                        min-height: calc(100vh - 100px); /* Adjust for smaller header on mobile */
+                    }
                 }
 
                 #binder-editor-root {
                     min-height: 100%;
+                    width: 100%;
+                    background: transparent;
+                }
+
+                /* Ensure footer doesn't interfere with editor */
+                footer {
+                    margin-top: 0;
+                    padding: 16px;
+                    background: #ffffff;
+                    border-top: 1px solid #e2e8f0;
+                }
+
+                footer .container {
+                    max-width: 100%;
+                    padding: 0 24px;
                 }
                 </style>
                 <div

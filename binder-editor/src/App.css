@@ -139,6 +139,7 @@
     border-radius: 0.75rem;
     box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px -1px rgba(0, 0, 0, 0.1);
     overflow: hidden;
+    position: relative; /* For mobile overlay positioning */
   }
   
   /* Page list (sidebar) - Tabbed document style */
@@ -1537,10 +1538,10 @@
   
   /* ===== Mobile Page List Overlay ===== */
   .mobile-page-list-overlay {
-    position: fixed;
+    position: absolute;
     inset: 0;
-    background: rgba(15, 23, 42, 0.4);
-    backdrop-filter: blur(2px);
+    background: rgba(15, 23, 42, 0.3);
+    backdrop-filter: blur(1px);
     z-index: 9997;
     display: none; /* Hidden on desktop */
     animation: fadeIn 0.2s ease-out;
@@ -1655,7 +1656,7 @@
     
     /* Hide page list panel on mobile - it becomes an overlay */
     .binder-editor-page-list {
-      position: fixed;
+      position: absolute;
       top: 0;
       left: 0;
       bottom: 0;
@@ -1666,7 +1667,8 @@
       transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
       box-shadow: 2px 0 12px rgba(0, 0, 0, 0.2);
       border-right: 1px solid #e2e8f0;
-      background: #ffffff;
+      background: rgba(255, 255, 255, 0.95);
+      backdrop-filter: blur(4px);
       display: flex;
       flex-direction: column;
     }
@@ -1676,9 +1678,11 @@
     }
     
     
-    /* Show mobile overlay backdrop */
+    /* Show mobile overlay backdrop - positioned relative to binder card */
     .mobile-page-list-overlay {
       display: block;
+      position: absolute;
+      inset: 0;
     }
     
     /* Show mobile close button */

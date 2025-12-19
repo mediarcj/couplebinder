@@ -158,17 +158,7 @@ function PageList({
   }
 
   return (
-    <>
-      {/* Mobile overlay backdrop */}
-      {mobileOverlayOpen && (
-        <div
-          className="mobile-page-list-overlay"
-          onClick={onCloseMobileOverlay}
-          aria-hidden="true"
-        />
-      )}
-
-      <aside className={`binder-editor-page-list bg-white ${mobileOverlayOpen ? 'mobile-overlay-open' : ''}`}>
+    <aside className={`binder-editor-page-list bg-white ${mobileOverlayOpen ? 'mobile-overlay-open' : ''}`}>
         <div className="page-list-header">
           <div className="page-list-actions">
             {/* Mobile close button - appears first on mobile */}
@@ -264,7 +254,6 @@ function PageList({
         )}
       </div>
     </aside>
-    </>
   );
 }
 

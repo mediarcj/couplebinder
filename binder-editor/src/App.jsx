@@ -800,13 +800,21 @@ function App({ binderId /*, csrfToken */ }) {
 
       <div className="binder-editor-workspace flex-1">
         <div className="binder-binder-card flex h-full bg-white border border-slate-200 shadow-sm rounded-xl overflow-hidden">
+          {/* Mobile overlay backdrop - positioned relative to binder card */}
+          {mobilePageListOpen && (
+            <div
+              className="mobile-page-list-overlay"
+              onClick={() => setMobilePageListOpen(false)}
+              aria-hidden="true"
+            />
+          )}
           <PageList
             pages={layout?.pages || []}
             selectedPageIndex={selectedPage}
             sectionLabels={SECTION_LABELS}
             onSelectPage={(idx) => {
               setSelectedPage(idx);
-              setMobilePageListOpen(false); // Close mobile menu when page is selected
+              // Keep menu open so user can see page changes
             }}
             onReorderPages={handleReorderPages}
             onAddPage={() => {

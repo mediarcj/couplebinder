@@ -11,6 +11,7 @@ import ActionSidebar from './ActionSidebar';
 import './App.css';
 import { SECTION_LABELS, SECTION_OPTIONS } from './sections';
 import { preloadBinderPhotos } from './preloadPhotos';
+import MobileMenu from './MobileMenu';
 
 const AUTOSAVE_DEBOUNCE_MS = 1500; // 1.5s after last change
 
@@ -101,6 +102,7 @@ function App({ binderId /*, csrfToken */ }) {
   const [zoom, setZoom] = useState(1);
   const canvasStageRef = useRef(null);
   const fileInputRef = useRef(null);
+  const [mobilePageListOpen, setMobilePageListOpen] = useState(false);
 
   // PDF Preview state (only the “busy” flag remains)
   const [previewing, setPreviewing] = useState(false);
@@ -229,30 +231,54 @@ function App({ binderId /*, csrfToken */ }) {
       if (!canvasStageRef.current) return;
 
       const stageRect = canvasStageRef.current.getBoundingClientRect();
-      const availableWidth = stageRect.width - 48;
-      const availableHeight = stageRect.height - 48;
+      // Account for padding (24px on each side = 48px total, but use smaller padding on mobile)
+      const isMobile = window.innerWidth <= 900;
+      const padding = isMobile ? 16 : 24;
+      const paddingTotal = padding * 2;
+      
+      const availableWidth = Math.max(200, stageRect.width - paddingTotal);
+      const availableHeight = Math.max(200, stageRect.height - paddingTotal);
 
       const a4Width = 794;
       const a4Height = 1122;
 
       const zoomX = availableWidth / a4Width;
       const zoomY = availableHeight / a4Height;
+      // Cap at 1.0 to prevent upscaling beyond actual size
       const fitZoom = Math.min(zoomX, zoomY, 1);
 
-      setZoom(fitZoom);
+      // Only update if zoom changed significantly (avoid jitter)
+      setZoom((prevZoom) => {
+        if (Math.abs(prevZoom - fitZoom) < 0.01) return prevZoom;
+        return fitZoom;
+      });
     };
 
+    // Initial calculation
     const timeoutId = setTimeout(calculateFitZoom, 100);
 
+    // Debounced resize handler
+    let resizeTimeout;
     const handleResize = () => {
-      clearTimeout(timeoutId);
-      setTimeout(calculateFitZoom, 100);
+      clearTimeout(resizeTimeout);
+      resizeTimeout = setTimeout(calculateFitZoom, 150);
     };
 
     window.addEventListener('resize', handleResize);
+    // Also recalculate when stage becomes visible or size changes
+    const observer = new ResizeObserver(() => {
+      clearTimeout(resizeTimeout);
+      resizeTimeout = setTimeout(calculateFitZoom, 150);
+    });
+    if (canvasStageRef.current) {
+      observer.observe(canvasStageRef.current);
+    }
+
     return () => {
       clearTimeout(timeoutId);
+      clearTimeout(resizeTimeout);
       window.removeEventListener('resize', handleResize);
+      observer.disconnect();
     };
   }, []);
 
@@ -656,7 +682,7 @@ function App({ binderId /*, csrfToken */ }) {
       openModal({
         kind: 'pdf',
         title: 'PDF Preview',
-        subtitle: '(A4-sized modal)',
+        subtitle: '(A4-size)',
         pdfUrl: url,
         onClose: () => {
           if (url) {
@@ -778,7 +804,10 @@ function App({ binderId /*, csrfToken */ }) {
             pages={layout?.pages || []}
             selectedPageIndex={selectedPage}
             sectionLabels={SECTION_LABELS}
-            onSelectPage={setSelectedPage}
+            onSelectPage={(idx) => {
+              setSelectedPage(idx);
+              setMobilePageListOpen(false); // Close mobile menu when page is selected
+            }}
             onReorderPages={handleReorderPages}
             onAddPage={() => {
               setLayout((prev) => {
@@ -803,6 +832,8 @@ function App({ binderId /*, csrfToken */ }) {
               setIsDirty(true);
             }}
             onDeletePage={handleDeletePage}
+            mobileOverlayOpen={mobilePageListOpen}
+            onCloseMobileOverlay={() => setMobilePageListOpen(false)}
           />
 
           <div className="workspace-canvas-wrapper">
@@ -822,6 +853,30 @@ function App({ binderId /*, csrfToken */ }) {
               onZoomChange={handleZoomChange}
               onZoomFit={handleZoomFit}
               canvasStageRef={canvasStageRef}
+              onToggleMobilePageList={() => setMobilePageListOpen(!mobilePageListOpen)}
+              onAddPage={() => {
+                setLayout((prev) => {
+                  if (!prev) {
+                    return {
+                      binderId,
+                      pages: applySectionDefaults([{ id: makePageId(), pageIndex: 0, layers: [] }]),
+                      updatedAt: new Date().toISOString()
+                    };
+                  }
+
+                  const pages = prev.pages || [];
+                  const nextIndex = pages.length;
+
+                  const newPages = [
+                    ...pages,
+                    { id: makePageId(), pageIndex: nextIndex, layers: [] }
+                  ];
+
+                  return { ...prev, pages: applySectionDefaults(newPages) };
+                });
+                setIsDirty(true);
+              }}
+              onDeletePage={handleDeletePage}
             />
           </div>
         </div>
@@ -888,6 +943,42 @@ function App({ binderId /*, csrfToken */ }) {
         multiple
         hidden
         onChange={handleFileChange}
+      />
+
+      <MobileMenu
+        onAddPhoto={handleAddPhotosClick}
+        onDeletePhoto={() => {
+          if (!selectedLayerId) return;
+          const layer = currentPage.layers?.find((l) => l.id === selectedLayerId);
+          if (!layer) return;
+
+          const hasStorageKey = layer?.storageKey && binderId;
+
+          const confirmMessage = hasStorageKey
+            ? 'Delete this photo from your binder? This will remove it from this page and from our storage.'
+            : 'Delete this photo from this page?';
+
+          openModal({
+            kind: 'confirm',
+            title: 'Delete photo',
+            body: confirmMessage,
+            confirmLabel: 'Delete photo',
+            cancelLabel: 'Cancel',
+            onConfirm: async () => {
+              try {
+                await removeLayer(selectedLayerId);
+                setSelectedLayerId(null);
+              } catch (err) {
+                if (isSessionExpiredError(err)) return;
+                setError(`Failed to delete photo: ${err.message}`);
+              }
+            }
+          });
+        }}
+        onTidy={handleTidyLayout}
+        onExportPdf={handleExportPdf}
+        onPreviewPdf={handlePreviewPdf}
+        canDelete={!!selectedLayerId}
       />
     </div>
   );

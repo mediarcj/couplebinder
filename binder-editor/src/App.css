@@ -152,6 +152,7 @@
     position: relative;
     min-width: 200px;
     max-width: 200px;
+    /* Desktop: normal sidebar position */
   }
   
   /* Long horizontal border on right side to close all tabs */
@@ -186,6 +187,14 @@
     align-items: center;
     flex-shrink: 0;
     min-width: 0;
+    width: 100%;
+    justify-content: flex-end;
+  }
+  
+  .page-list-actions-group {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
   }
   
   .page-tab-add-btn,
@@ -539,6 +548,8 @@
     justify-content: center;
     align-items: flex-start;
     min-height: 0;
+    /* Ensure proper containment for scaled content */
+    contain: layout style;
   }
   
   /* The white "sheet" */
@@ -553,6 +564,13 @@
     border: 1px solid #ddd;
     transform-origin: top center;
     isolation: isolate;
+    /* Critical: maintain logical size even when scaled */
+    flex-shrink: 0;
+    flex-grow: 0;
+    /* Ensure page stays centered when scaled */
+    margin: 0 auto;
+    /* Ensure all children (layers) scale with the page */
+    will-change: transform;
   }
   
   /* Outside-page overlay structure (dimming disabled) */
@@ -609,9 +627,10 @@
     flex-direction: column;
     user-select: none;
     background-color: var(--layer-bg-color, #fff);
-    will-change: left, top;
+    will-change: left, top, transform;
     contain: layout style;
     touch-action: none;
+    /* Layers are children of canvas-page, so they scale automatically with transform: scale() */
   }
   
   .binder-editor-layer.is-dragging {
@@ -1449,8 +1468,304 @@
       align-items: flex-start;
       gap: 0.5rem;
     }
-  
+    
     .canvas-header h3 {
       font-size: 0.9rem;
+    }
+  }
+  
+  /* ===== Mobile Pages Button in Canvas Header ===== */
+  .mobile-pages-btn {
+    display: none; /* Hidden on desktop */
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    background: #ffffff;
+    color: #64748b;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    touch-action: manipulation;
+  }
+  
+  .mobile-pages-btn:hover {
+    background: #f1f5f9;
+    border-color: #94a3b8;
+    color: #475569;
+  }
+  
+  .mobile-pages-btn:active {
+    transform: scale(0.95);
+  }
+  
+  /* Desktop page controls - hidden on mobile */
+  .desktop-page-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  
+  .page-control-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    background: #ffffff;
+    color: #64748b;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  
+  .page-control-btn:hover {
+    background: #f1f5f9;
+    border-color: #94a3b8;
+    color: #475569;
+  }
+  
+  .page-control-delete:hover {
+    background: #fef2f2;
+    border-color: #fca5a5;
+    color: #dc2626;
+  }
+  
+  /* ===== Mobile Page List Overlay ===== */
+  .mobile-page-list-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.4);
+    backdrop-filter: blur(2px);
+    z-index: 9997;
+    display: none; /* Hidden on desktop */
+    animation: fadeIn 0.2s ease-out;
+  }
+  
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  
+  .mobile-page-list-close-btn {
+    display: none; /* Hidden on desktop */
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    background: #ffffff;
+    color: #64748b;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  
+  .mobile-page-list-close-btn:hover {
+    background: #f1f5f9;
+    border-color: #94a3b8;
+    color: #475569;
+  }
+  
+  /* ===== Mobile Bottom Controls Bar ===== */
+  .mobile-bottom-controls {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: #ffffff;
+    border-top: 1px solid #e2e8f0;
+    display: none; /* Hidden on desktop */
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-around;
+    padding: 10px 8px;
+    padding-bottom: max(10px, env(safe-area-inset-bottom));
+    box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.05);
+    z-index: 9998;
+    touch-action: manipulation;
+  }
+  
+  .mobile-bottom-control-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    padding: 6px 8px;
+    border: none;
+    background: transparent;
+    color: #64748b;
+    cursor: pointer;
+    transition: color 0.15s ease;
+    touch-action: manipulation;
+    min-width: 0;
+    flex: 1;
+    max-width: 80px;
+  }
+  
+  .mobile-bottom-control-btn:active {
+    color: #3b82f6;
+    transform: scale(0.95);
+  }
+  
+  .mobile-bottom-control-btn-icon {
+    font-size: 20px;
+    font-weight: 600;
+    line-height: 1;
+  }
+  
+  .mobile-bottom-control-btn-label {
+    font-size: 10px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    line-height: 1.2;
+  }
+  
+  /* ===== Mobile Layout Overrides ===== */
+  @media (max-width: 900px) {
+    /* Show mobile controls */
+    .mobile-bottom-controls {
+      display: flex;
+    }
+    
+    /* Show mobile pages button */
+    .mobile-pages-btn {
+      display: flex;
+    }
+    
+    /* Hide desktop page controls on mobile */
+    .desktop-page-controls {
+      display: none;
+    }
+    
+    /* Hide desktop sidebar on mobile */
+    .binder-editor-action-sidebar {
+      display: none;
+    }
+    
+    /* Hide page list panel on mobile - it becomes an overlay */
+    .binder-editor-page-list {
+      position: fixed;
+      top: 0;
+      left: 0;
+      bottom: 0;
+      width: 280px;
+      max-width: 85vw;
+      z-index: 9998;
+      transform: translateX(-100%);
+      transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      box-shadow: 2px 0 12px rgba(0, 0, 0, 0.2);
+      border-right: 1px solid #e2e8f0;
+      background: #ffffff;
+      display: flex;
+      flex-direction: column;
+    }
+    
+    .binder-editor-page-list.mobile-overlay-open {
+      transform: translateX(0);
+    }
+    
+    
+    /* Show mobile overlay backdrop */
+    .mobile-page-list-overlay {
+      display: block;
+    }
+    
+    /* Show mobile close button */
+    .mobile-page-list-close-btn {
+      display: flex;
+    }
+    
+    /* Ensure page list header has close button visible on mobile */
+    .page-list-actions {
+      justify-content: space-between;
+    }
+    
+    .page-list-actions-group {
+      margin-left: auto;
+    }
+    
+    /* Adjust canvas for mobile */
+    .canvas-stage {
+      padding: 16px;
+      /* Ensure proper centering on mobile */
+      justify-content: center;
+      align-items: center;
+      /* Allow scrolling if content is larger */
+      overflow: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+    
+    .canvas-page {
+      /* On mobile, maintain logical size - zoom transform will scale it */
+      width: 794px;
+      height: 1122px;
+      /* Ensure it stays centered and scales properly */
+      margin: 0 auto;
+    }
+    
+    /* Stack workspace vertically on mobile */
+    .binder-editor-workspace {
+      flex-direction: column;
+      height: calc(100vh - 60px); /* Account for bottom controls */
+    }
+    
+    .binder-editor-canvas {
+      order: 1;
+      flex: 1;
+      min-height: 0;
+      width: 100%;
+    }
+    
+    /* Make toolbar more compact */
+    .binder-editor-toolbar {
+      padding: 0.5rem;
+      gap: 0.5rem;
+    }
+    
+    .canvas-header {
+      padding: 0.5rem;
+      height: auto;
+      min-height: 44px;
+    }
+    
+    /* Ensure canvas header actions have proper spacing */
+    .canvas-header-actions {
+      gap: 0.5rem !important;
+    }
+  }
+  
+  /* Small mobile devices */
+  @media (max-width: 600px) {
+    .canvas-stage {
+      padding: 8px;
+    }
+    
+    .mobile-bottom-controls {
+      padding: 8px 4px;
+      padding-bottom: max(8px, env(safe-area-inset-bottom));
+    }
+    
+    .mobile-bottom-control-btn {
+      padding: 5px 4px;
+      gap: 2px;
+    }
+    
+    .mobile-bottom-control-btn-icon {
+      font-size: 18px;
+    }
+    
+    .mobile-bottom-control-btn-label {
+      font-size: 9px;
     }
   }

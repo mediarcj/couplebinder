@@ -159,8 +159,8 @@ function PageList({
 
   return (
     <aside className={`binder-editor-page-list bg-white ${mobileOverlayOpen ? 'mobile-overlay-open' : ''}`}>
-        <div className="page-list-header">
-          <div className="page-list-actions">
+      <div className="page-list-header">
+        <div className="page-list-actions">
             {/* Mobile close button - appears first on mobile */}
             <button
               type="button"
@@ -174,70 +174,70 @@ function PageList({
             </button>
             
             <div className="page-list-actions-group">
-              <button
-                type="button"
-                className="page-tab-add-btn"
-                onClick={onAddPage}
-                title="Add new page"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                </svg>
-              </button>
+          <button
+            type="button"
+            className="page-tab-add-btn"
+            onClick={onAddPage}
+            title="Add new page"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+          </button>
 
-              {hasPages && selectedPageIndex != null && (
-                <button
-                  type="button"
-                  className="page-tab-delete-btn"
-                  onClick={handleDeleteClick}
-                  title="Delete selected page"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                  </svg>
-                </button>
-              )}
+          {hasPages && selectedPageIndex != null && (
+            <button
+              type="button"
+              className="page-tab-delete-btn"
+              onClick={handleDeleteClick}
+              title="Delete selected page"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+            </button>
+          )}
             </div>
-          </div>
         </div>
+      </div>
 
       <div className="page-tabs-container">
         {hasPages ? (
           <div className="page-tabs-dnd-wrapper">
-            <DndContext
-              sensors={sensors}
-              collisionDetection={closestCenter}
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
               modifiers={[restrictToVerticalAxis]}
-              onDragEnd={(e) => {
-                const activeId = e.active?.id;
-                const overId = e.over?.id;
-                if (!activeId || !overId) return;
-                if (activeId === overId) return;
+            onDragEnd={(e) => {
+              const activeId = e.active?.id;
+              const overId = e.over?.id;
+              if (!activeId || !overId) return;
+              if (activeId === overId) return;
 
-                const fromIndex = pages.findIndex((p) => p?.id === activeId);
-                const toIndex = pages.findIndex((p) => p?.id === overId);
-                if (fromIndex < 0 || toIndex < 0) return;
+              const fromIndex = pages.findIndex((p) => p?.id === activeId);
+              const toIndex = pages.findIndex((p) => p?.id === overId);
+              if (fromIndex < 0 || toIndex < 0) return;
 
-                onReorderPages?.(fromIndex, toIndex);
-              }}
-            >
-              <SortableContext items={itemIds} strategy={verticalListSortingStrategy}>
-                {pages.map((page, idx) => {
-                  const isActive = idx === selectedPageIndex;
-                  return (
-                    <SortablePageTab
-                      key={page.id || idx}
-                      page={page}
-                      idx={idx}
-                      isActive={isActive}
-                      sectionLabels={sectionLabels}
-                      onSelectPage={onSelectPage}
-                    />
-                  );
-                })}
-              </SortableContext>
+              onReorderPages?.(fromIndex, toIndex);
+            }}
+          >
+            <SortableContext items={itemIds} strategy={verticalListSortingStrategy}>
+              {pages.map((page, idx) => {
+                const isActive = idx === selectedPageIndex;
+                return (
+                  <SortablePageTab
+                    key={page.id || idx}
+                    page={page}
+                    idx={idx}
+                    isActive={isActive}
+                    sectionLabels={sectionLabels}
+                    onSelectPage={onSelectPage}
+                  />
+                );
+              })}
+            </SortableContext>
             </DndContext>
-          </div>
+                    </div>
         ) : (
           <div className="page-tabs-empty">
             <button

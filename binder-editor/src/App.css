@@ -647,8 +647,7 @@ body {
   }
   
   .binder-editor-layer.is-overlapping::after,
-  .binder-editor-layer.is-overlapped::after,
-  .binder-editor-layer.is-outside::after {
+  .binder-editor-layer.is-overlapped::after {
     content: '';
     position: absolute;
     inset: -2px;
@@ -664,11 +663,6 @@ body {
   
   .binder-editor-layer.is-overlapped::after {
     border-color: rgba(239, 68, 68, 0.45);
-  }
-  
-  .binder-editor-layer.is-outside::after {
-    border-color: rgba(245, 158, 11, 0.95);
-    border-style: dashed;
   }
   
 /* Floating drag badge (anchored to viewport via portal) */

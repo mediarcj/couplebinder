@@ -856,7 +856,7 @@ function Canvas({
                 snapGlowX={isDraggingLayer ? activeGlowEdges.x : null}
                 snapGlowY={isDraggingLayer ? activeGlowEdges.y : null}
                 isDragging={isDraggingLayer}
-                isOverlapping={isDraggingLayer && (dragFeedback.ids?.length || 0) > 0}
+                isOverlapping={false}
                 isOutside={isPartiallyOutside}
                 isOverlapped={!isDraggingLayer && overlapSet.has(layer.id)}
                 snapAnimating={isSnapAnimating}

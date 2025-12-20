@@ -1,5 +1,5 @@
 // File: binder-editor/src/Canvas.jsx
-// Description: Canvas component for editing layers
+// Description: Canvas editing surface (page + layers) with snapping + smart guide overlay
 // Purpose: Display and manipulate layers on a page
 
 import React, {
@@ -103,8 +103,6 @@ function getCollisionRect(layer) {
 /**
  * Compute how much of the PHOTO FRAME is outside the page, as 4 bands (top/left/right/bottom).
  * These values are in *layer-frame local pixels* and will drive the stripe overlay.
- *
- * NOTE: This is for photo layers only, and uses (height - CAPTION_H) as the frame height.
  */
 function computePhotoOutsideBands(layer) {
   if (!layer || layer.type !== 'photo') {
@@ -206,7 +204,6 @@ function CursorBadge({ show, text, clientX, clientY }) {
   const badgeRef = useRef(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
 
-  // Measure badge (so we can clamp to viewport edges)
   useLayoutEffect(() => {
     if (!show) return;
     const el = badgeRef.current;
@@ -224,11 +221,10 @@ function CursorBadge({ show, text, clientX, clientY }) {
 
   if (!show) return null;
 
-  // Offset so it sits next to the cursor, not under it
   const OFFSET = 12;
   const PAD = 8;
 
-  const w = size.w || 180; // fallback to keep it sane before first measure
+  const w = size.w || 180;
   const h = size.h || 32;
 
   const x = clamp(clientX + OFFSET, PAD, Math.max(PAD, window.innerWidth - w - PAD));
@@ -248,15 +244,42 @@ function CursorBadge({ show, text, clientX, clientY }) {
   );
 }
 
+/**
+ * Smart guides overlay (Figma/Canva-style dashed lines).
+ * Drawn in logical page coords so it scales with the page transform.
+ */
+function SmartGuides({ guideX, guideY }) {
+  const hasX = typeof guideX === 'number' && Number.isFinite(guideX);
+  const hasY = typeof guideY === 'number' && Number.isFinite(guideY);
+
+  if (!hasX && !hasY) return null;
+
+  // Align to half-pixel for crisp 1px strokes in most browsers.
+  const x = hasX ? clamp(guideX, 0, PAGE_WIDTH) + 0.5 : null;
+  const y = hasY ? clamp(guideY, 0, PAGE_HEIGHT) + 0.5 : null;
+
+  return (
+    <svg
+      className="canvas-guides"
+      viewBox={`0 0 ${PAGE_WIDTH} ${PAGE_HEIGHT}`}
+      preserveAspectRatio="none"
+      aria-hidden="true"
+    >
+      {hasX && <line className="canvas-guide-line" x1={x} y1={0} x2={x} y2={PAGE_HEIGHT} />}
+      {hasY && <line className="canvas-guide-line" x1={0} y1={y} x2={PAGE_WIDTH} y2={y} />}
+    </svg>
+  );
+}
+
 function Canvas({
   page,
   layers,
   onUpdateLayer,
-  onAddLayer, // unused here but kept for compatibility
+  onAddLayer,
   onRemoveLayer,
-  onAddPhoto, // unused here but kept for compatibility
+  onAddPhoto,
   sectionKey,
-  sectionLabels, // unused here but kept for compatibility
+  sectionLabels,
   sectionOptions,
   onSectionChange,
   selectedLayerId,
@@ -288,10 +311,10 @@ function Canvas({
     clientY: 0
   });
 
+  // These were already in your file, but guides weren’t being drawn anywhere.
   const [activeGuides, setActiveGuides] = useState({ x: null, y: null });
   const [activeGlowEdges, setActiveGlowEdges] = useState({ x: null, y: null });
 
-  // For smooth “snap back” animation after release
   const [snapAnimatingLayerId, setSnapAnimatingLayerId] = useState(null);
   const snapAnimTimerRef = useRef(null);
 
@@ -304,11 +327,9 @@ function Canvas({
     offsetX: 0,
     offsetY: 0,
 
-    // Full layer size (used for snap/clamp)
     w: 0,
     h: 0,
 
-    // Collision size (used for overlap/outside prompts)
     cw: 0,
     ch: 0,
     isPhoto: false,
@@ -320,7 +341,6 @@ function Canvas({
     snapTargets: { x: null, y: null },
     axisLock: null,
 
-    // pointer capture tracking
     pointerId: null,
     pointerEl: null,
 
@@ -336,7 +356,6 @@ function Canvas({
   const rafRef = useRef(0);
   const lastEventRef = useRef(null);
 
-  // Store handlers so stopDragging can always detach them
   const moveHandlerRef = useRef(null);
   const upHandlerRef = useRef(null);
   const cancelHandlerRef = useRef(null);
@@ -635,7 +654,6 @@ function Canvas({
       const col = getCollisionRect(layer);
       const cw = col.width;
       const ch = col.height;
-      const isPhoto = layer.type === 'photo';
 
       const px = (e.clientX - pageRect.left) / zoomAtStart;
       const py = (e.clientY - pageRect.top) / zoomAtStart;
@@ -652,14 +670,11 @@ function Canvas({
         offsetX,
         offsetY,
 
-        // full size (snap/clamp)
         w,
         h,
 
-        // collision size (prompts)
         cw,
         ch,
-        isPhoto,
 
         lastX: lx,
         lastY: ly,
@@ -667,13 +682,7 @@ function Canvas({
           .filter((l) => l && l.id !== layerId)
           .map((l) => {
             const r = getCollisionRect(l);
-            return {
-              id: l.id,
-              x: r.x,
-              y: r.y,
-              width: r.width,
-              height: r.height
-            };
+            return { id: l.id, x: r.x, y: r.y, width: r.width, height: r.height };
           })
           .filter((r) => r.width > 0 && r.height > 0),
         guides: buildGuideCandidates(layers || [], layerId),
@@ -683,13 +692,7 @@ function Canvas({
         pointerId: e.pointerId != null ? e.pointerId : null,
         pointerEl: layerEl || null,
 
-        lastUi: {
-          guideX: null,
-          guideY: null,
-          glowX: null,
-          glowY: null,
-          feedbackSig: null
-        }
+        lastUi: { guideX: null, guideY: null, glowX: null, glowY: null, feedbackSig: null }
       };
 
       clearUi();
@@ -727,9 +730,7 @@ function Canvas({
             snapAnimTimerRef.current = null;
           }
           setSnapAnimatingLayerId(d.layerId);
-          snapAnimTimerRef.current = setTimeout(() => {
-            setSnapAnimatingLayerId(null);
-          }, 220);
+          snapAnimTimerRef.current = setTimeout(() => setSnapAnimatingLayerId(null), 220);
 
           if (Math.abs(nextX - d.lastX) > 0.01 || Math.abs(nextY - d.lastY) > 0.01) {
             d.lastX = nextX;
@@ -753,6 +754,7 @@ function Canvas({
       document.addEventListener('pointerup', onUp);
       document.addEventListener('pointercancel', onCancel);
 
+      // Compatibility fallback
       document.addEventListener('mousemove', onMove);
       document.addEventListener('mouseup', onUp);
 
@@ -811,7 +813,6 @@ function Canvas({
       onMouseDown={handleCanvasMouseDown}
       onContextMenu={(e) => e.preventDefault()}
     >
-      {/* Portal badge: always next to cursor */}
       <CursorBadge
         show={badgeModel.show}
         text={badgeModel.text}
@@ -928,6 +929,9 @@ function Canvas({
             transition: 'transform 0.2s ease-out'
           }}
         >
+          {/* ✅ Smart guides (dashed alignment lines) */}
+          <SmartGuides guideX={activeGuides.x} guideY={activeGuides.y} />
+
           {layers.map((layer) => {
             const isDraggingLayer = dragging && dragRef.current.layerId === layer.id;
             const isSnapAnimating = snapAnimatingLayerId === layer.id;
@@ -956,8 +960,9 @@ function Canvas({
                 onResizeFeedback={handleResizeFeedback}
                 binderId={page.binderId || null}
                 zoom={zoom}
-                snapGlowX={null}
-                snapGlowY={null}
+                // ✅ Edge glow now matches the snap guide (modern feel)
+                snapGlowX={isDraggingLayer ? activeGlowEdges.x : null}
+                snapGlowY={isDraggingLayer ? activeGlowEdges.y : null}
                 isDragging={isDraggingLayer}
                 isOverlapping={false}
                 isOutside={isPartiallyOutside}

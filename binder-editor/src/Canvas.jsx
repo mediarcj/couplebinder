@@ -853,8 +853,8 @@ function Canvas({
                 onResizeFeedback={handleResizeFeedback}
                 binderId={page.binderId || null}
                 zoom={zoom}
-                snapGlowX={isDraggingLayer ? activeGlowEdges.x : null}
-                snapGlowY={isDraggingLayer ? activeGlowEdges.y : null}
+                snapGlowX={null}
+                snapGlowY={null}
                 isDragging={isDraggingLayer}
                 isOverlapping={false}
                 isOutside={isPartiallyOutside}
@@ -871,35 +871,6 @@ function Canvas({
             <div className="canvas-empty">
               <p>No layers on this page. Click "Add Photo" to start.</p>
             </div>
-          )}
-
-          {dragging && (activeGuides.x !== null || activeGuides.y !== null) && (
-            <svg
-              className="canvas-guides"
-              width={PAGE_WIDTH}
-              height={PAGE_HEIGHT}
-              viewBox={`0 0 ${PAGE_WIDTH} ${PAGE_HEIGHT}`}
-              aria-hidden="true"
-            >
-              {activeGuides.x !== null && (
-                <line
-                  className="canvas-guide-line"
-                  x1={activeGuides.x}
-                  y1="0"
-                  x2={activeGuides.x}
-                  y2={PAGE_HEIGHT}
-                />
-              )}
-              {activeGuides.y !== null && (
-                <line
-                  className="canvas-guide-line"
-                  x1="0"
-                  y1={activeGuides.y}
-                  x2={PAGE_WIDTH}
-                  y2={activeGuides.y}
-                />
-              )}
-            </svg>
           )}
         </div>
       </div>

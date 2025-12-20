@@ -858,7 +858,7 @@ function Canvas({
                 isDragging={isDraggingLayer}
                 isOverlapping={false}
                 isOutside={isPartiallyOutside}
-                isOverlapped={!isDraggingLayer && overlapSet.has(layer.id)}
+                isOverlapped={false}
                 snapAnimating={isSnapAnimating}
                 isFullyOutside={isFullyOutside}
                 insidePct={isDraggingLayer ? (dragInsidePct ?? 100) : 100}

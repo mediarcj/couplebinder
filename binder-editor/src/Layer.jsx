@@ -129,15 +129,15 @@ function Layer({
     const bottom = safeBandNumber(outsideBands?.bottom);
 
     // Instant ON the moment anything is outside (no "ramp" that can feel delayed)
-    const hasOutsidePixels = (top + left + right + bottom) > 0;
-    const outsideOn = (hasOutsidePixels || isOutside || resizeOutside) ? 1 : 0;
+    const hasOutsidePixels = top + left + right + bottom > 0;
+    const outsideOn = hasOutsidePixels || isOutside || resizeOutside ? 1 : 0;
 
     // Put selected/active layer above everything so handles always work
     const BASE_Z = Number.isFinite(Number(layer.zIndex)) ? Number(layer.zIndex) : 0;
     const BOOST_Z = 60000;
 
     // Selected/dragging/resizing should always be on top (UI-only; not saved)
-    const effectiveZ = (selected || isDragging || resizing) ? BOOST_Z : BASE_Z;
+    const effectiveZ = selected || isDragging || resizing ? BOOST_Z : BASE_Z;
 
     styleEl.textContent = `
       ${selector} {
@@ -222,14 +222,11 @@ function Layer({
     const layerEl = e.currentTarget.closest('.binder-editor-layer');
     if (!layerEl) return;
 
-    const canvasEl =
-      layerEl.closest('.canvas-page') ||
-      layerEl.closest('.canvas-stage') ||
-      layerEl.closest('.binder-editor-canvas');
+    // Always base resize math on the PAGE element (scaled by zoom)
+    const pageEl = layerEl.closest('.canvas-page');
+    if (!pageEl) return;
 
-    if (!canvasEl) return;
-
-    const canvasRect = canvasEl.getBoundingClientRect();
+    const canvasRect = pageEl.getBoundingClientRect();
     const layerRect = layerEl.getBoundingClientRect();
 
     const frameEl = layerEl.querySelector('.layer-photo-frame-wrapper') || layerEl;
@@ -240,6 +237,7 @@ function Layer({
     const left = (frameRect.left - canvasRect.left) / storedZoom;
     const top = (frameRect.top - canvasRect.top) / storedZoom;
 
+    // Caption height in logical units (only used for saving total layer height)
     const captionHeight =
       layer.type === 'photo'
         ? Math.max(0, (layerRect.height - frameRect.height) / storedZoom)
@@ -270,7 +268,7 @@ function Layer({
       },
       aspect,
       canvasRect,
-      canvasEl,
+      pageEl,
       layerEl,
       zoom: storedZoom,
       captionHeight
@@ -285,11 +283,10 @@ function Layer({
     const {
       corner,
       startMouseX,
-      startMouseY,
       startRect,
       aspect,
       canvasRect,
-      canvasEl,
+      pageEl,
       layerEl,
       zoom: storedZoom,
       captionHeight
@@ -308,12 +305,13 @@ function Layer({
     let left = isLeft ? startRect.left + (startRect.width - width) : startRect.left;
     let top = isTop ? startRect.top + (startRect.height - imageHeight) : startRect.top;
 
-    const canvasWidth = canvasRect.width / storedZoom;
-    const canvasHeight = canvasRect.height / storedZoom;
+    const canvasWidth = canvasRect.width / storedZoom;   // ~ PAGE_WIDTH
+    const canvasHeight = canvasRect.height / storedZoom; // ~ PAGE_HEIGHT
 
-    const totalHeight =
-      layer.type === 'photo' ? imageHeight + (captionHeight || 0) : imageHeight;
+    // Total layer height (image + caption) is what we SAVE.
+    const totalHeight = layer.type === 'photo' ? imageHeight + (captionHeight || 0) : imageHeight;
 
+    // Clamp position so the TOTAL layer stays in the page
     left = clamp(left, 0, canvasWidth - width);
     top = clamp(top, 0, canvasHeight - totalHeight);
 
@@ -322,13 +320,7 @@ function Layer({
       imageHeight = width / aspect;
     }
 
-    if (
-      top +
-        (layer.type === 'photo'
-          ? imageHeight + (captionHeight || 0)
-          : imageHeight) >
-      canvasHeight
-    ) {
+    if (top + totalHeight > canvasHeight) {
       const maxImageHeight =
         layer.type === 'photo'
           ? Math.max(50, canvasHeight - top - (captionHeight || 0))
@@ -342,23 +334,34 @@ function Layer({
       }
     }
 
-    const testRect = {
+    const nextTotalRect = {
       left,
       top,
       width,
-      height: layer.type === 'photo' ? imageHeight + (captionHeight || 0) : imageHeight
+      height: totalHeight
     };
 
-    // Calculate overlap percentage (similar to drag)
-    const resizingArea = Math.max(1, testRect.width * testRect.height);
+    // ===== Prompts are based on the PHOTO FRAME ONLY (exclude caption) =====
+    const feedbackRect =
+      layer.type === 'photo'
+        ? { left, top, width, height: imageHeight }
+        : { left, top, width, height: totalHeight };
+
+    const movingArea = Math.max(1, feedbackRect.width * feedbackRect.height);
     let ids = [];
     let maxPct = 0;
 
-    if (canvasEl && layerEl) {
-      const others = canvasEl.querySelectorAll('.binder-editor-layer');
+    if (pageEl && layerEl) {
+      const others = pageEl.querySelectorAll('.binder-editor-layer');
+
       for (const other of others) {
         if (other === layerEl) continue;
-        const r = other.getBoundingClientRect();
+
+        // If the other layer is a photo, use its FRAME wrapper rect (not caption box)
+        const otherFrame = other.querySelector('.layer-photo-frame-wrapper');
+        const rectEl = otherFrame || other;
+
+        const r = rectEl.getBoundingClientRect();
         const oLeft = (r.left - canvasRect.left) / storedZoom;
         const oTop = (r.top - canvasRect.top) / storedZoom;
         const oWidth = r.width / storedZoom;
@@ -366,10 +369,10 @@ function Layer({
 
         if (
           rectsOverlap(
-            testRect.left,
-            testRect.top,
-            testRect.width,
-            testRect.height,
+            feedbackRect.left,
+            feedbackRect.top,
+            feedbackRect.width,
+            feedbackRect.height,
             oLeft,
             oTop,
             oWidth,
@@ -379,30 +382,28 @@ function Layer({
           const otherId = other.getAttribute('data-layer-id');
           if (otherId) ids.push(otherId);
 
-          // Calculate intersection area
           const a = intersectionArea(
-            testRect.left,
-            testRect.top,
-            testRect.width,
-            testRect.height,
+            feedbackRect.left,
+            feedbackRect.top,
+            feedbackRect.width,
+            feedbackRect.height,
             oLeft,
             oTop,
             oWidth,
             oHeight
           );
-          const pct = (a / resizingArea) * 100;
+          const pct = (a / movingArea) * 100;
           if (pct > maxPct) maxPct = pct;
         }
       }
     }
 
     const outside =
-      testRect.left < 0 ||
-      testRect.top < 0 ||
-      testRect.left + testRect.width > PAGE_WIDTH ||
-      testRect.top + testRect.height > PAGE_HEIGHT;
+      feedbackRect.left < 0 ||
+      feedbackRect.top < 0 ||
+      feedbackRect.left + feedbackRect.width > PAGE_WIDTH ||
+      feedbackRect.top + feedbackRect.height > PAGE_HEIGHT;
 
-    // Report feedback to parent (CSS transform handles the offset)
     if (onResizeFeedback) {
       onResizeFeedback({
         ids,
@@ -413,16 +414,17 @@ function Layer({
       });
     }
 
-    if (maxPct > 0 !== resizeOverlap) setResizeOverlap(maxPct > 0);
+    if ((maxPct > 0) !== resizeOverlap) setResizeOverlap(maxPct > 0);
     if (outside !== resizeOutside) setResizeOutside(outside);
 
-    resizeRef.current.lastRect = { ...testRect };
+    resizeRef.current.lastRect = { ...nextTotalRect };
 
+    // Save FULL layer size (keeps caption sizing correct)
     onUpdate(layer.id, {
-      width: testRect.width,
-      height: testRect.height,
-      x: testRect.left,
-      y: testRect.top
+      width: nextTotalRect.width,
+      height: nextTotalRect.height,
+      x: nextTotalRect.left,
+      y: nextTotalRect.top
     });
   };
 
@@ -500,7 +502,7 @@ function Layer({
   const glowYClass = snapGlowY ? `snap-glow-y-${snapGlowY}` : '';
   const overlapClass = isOverlapping ? 'is-overlapping' : '';
   const overlappedClass = isOverlapped ? 'is-overlapped' : '';
-  const outsideClass = (isOutside || resizeOutside) ? 'is-outside' : '';
+  const outsideClass = isOutside || resizeOutside ? 'is-outside' : '';
   const draggingClass = isDragging ? 'is-dragging' : '';
   const snappingClass = snapAnimating ? 'is-snapping' : '';
   const fullyOutsideClass = isFullyOutside ? 'is-fully-outside' : '';

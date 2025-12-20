@@ -671,21 +671,28 @@ body {
     border-style: dashed;
   }
   
-  /* Floating drag badge */
-  .canvas-feedback-badge {
-    position: fixed;
-    pointer-events: none;
-    z-index: 40000;
-    transform: translate(12px, 12px);
-    padding: 6px 10px;
-    border-radius: 999px;
-    font-size: 12px;
-    font-weight: 600;
-    background: rgba(15, 23, 42, 0.92);
-    color: #fff;
-    box-shadow: 0 10px 22px rgba(15, 23, 42, 0.25);
-    backdrop-filter: blur(6px);
-  }
+/* Floating drag badge (anchored to viewport via portal) */
+.canvas-feedback-badge {
+  position: fixed;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+  z-index: 40000;
+
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+
+  background: rgba(15, 23, 42, 0.92);
+  color: #fff;
+  box-shadow: 0 10px 22px rgba(15, 23, 42, 0.25);
+  backdrop-filter: blur(6px);
+
+  /* We will drive positioning via inline transform */
+  transform: translate3d(0px, 0px, 0px);
+  will-change: transform;
+}
   
   /* ===== Snap edge glow ===== */
 .binder-editor-layer.snap-glow-x-left::before,

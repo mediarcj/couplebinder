@@ -116,9 +116,16 @@ function Layer({
     const right = safeBandNumber(outsideBands?.right);
     const bottom = safeBandNumber(outsideBands?.bottom);
 
-    // Instant ON the moment anything is outside (no “ramp” that can feel delayed)
+    // Instant ON the moment anything is outside (no "ramp" that can feel delayed)
     const hasOutsidePixels = (top + left + right + bottom) > 0;
     const outsideOn = (hasOutsidePixels || isOutside || resizeOutside) ? 1 : 0;
+
+    // Put selected/active layer above everything so handles always work
+    const BASE_Z = Number.isFinite(Number(layer.zIndex)) ? Number(layer.zIndex) : 0;
+    const BOOST_Z = 60000;
+
+    // Selected/dragging/resizing should always be on top (UI-only; not saved)
+    const effectiveZ = (selected || isDragging || resizing) ? BOOST_Z : BASE_Z;
 
     styleEl.textContent = `
       ${selector} {
@@ -127,7 +134,7 @@ function Layer({
         width: ${layer.width}px !important;
         height: ${layer.height}px !important;
         transform: rotate(${layer.rotation}deg) !important;
-        z-index: ${layer.zIndex || 0} !important;
+        z-index: ${effectiveZ} !important;
         background-color: ${bgColor} !important;
 
         /* Stripe-band controls (partial outside only) */
@@ -155,7 +162,10 @@ function Layer({
     outsideBands?.right,
     outsideBands?.bottom,
     isOutside,
-    resizeOutside
+    resizeOutside,
+    selected,
+    isDragging,
+    resizing
   ]);
 
   const handlePointerDown = (e) => {

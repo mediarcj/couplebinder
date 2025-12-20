@@ -266,7 +266,7 @@ router.get(
       // prefer that URL so page-tab switching hits the CDN cache instead of your app.
       let cdnUrl = null;
       if (storageProvider && typeof storageProvider.getBinderPhotoPublicUrl === 'function') {
-        cdnUrl = storageProvider.getBinderPhotoPublicUrl(storageKey);
+          cdnUrl = storageProvider.getBinderPhotoPublicUrl(storageKey);
       }
 
       if (cdnUrl) {

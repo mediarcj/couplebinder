@@ -56,31 +56,45 @@ function clamp(v, min, max) {
   return Math.min(Math.max(v, min), max);
 }
 
-function buildGuideCandidates(allLayers, movingLayerId) {
-  const x = [];
-  const y = [];
+ /**
+  * Snap rect for smart guides/snapping.
+  * For photos: use ONLY the visible photo frame (exclude caption).
+  */
+ function getSnapRect(layer) {
+   const x = typeof layer?.x === 'number' ? layer.x : 0;
+   const y = typeof layer?.y === 'number' ? layer.y : 0;
+   const w = Math.max(0, typeof layer?.width === 'number' ? layer.width : 0);
+   const totalH = Math.max(0, typeof layer?.height === 'number' ? layer.height : 0);
 
-  // Page guides: left/center/right, top/middle/bottom
-  x.push(0, PAGE_WIDTH / 2, PAGE_WIDTH);
-  y.push(0, PAGE_HEIGHT / 2, PAGE_HEIGHT);
+   if (layer?.type === 'photo') {
+     const frameH = Math.max(0, totalH - CAPTION_H);
+     return { x, y, width: w, height: frameH };
+   }
 
-  // Other layers’ edges + centers
-  (allLayers || []).forEach((l) => {
-    if (!l || l.id === movingLayerId) return;
+   return { x, y, width: w, height: totalH };
+ }
 
-    const lx = typeof l.x === 'number' ? l.x : 0;
-    const ly = typeof l.y === 'number' ? l.y : 0;
-    const lw = typeof l.width === 'number' ? l.width : 0;
-    const lh = typeof l.height === 'number' ? l.height : 0;
+ function buildGuideCandidates(allLayers, movingLayerId) {
+   const x = [];
+   const y = [];
 
-    if (lw <= 0 || lh <= 0) return;
+   // Page guides: left/center/right, top/middle/bottom
+   x.push(0, PAGE_WIDTH / 2, PAGE_WIDTH);
+   y.push(0, PAGE_HEIGHT / 2, PAGE_HEIGHT);
 
-    x.push(lx, lx + lw / 2, lx + lw);
-    y.push(ly, ly + lh / 2, ly + lh);
-  });
+   // Other layers’ edges + centers (photos exclude caption)
+   (allLayers || []).forEach((l) => {
+     if (!l || l.id === movingLayerId) return;
 
-  return { x, y };
-}
+     const r = getSnapRect(l);
+     if (r.width <= 0 || r.height <= 0) return;
+
+     x.push(r.x, r.x + r.width / 2, r.x + r.width);
+     y.push(r.y, r.y + r.height / 2, r.y + r.height);
+   });
+
+   return { x, y };
+ }
 
 /**
  * Collision rect for overlap/outside prompts.
@@ -516,9 +530,12 @@ function Canvas({
     let snappedTop = proposedTop;
 
     if (snappingEnabled) {
-      // snapping is based on FULL layer size
-      const sx = snapAxis(proposedLeft, d.w, d.guides.x || [], threshold);
-      const sy = snapAxis(proposedTop, d.h, d.guides.y || [], threshold);
+      // snapping is based on SNAP rect (photos exclude caption)
+      const sw = typeof d.snapW === 'number' ? d.snapW : d.w;
+      const sh = typeof d.snapH === 'number' ? d.snapH : d.h;
+
+      const sx = snapAxis(proposedLeft, sw, d.guides.x || [], threshold);
+      const sy = snapAxis(proposedTop, sh, d.guides.y || [], threshold);
 
       guideX = sx.guidePos;
       guideY = sy.guidePos;
@@ -526,12 +543,12 @@ function Canvas({
       if (sx.guidePos !== null) {
         if (sx.kind === 'start') glowXEdge = 'left';
         else if (sx.kind === 'end') glowXEdge = 'right';
-        else glowXEdge = closestEdgeX(proposedLeft, d.w, sx.guidePos);
+        else glowXEdge = closestEdgeX(proposedLeft, sw, sx.guidePos);
       }
       if (sy.guidePos !== null) {
         if (sy.kind === 'start') glowYEdge = 'top';
         else if (sy.kind === 'end') glowYEdge = 'bottom';
-        else glowYEdge = closestEdgeY(proposedTop, d.h, sy.guidePos);
+        else glowYEdge = closestEdgeY(proposedTop, sh, sy.guidePos);
       }
 
       let nextLeft = sx.snappedStart;
@@ -645,9 +662,13 @@ function Canvas({
 
       const pageRect = pageEl.getBoundingClientRect();
       const zoomAtStart = zoom || 1;
-
+ 
       const w = typeof layer.width === 'number' ? layer.width : 0;
       const h = typeof layer.height === 'number' ? layer.height : 0;
+       // Smart guides/snapping should ignore photo captions
+      const snapRect = getSnapRect(layer);
+      const snapW = snapRect.width;
+      const snapH = snapRect.height;
       const lx = typeof layer.x === 'number' ? layer.x : 0;
       const ly = typeof layer.y === 'number' ? layer.y : 0;
 
@@ -671,7 +692,10 @@ function Canvas({
         offsetY,
 
         w,
-        h,
+        h,        
+
+        snapW,
+        snapH,
 
         cw,
         ch,

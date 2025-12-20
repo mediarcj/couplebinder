@@ -586,14 +586,29 @@ body {
     z-index: 25000;
   }
   
-  /* ===== Smart guides ===== */
+/* ===== Smart guides ===== */
 .canvas-guides {
   position: absolute;
   inset: 0;
   pointer-events: none;
-    z-index: 10000;
+
+  /* Must be above selected/dragging layers */
+  z-index: 65050;
+
   overflow: visible;
+
+  /* Small modern “appear” without feeling laggy */
+  opacity: 1;
+  filter: drop-shadow(0 0 6px rgba(37, 99, 235, 0.18));
 }
+
+.canvas-guide-line {
+  stroke: rgba(37, 99, 235, 0.62);
+  stroke-width: 1;
+  stroke-dasharray: 4 4;
+  shape-rendering: crispEdges;
+}
+/* ===== End smart guides ===== */
 
 .canvas-guide-line {
   stroke: rgba(37, 99, 235, 0.55);

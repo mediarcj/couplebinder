@@ -211,6 +211,14 @@ function Canvas({
     clientY: 0
   });
 
+  const [resizeFeedback, setResizeFeedback] = useState({
+    ids: [],
+    pct: 0,
+    outside: false,
+    clientX: 0,
+    clientY: 0
+  });
+
   const [activeGuides, setActiveGuides] = useState({ x: null, y: null });
   const [activeGlowEdges, setActiveGlowEdges] = useState({ x: null, y: null });
 
@@ -284,6 +292,10 @@ function Canvas({
     setDragFeedback(next);
   };
 
+  const handleResizeFeedback = useCallback((feedback) => {
+    setResizeFeedback(feedback);
+  }, []);
+
   const clearUi = () => {
     dragRef.current.lastUi = {
       guideX: null,
@@ -295,6 +307,7 @@ function Canvas({
     setActiveGuides({ x: null, y: null });
     setActiveGlowEdges({ x: null, y: null });
     setDragFeedback({ ids: [], pct: 0, outside: false, insidePct: 100, clientX: 0, clientY: 0 });
+    setResizeFeedback({ ids: [], pct: 0, outside: false, clientX: 0, clientY: 0 });
   };
 
   const stopDragging = useCallback(() => {
@@ -790,6 +803,19 @@ function Canvas({
           </div>
         )}
 
+        {resizeFeedback.ids?.length > 0 && (
+          <div
+            className="canvas-feedback-badge"
+            style={{ left: resizeFeedback.clientX, top: resizeFeedback.clientY }}
+            role="status"
+            aria-live="polite"
+          >
+            {resizeFeedback.outside
+              ? 'Outside page'
+              : `Overlap: ${Math.max(1, Math.round(resizeFeedback.pct || 0))}%`}
+          </div>
+        )}
+
         <div
           className="canvas-page shadow-lg"
           style={{
@@ -824,6 +850,7 @@ function Canvas({
                 onUpdate={onUpdateLayer}
                 onRemove={onRemoveLayer}
                 onDragStart={handleDragStart}
+                onResizeFeedback={handleResizeFeedback}
                 binderId={page.binderId || null}
                 zoom={zoom}
                 snapGlowX={isDraggingLayer ? activeGlowEdges.x : null}

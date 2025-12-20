@@ -21,6 +21,17 @@ const clamp = (value, min, max) => {
   return Math.min(Math.max(value, min), max);
 };
 
+function intersectionArea(ax, ay, aw, ah, bx, by, bw, bh) {
+  const x1 = Math.max(ax, bx);
+  const y1 = Math.max(ay, by);
+  const x2 = Math.min(ax + aw, bx + bw);
+  const y2 = Math.min(ay + ah, by + bh);
+  const w = x2 - x1;
+  const h = y2 - y1;
+  if (w <= 0 || h <= 0) return 0;
+  return w * h;
+}
+
 function stripEmojiClient(input) {
   if (!input || typeof input !== 'string') return '';
   try {
@@ -43,6 +54,7 @@ function Layer({
   onUpdate,
   onRemove, // kept for compatibility
   onDragStart,
+  onResizeFeedback,
   binderId,
   zoom = 1,
   snapGlowX = null,
@@ -337,7 +349,11 @@ function Layer({
       height: layer.type === 'photo' ? imageHeight + (captionHeight || 0) : imageHeight
     };
 
-    let overlapped = false;
+    // Calculate overlap percentage (similar to drag)
+    const resizingArea = Math.max(1, testRect.width * testRect.height);
+    let ids = [];
+    let maxPct = 0;
+
     if (canvasEl && layerEl) {
       const others = canvasEl.querySelectorAll('.binder-editor-layer');
       for (const other of others) {
@@ -347,6 +363,7 @@ function Layer({
         const oTop = (r.top - canvasRect.top) / storedZoom;
         const oWidth = r.width / storedZoom;
         const oHeight = r.height / storedZoom;
+
         if (
           rectsOverlap(
             testRect.left,
@@ -359,8 +376,22 @@ function Layer({
             oHeight
           )
         ) {
-          overlapped = true;
-          break;
+          const otherId = other.getAttribute('data-layer-id');
+          if (otherId) ids.push(otherId);
+
+          // Calculate intersection area
+          const a = intersectionArea(
+            testRect.left,
+            testRect.top,
+            testRect.width,
+            testRect.height,
+            oLeft,
+            oTop,
+            oWidth,
+            oHeight
+          );
+          const pct = (a / resizingArea) * 100;
+          if (pct > maxPct) maxPct = pct;
         }
       }
     }
@@ -371,7 +402,18 @@ function Layer({
       testRect.left + testRect.width > PAGE_WIDTH ||
       testRect.top + testRect.height > PAGE_HEIGHT;
 
-    if (overlapped !== resizeOverlap) setResizeOverlap(overlapped);
+    // Report feedback to parent
+    if (onResizeFeedback) {
+      onResizeFeedback({
+        ids,
+        pct: maxPct,
+        outside,
+        clientX: e.clientX,
+        clientY: e.clientY
+      });
+    }
+
+    if (maxPct > 0 !== resizeOverlap) setResizeOverlap(maxPct > 0);
     if (outside !== resizeOutside) setResizeOutside(outside);
 
     resizeRef.current.lastRect = { ...testRect };
@@ -389,6 +431,9 @@ function Layer({
     resizeRef.current = null;
     setResizeOverlap(false);
     setResizeOutside(false);
+    if (onResizeFeedback) {
+      onResizeFeedback({ ids: [], pct: 0, outside: false, clientX: 0, clientY: 0 });
+    }
   };
 
   useEffect(() => {
@@ -453,7 +498,7 @@ function Layer({
 
   const glowXClass = snapGlowX ? `snap-glow-x-${snapGlowX}` : '';
   const glowYClass = snapGlowY ? `snap-glow-y-${snapGlowY}` : '';
-  const overlapClass = (isOverlapping || resizeOverlap) ? 'is-overlapping' : '';
+  const overlapClass = isOverlapping ? 'is-overlapping' : '';
   const overlappedClass = isOverlapped ? 'is-overlapped' : '';
   const outsideClass = (isOutside || resizeOutside) ? 'is-outside' : '';
   const draggingClass = isDragging ? 'is-dragging' : '';

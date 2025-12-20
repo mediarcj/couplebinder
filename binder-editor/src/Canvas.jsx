@@ -2,7 +2,15 @@
 // Description: Canvas component for editing layers
 // Purpose: Display and manipulate layers on a page
 
-import React, { useState, useCallback, useRef, useEffect } from 'react';
+import React, {
+  useState,
+  useCallback,
+  useRef,
+  useEffect,
+  useLayoutEffect,
+  useMemo
+} from 'react';
+import { createPortal } from 'react-dom';
 import Layer from './Layer';
 
 // A4 logical size (must match your canvas-page CSS)
@@ -108,7 +116,6 @@ function computePhotoOutsideBands(layer) {
   const frameArea = Math.max(1, w * frameH);
   const outsideArea = Math.max(0, frameArea - insideArea);
 
-  // Alpha 0..1: 0 when fully inside, 1 when fully outside
   const alpha = clamp(outsideArea / frameArea, 0, 1);
 
   // Bands in frame-local coords
@@ -122,12 +129,6 @@ function computePhotoOutsideBands(layer) {
 
 /**
  * Snap 1 axis (x or y).
- * Returns:
- * - snappedStart: proposedStart adjusted to perfectly align (if snapping)
- * - guidePos: the guide position being used (or null)
- * - delta: shift needed to snap (snappedStart - proposedStart)
- * - abs: |delta|
- * - kind: which anchor snapped ("start" | "center" | "end")
  */
 function snapAxis(proposedStart, size, guides, threshold) {
   const candidates = [
@@ -179,6 +180,56 @@ function closestEdgeY(top, height, guidePos) {
   return Math.abs(guidePos - t) <= Math.abs(guidePos - b) ? 'top' : 'bottom';
 }
 
+/**
+ * Cursor-follow badge rendered via portal to <body>,
+ * so transforms/scales in the editor cannot offset it.
+ */
+function CursorBadge({ show, text, clientX, clientY }) {
+  const badgeRef = useRef(null);
+  const [size, setSize] = useState({ w: 0, h: 0 });
+
+  // Measure badge (so we can clamp to viewport edges)
+  useLayoutEffect(() => {
+    if (!show) return;
+    const el = badgeRef.current;
+    if (!el) return;
+
+    const r = el.getBoundingClientRect();
+    const w = Math.round(r.width);
+    const h = Math.round(r.height);
+
+    setSize((prev) => {
+      if (prev.w === w && prev.h === h) return prev;
+      return { w, h };
+    });
+  }, [show, text]);
+
+  if (!show) return null;
+
+  // Offset so it sits next to the cursor, not under it
+  const OFFSET = 12;
+  const PAD = 8;
+
+  const w = size.w || 180; // fallback to keep it sane before first measure
+  const h = size.h || 32;
+
+  const x = clamp(clientX + OFFSET, PAD, Math.max(PAD, window.innerWidth - w - PAD));
+  const y = clamp(clientY + OFFSET, PAD, Math.max(PAD, window.innerHeight - h - PAD));
+
+  return createPortal(
+    <div
+      ref={badgeRef}
+      className="canvas-feedback-badge"
+      style={{ transform: `translate3d(${x}px, ${y}px, 0)` }}
+      role="status"
+      aria-live="polite"
+    >
+      {text}
+    </div>,
+    document.body
+  );
+}
+
 function Canvas({
   page,
   layers,
@@ -225,8 +276,6 @@ function Canvas({
   // For smooth “snap back” animation after release
   const [snapAnimatingLayerId, setSnapAnimatingLayerId] = useState(null);
   const snapAnimTimerRef = useRef(null);
-
-  const overlapSet = new Set(dragFeedback.ids || []);
 
   const dragRef = useRef({
     active: false,
@@ -287,8 +336,17 @@ function Canvas({
     const insidePctRounded = Math.round(next.insidePct || 0);
     const sig = `${idsSig}|${next.outside ? 1 : 0}|${Math.round(next.pct || 0)}|${insidePctRounded}`;
 
-    if (d.lastUi?.feedbackSig === sig) return;
-    d.lastUi = { ...(d.lastUi || {}), feedbackSig: sig };
+    const coordsChanged =
+      d.lastUi?.lastClientX !== next.clientX || d.lastUi?.lastClientY !== next.clientY;
+
+    if (d.lastUi?.feedbackSig === sig && !coordsChanged) return;
+
+    d.lastUi = {
+      ...(d.lastUi || {}),
+      feedbackSig: sig,
+      lastClientX: next.clientX,
+      lastClientY: next.clientY
+    };
     setDragFeedback(next);
   };
 
@@ -374,9 +432,6 @@ function Canvas({
 
     const zoomAtStart = d.zoom || 1;
 
-    // Convert screen coordinates to logical coordinates
-    // getBoundingClientRect() returns scaled dimensions when transform: scale() is applied
-    // So we divide by zoom to get logical coordinates
     const px = (ev.clientX - d.pageRect.left) / zoomAtStart;
     const py = (ev.clientY - d.pageRect.top) / zoomAtStart;
 
@@ -468,7 +523,6 @@ function Canvas({
       d.snapTargets = { x: null, y: null };
     }
 
-    // Outside + inside percentage (for “fully outside => empty box” look)
     const outside =
       finalX < 0 ||
       finalY < 0 ||
@@ -536,7 +590,6 @@ function Canvas({
       if (!layer) return;
 
       const layerEl = e?.currentTarget;
-      // Always use canvas-page for coordinate calculations
       const pageEl = layerEl?.closest('.canvas-page');
       if (!pageEl) return;
 
@@ -548,8 +601,6 @@ function Canvas({
       const lx = typeof layer.x === 'number' ? layer.x : 0;
       const ly = typeof layer.y === 'number' ? layer.y : 0;
 
-      // Convert screen coordinates to logical coordinates
-      // getBoundingClientRect() returns scaled dimensions, so we divide by zoom
       const px = (e.clientX - pageRect.left) / zoomAtStart;
       const py = (e.clientY - pageRect.top) / zoomAtStart;
       const offsetX = px - lx;
@@ -610,21 +661,18 @@ function Canvas({
           return;
         }
 
-        // 1) Settle to perfect snap target (if any)
         let nextX = d.lastX;
         let nextY = d.lastY;
 
-          const targetX = d.snapTargets?.x;
-          const targetY = d.snapTargets?.y;
+        const targetX = d.snapTargets?.x;
+        const targetY = d.snapTargets?.y;
 
         if (targetX !== null) nextX = targetX;
         if (targetY !== null) nextY = targetY;
 
-        // 2) Always snap back INSIDE bounds on release (clamp to page edge)
         nextX = clamp(nextX, 0, PAGE_WIDTH - d.w);
         nextY = clamp(nextY, 0, PAGE_HEIGHT - d.h);
 
-        // 3) Animate the “snap back” (only after release)
         if (d.active && d.layerId) {
           if (snapAnimTimerRef.current) {
             clearTimeout(snapAnimTimerRef.current);
@@ -645,13 +693,8 @@ function Canvas({
         stopDragging();
       };
 
-      const onCancel = () => {
-        stopDragging();
-      };
-
-      const onBlur = () => {
-        stopDragging();
-      };
+      const onCancel = () => stopDragging();
+      const onBlur = () => stopDragging();
 
       moveHandlerRef.current = onMove;
       upHandlerRef.current = onUp;
@@ -680,12 +723,54 @@ function Canvas({
     };
   }, [stopDragging]);
 
+  // ---- Cursor badge: choose drag feedback first, else resize feedback ----
+  const badgeModel = useMemo(() => {
+    const showDrag =
+      dragging && (dragFeedback.outside || (dragFeedback.ids?.length || 0) > 0);
+
+    if (showDrag) {
+      return {
+        show: true,
+        text: dragFeedback.outside
+          ? 'Outside page'
+          : `Overlap: ${Math.max(1, Math.round(dragFeedback.pct || 0))}%`,
+        clientX: dragFeedback.clientX || 0,
+        clientY: dragFeedback.clientY || 0
+      };
+    }
+
+    const showResize =
+      (resizeFeedback.outside || (resizeFeedback.ids?.length || 0) > 0) &&
+      (resizeFeedback.clientX || resizeFeedback.clientY);
+
+    if (showResize) {
+      return {
+        show: true,
+        text: resizeFeedback.outside
+          ? 'Outside page'
+          : `Overlap: ${Math.max(1, Math.round(resizeFeedback.pct || 0))}%`,
+        clientX: resizeFeedback.clientX || 0,
+        clientY: resizeFeedback.clientY || 0
+      };
+    }
+
+    return { show: false, text: '', clientX: 0, clientY: 0 };
+  }, [dragging, dragFeedback, resizeFeedback]);
+
   return (
     <div
       className="binder-editor-canvas bg-slate-50"
       onMouseDown={handleCanvasMouseDown}
       onContextMenu={(e) => e.preventDefault()}
     >
+      {/* Portal badge: always next to cursor */}
+      <CursorBadge
+        show={badgeModel.show}
+        text={badgeModel.text}
+        clientX={badgeModel.clientX}
+        clientY={badgeModel.clientY}
+      />
+
       <div className="canvas-header bg-white/90 backdrop-blur">
         <div className="canvas-header-left">
           <label className="section-select-label">
@@ -705,7 +790,6 @@ function Canvas({
         </div>
 
         <div className="canvas-header-actions flex items-center gap-3">
-          {/* Mobile pages button - only visible on mobile */}
           <button
             type="button"
             className="mobile-pages-btn"
@@ -717,8 +801,7 @@ function Canvas({
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
             </svg>
           </button>
-          
-          {/* Desktop page controls - hidden on mobile */}
+
           <div className="desktop-page-controls">
             <button
               type="button"
@@ -746,7 +829,6 @@ function Canvas({
             )}
           </div>
 
-          {/* (unchanged zoom UI) */}
           <div className="flex items-center gap-2 px-3 py-1.5 bg-gradient-to-r from-slate-50 to-slate-100 rounded-lg border border-slate-200 shadow-sm">
             <button
               type="button"
@@ -790,32 +872,6 @@ function Canvas({
       </div>
 
       <div className="canvas-stage" ref={canvasStageRef}>
-        {dragging && (dragFeedback.outside || (dragFeedback.ids?.length || 0) > 0) && (
-          <div
-            className="canvas-feedback-badge"
-            style={{ left: dragFeedback.clientX, top: dragFeedback.clientY }}
-            role="status"
-            aria-live="polite"
-          >
-            {dragFeedback.outside
-              ? 'Outside page'
-              : `Overlap: ${Math.max(1, Math.round(dragFeedback.pct || 0))}%`}
-          </div>
-        )}
-
-        {resizeFeedback.ids?.length > 0 && (
-          <div
-            className="canvas-feedback-badge"
-            style={{ left: resizeFeedback.clientX, top: resizeFeedback.clientY }}
-            role="status"
-            aria-live="polite"
-          >
-            {resizeFeedback.outside
-              ? 'Outside page'
-              : `Overlap: ${Math.max(1, Math.round(resizeFeedback.pct || 0))}%`}
-          </div>
-        )}
-
         <div
           className="canvas-page shadow-lg"
           style={{
@@ -835,7 +891,6 @@ function Canvas({
             const isPartiallyOutside =
               isDraggingLayer && (dragInsidePct != null ? dragInsidePct < 99.9 : false);
 
-            // NEW: outside stripe bands only matter while dragging photo layers
             const outsideBands =
               isDraggingLayer && layer?.type === 'photo'
                 ? computePhotoOutsideBands(layer)
@@ -862,7 +917,7 @@ function Canvas({
                 snapAnimating={isSnapAnimating}
                 isFullyOutside={isFullyOutside}
                 insidePct={isDraggingLayer ? (dragInsidePct ?? 100) : 100}
-                outsideBands={outsideBands} // NEW
+                outsideBands={outsideBands}
               />
             );
           })}

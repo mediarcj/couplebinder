@@ -402,7 +402,7 @@ function Layer({
       testRect.left + testRect.width > PAGE_WIDTH ||
       testRect.top + testRect.height > PAGE_HEIGHT;
 
-    // Report feedback to parent
+    // Report feedback to parent (CSS transform handles the offset)
     if (onResizeFeedback) {
       onResizeFeedback({
         ids,

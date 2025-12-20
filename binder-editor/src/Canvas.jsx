@@ -83,6 +83,24 @@ function buildGuideCandidates(allLayers, movingLayerId) {
 }
 
 /**
+ * Collision rect for overlap/outside prompts.
+ * For photos, use ONLY the visible photo frame (exclude caption).
+ */
+function getCollisionRect(layer) {
+  const x = typeof layer?.x === 'number' ? layer.x : 0;
+  const y = typeof layer?.y === 'number' ? layer.y : 0;
+  const w = Math.max(0, typeof layer?.width === 'number' ? layer.width : 0);
+  const totalH = Math.max(0, typeof layer?.height === 'number' ? layer.height : 0);
+
+  if (layer?.type === 'photo') {
+    const frameH = Math.max(0, totalH - CAPTION_H);
+    return { x, y, width: w, height: frameH };
+  }
+
+  return { x, y, width: w, height: totalH };
+}
+
+/**
  * Compute how much of the PHOTO FRAME is outside the page, as 4 bands (top/left/right/bottom).
  * These values are in *layer-frame local pixels* and will drive the stripe overlay.
  *
@@ -285,8 +303,16 @@ function Canvas({
     zoom: 1,
     offsetX: 0,
     offsetY: 0,
+
+    // Full layer size (used for snap/clamp)
     w: 0,
     h: 0,
+
+    // Collision size (used for overlap/outside prompts)
+    cw: 0,
+    ch: 0,
+    isPhoto: false,
+
     lastX: 0,
     lastY: 0,
     otherRects: [],
@@ -471,6 +497,7 @@ function Canvas({
     let snappedTop = proposedTop;
 
     if (snappingEnabled) {
+      // snapping is based on FULL layer size
       const sx = snapAxis(proposedLeft, d.w, d.guides.x || [], threshold);
       const sy = snapAxis(proposedTop, d.h, d.guides.y || [], threshold);
 
@@ -523,14 +550,18 @@ function Canvas({
       d.snapTargets = { x: null, y: null };
     }
 
+    // ===== Prompts are based on COLLISION RECT (photos exclude caption) =====
+    const cw = d.cw;
+    const ch = d.ch;
+
     const outside =
       finalX < 0 ||
       finalY < 0 ||
-      finalX + d.w > PAGE_WIDTH ||
-      finalY + d.h > PAGE_HEIGHT;
+      finalX + cw > PAGE_WIDTH ||
+      finalY + ch > PAGE_HEIGHT;
 
-    const movingArea = Math.max(1, d.w * d.h);
-    const insideArea = intersectionArea(finalX, finalY, d.w, d.h, 0, 0, PAGE_WIDTH, PAGE_HEIGHT);
+    const movingArea = Math.max(1, cw * ch);
+    const insideArea = intersectionArea(finalX, finalY, cw, ch, 0, 0, PAGE_WIDTH, PAGE_HEIGHT);
     const insidePct = (insideArea / movingArea) * 100;
 
     let ids = [];
@@ -538,9 +569,9 @@ function Canvas({
 
     for (const r of d.otherRects || []) {
       if (!r) continue;
-      if (rectsOverlap(finalX, finalY, d.w, d.h, r.x, r.y, r.width, r.height)) {
+      if (rectsOverlap(finalX, finalY, cw, ch, r.x, r.y, r.width, r.height)) {
         ids.push(r.id);
-        const a = intersectionArea(finalX, finalY, d.w, d.h, r.x, r.y, r.width, r.height);
+        const a = intersectionArea(finalX, finalY, cw, ch, r.x, r.y, r.width, r.height);
         const pct = (a / movingArea) * 100;
         if (pct > maxPct) maxPct = pct;
       }
@@ -601,6 +632,11 @@ function Canvas({
       const lx = typeof layer.x === 'number' ? layer.x : 0;
       const ly = typeof layer.y === 'number' ? layer.y : 0;
 
+      const col = getCollisionRect(layer);
+      const cw = col.width;
+      const ch = col.height;
+      const isPhoto = layer.type === 'photo';
+
       const px = (e.clientX - pageRect.left) / zoomAtStart;
       const py = (e.clientY - pageRect.top) / zoomAtStart;
       const offsetX = px - lx;
@@ -615,19 +651,30 @@ function Canvas({
         zoom: zoomAtStart,
         offsetX,
         offsetY,
+
+        // full size (snap/clamp)
         w,
         h,
+
+        // collision size (prompts)
+        cw,
+        ch,
+        isPhoto,
+
         lastX: lx,
         lastY: ly,
         otherRects: (layers || [])
           .filter((l) => l && l.id !== layerId)
-          .map((l) => ({
-            id: l.id,
-            x: typeof l.x === 'number' ? l.x : 0,
-            y: typeof l.y === 'number' ? l.y : 0,
-            width: typeof l.width === 'number' ? l.width : 0,
-            height: typeof l.height === 'number' ? l.height : 0
-          }))
+          .map((l) => {
+            const r = getCollisionRect(l);
+            return {
+              id: l.id,
+              x: r.x,
+              y: r.y,
+              width: r.width,
+              height: r.height
+            };
+          })
           .filter((r) => r.width > 0 && r.height > 0),
         guides: buildGuideCandidates(layers || [], layerId),
         snapTargets: { x: null, y: null },
@@ -670,6 +717,7 @@ function Canvas({
         if (targetX !== null) nextX = targetX;
         if (targetY !== null) nextY = targetY;
 
+        // Clamp final position based on FULL layer size (keeps caption inside page)
         nextX = clamp(nextX, 0, PAGE_WIDTH - d.w);
         nextY = clamp(nextY, 0, PAGE_HEIGHT - d.h);
 

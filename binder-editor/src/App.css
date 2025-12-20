@@ -702,39 +702,39 @@ body {
   transform: translate3d(0px, 0px, 0px);
   will-change: transform;
 }
-  
-  /* ===== Snap edge glow ===== */
-.binder-editor-layer.snap-glow-x-left::before,
-.binder-editor-layer.snap-glow-x-right::before,
-.binder-editor-layer.snap-glow-y-top::after,
-.binder-editor-layer.snap-glow-y-bottom::after {
+
+/* ===== Snap edge glow (DISABLED for photo layers) ===== */
+.binder-editor-layer:not(.layer-type-photo).snap-glow-x-left::before,
+.binder-editor-layer:not(.layer-type-photo).snap-glow-x-right::before,
+.binder-editor-layer:not(.layer-type-photo).snap-glow-y-top::after,
+.binder-editor-layer:not(.layer-type-photo).snap-glow-y-bottom::after {
   content: '';
   position: absolute;
-    inset: -1px;
+  inset: -1px;
   pointer-events: none;
   z-index: 20;
   border-radius: 2px;
 }
 
-.binder-editor-layer.snap-glow-x-left::before {
+.binder-editor-layer:not(.layer-type-photo).snap-glow-x-left::before {
   box-shadow:
     inset 3px 0 0 rgba(37, 99, 235, 0.65),
     0 0 10px rgba(37, 99, 235, 0.18);
 }
 
-.binder-editor-layer.snap-glow-x-right::before {
+.binder-editor-layer:not(.layer-type-photo).snap-glow-x-right::before {
   box-shadow:
     inset -3px 0 0 rgba(37, 99, 235, 0.65),
     0 0 10px rgba(37, 99, 235, 0.18);
 }
 
-.binder-editor-layer.snap-glow-y-top::after {
+.binder-editor-layer:not(.layer-type-photo).snap-glow-y-top::after {
   box-shadow:
     inset 0 3px 0 rgba(37, 99, 235, 0.65),
     0 0 10px rgba(37, 99, 235, 0.18);
 }
 
-.binder-editor-layer.snap-glow-y-bottom::after {
+.binder-editor-layer:not(.layer-type-photo).snap-glow-y-bottom::after {
   box-shadow:
     inset 0 -3px 0 rgba(37, 99, 235, 0.65),
     0 0 10px rgba(37, 99, 235, 0.18);

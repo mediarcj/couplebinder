@@ -601,8 +601,8 @@ function Canvas({
         let nextX = d.lastX;
         let nextY = d.lastY;
 
-        const targetX = d.snapTargets?.x;
-        const targetY = d.snapTargets?.y;
+          const targetX = d.snapTargets?.x;
+          const targetY = d.snapTargets?.y;
 
         if (targetX !== null) nextX = targetX;
         if (targetY !== null) nextY = targetY;

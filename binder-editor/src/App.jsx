@@ -33,7 +33,7 @@ function computeCascadingPhotoFrame({ index, aspectRatio = 1 }) {
   if (imageH > maxImageH) {
     imageH = maxImageH;
     w = Math.round(imageH * safeAr);
-  }
+        }
 
   const totalH = imageH + CAPTION_H;
 
@@ -349,7 +349,7 @@ function App({ binderId /*, csrfToken */ }) {
 
   const handleAddPhoto = useCallback(() => {
     // kept for compatibility (unused)
-    setIsDirty(true);
+      setIsDirty(true);
   }, []);
 
   const handleAddPhotosClick = useCallback(() => {
@@ -369,10 +369,10 @@ function App({ binderId /*, csrfToken */ }) {
 
       try {
         const res = await fetch(`/dashboard/binder/${encodeURIComponent(binderId)}/photos`, {
-          method: 'POST',
-          body: formData,
-          headers: csrfToken ? { 'X-CSRF-Token': csrfToken } : undefined,
-          credentials: 'same-origin'
+            method: 'POST',
+            body: formData,
+            headers: csrfToken ? { 'X-CSRF-Token': csrfToken } : undefined,
+            credentials: 'same-origin'
         });
 
         if (res.status === 401 || res.status === 403) {
@@ -499,7 +499,7 @@ function App({ binderId /*, csrfToken */ }) {
 
   const handleTidyLayout = useCallback(() => {
     // unchanged (kept as-is in your original)
-    setIsDirty(true);
+      setIsDirty(true);
   }, []);
 
   const removeLayer = useCallback(
@@ -533,7 +533,7 @@ function App({ binderId /*, csrfToken */ }) {
 
   const handleReorderPages = useCallback((fromIndex, toIndex) => {
     if (typeof fromIndex !== 'number' || typeof toIndex !== 'number') return;
-    if (fromIndex === toIndex) return;
+      if (fromIndex === toIndex) return;
 
     // Update selected page index so selection "follows" the moved tab
     setSelectedPage((prevSelected) => {
@@ -612,8 +612,8 @@ function App({ binderId /*, csrfToken */ }) {
        for (const storageKey of keysToDelete) {
          try {
            await deleteBinderPhoto(binderId, storageKey);
-         } catch (err) {
-           if (isSessionExpiredError(err)) return;
+      } catch (err) {
+        if (isSessionExpiredError(err)) return;
            failures.push(storageKey);
          }
        }
@@ -645,17 +645,17 @@ function App({ binderId /*, csrfToken */ }) {
      setSelectedLayerId(null);
 
      // 6) Mark dirty so autosave persists the new pages array
-     setIsDirty(true);
+        setIsDirty(true);
 
      // Optional: surface failures (page still deletes even if some photo deletes fail)
      if (failures.length > 0) {
        setError(
          `Page deleted, but ${failures.length} photo(s) could not be deleted from storage. Please retry deleting those photos later.`
        );
-     }
-   },
+      }
+    },
    [layout, binderId, selectedPage, applySectionDefaults]
- );
+  );
 
   // Preview PDF handler (now opens via ModalProvider)
   const handlePreviewPdf = useCallback(async () => {
@@ -671,7 +671,7 @@ function App({ binderId /*, csrfToken */ }) {
           setLayout((prev) => ({ ...(prev || layout), updatedAt: result.updatedAt }));
           setIsDirty(false);
           setLastSavedAt(result.updatedAt || new Date().toISOString());
-        }
+      }
       }
 
       setPreviewing(true);
@@ -710,32 +710,32 @@ function App({ binderId /*, csrfToken */ }) {
   }, [previewing, binderId, layout, isDirty, openModal]);
 
   const handleExportPdf = useCallback(async () => {
-    if (exporting || !binderId || !layout) return;
+      if (exporting || !binderId || !layout) return;
 
-    try {
-      if (isDirty) {
-        await applyLayout(binderId, layout);
-        setIsDirty(false);
-      }
+      try {
+        if (isDirty) {
+          await applyLayout(binderId, layout);
+          setIsDirty(false);
+        }
 
-      setExporting(true);
-      const blob = await exportBinderPdf(binderId);
+        setExporting(true);
+        const blob = await exportBinderPdf(binderId);
 
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `binder-${binderId || 'export'}.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      window.URL.revokeObjectURL(url);
-    } catch (err) {
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `binder-${binderId || 'export'}.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+      } catch (err) {
       if (isSessionExpiredError(err)) return;
-      setError(`Export failed: ${err.message}`);
-      console.error('[BinderEditor] Export failed:', err);
-    } finally {
-      setExporting(false);
-    }
+        setError(`Export failed: ${err.message}`);
+        console.error('[BinderEditor] Export failed:', err);
+      } finally {
+        setExporting(false);
+      }
   }, [binderId, layout, isDirty, exporting]);
 
   if (loading) {

@@ -1,3 +1,5 @@
+'use strict';
+
 // File: server/bootstrap/shutdown.js
 // Description: Central place to register graceful shutdown handlers for the app
 // Purpose: Separates shutdown logic from main server boot file
@@ -14,105 +16,216 @@
  * production deployments and zero-downtime updates.
  *
  * HOW:
- * We track server state, implement connection draining, close the HTTP server cleanly,
- * and provide timeout fallbacks. All shutdown paths exit with code 0 to avoid systemd/npm
- * reporting failures during restarts.
+ * - Track open sockets for connection draining
+ * - Close the HTTP server (stop accepting new connections)
+ * - Cull lingering keep-alive sockets after a short delay
+ * - Run optional cleanup hooks (redis, queues, etc.)
+ * - Use correct exit codes:
+ *   - SIGTERM/SIGINT => exit(0)
+ *   - uncaughtException/unhandledRejection => exit(1)
  *
- * @param {Object} params - Shutdown system registration parameters
+ * @param {Object} params
  * @param {Object} params.server - HTTP server instance from app.listen()
- * @param {Object} params.logger - Structured logger instance
+ * @param {Object} params.logger - Structured logger instance (pino-style recommended)
  * @param {Object} params.config - Application configuration object
- * @param {Object} params.consoleLogger - Console logger with formatting
+ * @param {Object} [params.consoleLogger] - Console logger with formatting
+ * @param {Array<{name:string, fn:Function}>} [params.cleanups] - Optional cleanup hooks
  */
-function registerShutdownSystem({ server, logger, config, consoleLogger }) {
-  // Use the logger passed in, or fallback to requiring it if not provided
+function registerShutdownSystem({ server, logger, config, consoleLogger, cleanups = [] }) {
   const log = logger || require('../utils/logger');
-  // Graceful shutdown configuration
-  const GRACE_MS = config.shutdown.graceMs;
-  const SOCKET_CULL_MS = Math.max(0, GRACE_MS - 2000);
+
+  const GRACE_MS =
+    Number(config?.shutdown?.graceMs) > 0 ? Number(config.shutdown.graceMs) : 15_000;
+
+  // Give the server most of the grace period, then kill lingering sockets near the end
+  const SOCKET_CULL_MS = Math.max(0, GRACE_MS - 2_000);
 
   let shuttingDown = false;
+  let forcedExitTimer = null;
+  let socketCullTimer = null;
+
   const sockets = new Set();
 
   // Track active connections for graceful draining
-  server.on('connection', (sock) => {
-    sockets.add(sock);
-    sock.on('close', () => sockets.delete(sock));
-  });
+  if (server && typeof server.on === 'function') {
+    server.on('connection', (sock) => {
+      sockets.add(sock);
+      sock.on('close', () => sockets.delete(sock));
+    });
+  }
+
+  function safeFormatRegistered() {
+    if (consoleLogger && typeof consoleLogger.formatMiddlewareRegistration === 'function') {
+      consoleLogger.formatMiddlewareRegistration('Graceful shutdown system');
+      return;
+    }
+    log.info({ event: 'boot.shutdown_registered' }, 'Graceful shutdown system registered');
+  }
+
+  async function runCleanups(signal) {
+    if (!Array.isArray(cleanups) || cleanups.length === 0) return;
+
+    const results = await Promise.allSettled(
+      cleanups.map(async (c) => {
+        const name = c?.name || 'cleanup';
+        const fn = c?.fn;
+        if (typeof fn !== 'function') {
+          return { name, skipped: true };
+        }
+        await fn();
+        return { name, ok: true };
+      })
+    );
+
+    // Log results in a structured way
+    for (const r of results) {
+      if (r.status === 'fulfilled') {
+        log.info(
+          { event: 'shutdown.cleanup_ok', signal, cleanup: r.value?.name },
+          'Shutdown cleanup completed'
+        );
+      } else {
+        log.error(
+          {
+            event: 'shutdown.cleanup_failed',
+            signal,
+            error: r.reason?.message || String(r.reason),
+          },
+          'Shutdown cleanup failed'
+        );
+      }
+    }
+  }
+
+  function destroyAllSockets() {
+    for (const s of sockets) {
+      try {
+        s.destroy();
+      } catch {
+        // ignore
+      }
+    }
+  }
+
+  function scheduleFailsafes(exitCode, signal) {
+    // Cull lingering sockets (keep-alive, long polls)
+    socketCullTimer = setTimeout(() => {
+      log.warn(
+        { event: 'shutdown.socket_cull', signal, sockets: sockets.size },
+        'Culling lingering sockets'
+      );
+      destroyAllSockets();
+    }, SOCKET_CULL_MS);
+    socketCullTimer.unref?.();
+
+    // Final failsafe: force exit if server.close callback never happens
+    forcedExitTimer = setTimeout(() => {
+      log.error(
+        { event: 'shutdown.force_exit', signal, exitCode },
+        'Graceful shutdown timeout reached; forcing exit'
+      );
+      destroyAllSockets();
+      process.exit(exitCode);
+    }, GRACE_MS);
+    forcedExitTimer.unref?.();
+  }
+
+  async function closeServer(signal) {
+    if (!server || typeof server.close !== 'function') return;
+
+    // If server isn't listening, close() can still callback immediately; handle both
+    await new Promise((resolve) => {
+      try {
+        server.close((err) => {
+          if (err) {
+            log.error(
+              { event: 'shutdown.server_close_error', signal, error: err.message },
+              'HTTP server close error'
+            );
+          } else {
+            log.info({ event: 'shutdown.server_closed', signal }, 'HTTP server closed');
+          }
+          resolve();
+        });
+      } catch (err) {
+        log.error(
+          { event: 'shutdown.server_close_throw', signal, error: err.message },
+          'HTTP server close threw'
+        );
+        resolve();
+      }
+    });
+  }
 
   /**
-   * Gracefully shutdown the server and all resources
-   * 
-   * WHAT:
-   * Handle shutdown signals exactly once, close HTTP server cleanly, and exit(0).
-   * 
-   * WHY:
-   * Duplicate signals or timeout exits with code 1 make systemd/npm report failures.
-   * Always exit(0) for clean restarts.
-   * 
-   * HOW:
-   * 1) Debounce with process.once and shuttingDown flag
-   * 2) Close server and cull lingering sockets
-   * 3) Always exit(0) so systemd doesn't mark restart as failed
-   * 
-   * @param {string} signal - The signal that triggered shutdown
+   * @param {string} signal
+   * @param {number} exitCode
+   * @param {Error} [cause]
    */
-  function gracefulShutdown(signal) {
+  async function gracefulShutdown(signal, exitCode, cause) {
     if (shuttingDown) {
-      log.info({ event: 'shutdown.duplicate_signal', signal }, 'Shutdown already in progress (ignored duplicate signal)');
-      return; // Just return, don't exit(1)
+      log.warn(
+        { event: 'shutdown.duplicate_signal', signal, exitCode },
+        'Shutdown already in progress (duplicate signal ignored)'
+      );
+      return;
     }
     shuttingDown = true;
 
-    log.info({ event: 'shutdown.initiated', signal }, 'GRACEFUL SHUTDOWN INITIATED');
-    
-    // Stop accepting new connections
-    server.close((err) => {
-      if (err) {
-        log.error({ event: 'shutdown.server_close_error', error: err.message }, 'HTTP server close error');
-        // Still exit(0) to avoid npm/systemd "failed" spam during restarts
-        process.exit(0);
-        return;
-      }
-      log.info({ event: 'shutdown.completed' }, 'Graceful shutdown completed');
-      process.exit(0); // IMPORTANT: exit(0) so systemd/npm doesn't mark it as failure
-    });
+    const errMeta = cause
+      ? { error: cause.message, stack: cause.stack, name: cause.name }
+      : undefined;
 
-    // After a short delay, kill any lingering sockets (keep-alive, long polls)
-    setTimeout(() => {
-      for (const s of sockets) {
-        try { s.destroy(); } catch {}
-      }
-    }, SOCKET_CULL_MS).unref();
+    log.info(
+      { event: 'shutdown.initiated', signal, exitCode, ...(errMeta ? { cause: errMeta } : {}) },
+      'GRACEFUL SHUTDOWN INITIATED'
+    );
 
-    // Final failsafe - if close callback never fires, exit(0) anyway
-    setTimeout(() => {
-      log.warn({ event: 'shutdown.timeout' }, 'Graceful shutdown timeout reached, forcing exit');
-      process.exit(0); // exit(0) on timeout to avoid restart "failed" noise
-    }, GRACE_MS).unref();
+    scheduleFailsafes(exitCode, signal);
+
+    // Stop accepting new connections and begin draining
+    await closeServer(signal);
+
+    // Run cleanup hooks (redis quit, queue drain, etc.)
+    await runCleanups(signal);
+
+    // Clear timers (best effort)
+    try {
+      if (socketCullTimer) clearTimeout(socketCullTimer);
+      if (forcedExitTimer) clearTimeout(forcedExitTimer);
+    } catch {
+      // ignore
+    }
+
+    log.info({ event: 'shutdown.completed', signal, exitCode }, 'Graceful shutdown completed');
+    process.exit(exitCode);
   }
 
-  // Handle termination signals (use once() to prevent duplicate handlers)
-  process.once('SIGTERM', () => gracefulShutdown('SIGTERM'));
-  process.once('SIGINT', () => gracefulShutdown('SIGINT'));
+  // SIGTERM/SIGINT are normal orchestrator/user stop signals => exit(0)
+  process.once('SIGTERM', () => gracefulShutdown('SIGTERM', 0));
+  process.once('SIGINT', () => gracefulShutdown('SIGINT', 0));
 
-  // Handle uncaught exceptions and unhandled rejections
+  // These are crash scenarios => exit(1) (but still attempt graceful drain)
   process.once('uncaughtException', (error) => {
-    log.error({ event: 'shutdown.uncaught_exception', error: error.message, stack: error.stack }, 'Uncaught Exception');
-    gracefulShutdown('UNCAUGHT_EXCEPTION');
+    log.error(
+      { event: 'shutdown.uncaught_exception', error: error.message, stack: error.stack },
+      'Uncaught Exception'
+    );
+    gracefulShutdown('UNCAUGHT_EXCEPTION', 1, error);
   });
 
-  process.once('unhandledRejection', (reason, promise) => {
-    log.error({ event: 'shutdown.unhandled_rejection', reason: String(reason) }, 'Unhandled Rejection');
-    gracefulShutdown('UNHANDLED_REJECTION');
+  process.once('unhandledRejection', (reason) => {
+    const msg = reason instanceof Error ? reason.message : String(reason);
+    const stack = reason instanceof Error ? reason.stack : undefined;
+
+    log.error(
+      { event: 'shutdown.unhandled_rejection', reason: msg, stack },
+      'Unhandled Rejection'
+    );
+    gracefulShutdown('UNHANDLED_REJECTION', 1, reason instanceof Error ? reason : undefined);
   });
 
-  if (consoleLogger && typeof consoleLogger.formatMiddlewareRegistration === 'function') {
-    consoleLogger.formatMiddlewareRegistration('Graceful shutdown system');
-  } else {
-    log.info({ event: 'boot.shutdown_registered' }, 'Graceful shutdown system registered');
-  }
+  safeFormatRegistered();
 }
 
 module.exports = { registerShutdownSystem };
-

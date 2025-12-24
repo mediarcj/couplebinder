@@ -12,13 +12,14 @@ import React, {
 } from 'react';
 import { createPortal } from 'react-dom';
 import Layer from './Layer';
+import { getPhotoFrameRectFromLayer, CAPTION_HEIGHT } from './utils/photoFrameMetrics';
 
 // A4 logical size (must match your canvas-page CSS)
 const PAGE_WIDTH = 794;
 const PAGE_HEIGHT = 1122;
 
-// Photo caption height in your CSS (.layer-caption-shell)
-const CAPTION_H = 88;
+// Photo caption height (now imported from shared helper)
+const CAPTION_H = CAPTION_HEIGHT;
 
 // Snap distance in *screen* pixels; we convert to logical using current zoom.
 const SNAP_SCREEN_PX = 8;
@@ -63,15 +64,9 @@ function clamp(v, min, max) {
  function getSnapRect(layer) {
    const x = typeof layer?.x === 'number' ? layer.x : 0;
    const y = typeof layer?.y === 'number' ? layer.y : 0;
-   const w = Math.max(0, typeof layer?.width === 'number' ? layer.width : 0);
-   const totalH = Math.max(0, typeof layer?.height === 'number' ? layer.height : 0);
-
-   if (layer?.type === 'photo') {
-     const frameH = Math.max(0, totalH - CAPTION_H);
-     return { x, y, width: w, height: frameH };
-   }
-
-   return { x, y, width: w, height: totalH };
+   // Use helper for consistency (refactor only, same output)
+   const { frameWidth, frameHeight } = getPhotoFrameRectFromLayer(layer);
+   return { x, y, width: frameWidth, height: frameHeight };
  }
 
  function buildGuideCandidates(allLayers, movingLayerId) {
@@ -103,15 +98,9 @@ function clamp(v, min, max) {
 function getCollisionRect(layer) {
   const x = typeof layer?.x === 'number' ? layer.x : 0;
   const y = typeof layer?.y === 'number' ? layer.y : 0;
-  const w = Math.max(0, typeof layer?.width === 'number' ? layer.width : 0);
-  const totalH = Math.max(0, typeof layer?.height === 'number' ? layer.height : 0);
-
-  if (layer?.type === 'photo') {
-    const frameH = Math.max(0, totalH - CAPTION_H);
-    return { x, y, width: w, height: frameH };
-  }
-
-  return { x, y, width: w, height: totalH };
+  // Use helper for consistency (refactor only, same output)
+  const { frameWidth, frameHeight } = getPhotoFrameRectFromLayer(layer);
+  return { x, y, width: frameWidth, height: frameHeight };
 }
 
 /**
@@ -125,9 +114,8 @@ function computePhotoOutsideBands(layer) {
 
   const x = typeof layer.x === 'number' ? layer.x : 0;
   const y = typeof layer.y === 'number' ? layer.y : 0;
-  const w = Math.max(0, typeof layer.width === 'number' ? layer.width : 0);
-  const totalH = Math.max(0, typeof layer.height === 'number' ? layer.height : 0);
-  const frameH = Math.max(0, totalH - CAPTION_H);
+  // Use helper for consistency (refactor only, same output)
+  const { frameWidth: w, frameHeight: frameH } = getPhotoFrameRectFromLayer(layer);
 
   if (w <= 0 || frameH <= 0) {
     return { top: 0, left: 0, right: 0, bottom: 0, alpha: 0 };

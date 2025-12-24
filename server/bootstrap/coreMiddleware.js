@@ -1,59 +1,31 @@
 // File: server/bootstrap/coreMiddleware.js
 // Description: Central place to register all core middleware for the app
 // Purpose: Separates middleware registration from main server boot file
-// Notes: All middleware is registered here in the correct boot order with appropriate logging
+// Notes: Middleware order matters; keep security and invariants here.
+
+'use strict';
 
 const express = require('express');
-const logger = require('../utils/logger');
 
 /**
  * WHAT:
  * Register all core middleware in the correct boot order for enterprise-grade protection.
  *
  * WHY:
- * Middleware order matters. Guards must run before parsers, headers before CORS,
- * and trust proxy before any IP-based logic. Centralizing this makes the boot order
- * explicit and easier to maintain.
+ * Middleware order matters. Guards must run before parsers, nonce must run before CSP headers,
+ * trust proxy must run before IP-based logic, webhook must mount before JSON body parsing,
+ * and cookie parsing must run before CSRF.
  *
- * HOW:
- * We register middleware in the documented order:
+ * HOW (actual order below):
  * CSP Nonce → Method Guard → Credential Guard → Security Headers → Cache Control →
- * Trust Proxy → Request ID → Health Routes → Degrade Guard → IP Firewall →
- * HTTPS Enforce → Permissions-Policy → CORS → Stripe Webhook → Body Parsers →
- * Cookies → App Config → Auth Bridge → Request Timing → CSRF → Rate Limiters
- *
- * @param {Object} params - Middleware registration parameters
- * @param {Object} params.app - Express application instance
- * @param {Object} params.config - Application configuration object
- * @param {Object} params.toggles - Feature flags/toggles object
- * @param {Object} params.logger - Structured logger instance
- * @param {Object} params.consoleLogger - Console logger with formatting
- * @param {Function} params.csrfLite - CSRF middleware
- * @param {Function} params.corsAllowlist - CORS allowlist middleware
- * @param {Function} params.trustProxyIp - Trust proxy IP middleware factory
- * @param {Function} params.cacheControl - Cache control middleware factory
- * @param {Function} params.methodGuard - Method guard middleware factory
- * @param {Function} params.credentialGuard - Credential guard middleware
- * @param {Function} params.generateCspNonce - CSP nonce generator middleware factory
- * @param {Function} params.securityHeaders - Security headers middleware factory
- * @param {Function} params.enforceHttps - HTTPS enforcement middleware
- * @param {Function} params.corsDebugMiddleware - CORS debug middleware factory (optional)
- * @param {Object} params.rateLimiters - Rate limiter functions object
- * @param {Function} params.authBridge - Authentication bridge middleware
- * @param {Function} params.requireAuth - Authentication requirement middleware
- * @param {Function} params.cookieGuardian - Cookie parsing middleware
- * @param {Function} params.appConfig - App config injection middleware
- * @param {Function} params.mountStripeWebhook - Stripe webhook mount function
- * @param {Function} params.degradeGuard - Redis degrade guard middleware
- * @param {Function} params.ipFirewall - IP firewall middleware factory
- * @param {Function} params.createMaintenanceGuard - Maintenance guard factory
- * @param {Object} params.healthRouter - Health routes router
- * @param {Function} params.requestIdMiddleware - Request ID middleware
- * @param {Object} params.redisClient - Redis client instance for maintenance guard
+ * Trust Proxy IP → Request ID → Health Routes (early) → Degrade Guard → IP Firewall →
+ * Maintenance Guard → HTTPS Enforce → Permissions-Policy → CORS (+ optional debug) →
+ * Stripe Webhook (raw body) → Body Parsers → Cookies → App Config → Auth Bridge →
+ * Request Timing → CSRF → Rate Limiters
  */
 function registerCoreMiddleware({
   app,
-  config,
+  config, // unused here (kept for signature consistency)
   toggles,
   logger,
   consoleLogger,
@@ -69,7 +41,7 @@ function registerCoreMiddleware({
   corsDebugMiddleware,
   rateLimiters,
   authBridge,
-  requireAuth,
+  requireAuth, // unused here (kept for signature consistency)
   cookieGuardian,
   appConfig,
   mountStripeWebhook,
@@ -80,98 +52,150 @@ function registerCoreMiddleware({
   requestIdMiddleware,
   redisClient,
 }) {
-  // ============================================================
-  // Security Middleware (Early Protection)
-  // ============================================================
+  const log = logger || require('../utils/logger');
 
-  /**
-   * WHAT:
-   * Apply new security middleware in the correct order for enterprise-grade protection.
-   * 
-   * WHY:
-   * Middleware order matters. Guards must run before parsers, headers before CORS,
-   * and trust proxy before any IP-based logic.
-   * 
-   * HOW:
-   * 1. Method guard blocks dangerous HTTP verbs
-   * 2. Security headers (Helmet with strict CSP)
-   * 3. Cache control (no-store for dynamic routes)
-   * 4. Trust proxy and extract real client IP
-   */
-
-  // 0. Generate CSP nonce for each request (MUST come first for security headers)
-  app.use(generateCspNonce());
-  logger.info({ event: 'boot.middleware_registered', middleware: 'cspNonce' }, 'Security: CSP nonce generation enabled');
-
-  // 1. Method guard: reject PROPFIND, TRACE, and unknown methods
-  app.use(methodGuard());
-  logger.info({ event: 'boot.middleware_registered', middleware: 'methodGuard' }, 'Security: Method guard enabled');
-
-  // Credential guard (block credentials in GET params - CRITICAL)
-  app.use(credentialGuard);
-  logger.info({ event: 'boot.middleware_registered', middleware: 'credentialGuard' }, 'Security: Credential guard enabled (blocks credentials in GET)');
-
-  // 2. Strict security headers with nonce-based CSP
-  app.use(securityHeaders());
-  logger.info({ event: 'boot.middleware_registered', middleware: 'securityHeaders' }, 'Security: Strict CSP and security headers enabled');
-
-  // 3. Cache control: no-store for dynamic routes
-  app.use(cacheControl());
-  logger.info({ event: 'boot.middleware_registered', middleware: 'cacheControl' }, 'Security: Cache control enabled');
-
-  // 4. Trust proxy and expose real client IP
-  app.use(trustProxyIp(app));
-  logger.info({ event: 'boot.middleware_registered', middleware: 'trustProxyIp' }, 'Security: Trust proxy and clientIp extraction enabled');
-
-  // 5. Request ID middleware - add unique ID to every request (must be early for logging)
-  app.use(requestIdMiddleware);
-  logger.info({ event: 'boot.middleware_registered', middleware: 'requestId' }, 'Security: Request ID tracking enabled');
-
-  // Health routes (fast, Redis-free) mounted early
-  try {
-    app.use('/health', healthRouter);
-    logger.info({ event: 'boot.route_loaded', route: 'health' }, 'Health routes mounted early');
-  } catch (error) {
-    logger.error({ event: 'boot.route_load_failed', route: 'health', error: error.message }, 'Failed to load health routes');
+  // ----------------------------
+  // Mandatory middleware checks
+  // ----------------------------
+  // We keep these checks light: fail-fast only for things that must exist
+  // for the app’s security model (nonce + CSP headers + request id + CSRF).
+  function must(name, v) {
+    if (!v) throw new Error(`coreMiddleware: missing required dependency: ${name}`);
+    return v;
   }
 
-  // Redis Degrade Guard - must run before IP firewall and rate limiters
-  app.use(degradeGuard);
-  logger.info({ event: 'boot.middleware_registered', middleware: 'degradeGuard' }, 'Security: Redis degrade guard enabled (early; 503 on sensitive paths if Redis down)');
-
-  // 6. IP Firewall - block abusive IPs before they reach route logic
-  app.use(ipFirewall());
-  logger.info({ event: 'boot.middleware_registered', middleware: 'ipFirewall' }, 'Security: IP firewall enabled (Redis-backed auto-ban)');
-
-  // 7. Maintenance Guard - instant maintenance mode toggle (after Redis client is available)
-  app.use(createMaintenanceGuard(redisClient));
-  logger.info({ event: 'boot.middleware_registered', middleware: 'maintenanceGuard' }, 'Security: Maintenance guard enabled (Redis/env toggle)');
+  must('app', app);
+  must('generateCspNonce', generateCspNonce);
+  must('securityHeaders', securityHeaders);
+  must('requestIdMiddleware', requestIdMiddleware);
+  must('csrfLite', csrfLite);
 
   // ============================================================
-  // Security and Core Middleware Registration
+  // 1) Early security / invariants
   // ============================================================
 
-  /**
-   * WHAT:
-   * We register all security middleware, parsers, and core functionality.
-   *
-   * WHY:
-   * Security middleware must be registered early in the middleware stack
-   * to protect all subsequent routes and handlers.
-   *
-   * HOW:
-   * We register middleware in the correct order: security headers, CORS,
-   * rate limiting, body parsing, sessions, and custom middleware.
-   */
+  // 0) CSP nonce (MUST be first so CSP header can include it)
+  app.use(generateCspNonce());
+  log.info({ event: 'boot.middleware_registered', middleware: 'cspNonce' }, 'Security: CSP nonce generation enabled');
 
-  // HTTPS enforcement (respects Cloudflare proxy headers, uses canonical PUBLIC_ORIGIN)
-  // NOTE: OPTIONS requests are handled by the preflight short-circuit at the top
-  app.use(enforceHttps);
+  // 1) Method guard (blocks TRACE/PROPFIND/etc.)
+  if (typeof methodGuard === 'function') {
+    app.use(methodGuard());
+    log.info({ event: 'boot.middleware_registered', middleware: 'methodGuard' }, 'Security: Method guard enabled');
+  } else {
+    log.warn({ event: 'boot.middleware_skipped', middleware: 'methodGuard' }, 'Method guard unavailable (skipped)');
+  }
 
-  // Note: CSP with nonce is now handled by securityHeaders() middleware above
-  // No additional Helmet configuration needed here
+  // 2) Credential guard (blocks credentials in query params)
+  if (typeof credentialGuard === 'function') {
+    app.use(credentialGuard);
+    log.info(
+      { event: 'boot.middleware_registered', middleware: 'credentialGuard' },
+      'Security: Credential guard enabled (blocks credentials in GET)'
+    );
+  } else {
+    log.warn({ event: 'boot.middleware_skipped', middleware: 'credentialGuard' }, 'Credential guard unavailable (skipped)');
+  }
 
-  // Permissions-Policy header - Enterprise-grade browser feature restrictions
+  // 3) Security headers (Helmet + CSP using nonce)
+  app.use(securityHeaders());
+  log.info({ event: 'boot.middleware_registered', middleware: 'securityHeaders' }, 'Security: Strict CSP and security headers enabled');
+
+  // 4) Cache control (no-store for dynamic routes)
+  if (typeof cacheControl === 'function') {
+    app.use(cacheControl());
+    log.info({ event: 'boot.middleware_registered', middleware: 'cacheControl' }, 'Security: Cache control enabled');
+  } else {
+    log.warn({ event: 'boot.middleware_skipped', middleware: 'cacheControl' }, 'Cache control middleware unavailable (skipped)');
+  }
+
+  // 5) Trust proxy IP extraction (must be before IP-based logic)
+  if (typeof trustProxyIp === 'function') {
+    app.use(trustProxyIp(app));
+    log.info(
+      { event: 'boot.middleware_registered', middleware: 'trustProxyIp' },
+      'Security: Trust proxy and clientIp extraction enabled'
+    );
+  } else {
+    log.warn({ event: 'boot.middleware_skipped', middleware: 'trustProxyIp' }, 'Trust proxy middleware unavailable (skipped)');
+  }
+
+  // 6) Request ID (must be early so logs can include reqId)
+  app.use(requestIdMiddleware);
+  log.info({ event: 'boot.middleware_registered', middleware: 'requestId' }, 'Security: Request ID tracking enabled');
+
+  // 7) Health routes (fast, Redis-free) mounted early.
+  // Mounting them here means later middleware won’t run if health responds immediately.
+  if (healthRouter) {
+    try {
+      app.use('/health', healthRouter);
+      log.info({ event: 'boot.route_loaded', route: 'health' }, 'Health routes mounted early');
+    } catch (error) {
+      log.error(
+        { event: 'boot.route_load_failed', route: 'health', error: error.message },
+        'Failed to mount health routes'
+      );
+    }
+  } else {
+    log.warn({ event: 'boot.route_skipped', route: 'health' }, 'Health router not provided (skipped)');
+  }
+
+  // 8) Redis degrade guard (should run before firewall/rate limits)
+  if (typeof degradeGuard === 'function') {
+    app.use(degradeGuard);
+    log.info(
+      { event: 'boot.middleware_registered', middleware: 'degradeGuard' },
+      'Security: Redis degrade guard enabled (early)'
+    );
+  } else {
+    log.warn({ event: 'boot.middleware_skipped', middleware: 'degradeGuard' }, 'Degrade guard unavailable (skipped)');
+  }
+
+  // 9) IP firewall
+  if (ipFirewall && typeof ipFirewall === 'function') {
+    app.use(ipFirewall());
+    log.info({ event: 'boot.middleware_registered', middleware: 'ipFirewall' }, 'Security: IP firewall enabled');
+  } else {
+    log.warn({ event: 'boot.middleware_skipped', middleware: 'ipFirewall' }, 'IP firewall unavailable (skipped)');
+  }
+
+  // 10) Maintenance guard (best-effort; must not crash boot)
+  if (typeof createMaintenanceGuard === 'function') {
+    try {
+      const mg = createMaintenanceGuard(redisClient);
+      if (typeof mg === 'function') {
+        app.use(mg);
+        log.info(
+          { event: 'boot.middleware_registered', middleware: 'maintenanceGuard' },
+          'Security: Maintenance guard enabled'
+        );
+      } else {
+        log.warn(
+          { event: 'boot.middleware_skipped', middleware: 'maintenanceGuard' },
+          'Maintenance guard factory did not return middleware (skipped)'
+        );
+      }
+    } catch (err) {
+      log.warn(
+        { event: 'boot.middleware_load_failed', middleware: 'maintenanceGuard', error: err.message },
+        'Failed to initialize maintenance guard (skipped)'
+      );
+    }
+  }
+
+  // ============================================================
+  // 2) Network/security policy middleware
+  // ============================================================
+
+  // HTTPS enforcement (preflight OPTIONS is already short-circuited in zorvalon.js)
+  if (typeof enforceHttps === 'function') {
+    app.use(enforceHttps);
+    log.info({ event: 'boot.middleware_registered', middleware: 'enforceHttps' }, 'Security: HTTPS enforcement enabled');
+  } else {
+    log.warn({ event: 'boot.middleware_skipped', middleware: 'enforceHttps' }, 'HTTPS enforcement unavailable (skipped)');
+  }
+
+  // Permissions-Policy (kept here; if you later move it into securityHeaders, delete this block)
   app.use((req, res, next) => {
     res.setHeader(
       'Permissions-Policy',
@@ -182,181 +206,124 @@ function registerCoreMiddleware({
         'payment=()',
         'usb=()',
         'serial=()',
-        'bluetooth=()'
+        'bluetooth=()',
       ].join(', ')
     );
     next();
   });
 
-  // CORS configuration using dedicated middleware
-  /**
-   * WHAT:
-   * CORS origin validation using centralized corsAllowlist middleware.
-   * 
-   * WHY:
-   * OPTIONS preflight is handled at the absolute top unconditionally.
-   * This validates actual requests (GET, POST, etc.) against allowed origins.
-   * 
-   * HOW:
-   * Uses corsAllowlist.js which supports:
-   * 1. Explicit CORS_ORIGINS env var
-   * 2. Any subdomain of BASE_DOMAIN (if set) or fallback to *.couplebinder.com (legacy)
-   * 3. Localhost in development
-   * 4. Blocks and logs all others
-   */
-  app.use(corsAllowlist);
+  // CORS allowlist validation for non-OPTIONS requests
+  if (typeof corsAllowlist === 'function') {
+    app.use(corsAllowlist);
+    log.info({ event: 'boot.middleware_registered', middleware: 'corsAllowlist' }, 'Security: CORS allowlist enabled');
+  } else {
+    log.warn({ event: 'boot.middleware_skipped', middleware: 'corsAllowlist' }, 'CORS allowlist unavailable (skipped)');
+  }
 
-  // CORS debug logging (noisy, keep off unless actively debugging)
-  if (toggles.corsDebug && corsDebugMiddleware) {
+  // Optional CORS debug
+  if (toggles && toggles.corsDebug && typeof corsDebugMiddleware === 'function') {
     app.use(corsDebugMiddleware());
-    logger.info({ event: 'boot.toggle_enabled', toggle: 'corsDebug' }, 'Toggle: CORS debug logging enabled');
+    log.info({ event: 'boot.toggle_enabled', toggle: 'corsDebug' }, 'Toggle: CORS debug logging enabled');
   }
 
-  // Rate limiting will be applied after static files
+  // ============================================================
+  // 3) Stripe webhook + parsers + cookies + auth bridge
+  // ============================================================
 
-  // Body parsers with size limits
-  // Stripe webhook (raw body, CSRF bypass) - must be before body parsers
-  try {
-    mountStripeWebhook(app);
-    logger.info({ event: 'boot.webhook_mounted', webhook: 'stripe' }, 'Stripe webhook mounted (raw body, CSRF bypass).');
-  } catch (e) {
-    logger.error({ event: 'boot.webhook_mount_failed', webhook: 'stripe', error: e.message }, 'Failed to mount Stripe webhook');
+  // Stripe webhook must mount BEFORE json/urlencoded parsers, and BEFORE CSRF.
+  if (typeof mountStripeWebhook === 'function') {
+    try {
+      mountStripeWebhook(app);
+      log.info({ event: 'boot.webhook_mounted', webhook: 'stripe' }, 'Stripe webhook mounted (raw body)');
+    } catch (e) {
+      log.error(
+        { event: 'boot.webhook_mount_failed', webhook: 'stripe', error: e.message },
+        'Failed to mount Stripe webhook'
+      );
+    }
   }
 
-  // Body size limits (32KB to match text input limits and prevent abuse)
+  // Body parsers (small limits to reduce abuse)
   app.use(express.json({ limit: '32kb' }));
   app.use(express.urlencoded({ extended: false, limit: '32kb' }));
 
-  // Cookie parsing middleware - must be before sessions and CSRF
-  app.use(cookieGuardian);
+  // Cookies (must be before CSRF)
+  if (typeof cookieGuardian === 'function') {
+    app.use(cookieGuardian);
+    log.info({ event: 'boot.middleware_registered', middleware: 'cookieGuardian' }, 'Cookies: parsing/guard enabled');
+  } else {
+    log.warn({ event: 'boot.middleware_skipped', middleware: 'cookieGuardian' }, 'Cookie guardian unavailable (skipped)');
+  }
 
-  // App config injection (makes config available to all views)
-  app.use(appConfig);
+  // App config injection
+  if (typeof appConfig === 'function') {
+    app.use(appConfig);
+    log.info({ event: 'boot.middleware_registered', middleware: 'appConfig' }, 'App config middleware enabled');
+  }
 
-  // Stateless authentication bridge - reads Supabase tokens
-  app.use(authBridge);
+  // Auth bridge (stateless)
+  if (typeof authBridge === 'function') {
+    app.use(authBridge);
+    log.info({ event: 'boot.auth_mode', mode: 'stateless' }, 'Authentication: Stateless only (Supabase JWT tokens)');
+  } else {
+    log.warn({ event: 'boot.middleware_skipped', middleware: 'authBridge' }, 'Auth bridge unavailable (skipped)');
+  }
 
-  /**
-   * WHAT:
-   * Session middleware is disabled - using stateless authentication only.
-   * 
-   * WHY:
-   * No routes use req.session, so sessions are not needed.
-   * Stateless Supabase JWT authentication is sufficient.
-   * 
-   * HOW:
-   * Sessions are completely disabled to reduce attack surface.
-   * All authentication is handled via Supabase JWT tokens.
-   */
-
-  logger.info({ event: 'boot.auth_mode', mode: 'stateless' }, 'Authentication: Stateless only (Supabase JWT tokens)');
-
-  // Request timing middleware for formatted logging
+  // Request timing → pretty terminal logging (must not crash if consoleLogger is missing)
   app.use((req, res, next) => {
     const startTime = Date.now();
-    
+
     res.on('finish', () => {
       const duration = Date.now() - startTime;
-      // Use formatted logger for terminal display
-      consoleLogger.formatRequest(req, res, duration);
+      if (consoleLogger && typeof consoleLogger.formatRequest === 'function') {
+        consoleLogger.formatRequest(req, res, duration);
+      }
     });
-    
+
     next();
   });
 
-  consoleLogger.formatMiddlewareRegistration('Core middleware');
-
-  // Supabase Auth middleware (stateless token verification)
-  consoleLogger.formatMiddlewareRegistration('Supabase Auth (token verification)');
-
-  // Rate limiting configuration logged via structured logger
-  // EVIDENCE: Both Cloudflare edge AND Redis-based application limiters are active
-  logger.info({
-    event: 'boot.rate_limit_stack',
-    rateLimit: {
-      primary: 'cloudflare',    // Handles volumetric DDoS attacks
-      secondary: 'redis'        // Handles application-specific limits
-    }
-  }, 'Rate limiting: Edge (primary) → Origin/Redis (secondary)');
+  if (consoleLogger && typeof consoleLogger.formatMiddlewareRegistration === 'function') {
+    consoleLogger.formatMiddlewareRegistration('Core middleware');
+    consoleLogger.formatMiddlewareRegistration('Supabase Auth (token verification)');
+  }
 
   // ============================================================
-  // Security Middleware Configuration
+  // 4) CSRF (must be after cookies) + rate limiters (secondary layer)
   // ============================================================
 
-  /**
-   * WHAT:
-   * We register security middleware for CSRF protection.
-   *
-   * WHY:
-   * CSRF protection prevents cross-site request forgery attacks
-   * by validating tokens on state-changing requests.
-   *
-   * HOW:
-   * We add CSRF token generation middleware and configure
-   * validation for protected routes.
-   */
-  // Add CSRF protection middleware (stateless double-submit)
   app.use(csrfLite);
 
-  consoleLogger.formatMiddlewareRegistration('Security middleware');
+  if (consoleLogger && typeof consoleLogger.formatMiddlewareRegistration === 'function') {
+    consoleLogger.formatMiddlewareRegistration('Security middleware');
+  }
 
-  // ============================================================
-  // Application-Layer Rate Limiting (Defense-in-Depth)
-  // ============================================================
+  // Secondary layer rate limiting (Cloudflare is primary edge layer)
+  if (rateLimiters) {
+    if (typeof rateLimiters.generalLimiter === 'function') {
+      app.use(['/api'], rateLimiters.generalLimiter());
+    }
+    if (typeof rateLimiters.cookieSetLimiter === 'function') {
+      app.use('/auth/set-cookie', rateLimiters.cookieSetLimiter());
+    }
+    if (typeof rateLimiters.logoutLimiter === 'function') {
+      app.use('/auth/clear-cookie', rateLimiters.logoutLimiter());
+    }
+    if (typeof rateLimiters.loginLimiter === 'function') {
+      app.use(['/auth/login', '/api/auth/login'], rateLimiters.loginLimiter());
+    }
+    if (typeof rateLimiters.registerLimiter === 'function') {
+      app.use(['/auth/register', '/api/auth/register'], rateLimiters.registerLimiter());
+    }
 
-  /**
-   * WHAT:
-   * Per-route rate limiting at the application layer (SECONDARY layer).
-   *
-   * WHY:
-   * Defense-in-depth behind Cloudflare edge protection (PRIMARY layer).
-   * Different routes need different limits (login strict, logout lenient).
-   *
-   * HOW:
-   * DUAL-LAYER RATE LIMITING ARCHITECTURE:
-   * 
-   * LAYER 1 (PRIMARY): Cloudflare Edge
-   * - Handles volumetric DDoS attacks and massive traffic floods
-   * - Provides geographic filtering and bot protection
-   * - Blocks traffic before it reaches this origin server
-   * - Configured at Cloudflare dashboard level
-   *
-   * LAYER 2 (SECONDARY): Application-specific limiters (this section)
-   * - Five tiers of rate limiting for different endpoint types:
-   *   1. General API limiter (300 req/min) - generous for normal use
-   *   2. Cookie set limiter (300 req/min) - lenient for post-login flow
-   *   3. Logout limiter (120 req/10min) - very lenient, users click around
-   *   4. Login limiter (10 attempts/15min) - strict to prevent brute force
-   *   5. Register limiter (5 attempts/hour) - very strict to prevent abuse
-   * - Escalates repeated violations to IP firewall blocking
-   * - Uses Redis for shared state across multiple server instances
-   *
-   * EVIDENCE: Both layers are active:
-   * - Line 522: "Rate limiting: Edge (primary) → Origin/Redis (secondary)"
-   * - Line 898: "rateLimit: 'handled at Cloudflare edge'"
-   */
-  // Apply general rate limiting to API endpoints (SECONDARY layer)
-  // This works IN ADDITION to Cloudflare edge protection (PRIMARY layer)
-  app.use(['/api'], rateLimiters.generalLimiter());
-  // General limiter enabled (300 req/min) - logged via structured logger above
-
-  // Apply per-route rate limiting to auth endpoints (SECONDARY layer)
-  // These are application-specific limits after Cloudflare edge filtering
-  app.use('/auth/set-cookie', rateLimiters.cookieSetLimiter());
-  // Cookie set limiter enabled (300 req/min) - logged via structured logger above
-
-  app.use('/auth/clear-cookie', rateLimiters.logoutLimiter());
-  // Logout limiter enabled (120 req/10min) - logged via structured logger above
-  // NOTE: This is SECONDARY layer - Cloudflare edge handles volumetric attacks first
-
-  app.use(['/auth/login', '/api/auth/login'], rateLimiters.loginLimiter());
-  // Login limiter enabled (10 attempts per 15 min) - logged via structured logger above
-  // NOTE: This is SECONDARY layer - Cloudflare edge handles volumetric attacks first
-
-  app.use(['/auth/register', '/api/auth/register'], rateLimiters.registerLimiter());
-  // Register limiter enabled (5 attempts per hour) - logged via structured logger above
-  // NOTE: This is SECONDARY layer - Cloudflare edge handles volumetric attacks first
+    log.info(
+      {
+        event: 'boot.rate_limit_stack',
+        rateLimit: { primary: 'cloudflare', secondary: 'redis' },
+      },
+      'Rate limiting: Edge (primary) → Origin/Redis (secondary)'
+    );
+  }
 }
 
 module.exports = { registerCoreMiddleware };
-

@@ -1,7 +1,7 @@
 // File: binder-editor/src/utils/imageFitMath.js
 // Description: Shared math for image fit calculations (contain and cover)
 // Purpose: Ensure canvas and PDF use identical placement logic
-// Notes: Used for rendering parity verification and future crop implementation
+// Notes: Used by PDF parity verification and will be reused by crop math; do not delete as unused.
 
 /**
  * WHAT:

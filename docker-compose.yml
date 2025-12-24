@@ -4,16 +4,13 @@ services:
     restart: unless-stopped
     volumes:
       - redis_data:/data
-      # Config file for non-secret tuning (no password inside)
       - ./redis.conf:/usr/local/etc/redis/redis.conf:ro
-    # Start Redis with config file + requirepass from env
     command:
       - redis-server
       - /usr/local/etc/redis/redis.conf
       - --requirepass
       - ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
     environment:
-      # Make these visible inside the container (for debugging / healthcheck)
       REDIS_PASSWORD: ${REDIS_PASSWORD}
       REDIS_HOST: redis
       REDIS_PORT: 6379
@@ -40,36 +37,37 @@ services:
     init: true
     stop_signal: SIGTERM
     stop_grace_period: 30s
+
     build:
       context: .
       dockerfile: server/Dockerfile
       args:
         NODE_VERSION: "20"
-    # Env values are injected by Compose from:
-    #   - .env (local dev)
-    #   - .env.production.full (prod, via --env-file)
-    # Here we only set container-specific overrides and wire Redis up.
+
     environment:
       HOST: 0.0.0.0
       PORT: 3000
 
-      # Redis wiring for the Node app
+      # Graceful shutdown tuning (keep under stop_grace_period)
+      SHUTDOWN_GRACE_MS: "28000"
+      SHUTDOWN_DRAIN_MS: "20000"
+
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_PASSWORD: ${REDIS_PASSWORD}
-      # Prefer REDIS_URL from env if explicitly set, otherwise build it
       REDIS_URL: ${REDIS_URL:-redis://:${REDIS_PASSWORD}@redis:6379}
 
     depends_on:
       redis:
         condition: service_healthy
+
     restart: unless-stopped
-    # Do NOT publish 3000 to the host; proxy will front it (dev override can re-expose if needed).
     logging:
       driver: json-file
       options:
         max-size: "10m"
         max-file: "3"
+
     healthcheck:
       test:
         [
@@ -91,12 +89,10 @@ services:
     ports:
       - "80:80"
       - "443:443"
-    # Mount templates (not conf.d) and certs; the startup command copies the right one in.
     volumes:
       - ./nginx/templates:/etc/nginx/templates:ro
       - ./certs:/etc/nginx/certs:ro
     environment:
-      # Default to PLAINTEXT unless explicitly set to true (prod only when certs exist).
       - NGINX_USE_SSL=${NGINX_USE_SSL:-false}
     command: >
       sh -c 'set -e;

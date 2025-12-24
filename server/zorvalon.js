@@ -118,6 +118,9 @@ const {
 const app = express();
 app.disable('x-powered-by');
 
+// Shutdown posture flags (used by readiness/guards if you add them later)
+app.locals.isShuttingDown = false;
+
 // Initialize Redis status tracking
 app.locals.redisReady = false;
 app.locals.rateLimitStoreReady = false;
@@ -189,6 +192,29 @@ app.use((req, res, next) => {
 
   return res.status(204).end();
 });
+
+// ------------------------------------------------------------------
+// Request tracker (for shutdown drain diagnostics)
+// Mount AFTER OPTIONS short-circuit so it doesn’t count preflights.
+// ------------------------------------------------------------------
+let requestTracker = null;
+try {
+  const shutdownModule = require('./bootstrap/shutdown');
+  if (typeof shutdownModule.createRequestTracker === 'function') {
+    requestTracker = shutdownModule.createRequestTracker({ logger });
+    app.use(requestTracker.middleware);
+  } else {
+    logger.warn(
+      { event: 'boot.request_tracker_unavailable' },
+      'createRequestTracker not exported; request draining diagnostics disabled'
+    );
+  }
+} catch (err) {
+  logger.warn(
+    { event: 'boot.request_tracker_load_failed', error: err.message },
+    'Failed to initialize request tracker; request draining diagnostics disabled'
+  );
+}
 
 /**
  * STEP 1.5: Toggle-Based Middleware
@@ -470,6 +496,9 @@ registerErrorHandlers({ app, logger, config, consoleLogger });
 const PORT = config.server.port;
 const HOST = config.server.host;
 
+// Hold a stop handle for the outbox processor (so shutdown can stop it first)
+let stopOutboxProcessor = null;
+
 const server = app.listen(PORT, HOST, () => {
   consoleLogger.formatServerStartup({
     host: HOST,
@@ -483,7 +512,22 @@ const server = app.listen(PORT, HOST, () => {
 
   try {
     const { startOutboxProcessor } = require('./jobs/outboxProcessor');
-    startOutboxProcessor(30000);
+
+    // We support multiple possible return shapes safely:
+    // - function (stop)
+    // - { stop() }
+    // - interval-like object with .unref/.ref (not ideal), but we still can clearInterval if it looks like one
+    const started = startOutboxProcessor(30000);
+
+    if (typeof started === 'function') {
+      stopOutboxProcessor = started;
+    } else if (started && typeof started.stop === 'function') {
+      stopOutboxProcessor = () => started.stop();
+    } else if (started && typeof started === 'object' && typeof started.hasRef === 'function') {
+      // looks like a Timer, best-effort
+      stopOutboxProcessor = () => clearInterval(started);
+    }
+
     logger.info({ event: 'boot.outbox_processor_started' }, 'Outbox processor started successfully');
   } catch (error) {
     logger.error(
@@ -494,15 +538,59 @@ const server = app.listen(PORT, HOST, () => {
 });
 
 // ============================================================
-// STEP 10: Graceful Shutdown System
+// STEP 10: Graceful Shutdown System (step-based + draining + ordered cleanups)
 // ============================================================
 
 const { registerShutdownSystem } = require('./bootstrap/shutdown');
 
-// Optional: if you want to explicitly close redis on shutdown, you can wire it here.
-// This is safe even if redisClient is null.
+// Cleanups run in order (more predictable)
 const cleanups = [];
-if (redisClient && typeof redisClient.quit === 'function') {
+
+// 1) Stop outbox processor FIRST (prevents new background work during shutdown)
+cleanups.push({
+  name: 'outbox.stop',
+  fn: async () => {
+    try {
+      if (typeof stopOutboxProcessor === 'function') {
+        await stopOutboxProcessor();
+      }
+    } catch {
+      // ignore
+    }
+  },
+});
+
+// 2) Redis shutdown (use redisClient helpers so “disconnect” logs are not errors on purpose)
+let markRedisShuttingDown = null;
+let disconnectRedis = null;
+
+try {
+  const redisMod = require('./utils/redisClient');
+
+  if (redisMod && typeof redisMod.markShuttingDown === 'function') {
+    markRedisShuttingDown = redisMod.markShuttingDown;
+  }
+  if (redisMod && typeof redisMod.disconnectRedis === 'function') {
+    disconnectRedis = redisMod.disconnectRedis;
+  }
+} catch {
+  // ignore (redis module not available)
+}
+
+// Prefer disconnectRedis() (it should flip shutdown mode + quit safely)
+if (typeof disconnectRedis === 'function') {
+  cleanups.push({
+    name: 'redis.quit',
+    fn: async () => {
+      try {
+        await disconnectRedis();
+      } catch {
+        // ignore
+      }
+    },
+  });
+} else if (redisClient && typeof redisClient.quit === 'function') {
+  // Fallback if helper isn't present yet
   cleanups.push({
     name: 'redis.quit',
     fn: async () => {
@@ -515,7 +603,29 @@ if (redisClient && typeof redisClient.quit === 'function') {
   });
 }
 
-registerShutdownSystem({ server, logger, config, consoleLogger, cleanups });
+registerShutdownSystem({
+  server,
+  logger,
+  config,
+  consoleLogger,
+  cleanups,
+  requestTracker,
+  onShutdownStart: () => {
+    app.locals.isShuttingDown = true;
+
+    // Critical: tells redisClient module “shutdown is intentional”
+    // so its 'end' event can log INFO instead of ERROR.
+    try {
+      if (typeof markRedisShuttingDown === 'function') {
+        markRedisShuttingDown('app_shutdown');
+      }
+    } catch {
+      // ignore
+    }
+
+    // If you ever add readiness, this is where you flip readiness=false.
+  },
+});
 
 // Export for testing
 module.exports = app;

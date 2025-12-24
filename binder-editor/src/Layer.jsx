@@ -4,6 +4,8 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { getPhotoViewUrl, updatePhotoCaption } from './api';
+import { getPhotoFrameRectFromLayer } from './utils/photoFrameMetrics';
+import { updateLayerWithNaturalDimensions } from './utils/imageDimensions';
 
 const PAGE_WIDTH = 794;
 const PAGE_HEIGHT = 1122;
@@ -238,6 +240,7 @@ function Layer({
     const top = (frameRect.top - canvasRect.top) / storedZoom;
 
     // Caption height in logical units (only used for saving total layer height)
+    // Compute from actual DOM measurements (layerRect includes caption, frameRect does not)
     const captionHeight =
       layer.type === 'photo'
         ? Math.max(0, (layerRect.height - frameRect.height) / storedZoom)
@@ -538,8 +541,20 @@ function Layer({
                           typeof layer.photoAspectRatio === 'number'
                             ? layer.photoAspectRatio
                             : null;
+                        // Prep work: also capture natural dimensions for future crop implementation
+                        const updatedLayer = updateLayerWithNaturalDimensions(layer, nw, nh);
                         if (!prev || Math.abs(prev - ar) > 0.01) {
-                          onUpdate(layer.id, { photoAspectRatio: ar });
+                          onUpdate(layer.id, {
+                            photoAspectRatio: ar,
+                            photoNaturalWidth: updatedLayer.photoNaturalWidth,
+                            photoNaturalHeight: updatedLayer.photoNaturalHeight
+                          });
+                        } else if (!layer.photoNaturalWidth || !layer.photoNaturalHeight) {
+                          // Update natural dimensions even if aspect ratio hasn't changed
+                          onUpdate(layer.id, {
+                            photoNaturalWidth: updatedLayer.photoNaturalWidth,
+                            photoNaturalHeight: updatedLayer.photoNaturalHeight
+                          });
                         }
                       }
                     }}

@@ -12,6 +12,7 @@ import './App.css';
 import { SECTION_LABELS, SECTION_OPTIONS } from './sections';
 import { preloadBinderPhotos } from './preloadPhotos';
 import MobileMenu from './MobileMenu';
+import { captureImageDimensions } from './utils/imageDimensions';
 
 const AUTOSAVE_DEBOUNCE_MS = 1500; // 1.5s after last change
 
@@ -402,15 +403,11 @@ function App({ binderId /*, csrfToken */ }) {
             if (!url) return { ...photo, aspectRatio: 1 };
 
             try {
-              const aspectRatio = await new Promise((resolve) => {
-                const img = new Image();
-                img.onload = () => resolve((img.naturalWidth || 1) / (img.naturalHeight || 1));
-                img.onerror = () => resolve(1);
-                img.src = url;
-              });
-              return { ...photo, aspectRatio, url };
+              // Prep work: capture natural dimensions for future crop implementation
+              const { naturalWidth, naturalHeight, aspectRatio } = await captureImageDimensions(url);
+              return { ...photo, aspectRatio, naturalWidth, naturalHeight, url };
             } catch {
-              return { ...photo, aspectRatio: 1, url };
+              return { ...photo, aspectRatio: 1, naturalWidth: 0, naturalHeight: 0, url };
             }
           })
         );
@@ -456,7 +453,10 @@ function App({ binderId /*, csrfToken */ }) {
               photoId: null,
               storageKey: photo.storageKey || null,
               src: url,
-              photoAspectRatio: imageAspectRatio
+              photoAspectRatio: imageAspectRatio,
+              // Prep work: store natural dimensions for future crop implementation
+              photoNaturalWidth: photo.naturalWidth || 0,
+              photoNaturalHeight: photo.naturalHeight || 0
             });
           });
 

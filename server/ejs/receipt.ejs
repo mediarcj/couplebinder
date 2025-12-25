@@ -119,8 +119,8 @@
 
   <%- include('partials/modals') %>
 
-  <script src="/js/modalManager.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= page.nonce %>"></script>
-  <script src="/js/receipt.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= page.nonce %>"></script>
-  <script src="/js/main.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= page.nonce %>"></script>
+  <script src="/js/modalManager.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= cspNonce %>"></script>
+  <script src="/js/receipt.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= cspNonce %>"></script>
+  <script src="/js/main.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= cspNonce %>"></script>
 </body>
 </html>

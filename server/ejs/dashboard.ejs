@@ -1,189 +1,143 @@
 <!-- File: server/ejs/dashboard.ejs
-     Description: Protected dashboard template for authenticated users
-     Purpose: Binder workspace with large canvas and simple page strip
-     Notes: Uses consistent UI/UX with main homepage template -->
+     Description: Protected dashboard template for authenticated users -->
 
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="csrf-token" content="<%= ui.csrfToken || '' %>">
-    <% if (typeof APP_CONFIG !== 'undefined') { %>
-      <meta id="app-config" 
-            data-supabase-url="<%= APP_CONFIG.SUPABASE_URL %>" 
-            data-supabase-anon-key="<%= APP_CONFIG.SUPABASE_ANON_KEY %>">
-    <% } %>
-    <title><%= (page && page.title) || (app_info && app_info.name) || 'Application' %></title>
-    <link rel="icon" href="/images/favicon.ico">
-    <link rel="stylesheet" href="/css/style.css?v=<%= (page && page.assetVersion) || assetVersion || '' %>">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="csrf-token" content="<%= ui.csrfToken || '' %>">
+
+  <% if (typeof APP_CONFIG !== 'undefined') { %>
+    <meta id="app-config"
+      data-supabase-url="<%= APP_CONFIG.SUPABASE_URL %>"
+      data-supabase-anon-key="<%= APP_CONFIG.SUPABASE_ANON_KEY %>">
+  <% } %>
+
+  <title><%= (page && page.title) || (app_info && app_info.name) || 'Application' %></title>
+  <link rel="icon" href="/images/favicon.ico">
+  <link rel="stylesheet" href="/css/style.css?v=<%= (page && page.assetVersion) || assetVersion || '' %>">
 </head>
+
 <body
   data-auth-hydrate="true"
-  data-binder-id="<%= (typeof binder !== 'undefined' && binder && binder.id) || '' %>"
+  data-binder-id="<%= (binder && binder.id) || '' %>"
 >
-    <%- include('partials/nav', { nav: page.nav, app_info: app_info }) %>
+  <%- include('partials/nav', { nav: page.nav, app_info: app_info }) %>
 
-    <main class="dashboard-root">
-        <div class="workspace-shell">
-            <!-- Workspace header -->
-            <header class="workspace-header">
-                <div class="workspace-header-main">
-                    <h1 class="workspace-title">Your Binder Workspace</h1>
-                    <p class="workspace-subtitle">
-                        Hi <%= user.display_name %>. This is your simple work table.
-                    </p>
-                </div>
-                <div class="workspace-header-meta">
-                    <div class="workspace-meta-row">
-                        <span class="meta-label">Binder</span>
-                        <span class="meta-value"><%= user.display_name %>'s Binder</span>
-                    </div>
-                    <div class="workspace-meta-row">
-                        <span class="meta-label">Status</span>
-                        <span class="meta-value meta-pill meta-pill-draft">Draft</span>
-                    </div>
-                </div>
-            </header>
-
-            <!-- Workspace body: left page list + big canvas -->
-            <section class="workspace-body workspace-body-simple">
-                <!-- Left: page thumbnails (stub for now) -->
-                <aside class="page-strip" id="builder-page-strip" aria-label="Pages">
-                    <div class="page-strip-header">
-                        <span class="page-strip-title">Pages</span>
-                    </div>
-                    <button
-                        type="button"
-                        class="page-thumb page-thumb-active"
-                        data-page="1"
-                    >
-                        <span class="page-thumb-label">Page 1</span>
-                    </button>
-                    <!-- Later: dynamically generated additional pages -->
-                </aside>
-
-                <!-- Right: toolbar + canvas + photo strip -->
-                <section class="workspace-canvas-wrapper">
-                    <!-- Toolbar -->
-                    <div class="workspace-toolbar workspace-toolbar-simple">
-                        <div class="toolbar-left">
-                            <button
-                                type="button"
-                                class="btn btn-primary toolbar-btn"
-                                id="builder-add-photos-btn"
-                            >
-                                Add photos
-                            </button>
-                            <button
-                                type="button"
-                                class="btn btn-secondary toolbar-btn"
-                                id="builder-delete-photo-btn"
-                            >
-                                Delete selected photo
-                            </button>                            
-                        </div>
-                        <div class="toolbar-right">
-                            <button
-                                type="button"
-                                class="btn btn-secondary toolbar-btn"
-                                id="builder-save-draft-btn"
-                            >
-                                Save draft
-                            </button>
-                            <button
-                                type="button"
-                                class="btn btn-primary toolbar-btn"
-                                id="builder-export-pdf-btn"
-                                disabled
-                            >
-                                Export PDF
-                            </button>
-
-                            <% if (typeof binder !== 'undefined' && binder && binder.id) { %>
-                            <button
-                                type="button"
-                                class="btn btn-secondary toolbar-btn"
-                                id="open-react-editor-btn"
-                            >
-                                New editor (beta)
-                            </button>
-                            <% } %>
-                        </div>
-                    </div>
-
-                    <!-- Hidden file input that the button will trigger -->
-                    <input
-                        type="file"
-                        id="builder-file-input"
-                        accept="image/*,.jpg,.jpeg,.png,.webp,.heic,.heif,.avif"
-                        multiple
-                        hidden
-                    />
-
-                    <!-- Canvas always visible -->
-                    <div class="canvas-stage">
-                        <div
-                            id="builder-canvas"
-                            class="builder-canvas"
-                            data-page="1"
-                        >
-                            <div class="builder-canvas-placeholder">
-                                <p>
-                                    Page 1 preview (A4). This is where your photos will be placed.
-                                    We’ll keep margins and layout clean for the final PDF.
-                                </p>
-                                <p class="builder-canvas-help">
-                                    Start by clicking “Add photos”. Once wired, you’ll be able to
-                                    drag photos into this page and resize them without breaking the layout.
-                                </p>
-                            </div>
-                            <!-- Later: photo boxes go here -->
-                        </div>
-                    </div>
-
-                    <!-- Photo strip: uploaded photos for this binder -->
-                    <div
-                        class="canvas-photo-strip photo-palette"
-                        id="builder-photo-strip"
-                        aria-label="Uploaded photos"
-                    >
-                        <p class="panel-hint">
-                            No photos loaded yet. Upload some using “Add photos”.
-                        </p>
-                    </div>
-
-                    <div class="canvas-footer">
-                        <span id="builder-status-text">
-                            Ready. Layout updates are saved here before generating the PDF.
-                        </span>
-                    </div>
-                </section>
-            </section>
+  <main class="dashboard-root">
+    <div class="workspace-shell">
+      <header class="workspace-header">
+        <div class="workspace-header-main">
+          <h1 class="workspace-title">Your Binder Workspace</h1>
+          <p class="workspace-subtitle">
+            Hi <%= user.display_name %>. This is your simple work table.
+          </p>
         </div>
-    </main>
-        
-    <footer>
-        <div class="container">
-            <p>&copy; 2024 <%= app_info?.name || 'Application' %>. <%= app_info?.description || 'A modern web application' %>.</p>
+        <div class="workspace-header-meta">
+          <div class="workspace-meta-row">
+            <span class="meta-label">Binder</span>
+            <span class="meta-value"><%= user.display_name %>'s Binder</span>
+          </div>
+          <div class="workspace-meta-row">
+            <span class="meta-label">Status</span>
+            <span class="meta-value meta-pill meta-pill-draft">Draft</span>
+          </div>
         </div>
-    </footer>
+      </header>
 
-    <!-- Hidden submissions list for dashboard -->
-    <div id="submissionsList" class="submissions-list hidden"></div>
+      <section class="workspace-body workspace-body-simple">
+        <aside class="page-strip" id="builder-page-strip" aria-label="Pages">
+          <div class="page-strip-header">
+            <span class="page-strip-title">Pages</span>
+          </div>
+          <button type="button" class="page-thumb page-thumb-active" data-page="1">
+            <span class="page-thumb-label">Page 1</span>
+          </button>
+        </aside>
 
-    <!-- Centralized Modals (password change, notifications) -->
-    <%- include('partials/modals') %>
+        <section class="workspace-canvas-wrapper">
+          <div class="workspace-toolbar workspace-toolbar-simple">
+            <div class="toolbar-left">
+              <button type="button" class="btn btn-primary toolbar-btn" id="builder-add-photos-btn">
+                Add photos
+              </button>
+              <button type="button" class="btn btn-secondary toolbar-btn" id="builder-delete-photo-btn">
+                Delete selected photo
+              </button>
+            </div>
 
-    <!-- Shared core scripts -->
-    <script src="/js/supabase-client.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= page.nonce %>"></script>
-    <script src="/js/sbClient.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= page.nonce %>"></script>
-    <script src="/js/logout.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= page.nonce %>"></script>
-    <script src="/js/modalManager.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= page.nonce %>"></script>
-    <script src="/js/nav-client.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= page.nonce %>"></script>
-    
-    <!-- Page-specific scripts -->
-    <script src="/js/dashboard.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= page.nonce %>"></script>
-    <script src="/js/main.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= page.nonce %>"></script>
+            <div class="toolbar-right">
+              <button type="button" class="btn btn-secondary toolbar-btn" id="builder-save-draft-btn">
+                Save draft
+              </button>
+              <button type="button" class="btn btn-primary toolbar-btn" id="builder-export-pdf-btn" disabled>
+                Export PDF
+              </button>
+
+              <% if (binder && binder.id) { %>
+                <button type="button" class="btn btn-secondary toolbar-btn" id="open-react-editor-btn">
+                  New editor (beta)
+                </button>
+              <% } %>
+            </div>
+          </div>
+
+          <input
+            type="file"
+            id="builder-file-input"
+            accept="image/*,.jpg,.jpeg,.png,.webp,.heic,.heif,.avif"
+            multiple
+            hidden
+          />
+
+          <div class="canvas-stage">
+            <div id="builder-canvas" class="builder-canvas" data-page="1">
+              <div class="builder-canvas-placeholder">
+                <p>
+                  Page 1 preview (A4). This is where your photos will be placed.
+                  We’ll keep margins and layout clean for the final PDF.
+                </p>
+                <p class="builder-canvas-help">
+                  Start by clicking “Add photos”. Once wired, you’ll be able to
+                  drag photos into this page and resize them without breaking the layout.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div class="canvas-photo-strip photo-palette" id="builder-photo-strip" aria-label="Uploaded photos">
+            <p class="panel-hint">
+              No photos loaded yet. Upload some using “Add photos”.
+            </p>
+          </div>
+
+          <div class="canvas-footer">
+            <span id="builder-status-text">
+              Ready.
+            </span>
+          </div>
+        </section>
+      </section>
+    </div>
+  </main>
+
+  <footer>
+    <div class="container">
+      <p>&copy; 2024 <%= app_info?.name || 'Application' %>. <%= app_info?.description || 'A modern web application' %>.</p>
+    </div>
+  </footer>
+
+  <div id="submissionsList" class="submissions-list hidden"></div>
+  <%- include('partials/modals') %>
+
+  <script src="/js/supabase-client.js?v=<%= (page && page.assetVersion) || assetVersion || '' %>" nonce="<%= (page && page.nonce) || '' %>"></script>
+  <script src="/js/sbClient.js?v=<%= (page && page.assetVersion) || assetVersion || '' %>" nonce="<%= (page && page.nonce) || '' %>"></script>
+  <script src="/js/logout.js?v=<%= (page && page.assetVersion) || assetVersion || '' %>" nonce="<%= (page && page.nonce) || '' %>"></script>
+  <script src="/js/modalManager.js?v=<%= (page && page.assetVersion) || assetVersion || '' %>" nonce="<%= (page && page.nonce) || '' %>"></script>
+  <script src="/js/nav-client.js?v=<%= (page && page.assetVersion) || assetVersion || '' %>" nonce="<%= (page && page.nonce) || '' %>"></script>
+
+  <script src="/js/dashboard.js?v=<%= (page && page.assetVersion) || assetVersion || '' %>" nonce="<%= (page && page.nonce) || '' %>"></script>
+  <script src="/js/main.js?v=<%= (page && page.assetVersion) || assetVersion || '' %>" nonce="<%= (page && page.nonce) || '' %>"></script>
 </body>
 </html>

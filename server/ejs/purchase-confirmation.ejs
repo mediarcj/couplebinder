@@ -95,11 +95,11 @@
 
   <%- include('partials/modals') %>
 
-  <script src="/js/modalManager.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= (page && page.nonce) || '' %>"></script>
-  <script src="/js/purchase-confirmation.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= (page && page.nonce) || '' %>"></script>
-  <script src="/js/main.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= (page && page.nonce) || '' %>"></script>
+  <script src="/js/modalManager.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= cspNonce %>"></script>
+  <script src="/js/purchase-confirmation.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= cspNonce %>"></script>
+  <script src="/js/main.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= cspNonce %>"></script>
 
-  <style nonce="<%= (page && page.nonce) || '' %>">
+  <style nonce="<%= cspNonce %>">
     .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 0.875rem; }
     .break { word-break: break-all; overflow-wrap: anywhere; }
     .idwrap { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }

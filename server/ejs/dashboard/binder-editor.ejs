@@ -1,31 +1,39 @@
-<!-- File: server/ejs/dashboard/binder-editor.ejs
-     Description: Binder editor page with React app mount point -->
+<!--
+  File: server/ejs/dashboard/binder-editor.ejs
+  Description: Binder editor page with React app mount point
+  Notes:
+    - Exposes binderId + csrfToken to the React app via #binder-editor-root dataset.
+    - Loads the Vite-built bundle with CSP nonce.
+-->
 
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="csrf-token" content="<%= ui.csrfToken || '' %>">
 
-  <% if (typeof APP_CONFIG !== 'undefined') { %>
-    <meta id="app-config"
+  <!-- CSRF token (also duplicated onto #binder-editor-root for React convenience) -->
+  <meta name="csrf-token" content="<%= (ui && ui.csrfToken) ? ui.csrfToken : '' %>">
+
+  <% if (typeof APP_CONFIG !== 'undefined' && APP_CONFIG) { %>
+    <meta
+      id="app-config"
       data-supabase-url="<%= APP_CONFIG.SUPABASE_URL %>"
-      data-supabase-anon-key="<%= APP_CONFIG.SUPABASE_ANON_KEY %>">
+      data-supabase-anon-key="<%= APP_CONFIG.SUPABASE_ANON_KEY %>"
+    >
   <% } %>
 
-  <title>Binder Editor - <%= (page && page.title) || (app_info && app_info.name) || 'Application' %></title>
+  <title>
+    Binder Editor - <%= (page && page.title) || (app_info && app_info.name) || 'Application' %>
+  </title>
 
   <link rel="icon" href="/images/favicon.ico">
   <link rel="stylesheet" href="/css/style.css?v=<%= (page && page.assetVersion) || assetVersion || '' %>">
   <link rel="stylesheet" href="/binder-editor/binder-editor.css?v=<%= (page && page.assetVersion) || assetVersion || '' %>">
 </head>
 
-<body
-  data-auth-hydrate="true"
-  data-binder-id="<%= (binder && binder.id) || '' %>"
->
-  <%- include('../partials/nav', { nav: page.nav, app_info: app_info }) %>
+<body data-auth-hydrate="true">
+  <%- include('../partials/nav', { nav: (page && page.nav) ? page.nav : null, app_info: app_info }) %>
 
   <main class="dashboard-root">
     <div class="workspace-shell">
@@ -52,7 +60,8 @@
       </header>
 
       <section class="workspace-body workspace-body-editor">
-        <style nonce="<%= (page && page.nonce) || '' %>">
+        <!-- Inline layout tweaks for full-bleed editor experience (nonce-protected) -->
+        <style nonce="<%= cspNonce %>">
           html, body { margin: 0; padding: 0; height: 100%; background: #ffffff; }
 
           .dashboard-root {
@@ -113,8 +122,8 @@
         <div
           id="binder-editor-root"
           data-binder-id="<%= (binder && binder.id) || '' %>"
-          data-csrf-token="<%= ui.csrfToken || '' %>"
-          data-csp-nonce="<%= (page && page.nonce) || '' %>"
+          data-csrf-token="<%= (ui && ui.csrfToken) ? ui.csrfToken : '' %>"
+          data-csp-nonce="<%= cspNonce %>"
         ></div>
       </section>
     </div>
@@ -122,21 +131,29 @@
 
   <footer>
     <div class="container">
-      <p>&copy; 2024 <%= app_info?.name || 'Application' %>. <%= app_info?.description || 'A modern web application' %>.</p>
+      <p>
+        &copy; 2024 <%= (app_info && app_info.name) || 'Application' %>.
+        <%= (app_info && app_info.description) || 'A modern web application' %>.
+      </p>
     </div>
   </footer>
 
-  <!-- Shared core scripts -->
-  <script src="/js/supabase-client.js?v=<%= (page && page.assetVersion) || assetVersion || '' %>" nonce="<%= (page && page.nonce) || '' %>"></script>
-  <script src="/js/sbClient.js?v=<%= (page && page.assetVersion) || assetVersion || '' %>" nonce="<%= (page && page.nonce) || '' %>"></script>
-  <script src="/js/logout.js?v=<%= (page && page.assetVersion) || assetVersion || '' %>" nonce="<%= (page && page.nonce) || '' %>"></script>
-  <script src="/js/modalManager.js?v=<%= (page && page.assetVersion) || assetVersion || '' %>" nonce="<%= (page && page.nonce) || '' %>"></script>
-  <script src="/js/nav-client.js?v=<%= (page && page.assetVersion) || assetVersion || '' %>" nonce="<%= (page && page.nonce) || '' %>"></script>
+  <!-- Shared core scripts (nonce-protected) -->
+  <script
+  src="/js/supabase-client.js?v=<%= page.assetVersion || assetVersion || '' %>"
+  integrity="sha384-YMVjikuvjBqcUGM8khD0XYqXXIKa8aYRc3Ptvi2nPKveAKdxFl20QG9/12Dwx94a"
+  crossorigin="anonymous"
+  nonce="<%= cspNonce %>"
+></script>
+  <script src="/js/sbClient.js?v=<%= (page && page.assetVersion) || assetVersion || '' %>" nonce="<%= cspNonce %>"></script>
+  <script src="/js/logout.js?v=<%= (page && page.assetVersion) || assetVersion || '' %>" nonce="<%= cspNonce %>"></script>
+  <script src="/js/modalManager.js?v=<%= (page && page.assetVersion) || assetVersion || '' %>" nonce="<%= cspNonce %>"></script>
+  <script src="/js/nav-client.js?v=<%= (page && page.assetVersion) || assetVersion || '' %>" nonce="<%= cspNonce %>"></script>
 
-  <!-- Binder editor React app -->
+  <!-- Binder editor React app bundle (nonce-protected) -->
   <script
     src="/binder-editor/binder-editor.js?v=<%= (page && page.assetVersion) || assetVersion || '' %>"
-    nonce="<%= (page && page.nonce) || '' %>"
+    nonce="<%= cspNonce %>"
     defer
   ></script>
 </body>

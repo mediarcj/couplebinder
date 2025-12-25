@@ -6,128 +6,171 @@
 
 /**
  * WHAT:
- * Script to copy and update the self-hosted Supabase client.
+ * Copies the UMD Supabase bundle into /server/public/js as a self-hosted asset.
  *
  * WHY:
- * Ensures we have the latest Supabase client without CDN dependency.
- * Provides controlled asset delivery and eliminates external dependencies.
+ * - Eliminates CDN dependency
+ * - Allows strict CSP + SRI usage
+ * - Keeps frontend auth client delivery under our control
  *
  * HOW:
- * Copy the UMD build from node_modules to public/js directory.
- * Add integrity hash for Subresource Integrity (SRI) protection.
+ * - Resolve @supabase/supabase-js from either repo root or /server
+ * - Copy dist/umd/supabase.js -> server/public/js/supabase-client.js
+ * - Prepend a metadata header
+ * - Compute sha384 integrity for SRI
+ * - Write /docs/supabase-client-integrity.md (optional, but recommended)
  */
+
+'use strict';
 
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 
-const sourceFile = path.join(__dirname, '../server/node_modules/@supabase/supabase-js/dist/umd/supabase.js');
-const targetFile = path.join(__dirname, '../server/public/js/supabase-client.js');
+const PROJECT_ROOT = path.resolve(__dirname, '..');
 
-function updateSupabaseClient() {
+const TARGET_FILE = path.join(PROJECT_ROOT, 'server', 'public', 'js', 'supabase-client.js');
+const DOC_FILE = path.join(PROJECT_ROOT, 'docs', 'supabase-client-integrity.md');
+
+function fileExists(p) {
   try {
-    // Check if source file exists
-    if (!fs.existsSync(sourceFile)) {
-      console.error('❌ Supabase UMD build not found. Run: npm install @supabase/supabase-js');
-      process.exit(1);
-    }
-
-    // Read source file
-    const sourceContent = fs.readFileSync(sourceFile, 'utf8');
-    
-    // Generate integrity hash
-    const hash = crypto.createHash('sha384').update(sourceContent).digest('base64');
-    const integrity = `sha384-${hash}`;
-
-    // Add header comment with integrity info
-    const headerComment = `// File: supabase-client.js (self-hosted)
-// Description: Supabase client library for frontend authentication
-// Purpose: Self-hosted to eliminate CDN dependency and ensure controlled delivery
-// Version: ${getSupabaseVersion()}
-// Integrity: ${integrity}
-// Generated: ${new Date().toISOString()}
-// Source: @supabase/supabase-js/dist/umd/supabase.js
-
-`;
-
-    const finalContent = headerComment + sourceContent;
-
-    // Write to target file
-    fs.writeFileSync(targetFile, finalContent, 'utf8');
-
-    console.log('✅ Supabase client updated successfully');
-    console.log(`📁 Target: ${targetFile}`);
-    console.log(`🔒 Integrity: ${integrity}`);
-    console.log(`📦 Version: ${getSupabaseVersion()}`);
-    console.log(`📊 Size: ${Math.round(finalContent.length / 1024)}KB`);
-
-    // Update CSP integrity hash in documentation
-    updateIntegrityDocumentation(integrity);
-
-  } catch (error) {
-    console.error('❌ Failed to update Supabase client:', error.message);
-    process.exit(1);
+    fs.accessSync(p, fs.constants.F_OK);
+    return true;
+  } catch {
+    return false;
   }
 }
 
-function getSupabaseVersion() {
+function ensureDirExists(filePath) {
+  const dir = path.dirname(filePath);
+  fs.mkdirSync(dir, { recursive: true });
+}
+
+/**
+ * Try to resolve a module file from common install locations:
+ * - repo root node_modules
+ * - server/node_modules (monorepo-ish layouts)
+ */
+function resolveFromProject(moduleSubPath) {
+  const candidates = [
+    path.join(PROJECT_ROOT, 'node_modules', moduleSubPath),
+    path.join(PROJECT_ROOT, 'server', 'node_modules', moduleSubPath),
+  ];
+
+  for (const p of candidates) {
+    if (fileExists(p)) return p;
+  }
+
+  // Fallback: try Node's resolver with explicit paths
   try {
-    const packageJsonPath = path.join(__dirname, '../server/node_modules/@supabase/supabase-js/package.json');
-    const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
-    return packageJson.version || 'unknown';
+    return require.resolve(moduleSubPath, { paths: [PROJECT_ROOT, path.join(PROJECT_ROOT, 'server')] });
+  } catch {
+    return null;
+  }
+}
+
+function readJson(p) {
+  return JSON.parse(fs.readFileSync(p, 'utf8'));
+}
+
+function getSupabaseVersion() {
+  const pkgPath =
+    resolveFromProject('@supabase/supabase-js/package.json') ||
+    resolveFromProject(path.join('@supabase', 'supabase-js', 'package.json'));
+
+  if (!pkgPath) return 'unknown';
+
+  try {
+    const pkg = readJson(pkgPath);
+    return pkg.version || 'unknown';
   } catch {
     return 'unknown';
   }
 }
 
-function updateIntegrityDocumentation(integrity) {
-  try {
-    const docFile = path.join(__dirname, '../docs/supabase-client-integrity.md');
-    const docContent = `# Supabase Client Integrity
+function computeSriSha384(content) {
+  const hash = crypto.createHash('sha384').update(content, 'utf8').digest('base64');
+  return `sha384-${hash}`;
+}
 
-## Current Version
-- **File**: \`/js/supabase-client.js\`
-- **Version**: ${getSupabaseVersion()}
-- **Integrity**: \`${integrity}\`
-- **Updated**: ${new Date().toISOString()}
+function buildHeaderComment({ version, integrity, generatedAtIso }) {
+  return `// File: supabase-client.js (self-hosted)
+// Description: Supabase client library for frontend authentication
+// Purpose: Self-hosted to eliminate CDN dependency and ensure controlled delivery
+// Version: ${version}
+// Integrity: ${integrity}
+// Generated: ${generatedAtIso}
+// Source: @supabase/supabase-js/dist/umd/supabase.js
 
-## Usage in Templates
+`;
+}
 
-For additional security, you can add the integrity attribute:
+function writeIntegrityDoc({ version, integrity }) {
+  ensureDirExists(DOC_FILE);
+
+  const doc = `# Supabase Client Integrity
+
+This document is generated by \`scripts/update-supabase-client.js\`.
+
+## Current Asset
+- File: \`/server/public/js/supabase-client.js\`
+- Public path: \`/js/supabase-client.js\`
+- Version: \`${version}\`
+- Integrity (SRI): \`${integrity}\`
+
+## HTML usage (recommended)
 
 \`\`\`html
-<script src="/js/supabase-client.js" 
-        integrity="${integrity}"
-        crossorigin="anonymous"
-        nonce="<%= page.nonce %>"></script>
+<script
+  src="/js/supabase-client.js"
+  integrity="${integrity}"
+  crossorigin="anonymous"
+></script>
 \`\`\`
 
-## Update Process
-
-1. Update @supabase/supabase-js: \`npm update @supabase/supabase-js\`
-2. Run this script: \`node scripts/update-supabase-client.js\`
-3. Test the application to ensure compatibility
-4. Commit the updated client file
-
-## Security Benefits
-
-- ✅ No external CDN dependency
-- ✅ Controlled asset delivery
-- ✅ Subresource Integrity protection
-- ✅ Version pinning and tracking
-- ✅ Reduced attack surface
+## Notes
+- Any change to \`supabase-client.js\` changes the integrity hash.
+- Do not hand-edit the generated file. Re-run the update script instead.
 `;
 
-    fs.writeFileSync(docFile, docContent, 'utf8');
-    console.log(`📚 Documentation updated: ${docFile}`);
-  } catch (error) {
-    console.warn('⚠️ Could not update documentation:', error.message);
+  fs.writeFileSync(DOC_FILE, doc, 'utf8');
+}
+
+function updateSupabaseClient() {
+  const umdPath =
+    resolveFromProject(path.join('@supabase', 'supabase-js', 'dist', 'umd', 'supabase.js')) ||
+    resolveFromProject('@supabase/supabase-js/dist/umd/supabase.js');
+
+  if (!umdPath || !fileExists(umdPath)) {
+    console.error('Supabase UMD build not found.');
+    console.error('Expected: @supabase/supabase-js/dist/umd/supabase.js');
+    console.error('Fix: run npm install, and confirm where node_modules is located (repo root or /server).');
+    process.exitCode = 1;
+    return;
   }
+
+  const version = getSupabaseVersion();
+
+  const sourceContent = fs.readFileSync(umdPath, 'utf8');
+  const integrity = computeSriSha384(sourceContent);
+
+  const generatedAtIso = new Date().toISOString();
+  const header = buildHeaderComment({ version, integrity, generatedAtIso });
+  const finalContent = header + sourceContent;
+
+  ensureDirExists(TARGET_FILE);
+  fs.writeFileSync(TARGET_FILE, finalContent, 'utf8');
+
+  console.log('Supabase client updated successfully');
+  console.log(`Source: ${umdPath}`);
+  console.log(`Target: ${TARGET_FILE}`);
+  console.log(`Version: ${version}`);
+  console.log(`Integrity: ${integrity}`);
+  console.log(`Size (KB): ${Math.round(finalContent.length / 1024)}`);
+
+  // Optional doc output (safe, deterministic)
+  writeIntegrityDoc({ version, integrity });
+  console.log(`Doc: ${DOC_FILE}`);
 }
 
-// Run the update
-if (require.main === module) {
-  updateSupabaseClient();
-}
-
-module.exports = { updateSupabaseClient };
+updateSupabaseClient();

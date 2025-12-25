@@ -1,7 +1,11 @@
 // File: server/public/js/dashboard.js
 // Description: Client-side JavaScript for dashboard functionality
 // Purpose: Handles submissions and binder builder workspace (uploads to S3-backed route)
-// Notes: Workspace is now a simple layout: left page strip + big canvas + photo strip
+// Notes:
+//  - Workspace is now a simple layout: left page strip + big canvas + photo strip
+//  - IMPORTANT: Legacy canvas autosave/restore to Supabase binder_layouts is DISABLED.
+//    The React editor owns binder_layouts with a different JSON shape. Writing legacy JSON
+//    into that table can corrupt the new editor/export experience.
 
 // -----------------------------------------------------------------------------
 // Logger setup (safe fallback; no TDZ / self-reference problems)
@@ -83,11 +87,13 @@ const ALLOWED_IMAGE_MIME_TYPES = new Set([
 const ALLOWED_IMAGE_EXTENSIONS = /\.(jpe?g|png|webp|heic|heif|avif)$/i;
 
 // -----------------------------------------------------------------------------
+// Legacy layout autosave/restore: intentionally disabled
+// -----------------------------------------------------------------------------
+const LEGACY_LAYOUT_PERSISTENCE_DISABLED = true;
+
+// -----------------------------------------------------------------------------
 // Simple canvas state for selection, dragging, and resizing
 // -----------------------------------------------------------------------------
-const LAYOUT_AUTOSAVE_DEBOUNCE_MS = 1000;   // 1s after user stops changing layout
-const LAYOUT_AUTOSAVE_INTERVAL_MS = 10000;  // 10s periodic safety autosave
-
 const builderCanvasState = {
     canvasEl: null,
 
@@ -116,18 +122,8 @@ const builderCanvasState = {
 
     initialized: false,
 
-    // layout saving state
-    dirty: false,
-    autoSaveTimerId: null,      // periodic autosave interval id
-    saveDebounceId: null,       // debounce timer when user changes layout
-    lastSaveError: null,
-    lastSavedAt: null,
-    saving: false,
-
-    // binder + Supabase
-    binderId: null,
-    sbReady: false,
-    sbUserId: null
+    // "dirty" is now UI-only (no Supabase writes from this legacy page)
+    dirty: false
 };
 
 function markCanvasDirty() {
@@ -135,26 +131,10 @@ function markCanvasDirty() {
 
     const statusEl = document.getElementById('builder-status-text');
     if (statusEl) {
-        statusEl.textContent = 'Unsaved changes...';
+        statusEl.textContent = LEGACY_LAYOUT_PERSISTENCE_DISABLED
+            ? 'Unsaved changes (legacy editor does not autosave).'
+            : 'Unsaved changes...';
     }
-
-    if (builderCanvasState.saveDebounceId) {
-        clearTimeout(builderCanvasState.saveDebounceId);
-    }
-
-    builderCanvasState.saveDebounceId = window.setTimeout(() => {
-        const binderId = getBinderIdFromBody();
-        if (!binderId) {
-            log.warn('Binder layout: no binderId during debounced save');
-            return;
-        }
-
-        saveCanvasLayoutIfDirty(binderId).catch((err) => {
-            log.error('Binder layout: debounced save failed', {
-                error: err?.message || String(err)
-            });
-        });
-    }, LAYOUT_AUTOSAVE_DEBOUNCE_MS);
 }
 
 // -----------------------------------------------------------------------------
@@ -188,9 +168,12 @@ document.addEventListener('DOMContentLoaded', function() {
     initializeDashboard();
     initializeSubmissions();
     initializeBuilderWorkspace();
+
+    // Disabled on purpose to protect binder_layouts format used by React editor/export
     initializeBinderLayoutAutosave();
-    initializeDeletePhotoButton();   // NEW: wire delete button
-    initializeReactEditorButton();   // NEW: wire "New editor (beta)" button
+
+    initializeDeletePhotoButton();
+    initializeReactEditorButton();
 
     log.info('Dashboard page initialized - logout handled by logout.js module');
 });
@@ -205,7 +188,6 @@ function initializeDashboard() {
 // -----------------------------------------------------------------------------
 // Helpers for collision / geometry
 // -----------------------------------------------------------------------------
-
 function rectsOverlap(l1, t1, w1, h1, l2, t2, w2, h2) {
     return !(
         l1 + w1 <= l2 ||
@@ -218,9 +200,8 @@ function rectsOverlap(l1, t1, w1, h1, l2, t2, w2, h2) {
 /**
  * Prevent dragging a photo on top of other photos.
  *
- * We treat other photos as "solid blocks". If the proposed rect would overlap
- * another photo, we push the moving photo back so it just touches the obstacle,
- * based on the main direction of movement (horizontal vs vertical).
+ * Treat other photos as "solid blocks". If proposed rect overlaps another,
+ * push the moving photo back so it just touches the obstacle, based on main movement axis.
  */
 function constrainDragWithCollisions(photoEl, proposedLeft, proposedTop, width, height, dx, dy, canvasRect, dragAxis) {
     const canvas = builderCanvasState.canvasEl;
@@ -245,35 +226,25 @@ function constrainDragWithCollisions(photoEl, proposedLeft, proposedTop, width, 
             return;
         }
 
-        // Decide which axis to resolve along:
-        // - Prefer the locked dragAxis from state
-        // - Fallback to per-frame dominant axis if dragAxis is missing
         const absDx = Math.abs(dx);
         const absDy = Math.abs(dy);
         const axis = dragAxis || (absDx >= absDy ? 'x' : 'y');
 
         if (axis === 'x') {
-            // Horizontal move dominates
             if (dx > 0) {
-                // Moving right: stop to the left of the obstacle
                 left = Math.min(left, oLeft - width);
             } else if (dx < 0) {
-                // Moving left: stop to the right of the obstacle
                 left = Math.max(left, oLeft + oWidth);
             }
         } else if (axis === 'y') {
-            // Vertical move dominates
             if (dy > 0) {
-                // Moving down: stop above the obstacle
                 top = Math.min(top, oTop - height);
             } else if (dy < 0) {
-                // Moving up: stop below the obstacle
                 top = Math.max(top, oTop + oHeight);
             }
         }
     });
 
-    // Final safety clamp to canvas bounds
     left = Math.max(0, Math.min(left, canvasRect.width - width));
     top = Math.max(0, Math.min(top, canvasRect.height - height));
 
@@ -292,21 +263,18 @@ function initializeCanvasInteractions() {
     builderCanvasState.canvasEl = canvas;
     builderCanvasState.initialized = true;
 
-    // Deselect when clicking on blank canvas area
     canvas.addEventListener('mousedown', function(event) {
-        if (event.button !== 0) return; // left click only
+        if (event.button !== 0) return;
         const clickedPhoto = event.target.closest('.canvas-photo');
         if (!clickedPhoto) {
             setSelectedCanvasPhoto(null);
         }
     });
 
-    // Global mouse move / up for dragging and resizing
     document.addEventListener('mousemove', handleCanvasMouseMove);
     document.addEventListener('mouseup', handleCanvasMouseUp);
     document.addEventListener('mouseleave', handleCanvasMouseUp);
 
-    // Delete selected photo with Delete/Backspace
     document.addEventListener('keydown', handleCanvasKeyDown);
 
     log.info('Canvas interactions initialized');
@@ -333,20 +301,16 @@ function handleCanvasMouseMove(event) {
         event.preventDefault();
 
         if (!insideCanvasBounds) {
-            // Stop dragging if pointer leaves the canvas area
             handleCanvasMouseUp();
             return;
         }
 
-        // Step-based movement: only move by the delta since the last event,
-        // not from the original click point. This avoids big jumps.
         const dx = event.clientX - builderCanvasState.lastDragMouseX;
         const dy = event.clientY - builderCanvasState.lastDragMouseY;
 
         const absDx = Math.abs(dx);
         const absDy = Math.abs(dy);
 
-        // Decide drag axis once per drag (first meaningful movement)
         if (!builderCanvasState.dragAxis && (absDx > 0 || absDy > 0)) {
             builderCanvasState.dragAxis = absDx >= absDy ? 'x' : 'y';
         }
@@ -372,24 +336,22 @@ function handleCanvasMouseMove(event) {
         photoEl.style.left = `${constrained.left}px`;
         photoEl.style.top = `${constrained.top}px`;
 
-        // Update "last" state for the next small step
         builderCanvasState.lastDragLeft = constrained.left;
         builderCanvasState.lastDragTop = constrained.top;
         builderCanvasState.lastDragMouseX = event.clientX;
         builderCanvasState.lastDragMouseY = event.clientY;
-        return;    
+        return;
     }
 
-    // Resizing (we still keep aspect ratio and canvas bounds, but allow overlap)
+    // Resizing (keep aspect ratio and canvas bounds, but allow overlap)
     if (builderCanvasState.resizing && builderCanvasState.resizeStartRect) {
         event.preventDefault();
 
         if (!insideCanvasBounds) {
-            // Stop resizing if pointer leaves the canvas area
             handleCanvasMouseUp();
             return;
         }
-        
+
         const handle = builderCanvasState.resizeHandle;
         if (!handle) return;
 
@@ -407,18 +369,15 @@ function handleCanvasMouseMove(event) {
         const isLeft = handle.classList.contains('canvas-photo-resize-top-left') ||
                        handle.classList.contains('canvas-photo-resize-bottom-left');
 
-        // Horizontal movement controls size (keep simple)
         if (isLeft) {
             width = rect0.width - dx;
         } else {
             width = rect0.width + dx;
         }
 
-        // Keep aspect ratio
         width = Math.max(40, width);
         height = width / aspect;
 
-        // Adjust origin depending on corner
         if (isLeft) {
             left = rect0.left + (rect0.width - width);
         }
@@ -426,13 +385,8 @@ function handleCanvasMouseMove(event) {
             top = rect0.top + (rect0.height - height);
         }
 
-        // Constrain within canvas bounds
-        if (left < 0) {
-            left = 0;
-        }
-        if (top < 0) {
-            top = 0;
-        }
+        if (left < 0) left = 0;
+        if (top < 0) top = 0;
 
         if (left + width > canvasRect.width) {
             width = canvasRect.width - left;
@@ -454,22 +408,19 @@ function handleCanvasMouseMove(event) {
 }
 
 function handleCanvasMouseUp() {
+    const hadInteraction = builderCanvasState.dragging || builderCanvasState.resizing;
+
     builderCanvasState.dragging = false;
     builderCanvasState.resizing = false;
     builderCanvasState.resizeHandle = null;
     builderCanvasState.resizeStartRect = null;
-    builderCanvasState.dragAxis = null; // reset for next drag
+    builderCanvasState.dragAxis = null;
 
-    // If we had a selected photo and a drag/resize just ended, mark layout dirty
-    if (builderCanvasState.selectedPhotoEl) {
+    if (hadInteraction && builderCanvasState.selectedPhotoEl) {
         markCanvasDirty();
     }
 }
 
-/**
- * Delete selected photo with keyboard (Delete/Backspace).
- * Uses the same full system delete flow as the Delete button.
- */
 function handleCanvasKeyDown(event) {
     if (event.key !== 'Delete' && event.key !== 'Backspace') return;
 
@@ -487,9 +438,7 @@ function setSelectedCanvasPhoto(photoEl) {
     if (!canvas) return;
 
     const all = canvas.querySelectorAll('.canvas-photo');
-    all.forEach((el) => {
-        el.classList.remove('canvas-photo-selected');
-    });
+    all.forEach((el) => el.classList.remove('canvas-photo-selected'));
 
     if (photoEl) {
         photoEl.classList.add('canvas-photo-selected');
@@ -505,19 +454,10 @@ function bringCanvasPhotoToFront(photoEl) {
     photoEl.style.zIndex = String(builderCanvasState.zCounter);
 }
 
-/**
- * Attach per-photo event handlers:
- * - select on click
- * - drag on mouse down
- * - resize on handle mouse down
- * - delete on right-click (not implemented here, but could be extended)
- */
 function wireCanvasPhotoInteractions(photoEl) {
-    // Select + drag (left click on the box, not on handles)
     photoEl.addEventListener('mousedown', function (event) {
-        if (event.button !== 0) return; // only left click
+        if (event.button !== 0) return;
 
-        // If they clicked a resize handle, resizing handler will take over
         if (event.target.classList.contains('canvas-photo-resize-handle')) {
             return;
         }
@@ -543,14 +483,12 @@ function wireCanvasPhotoInteractions(photoEl) {
         builderCanvasState.dragStartLeft = left;
         builderCanvasState.dragStartTop = top;
 
-        // Initialize step-based drag state
         builderCanvasState.lastDragMouseX = event.clientX;
         builderCanvasState.lastDragMouseY = event.clientY;
         builderCanvasState.lastDragLeft = left;
         builderCanvasState.lastDragTop = top;
     });
 
-    // Resize handles (corners)
     const handles = photoEl.querySelectorAll('.canvas-photo-resize-handle');
     handles.forEach((handleEl) => {
         handleEl.addEventListener('mousedown', function (event) {
@@ -586,10 +524,6 @@ function wireCanvasPhotoInteractions(photoEl) {
 // -----------------------------------------------------------------------------
 // Binder builder workspace
 // -----------------------------------------------------------------------------
-
-/**
- * Client-side image validation to mirror server rules.
- */
 function isAllowedImageFile(file) {
     if (!file) return false;
 
@@ -599,13 +533,9 @@ function isAllowedImageFile(file) {
     const mimeOk = type && ALLOWED_IMAGE_MIME_TYPES.has(type);
     const extOk = ALLOWED_IMAGE_EXTENSIONS.test(name);
 
-    // Allow if either the mime type or the extension says "this is an image we support"
     return mimeOk || extOk;
 }
 
-/**
- * Read binderId from <body data-binder-id="">
- */
 function getBinderIdFromBody() {
     try {
         const body = document.body;
@@ -616,17 +546,6 @@ function getBinderIdFromBody() {
     }
 }
 
-/**
- * Initialize binder builder workspace
- *
- * WHAT:
- *  Wires up the "Add photos" button and hidden file input
- *  so uploads can be sent to the binder photo route.
- *
- * HOW:
- *  - Always wires the button -> file picker
- *  - If binderId is missing, we block uploads with a clear message + log
- */
 function initializeBuilderWorkspace() {
     const binderId = getBinderIdFromBody();
     const addPhotosBtn = document.getElementById('builder-add-photos-btn');
@@ -638,16 +557,13 @@ function initializeBuilderWorkspace() {
     }
 
     if (!binderId) {
-        // We still wire the button so you can see a clear error instead of “doing nothing”.
         log.warn('Builder workspace: binderId is missing; uploads will be blocked until backend provides it');
     } else {
         log.info('Builder workspace: wiring upload handler', { binderId });
     }
 
-    // Clicking the visible button opens the hidden file input
     addPhotosBtn.addEventListener('click', function () {
         if (!binderId) {
-            // No binder id => do not attempt upload; show clear message.
             if (window.modalManager && typeof window.modalManager.showNotification === 'function') {
                 window.modalManager.showNotification(
                     'Binder not ready',
@@ -662,7 +578,6 @@ function initializeBuilderWorkspace() {
         fileInput.click();
     });
 
-    // When files are selected, upload them
     fileInput.addEventListener('change', function (event) {
         const files = Array.from(event.target.files || []);
         if (!files.length) return;
@@ -681,7 +596,6 @@ function initializeBuilderWorkspace() {
             return;
         }
 
-        // Client-side filter: only keep allowed image types
         const safeFiles = files.filter(isAllowedImageFile);
 
         if (!safeFiles.length) {
@@ -706,418 +620,39 @@ function initializeBuilderWorkspace() {
                 log.error('Builder workspace: uploadBinderPhotos failed', { error: err?.message || String(err) });
             })
             .finally(() => {
-                // Reset the input so selecting the same file later still fires change
                 fileInput.value = '';
             });
     });
 }
 
 // -----------------------------------------------------------------------------
-// Binder layout autosave + restore (Supabase)
+// Legacy layout autosave + restore: disabled to protect binder_layouts schema
 // -----------------------------------------------------------------------------
-
 function initializeBinderLayoutAutosave() {
+    if (!LEGACY_LAYOUT_PERSISTENCE_DISABLED) return;
+
     const binderId = getBinderIdFromBody();
     if (!binderId) {
-        log.warn('Binder layout: no binderId on page; autosave disabled');
+        log.warn('Binder layout: no binderId on page; legacy autosave already disabled');
         return;
     }
 
-    function bootstrap() {
-        if (!window.SB) {
-            log.error('Binder layout: Supabase client (window.SB) not ready');
-            return;
-        }
-
-        // 1) Restore last saved layout for this binder/page
-        restoreCanvasLayoutFromSupabase(binderId)
-            .catch((err) => {
-                log.error('Binder layout: restore failed', { error: err?.message || String(err) });
-            });
-
-        // 2) Start periodic autosave every 10 seconds
-        if (!builderCanvasState.autoSaveTimerId) {
-            builderCanvasState.autoSaveTimerId = setInterval(() => {
-                saveCanvasLayoutIfDirty(binderId).catch((err) => {
-                    log.error('Binder layout: periodic save failed', { error: err?.message || String(err) });
-                });
-            }, LAYOUT_AUTOSAVE_INTERVAL_MS);
-        }
-
-        log.info('Binder layout: autosave + restore initialized', { binderId });
+    const statusEl = document.getElementById('builder-status-text');
+    if (statusEl) {
+        statusEl.textContent = 'Ready. (Legacy editor: autosave disabled. Use New editor (beta) for saved layouts.)';
     }
 
-    // If SB is already ready, bootstrap immediately; otherwise wait for sb-ready
-    if (window.SB) {
-        bootstrap();
-    } else {
-        document.addEventListener('sb-ready', bootstrap, { once: true });
-    }
+    log.info('Binder layout: legacy autosave/restore disabled to protect binder_layouts', { binderId });
 }
 
-// Small in-memory cache so we don't keep re-fetching the same URL for a photo.
-// Key: storageKey (S3 object key), Value: resolved src URL (CDN or raw).
+// -----------------------------------------------------------------------------
+// Photo URL cache for fast restores (used only for post-upload caching)
+// -----------------------------------------------------------------------------
 const PHOTO_SRC_CACHE = new Map();
 
-/**
- * Collect current canvas layout as relative percentages so it scales with A4.
- * We also store the element's aspectRatio so we can restore without distorting.
- */
-function collectCanvasLayout() {
-    const canvas = document.getElementById('builder-canvas');
-    if (!canvas) return null;
-
-    const canvasRect = canvas.getBoundingClientRect();
-    if (!canvasRect.width || !canvasRect.height) return null;
-
-    const elements = Array.from(canvas.querySelectorAll('.canvas-photo')).map((el, idx) => {
-        const r = el.getBoundingClientRect();
-
-        const left = r.left - canvasRect.left;
-        const top = r.top - canvasRect.top;
-
-        const leftPct = left / canvasRect.width;
-        const topPct = top / canvasRect.height;
-        const widthPct = r.width / canvasRect.width;
-        const heightPct = r.height / canvasRect.height;
-
-        const zIndex = parseInt(el.style.zIndex || '1', 10) || 1;
-        const aspectRatio = (r.width && r.height) ? (r.width / r.height) : null;
-
-        const src =
-            el.dataset.src ||
-            (el.querySelector('img') ? el.querySelector('img').src : '');
-
-        return {
-            id: el.dataset.id || `photo-${idx}`,
-            src,
-            storageKey: el.dataset.storageKey || null,
-            leftPct,
-            topPct,
-            widthPct,
-            heightPct,
-            zIndex,
-            aspectRatio
-        };
-    });
-
-    return {
-        pageWidthPx: canvasRect.width,
-        pageHeightPx: canvasRect.height,
-        elements
-    };
-}
-
-/**
- * Save layout only if it's marked dirty.
- */
-async function saveCanvasLayoutIfDirty(binderId) {
-    if (!builderCanvasState.dirty) return;
-    if (!window.SB) {
-        log.warn('Binder layout: save skipped, SB not ready');
-        return;
-    }
-
-    const layout = collectCanvasLayout();
-    if (!layout) {
-        log.info('Binder layout: nothing to save (empty canvas)');
-        builderCanvasState.dirty = false;
-        return;
-    }
-
-    const statusEl = document.getElementById('builder-status-text');
-    if (statusEl) {
-        statusEl.textContent = 'Saving changes…';
-    }
-
-    try {
-        // We need the Supabase auth user id to satisfy RLS (auth.uid())
-        const { data: userData, error: userErr } = await window.SB.auth.getUser();
-        if (userErr || !userData?.user?.id) {
-            log.error('Binder layout: unable to read Supabase user', { error: userErr?.message });
-            if (statusEl) {
-                statusEl.textContent = 'Save error – auth not ready.';
-            }
-            return;
-        }
-
-        const userId = userData.user.id;
-
-        const { error } = await window.SB
-            .from('binder_layouts')
-            .upsert(
-                [
-                    {
-                        user_id: userId,
-                        binder_id: binderId,
-                        page_number: 1,
-                        layout_json: layout
-                    }
-                ],
-                {
-                    onConflict: 'user_id,binder_id,page_number'
-                }
-            );
-
-        if (error) {
-            log.error('Binder layout: Supabase upsert failed', { error: error.message });
-            builderCanvasState.lastSaveError = error.message;
-            if (statusEl) {
-                statusEl.textContent = 'Save error – will retry…';
-            }
-            return;
-        }
-
-        builderCanvasState.dirty = false;
-        builderCanvasState.lastSaveError = null;
-        if (statusEl) {
-            statusEl.textContent = 'All changes saved.';
-        }
-    } catch (e) {
-        log.error('Binder layout: unexpected save error', { error: e?.message || String(e) });
-        if (statusEl) {
-            statusEl.textContent = 'Save error – will retry…';
-        }
-    }
-}
-
-/**
- * Restore the latest layout for this binder/page from Supabase.
- */
-async function restoreCanvasLayoutFromSupabase(binderId) {
-    if (!window.SB) {
-        log.warn('Binder layout: restore skipped, SB not ready');
-        return;
-    }
-
-    const statusEl = document.getElementById('builder-status-text');
-    if (statusEl) {
-        statusEl.textContent = 'Loading last saved layout…';
-    }
-
-    try {
-        // RLS will automatically filter to this user’s rows; we only filter by binder/page
-        const { data, error } = await window.SB
-            .from('binder_layouts')
-            .select('layout_json')
-            .eq('binder_id', binderId)
-            .eq('page_number', 1)
-            .order('updated_at', { ascending: false })
-            .limit(1)
-            .maybeSingle();
-
-        if (error) {
-            log.error('Binder layout: restore query failed', { error: error.message });
-            if (statusEl) {
-                statusEl.textContent = 'Could not restore last layout.';
-            }
-            return;
-        }
-
-        if (!data || !data.layout_json) {
-            log.info('Binder layout: nothing to restore for this binder yet');
-            if (statusEl) {
-                statusEl.textContent = 'Ready. No saved layout yet.';
-            }
-            return;
-        }
-
-        let layout = data.layout_json;
-        if (typeof layout === 'string') {
-            try {
-                layout = JSON.parse(layout);
-            } catch (e) {
-                log.error('Binder layout: failed to parse layout_json string', {
-                    error: e?.message || String(e)
-                });
-                if (statusEl) {
-                    statusEl.textContent = 'Could not restore last layout.';
-                }
-                return;
-            }
-        }
-
-        await rebuildCanvasFromLayout(binderId, layout);
-
-        // After restoring, we consider the layout "clean" until user changes something.
-        builderCanvasState.dirty = false;
-        builderCanvasState.lastSaveError = null;
-
-        if (statusEl) {
-            statusEl.textContent = 'Canvas restored from last saved layout.';
-        }
-    } catch (e) {
-        log.error('Binder layout: unexpected restore error', { error: e?.message || String(e) });
-        if (statusEl) {
-            statusEl.textContent = 'Could not restore last layout.';
-        }
-    }
-}
-
-async function resolvePhotoSrcFromStorageKey(binderId, storageKey) {
-    if (!binderId || !storageKey) return null;
-
-    // 1) Fast path: per-page in-memory cache
-    const cached = PHOTO_SRC_CACHE.get(storageKey);
-    if (cached) {
-        return cached;
-    }
-
-    // 2) Ask backend once, then cache the CDN/raw URL
-    try {
-        const url = `/dashboard/binder/${encodeURIComponent(
-            binderId
-        )}/photos/view-url?storageKey=${encodeURIComponent(storageKey)}`;
-
-        const resp = await fetch(url, {
-            method: 'GET',
-            headers: {
-                'Accept': 'application/json'
-            }
-        });
-
-        if (!resp.ok) {
-            log.warn('Binder layout: view-url endpoint returned non-200', {
-                status: resp.status
-            });
-            return null;
-        }
-
-        const data = await resp.json().catch(() => null);
-        if (!data || !data.ok || !data.url) {
-            log.warn('Binder layout: view-url endpoint returned no url', { data });
-            return null;
-        }
-
-        PHOTO_SRC_CACHE.set(storageKey, data.url);
-        return data.url;
-    } catch (e) {
-        log.error('Binder layout: failed to resolve photo src from storageKey', {
-            error: e?.message || String(e)
-        });
-        return null;
-    }
-}
-
-/**
- * Actually rebuild the DOM canvas from a stored layout object.
- * IMPORTANT: we now use stored aspectRatio (if present) so the box matches
- * the photo shape even if the canvas size changed since the last save.
- */
-async function rebuildCanvasFromLayout(binderId, layout) {
-    const canvas = document.getElementById('builder-canvas');
-    if (!canvas) return;
-
-    const canvasRect = canvas.getBoundingClientRect();
-    if (!canvasRect.width || !canvasRect.height) return;
-
-    // Clear placeholder and any existing photos
-    const placeholder = canvas.querySelector('.builder-canvas-placeholder');
-    if (placeholder) {
-        placeholder.remove();
-    }
-    canvas.querySelectorAll('.canvas-photo').forEach((el) => el.remove());
-
-    const elements = Array.isArray(layout.elements) ? layout.elements : [];
-
-    for (let idx = 0; idx < elements.length; idx++) {
-        const el = elements[idx];
-        if (!el) continue;
-
-        const storageKey = el.storageKey || null;
-        if (!storageKey) {
-            log.warn('Binder layout: element missing storageKey, skipping', { idx, el });
-            continue;
-        }
-
-        // Always get a fresh URL from the backend
-        const src = await resolvePhotoSrcFromStorageKey(binderId, storageKey);
-        if (!src) {
-            log.warn('Binder layout: could not resolve src for storageKey', {
-                storageKey
-            });
-            continue;
-        }
-
-        const photoEl = createCanvasPhotoElement(
-            canvas,
-            src,
-            { storageKey, originalname: `Photo ${idx + 1}` },
-            {
-                fromLayout: true,
-                zIndex: typeof el.zIndex === 'number' ? el.zIndex : undefined
-            }
-        );
-
-        const leftPct = typeof el.leftPct === 'number' ? el.leftPct : 0;
-        const topPct = typeof el.topPct === 'number' ? el.topPct : 0;
-        const widthPct = typeof el.widthPct === 'number' ? el.widthPct : 0.3;
-        const heightPct = typeof el.heightPct === 'number' ? el.heightPct : 0.2;
-
-        const left = leftPct * canvasRect.width;
-        const top = topPct * canvasRect.height;
-        const width = widthPct * canvasRect.width;
-        const height = heightPct * canvasRect.height;
-
-        photoEl.style.left = `${left}px`;
-        photoEl.style.top = `${top}px`;
-        photoEl.style.width = `${width}px`;
-        photoEl.style.height = `${height}px`;
-
-        // Always adjust the box so it matches the image's natural aspect ratio.
-        // This fixes old saved layouts where the box was too tall or too wide.
-        const imgEl = photoEl.querySelector('img');
-        if (imgEl) {
-            if (imgEl.complete && imgEl.naturalWidth) {
-                adjustPhotoSizeFromImage(photoEl, imgEl);
-            } else {
-                imgEl.addEventListener(
-                    'load',
-                    function () {
-                        adjustPhotoSizeFromImage(photoEl, imgEl);
-                    },
-                    { once: true }
-                );
-            }
-        }
-    }
-
-    log.info('Binder layout: canvas rebuilt from saved layout', {
-        elementCount: elements.length
-    });
-}
-
-
-/**
- * For legacy layouts (no aspectRatio stored), resize the box so it matches
- * the image's natural aspect ratio while preserving the current width.
- */
-function adjustPhotoSizeFromImage(photoEl, imgEl) {
-    const canvas = builderCanvasState.canvasEl || document.getElementById('builder-canvas');
-    if (!canvas) return;
-
-    const canvasRect = canvas.getBoundingClientRect();
-    if (!canvasRect.width || !canvasRect.height) return;
-
-    const naturalWidth = imgEl.naturalWidth || 1;
-    const naturalHeight = imgEl.naturalHeight || 1;
-    if (!naturalWidth || !naturalHeight) return;
-
-    const aspect = naturalWidth / naturalHeight;
-
-    const currentWidth = parseFloat(photoEl.style.width) || (canvasRect.width * 0.15);
-    const newHeight = Math.max(40, currentWidth / aspect);
-
-    photoEl.style.width = `${currentWidth}px`;
-    photoEl.style.height = `${newHeight}px`;
-}
-
-/**
- * Upload photos to the binder photos endpoint.
- *
- * This hits your route:
- *   POST /dashboard/binder/:binderId/photos
- */
+// -----------------------------------------------------------------------------
+// Uploads
+// -----------------------------------------------------------------------------
 async function uploadBinderPhotos(binderId, files) {
     if (!binderId) {
         throw new Error('Missing binderId for upload');
@@ -1127,7 +662,6 @@ async function uploadBinderPhotos(binderId, files) {
     const formData = new FormData();
 
     files.forEach((file) => {
-        // "photos" matches the Multer field name you use on the server
         formData.append('photos', file);
     });
 
@@ -1142,7 +676,6 @@ async function uploadBinderPhotos(binderId, files) {
     const response = await fetch(endpoint, {
         method: 'POST',
         body: formData,
-        // Do NOT set Content-Type manually; the browser sets proper multipart boundary.
         headers: csrfToken ? { 'x-csrf-token': csrfToken } : {}
     });
 
@@ -1170,18 +703,13 @@ async function uploadBinderPhotos(binderId, files) {
     });
 
     try {
-        // 1) update the strip
         refreshPhotoStrip(data);
-        // 2) drop new photos onto the canvas
         addUploadedPhotosToCanvas(data);
     } catch (e) {
         log.error('Builder workspace: post-upload handling failed', { error: e?.message || String(e) });
     }
 }
 
-/**
- * Simple renderer: show uploaded photos as chips in the strip.
- */
 function refreshPhotoStrip(data) {
     if (!data || !Array.isArray(data.photos)) return;
 
@@ -1206,32 +734,25 @@ function refreshPhotoStrip(data) {
     strip.innerHTML = itemsHtml || '<p class="panel-hint">No photos uploaded yet.</p>';
 }
 
-/**
- * Take the uploaded photos from the server response and add them to the canvas.
- * Expects data.photos to include a URL we can load.
- */
 function addUploadedPhotosToCanvas(data) {
     if (!data || !Array.isArray(data.photos) || !data.photos.length) return;
 
     const canvas = document.getElementById('builder-canvas');
     if (!canvas) return;
 
-    // Remove placeholder if present
     const placeholder = canvas.querySelector('.builder-canvas-placeholder');
     if (placeholder) {
         placeholder.remove();
     }
 
     data.photos.forEach((photo) => {
-        // Prefer signed URL (for private buckets), then public URL variants
         const src =
-            photo.publicUrl ||   // CDN URL from STORAGE_S3_PUBLIC_BASE_URL when available
-            photo.signedUrl ||   // presigned S3 URL (fallback)
+            photo.publicUrl ||
+            photo.signedUrl ||
             photo.url ||
             photo.previewUrl ||
             '';
 
-        // Seed cache so future layout restores re-use the same URL
         if (photo.storageKey && src) {
             PHOTO_SRC_CACHE.set(photo.storageKey, src);
         }
@@ -1245,14 +766,9 @@ function addUploadedPhotosToCanvas(data) {
     });
 }
 
-/**
- * Create a draggable/resizable photo element on the canvas.
- * New photos start roughly 15% of canvas size, centered.
- *
- * options:
- *  - fromLayout: true if we are restoring from Supabase (do NOT recenter, do NOT mark dirty)
- *  - zIndex: optional explicit zIndex to apply
- */
+// -----------------------------------------------------------------------------
+// Canvas element creation
+// -----------------------------------------------------------------------------
 function createCanvasPhotoElement(canvas, src, photoMeta, options = {}) {
     const fromLayout = options.fromLayout === true;
     const explicitZ = typeof options.zIndex === 'number' ? options.zIndex : null;
@@ -1264,7 +780,6 @@ function createCanvasPhotoElement(canvas, src, photoMeta, options = {}) {
         photoEl.dataset.storageKey = photoMeta.storageKey;
     }
 
-    // Store src so we can rebuild layout later
     if (src) {
         photoEl.dataset.src = src;
     }
@@ -1274,7 +789,6 @@ function createCanvasPhotoElement(canvas, src, photoMeta, options = {}) {
     imgEl.alt = photoMeta?.originalname || 'Photo';
     imgEl.draggable = false;
 
-    // Ensure the image visually fills the blue box and stays in sync
     imgEl.style.width = '100%';
     imgEl.style.height = '100%';
     imgEl.style.objectFit = 'contain';
@@ -1284,7 +798,6 @@ function createCanvasPhotoElement(canvas, src, photoMeta, options = {}) {
 
     photoEl.appendChild(imgEl);
 
-    // Add resize handles (visuals controlled by CSS)
     const corners = ['top-left', 'top-right', 'bottom-left', 'bottom-right'];
     corners.forEach((pos) => {
         const handle = document.createElement('div');
@@ -1294,12 +807,9 @@ function createCanvasPhotoElement(canvas, src, photoMeta, options = {}) {
 
     canvas.appendChild(photoEl);
 
-    // Make sure interactions are wired for this element
     wireCanvasPhotoInteractions(photoEl);
 
     if (fromLayout) {
-        // Layout restore: caller will set width/height/top/left.
-        // Only set zIndex and bump our counter.
         if (explicitZ !== null) {
             photoEl.style.zIndex = String(explicitZ);
             builderCanvasState.zCounter = Math.max(builderCanvasState.zCounter, explicitZ);
@@ -1309,7 +819,6 @@ function createCanvasPhotoElement(canvas, src, photoMeta, options = {}) {
         return photoEl;
     }
 
-    // New upload: size & center once the image is ready
     if (imgEl.complete && imgEl.naturalWidth) {
         sizeAndCenterCanvasPhoto(photoEl, imgEl);
     } else {
@@ -1322,15 +831,10 @@ function createCanvasPhotoElement(canvas, src, photoMeta, options = {}) {
         );
     }
 
-    // New photo on canvas => mark dirty
     markCanvasDirty();
-
     return photoEl;
 }
 
-/**
- * Size photo to about 15% of canvas (by width/height) and center it.
- */
 function sizeAndCenterCanvasPhoto(photoEl, imgEl) {
     const canvas = builderCanvasState.canvasEl || document.getElementById('builder-canvas');
     if (!canvas) return;
@@ -1365,9 +869,9 @@ function sizeAndCenterCanvasPhoto(photoEl, imgEl) {
     bringCanvasPhotoToFront(photoEl);
 }
 
-/**
- * Remove the photo chip from the strip for this storageKey.
- */
+// -----------------------------------------------------------------------------
+// Delete flow
+// -----------------------------------------------------------------------------
 function removePhotoChipForStorageKey(storageKey) {
     if (!storageKey) return;
     const strip = document.getElementById('builder-photo-strip');
@@ -1390,30 +894,18 @@ function removePhotoChipForStorageKey(storageKey) {
     }
 }
 
-/**
- * Call backend DELETE endpoint to remove photo from S3/local.
- */
 async function deleteBinderPhotoOnServer(binderId, storageKey) {
     if (!binderId || !storageKey) {
         throw new Error('deleteBinderPhotoOnServer requires binderId and storageKey');
     }
 
     const csrfToken = _getCSRFToken();
-    const url = `/dashboard/binder/${encodeURIComponent(
-        binderId
-    )}/photos?storageKey=${encodeURIComponent(storageKey)}`;
+    const url = `/dashboard/binder/${encodeURIComponent(binderId)}/photos?storageKey=${encodeURIComponent(storageKey)}`;
 
-    const headers = {
-        'Accept': 'application/json'
-    };
-    if (csrfToken) {
-        headers['x-csrf-token'] = csrfToken;
-    }
+    const headers = { 'Accept': 'application/json' };
+    if (csrfToken) headers['x-csrf-token'] = csrfToken;
 
-    const resp = await fetch(url, {
-        method: 'DELETE',
-        headers
-    });
+    const resp = await fetch(url, { method: 'DELETE', headers });
 
     if (!resp.ok) {
         const text = await resp.text().catch(() => '');
@@ -1426,18 +918,6 @@ async function deleteBinderPhotoOnServer(binderId, storageKey) {
     }
 }
 
-/**
- * Central delete flow used by:
- *  - Delete key (Delete/Backspace)
- *  - Delete selected photo button
- *
- * Behavior:
- *  - If no selected photo -> show hint and return
- *  - Ask for confirmation via centralized modalManager (fallback to window.confirm)
- *  - Call backend to delete (full system delete) when binderId + storageKey exist
- *  - Remove photo from canvas + strip
- *  - Mark layout dirty so Supabase layout is updated
- */
 function requestDeleteSelectedPhoto() {
     const photoEl = builderCanvasState.selectedPhotoEl;
     if (!photoEl) {
@@ -1459,9 +939,7 @@ function requestDeleteSelectedPhoto() {
         ? 'Delete this photo from your binder? This will remove it from this page and from our storage.'
         : 'Delete this photo from this page?';
 
-    // Actual delete logic (same as before, kept in a helper)
     const performDelete = async () => {
-        // If we have a binder and a storageKey, attempt full system delete
         if (binderId && storageKey) {
             try {
                 await deleteBinderPhotoOnServer(binderId, storageKey);
@@ -1478,13 +956,9 @@ function requestDeleteSelectedPhoto() {
                 return;
             }
         } else if (!binderId && storageKey) {
-            // Very rare edge case: we have a storageKey but no binderId (miswired template).
-            log.warn('Binder delete: storageKey present but binderId missing; deleting from layout only', {
-                storageKey
-            });
+            log.warn('Binder delete: storageKey present but binderId missing; deleting from layout only', { storageKey });
         }
 
-        // Remove from canvas
         if (photoEl.parentElement) {
             photoEl.parentElement.removeChild(photoEl);
         }
@@ -1492,42 +966,30 @@ function requestDeleteSelectedPhoto() {
             builderCanvasState.selectedPhotoEl = null;
         }
 
-        // Remove matching chip from strip (if any)
         if (storageKey) {
             removePhotoChipForStorageKey(storageKey);
         }
 
-        // Layout changed -> mark dirty so Supabase gets updated layout_json
         markCanvasDirty();
     };
 
     const mm = window.modalManager;
     if (mm && typeof mm.showConfirm === 'function') {
-        // Use centralized confirm modal
         mm.showConfirm({
             title: 'Delete photo',
             message: confirmMessage,
             confirmLabel: 'Delete photo',
-            onConfirm: () => {
-                // Fire and forget; errors are handled inside performDelete
-                performDelete();
-            },
-            onCancel: () => {
-                // No-op; user changed their mind
-            }
+            onConfirm: () => { performDelete(); },
+            onCancel: () => {}
         });
         return;
     }
 
-    // Fallback to native confirm if modal manager is unavailable
     const confirmed = window.confirm(confirmMessage);
     if (!confirmed) return;
     performDelete();
 }
 
-/**
- * Wire up the "Delete selected photo" toolbar button.
- */
 function initializeDeletePhotoButton() {
     const btn = document.getElementById('builder-delete-photo-btn');
     if (!btn) {
@@ -1542,14 +1004,12 @@ function initializeDeletePhotoButton() {
     log.info('Delete photo button wired');
 }
 
-/**
- * Wire up the "New editor (beta)" button to open the React/Vite editor
- * at /dashboard/binder/:binderId/editor.
- */
+// -----------------------------------------------------------------------------
+// React editor button
+// -----------------------------------------------------------------------------
 function initializeReactEditorButton() {
     const btn = document.getElementById('open-react-editor-btn');
     if (!btn) {
-        // Button is only rendered when binder exists in the EJS template.
         log.info('React editor button not found on page; skipping wiring');
         return;
     }
@@ -1565,7 +1025,7 @@ function initializeReactEditorButton() {
     btn.addEventListener('click', function () {
         const targetUrl = `/dashboard/binder/${encodeURIComponent(binderId)}/editor`;
         log.info('Navigating to React binder editor', { binderId, targetUrl });
-        window.location.href = targetUrl; // same-tab navigation
+        window.location.href = targetUrl;
     });
 
     log.info('React editor button wired', { binderId });

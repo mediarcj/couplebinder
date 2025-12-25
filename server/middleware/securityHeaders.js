@@ -49,11 +49,16 @@ try {
  * MUST run before securityHeaders middleware
  */
 function generateCspNonce() {
-  return (req, res, next) => {
+  return function cspNonceMiddleware(req, res, next) {
     const nonce = crypto.randomBytes(16).toString('base64');
+
+    // Canonical name used across the app:
+    res.locals.nonce = nonce;
+
+    // Backwards-compatible alias (optional but safe):
     res.locals.cspNonce = nonce;
-    res.locals.nonce = nonce; // Backwards compatibility with existing templates
-    next();
+
+    return next();
   };
 }
 

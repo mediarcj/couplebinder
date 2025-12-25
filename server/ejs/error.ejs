@@ -7,7 +7,7 @@
     <title><%= title %> - <%= app_info?.name || 'Application' %></title>
     <link rel="icon" href="/images/favicon.ico">
     <link rel="stylesheet" href="/css/style.css?v=<%= page.assetVersion || assetVersion || '' %>">
-    <style nonce="<%= page.nonce %>">
+    <style nonce="<%= cspNonce %>">
         .error-container {
             max-width: 600px;
             margin: 100px auto;
@@ -88,7 +88,7 @@
     </div>
 
     <% if (retryAfter) { %>
-    <script nonce="<%= page.nonce %>">
+    <script nonce="<%= cspNonce %>">
         // Countdown timer for retry
         let timeLeft = <%= retryAfter %>;
         const countdownElement = document.getElementById('countdown');
@@ -110,7 +110,7 @@
     <%- include('partials/modals') %>
 
     <!-- Shared core scripts -->
-    <script src="/js/modalManager.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= page.nonce %>"></script>
-    <script src="/js/main.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= page.nonce %>"></script>
+    <script src="/js/modalManager.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= cspNonce %>"></script>
+    <script src="/js/main.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= cspNonce %>"></script>
 </body>
 </html>

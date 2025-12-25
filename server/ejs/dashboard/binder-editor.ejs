@@ -1,177 +1,143 @@
 <!-- File: server/ejs/dashboard/binder-editor.ejs
-     Description: Binder editor page with React app mount point
-     Purpose: Canvas editor for proof-of-relationship binder
-     Notes: Uses consistent UI/UX with main dashboard template -->
+     Description: Binder editor page with React app mount point -->
 
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="csrf-token" content="<%= ui.csrfToken || '' %>">
-    <% if (typeof APP_CONFIG !== 'undefined') { %>
-      <meta id="app-config" 
-            data-supabase-url="<%= APP_CONFIG.SUPABASE_URL %>" 
-            data-supabase-anon-key="<%= APP_CONFIG.SUPABASE_ANON_KEY %>">
-    <% } %>
-    <title>Binder Editor - <%= (page && page.title) || (app_info && app_info.name) || 'Application' %></title>
-    <link rel="icon" href="/images/favicon.ico">
-    <link rel="stylesheet" href="/css/style.css?v=<%= (page && page.assetVersion) || assetVersion || '' %>">
-    <link rel="stylesheet" href="/binder-editor/binder-editor.css?v=<%= (page && page.assetVersion) || assetVersion || '' %>">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="csrf-token" content="<%= ui.csrfToken || '' %>">
+
+  <% if (typeof APP_CONFIG !== 'undefined') { %>
+    <meta id="app-config"
+      data-supabase-url="<%= APP_CONFIG.SUPABASE_URL %>"
+      data-supabase-anon-key="<%= APP_CONFIG.SUPABASE_ANON_KEY %>">
+  <% } %>
+
+  <title>Binder Editor - <%= (page && page.title) || (app_info && app_info.name) || 'Application' %></title>
+
+  <link rel="icon" href="/images/favicon.ico">
+  <link rel="stylesheet" href="/css/style.css?v=<%= (page && page.assetVersion) || assetVersion || '' %>">
+  <link rel="stylesheet" href="/binder-editor/binder-editor.css?v=<%= (page && page.assetVersion) || assetVersion || '' %>">
 </head>
+
 <body
   data-auth-hydrate="true"
-  data-binder-id="<%= (typeof binder !== 'undefined' && binder && binder.id) || '' %>"
+  data-binder-id="<%= (binder && binder.id) || '' %>"
 >
-    <%- include('../partials/nav', { nav: page.nav, app_info: app_info }) %>
+  <%- include('../partials/nav', { nav: page.nav, app_info: app_info }) %>
 
-    <main class="dashboard-root">
-        <div class="workspace-shell">
-            <!-- Workspace header -->
-            <header class="workspace-header">
-                <div class="workspace-header-main">
-                    <h1 class="workspace-title">Binder Editor</h1>
-                    <p class="workspace-subtitle">
-                        Edit your binder layout
-                    </p>
-                </div>
-                <div class="workspace-header-meta">
-                    <% if (typeof binder !== 'undefined' && binder) { %>
-                    <div class="workspace-meta-row">
-                        <span class="meta-label">Binder</span>
-                        <span class="meta-value"><%= binder.title || 'Untitled' %></span>
-                    </div>
-                    <div class="workspace-meta-row">
-                        <span class="meta-label">Last Updated</span>
-                        <span class="meta-value"><%= binder.updated_at ? new Date(binder.updated_at).toLocaleDateString() : 'Never' %></span>
-                    </div>
-                    <% } %>
-                </div>
-            </header>
-
-            <!-- React app mount point -->
-            <section class="workspace-body workspace-body-editor">
-                <!-- Nonce-protected style element for dynamic layer positioning (CSP-compliant) -->
-                <style nonce="<%= page.nonce %>">
-                /* Make the binder editor view as full-bleed as possible inside the dashboard */
-
-                html,
-                body {
-                    margin: 0;
-                    padding: 0;
-                    height: 100%;
-                    background: #ffffff;
-                }
-
-                .dashboard-root {
-                    min-height: 100vh;
-                    margin: 0;
-                    padding: 0 !important; /* Override global padding */
-                    background-color: #ffffff !important; /* Match React app background */
-                }
-
-                .workspace-shell {
-                    width: 100%;
-                    max-width: none !important; /* Remove global max-width */
-                    margin: 0;
-                    padding: 0;
-                }
-
-                /* Override global workspace-body styles for editor */
-                .workspace-body.workspace-body-editor {
-                    margin: 0;
-                    padding: 0 !important; /* Override global padding */
-                    min-height: calc(100vh - 120px); /* allow growth beyond viewport */
-                    background: transparent !important; /* Remove white background */
-                    border-radius: 0 !important; /* Remove rounded corners */
-                    box-shadow: none !important; /* Remove shadow */
-                }
-
-                /* Ensure workspace-header doesn't interfere */
-                .workspace-header {
-                    margin-bottom: 0; /* Remove default margin */
-                    padding: 16px 24px; /* Add padding for header content */
-                    background: #ffffff;
-                    border-bottom: 1px solid #e2e8f0;
-                }
-
-                /* Mobile responsive overrides */
-                @media (max-width: 768px) {
-                    .dashboard-root {
-                        padding: 0 !important; /* Override global mobile padding */
-                    }
-                    
-                    .workspace-header {
-                        padding: 12px 16px;
-                    }
-                    
-                    .workspace-body.workspace-body-editor {
-                        min-height: calc(100vh - 100px); /* Adjust for smaller header on mobile */
-                    }
-                }
-
-                #binder-editor-root {
-                    min-height: 100%;
-                    width: 100%;
-                    background: transparent;
-                }
-
-                /* Ensure footer doesn't interfere with editor */
-                footer {
-                    margin-top: 0;
-                    padding: 16px;
-                    background: #ffffff;
-                    border-top: 1px solid #e2e8f0;
-                }
-
-                footer .container {
-                    max-width: 100%;
-                    padding: 0 24px;
-                }
-                </style>
-                <div
-                  id="binder-editor-root"
-                  data-binder-id="<%= (typeof binder !== 'undefined' && binder && binder.id) || '' %>"
-                  data-csrf-token="<%= ui.csrfToken || '' %>"
-                  data-csp-nonce="<%= page.nonce || '' %>"
-                ></div>
-            </section>
+  <main class="dashboard-root">
+    <div class="workspace-shell">
+      <header class="workspace-header">
+        <div class="workspace-header-main">
+          <h1 class="workspace-title">Binder Editor</h1>
+          <p class="workspace-subtitle">Edit your binder layout</p>
         </div>
-    </main>
-        
-    <footer>
-        <div class="container">
-            <p>&copy; 2024 <%= app_info?.name || 'Application' %>. <%= app_info?.description || 'A modern web application' %>.</p>
-        </div>
-    </footer>
 
-    <!-- Shared core scripts -->
-    <script src="/js/supabase-client.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= page.nonce %>"></script>
-    <script src="/js/sbClient.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= page.nonce %>"></script>
-    <script src="/js/logout.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= page.nonce %>"></script>
-    <script src="/js/modalManager.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= page.nonce %>"></script>
-    <script src="/js/nav-client.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= page.nonce %>"></script>
-    
-    <!-- Binder editor React app -->
-    <script
-      src="/binder-editor/binder-editor.js?v=<%= page.assetVersion || assetVersion || '' %>"
-      nonce="<%= page.nonce %>"
-      defer
-    ></script>
-    
-    <!-- Temporary CSP violation logger (remove after confirming fix) -->
-    <script nonce="<%= page.nonce %>">
-      document.addEventListener('securitypolicyviolation', (e) => {
-        console.log('[CSP violation]', {
-          violatedDirective: e.violatedDirective,
-          blockedURI: e.blockedURI,
-          sourceFile: e.sourceFile,
-          lineNumber: e.lineNumber,
-          effectiveDirective: e.effectiveDirective,
-          originalPolicy: e.originalPolicy
-        });
-      });
-    </script>
+        <div class="workspace-header-meta">
+          <% if (binder) { %>
+            <div class="workspace-meta-row">
+              <span class="meta-label">Binder</span>
+              <span class="meta-value"><%= binder.title || 'Untitled' %></span>
+            </div>
+            <div class="workspace-meta-row">
+              <span class="meta-label">Last Updated</span>
+              <span class="meta-value">
+                <%= binder.updated_at ? new Date(binder.updated_at).toLocaleDateString() : 'Never' %>
+              </span>
+            </div>
+          <% } %>
+        </div>
+      </header>
+
+      <section class="workspace-body workspace-body-editor">
+        <style nonce="<%= (page && page.nonce) || '' %>">
+          html, body { margin: 0; padding: 0; height: 100%; background: #ffffff; }
+
+          .dashboard-root {
+            min-height: 100vh;
+            margin: 0;
+            padding: 0 !important;
+            background-color: #ffffff !important;
+          }
+
+          .workspace-shell {
+            width: 100%;
+            max-width: none !important;
+            margin: 0;
+            padding: 0;
+          }
+
+          .workspace-body.workspace-body-editor {
+            margin: 0;
+            padding: 0 !important;
+            min-height: calc(100vh - 120px);
+            background: transparent !important;
+            border-radius: 0 !important;
+            box-shadow: none !important;
+          }
+
+          .workspace-header {
+            margin-bottom: 0;
+            padding: 16px 24px;
+            background: #ffffff;
+            border-bottom: 1px solid #e2e8f0;
+          }
+
+          @media (max-width: 768px) {
+            .dashboard-root { padding: 0 !important; }
+            .workspace-header { padding: 12px 16px; }
+            .workspace-body.workspace-body-editor { min-height: calc(100vh - 100px); }
+          }
+
+          #binder-editor-root {
+            min-height: 100%;
+            width: 100%;
+            background: transparent;
+          }
+
+          footer {
+            margin-top: 0;
+            padding: 16px;
+            background: #ffffff;
+            border-top: 1px solid #e2e8f0;
+          }
+
+          footer .container {
+            max-width: 100%;
+            padding: 0 24px;
+          }
+        </style>
+
+        <div
+          id="binder-editor-root"
+          data-binder-id="<%= (binder && binder.id) || '' %>"
+          data-csrf-token="<%= ui.csrfToken || '' %>"
+          data-csp-nonce="<%= (page && page.nonce) || '' %>"
+        ></div>
+      </section>
+    </div>
+  </main>
+
+  <footer>
+    <div class="container">
+      <p>&copy; 2024 <%= app_info?.name || 'Application' %>. <%= app_info?.description || 'A modern web application' %>.</p>
+    </div>
+  </footer>
+
+  <!-- Shared core scripts -->
+  <script src="/js/supabase-client.js?v=<%= (page && page.assetVersion) || assetVersion || '' %>" nonce="<%= (page && page.nonce) || '' %>"></script>
+  <script src="/js/sbClient.js?v=<%= (page && page.assetVersion) || assetVersion || '' %>" nonce="<%= (page && page.nonce) || '' %>"></script>
+  <script src="/js/logout.js?v=<%= (page && page.assetVersion) || assetVersion || '' %>" nonce="<%= (page && page.nonce) || '' %>"></script>
+  <script src="/js/modalManager.js?v=<%= (page && page.assetVersion) || assetVersion || '' %>" nonce="<%= (page && page.nonce) || '' %>"></script>
+  <script src="/js/nav-client.js?v=<%= (page && page.assetVersion) || assetVersion || '' %>" nonce="<%= (page && page.nonce) || '' %>"></script>
+
+  <!-- Binder editor React app -->
+  <script
+    src="/binder-editor/binder-editor.js?v=<%= (page && page.assetVersion) || assetVersion || '' %>"
+    nonce="<%= (page && page.nonce) || '' %>"
+    defer
+  ></script>
 </body>
 </html>
-

@@ -1,24 +1,25 @@
 #!/usr/bin/env node
+'use strict';
 
-// env-doctor.js
+// File: server/scripts/env-doctor.js
+// Description: Env schema auditor (required/optional + conditional checks)
+// Notes:
+// - Compares server/config/env.schema.yml with:
+//     - .env.development.local
+//     - .env.production.full
+// - Reports:
+//     - Missing REQUIRED keys
+//     - Missing OPTIONAL keys (informational)
+//     - Omitted (=) REQUIRED keys (present but empty)
+//     - Omitted (=) OPTIONAL keys (present but empty)
+//     - Extra keys in env files (not in schema)
+// - Applies conditional rules that match server/config/index.js validation posture:
+//     - DB_PROVIDER=postgres => SUPABASE_DB_URL required
+//     - AUTH_SET_COOKIE_ENFORCE_TURNSTILE=true => TURNSTILE_SITE_KEY and TURNSTILE_SECRET_KEY required
 //
-// Compares config/env.schema.yml with:
-//   - ../.env.development.local  (dev values at repo root)
-//   - ../.env.production.full    (prod snapshot at repo root)
-//
-// Shows (in terminal):
-//   - Missing keys in dev
-//   - Missing keys in prod
-//   - Extra keys in dev (not in schema)
-//   - Extra keys in prod (not in schema)
-//   - Omitted (=) keys in dev (present but empty)
-//   - Omitted (=) keys in prod (present but empty)
-//
-// Also writes evidence files to repo root:
+// Evidence files written to repo root:
 //   - env-doctor-report-YYYYMMDD-HHmmss.json
 //   - env-doctor-report-YYYYMMDD-HHmmss.csv
-//
-// This gives you a durable record you can inspect or open in Excel.
 
 const fs = require('fs');
 const path = require('path');
@@ -69,7 +70,6 @@ function loadSchema(filePath) {
     process.exit(1);
   }
 
-  // Basic validation and warnings
   const keys = Object.keys(doc);
   if (keys.length === 0) {
     console.warn('WARN: Schema has zero keys. Is env.schema.yml populated?');
@@ -81,17 +81,13 @@ function loadSchema(filePath) {
     const envs = info.environments || [];
     if (!Array.isArray(envs)) continue;
     for (const env of envs) {
-      if (!ALLOWED_ENVS.has(env)) {
-        invalidEnvs.add(env);
-      }
+      if (!ALLOWED_ENVS.has(env)) invalidEnvs.add(env);
     }
   }
 
   if (invalidEnvs.size > 0) {
     console.warn(
-      `WARN: Schema contains unknown environment labels: ${Array.from(
-        invalidEnvs
-      ).join(', ')}`
+      `WARN: Schema contains unknown environment labels: ${Array.from(invalidEnvs).join(', ')}`
     );
   }
 
@@ -111,8 +107,6 @@ function loadEnvFile(filePath, label) {
 
   for (const line of lines) {
     const trimmed = line.trim();
-
-    // Ignore empty lines and comments
     if (!trimmed || trimmed.startsWith('#')) continue;
 
     const eqIdx = trimmed.indexOf('=');
@@ -129,7 +123,6 @@ function loadEnvFile(filePath, label) {
       continue;
     }
 
-    // If the same key appears twice, last one wins, but we log it
     if (Object.prototype.hasOwnProperty.call(out, key)) {
       console.warn(
         `WARN: Duplicate key "${key}" in ${label} env file ${filePath}; last value wins.`
@@ -183,12 +176,9 @@ function writeJsonReport(report) {
 }
 
 function csvEscape(value) {
-  // Simple CSV rule: if it has comma, quote or newline, wrap in quotes and escape quotes
   if (value == null) return '';
   const s = String(value);
-  if (/[",\r\n]/.test(s)) {
-    return `"${s.replace(/"/g, '""')}"`;
-  }
+  if (/[",\r\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
   return s;
 }
 
@@ -197,58 +187,40 @@ function writeCsvReport(report) {
   const filePath = path.join(REPO_ROOT, `env-doctor-report-${stamp}.csv`);
 
   const rows = [];
-  // Header
   rows.push([
     'environment',
-    'type',         // missing | extra | omitted
+    'type',          // missing_required | missing_optional | omitted_required | omitted_optional | extra | conditional_missing
     'key',
-    'required',     // yes | no | empty
+    'required',      // yes | no
     'description'
   ]);
 
-  const addRow = (env, type, key, schemaInfo) => {
-    const required = schemaInfo && schemaInfo.required ? 'yes' : 'no';
-    const description = schemaInfo && schemaInfo.description ? schemaInfo.description : '';
-    rows.push([
-      env,
-      type,
-      key,
-      required,
-      description
-    ]);
-  };
-
   const schema = report.schema || {};
 
-  // Missing in dev
-  for (const key of report.devMissing) {
-    addRow('dev', 'missing', key, schema[key]);
-  }
+  const addRow = (env, type, key) => {
+    const info = schema[key] || {};
+    const required = info && info.required ? 'yes' : 'no';
+    const description = info && info.description ? info.description : '';
+    rows.push([env, type, key, required, description]);
+  };
 
-  // Missing in prod
-  for (const key of report.prodMissing) {
-    addRow('prod', 'missing', key, schema[key]);
-  }
+  for (const key of report.devMissingRequired) addRow('dev', 'missing_required', key);
+  for (const key of report.prodMissingRequired) addRow('prod', 'missing_required', key);
 
-  // Omitted in dev
-  for (const key of report.devOmitted) {
-    addRow('dev', 'omitted', key, schema[key]);
-  }
+  for (const key of report.devMissingOptional) addRow('dev', 'missing_optional', key);
+  for (const key of report.prodMissingOptional) addRow('prod', 'missing_optional', key);
 
-  // Omitted in prod
-  for (const key of report.prodOmitted) {
-    addRow('prod', 'omitted', key, schema[key]);
-  }
+  for (const key of report.devOmittedRequired) addRow('dev', 'omitted_required', key);
+  for (const key of report.prodOmittedRequired) addRow('prod', 'omitted_required', key);
 
-  // Extra in dev
-  for (const key of report.devExtras) {
-    rows.push(['dev', 'extra', key, '', '']);
-  }
+  for (const key of report.devOmittedOptional) addRow('dev', 'omitted_optional', key);
+  for (const key of report.prodOmittedOptional) addRow('prod', 'omitted_optional', key);
 
-  // Extra in prod
-  for (const key of report.prodExtras) {
-    rows.push(['prod', 'extra', key, '', '']);
-  }
+  for (const key of report.devConditionalMissing) addRow('dev', 'conditional_missing', key);
+  for (const key of report.prodConditionalMissing) addRow('prod', 'conditional_missing', key);
+
+  for (const key of report.devExtras) rows.push(['dev', 'extra', key, '', '']);
+  for (const key of report.prodExtras) rows.push(['prod', 'extra', key, '', '']);
 
   const csvContent = rows.map((cols) => cols.map(csvEscape).join(',')).join('\n');
 
@@ -261,6 +233,99 @@ function writeCsvReport(report) {
   }
 }
 
+function boolFromEnvValue(v, def = false) {
+  if (v === undefined || v === null) return def;
+  const s = String(v).trim().toLowerCase();
+  if (['1', 'true', 'yes', 'on', 'y'].includes(s)) return true;
+  if (['0', 'false', 'no', 'off', 'n'].includes(s)) return false;
+  return def;
+}
+
+function hasKey(envObj, key) {
+  return Object.prototype.hasOwnProperty.call(envObj, key);
+}
+
+function isEmpty(envObj, key) {
+  return hasKey(envObj, key) && String(envObj[key]) === '';
+}
+
+function computeMissingAndOmitted(schema, envObj, envLabel) {
+  const schemaKeys = Object.keys(schema);
+
+  const missingRequired = [];
+  const missingOptional = [];
+  const omittedRequired = [];
+  const omittedOptional = [];
+
+  for (const key of schemaKeys) {
+    const info = schema[key] || {};
+    const envs = Array.isArray(info.environments) ? info.environments : [];
+    if (!envs.includes(envLabel)) continue;
+
+    const required = !!info.required;
+
+    if (!hasKey(envObj, key)) {
+      if (required) missingRequired.push(key);
+      else missingOptional.push(key);
+      continue;
+    }
+
+    if (String(envObj[key]) === '') {
+      if (required) omittedRequired.push(key);
+      else omittedOptional.push(key);
+    }
+  }
+
+  return { missingRequired, missingOptional, omittedRequired, omittedOptional };
+}
+
+function computeExtras(schema, envObj) {
+  const schemaSet = new Set(Object.keys(schema));
+  return Object.keys(envObj).filter((k) => !schemaSet.has(k)).sort();
+}
+
+function computeConditionalMissing(envObj, envLabel) {
+  const missing = [];
+
+  // Match config default: (process.env.DB_PROVIDER || 'supabase-http').toLowerCase()
+  const provider = String(envObj.DB_PROVIDER || 'supabase-http').trim().toLowerCase();
+  if (provider === 'postgres') {
+    if (!hasKey(envObj, 'SUPABASE_DB_URL') || String(envObj.SUPABASE_DB_URL) === '') {
+      missing.push('SUPABASE_DB_URL');
+    }
+  }
+
+  // Match config validation: if AUTH_SET_COOKIE_ENFORCE_TURNSTILE=true => require turnstile keys
+  const enforceTurnstile = boolFromEnvValue(envObj.AUTH_SET_COOKIE_ENFORCE_TURNSTILE, false);
+  if (enforceTurnstile) {
+    if (!hasKey(envObj, 'TURNSTILE_SITE_KEY') || String(envObj.TURNSTILE_SITE_KEY) === '') {
+      missing.push('TURNSTILE_SITE_KEY');
+    }
+    if (!hasKey(envObj, 'TURNSTILE_SECRET_KEY') || String(envObj.TURNSTILE_SECRET_KEY) === '') {
+      missing.push('TURNSTILE_SECRET_KEY');
+    }
+  }
+
+  // Optional: if Stripe prices are configured, PUBLIC_ORIGIN should exist (mirrors config validateConfig()).
+  // Mode mapping matches your config:
+  // - dev => test
+  // - prod => live
+  const stripeMode = envLabel === 'prod' ? 'live' : 'test';
+  const priceKeys =
+    stripeMode === 'live'
+      ? ['STRIPE_PRICE_RESUME_ONE_TIME_LIVE', 'STRIPE_PRICE_RESUME_EXPERT_LIVE']
+      : ['STRIPE_PRICE_RESUME_ONE_TIME_TEST', 'STRIPE_PRICE_RESUME_EXPERT_TEST'];
+
+  const hasAnyPrice = priceKeys.some((k) => hasKey(envObj, k) && String(envObj[k]) !== '');
+  if (hasAnyPrice) {
+    if (!hasKey(envObj, 'PUBLIC_ORIGIN') || String(envObj.PUBLIC_ORIGIN) === '') {
+      missing.push('PUBLIC_ORIGIN');
+    }
+  }
+
+  return Array.from(new Set(missing)).sort();
+}
+
 function main() {
   try {
     console.log('INFO: Starting env-doctor...');
@@ -269,155 +334,120 @@ function main() {
     console.log(`INFO: Prod env path: ${PROD_ENV_PATH}`);
 
     const schema = loadSchema(SCHEMA_PATH);
-    const schemaKeys = Object.keys(schema).sort();
 
     const devEnv = loadEnvFile(DEV_ENV_PATH, 'dev');
     const prodEnv = loadEnvFile(PROD_ENV_PATH, 'prod');
 
-    const devKeys = Object.keys(devEnv).sort();
-    const prodKeys = Object.keys(prodEnv).sort();
+    const dev = computeMissingAndOmitted(schema, devEnv, 'dev');
+    const prod = computeMissingAndOmitted(schema, prodEnv, 'prod');
 
-    const devMissing = [];
-    const prodMissing = [];
-    const devExtras = [];
-    const prodExtras = [];
-    const devOmitted = []; // present in dev, value === ''
-    const prodOmitted = []; // present in prod, value === ''
+    const devExtras = computeExtras(schema, devEnv);
+    const prodExtras = computeExtras(schema, prodEnv);
 
-    // Check missing / omitted keys (schema says this key should exist in dev/prod)
-    for (const key of schemaKeys) {
-      const info = schema[key] || {};
-      const envs = Array.isArray(info.environments) ? info.environments : [];
-
-      if (envs.includes('dev')) {
-        if (!Object.prototype.hasOwnProperty.call(devEnv, key)) {
-          devMissing.push(key);
-        } else if (devEnv[key] === '') {
-          devOmitted.push(key);
-        }
-      }
-
-      if (envs.includes('prod')) {
-        if (!Object.prototype.hasOwnProperty.call(prodEnv, key)) {
-          prodMissing.push(key);
-        } else if (prodEnv[key] === '') {
-          prodOmitted.push(key);
-        }
-      }
-    }
-
-    // Check extra keys (present in env files but not in schema)
-    for (const key of devKeys) {
-      if (!schemaKeys.includes(key)) devExtras.push(key);
-    }
-
-    for (const key of prodKeys) {
-      if (!schemaKeys.includes(key)) prodExtras.push(key);
-    }
-
-    // Basic sanity checks
-    if (schemaKeys.length === 0) {
-      console.warn('WARN: Schema has 0 keys. All env keys will appear as "extra".');
-    }
+    const devConditionalMissing = computeConditionalMissing(devEnv, 'dev');
+    const prodConditionalMissing = computeConditionalMissing(prodEnv, 'prod');
 
     // Summary
-    printSection('Env Doctor Summary');
-    console.log(`Schema keys:          ${schemaKeys.length}`);
-    console.log(`Dev keys present:     ${devKeys.length}`);
-    console.log(`Prod keys present:    ${prodKeys.length}`);
-    console.log(`Dev missing count:    ${devMissing.length}`);
-    console.log(`Prod missing count:   ${prodMissing.length}`);
-    console.log(`Dev omitted (=) count:${devOmitted.length}`);
-    console.log(`Prod omitted (=) count:${prodOmitted.length}`);
-    console.log(`Dev extra count:      ${devExtras.length}`);
-    console.log(`Prod extra count:     ${prodExtras.length}`);
+    printSection('Env Doctor Summary (required/optional + conditional)');
+    console.log(`Schema keys:                    ${Object.keys(schema).length}`);
+    console.log(`Dev keys present:               ${Object.keys(devEnv).length}`);
+    console.log(`Prod keys present:              ${Object.keys(prodEnv).length}`);
+    console.log(`Dev missing REQUIRED:           ${dev.missingRequired.length}`);
+    console.log(`Prod missing REQUIRED:          ${prod.missingRequired.length}`);
+    console.log(`Dev missing optional (info):    ${dev.missingOptional.length}`);
+    console.log(`Prod missing optional (info):   ${prod.missingOptional.length}`);
+    console.log(`Dev omitted (=) REQUIRED:       ${dev.omittedRequired.length}`);
+    console.log(`Prod omitted (=) REQUIRED:      ${prod.omittedRequired.length}`);
+    console.log(`Dev omitted (=) optional (info):${dev.omittedOptional.length}`);
+    console.log(`Prod omitted (=) optional (info):${prod.omittedOptional.length}`);
+    console.log(`Dev conditional missing:        ${devConditionalMissing.length}`);
+    console.log(`Prod conditional missing:       ${prodConditionalMissing.length}`);
+    console.log(`Dev extra (not in schema):      ${devExtras.length}`);
+    console.log(`Prod extra (not in schema):     ${prodExtras.length}`);
 
-    // Missing in DEV
-    printSection('Missing in DEV (.env.development.local)');
-    if (devMissing.length === 0) {
-      console.log('✓ None (all schema keys for dev are present).');
-    } else {
-      devMissing.forEach((key) => {
-        const info = schema[key] || {};
-        const required = info.required ? 'required' : 'optional';
-        console.log(`- ${key} (${required})`);
-      });
-    }
+    // Required missing
+    printSection('Missing REQUIRED in DEV (.env.development.local)');
+    if (dev.missingRequired.length === 0) console.log('✓ None.');
+    else dev.missingRequired.forEach((k) => console.log(`- ${k}`));
 
-    // Missing in PROD
-    printSection('Missing in PROD (.env.production.full)');
-    if (prodMissing.length === 0) {
-      console.log('✓ None (all schema keys for prod are present).');
-    } else {
-      prodMissing.forEach((key) => {
-        const info = schema[key] || {};
-        const required = info.required ? 'required' : 'optional';
-        console.log(`- ${key} (${required})`);
-      });
-    }
+    printSection('Missing REQUIRED in PROD (.env.production.full)');
+    if (prod.missingRequired.length === 0) console.log('✓ None.');
+    else prod.missingRequired.forEach((k) => console.log(`- ${k}`));
 
-    // Omitted in DEV (present but empty)
-    printSection('Omitted (=) in DEV (.env.development.local)');
-    if (devOmitted.length === 0) {
-      console.log('✓ None (no schema keys in dev are set to empty values).');
-    } else {
-      devOmitted.forEach((key) => {
-        const info = schema[key] || {};
-        const required = info.required ? 'required' : 'optional';
-        console.log(`- ${key} (${required}) =`);
-      });
-    }
+    // Required omitted
+    printSection('Omitted (=) REQUIRED in DEV (.env.development.local)');
+    if (dev.omittedRequired.length === 0) console.log('✓ None.');
+    else dev.omittedRequired.forEach((k) => console.log(`- ${k} =`));
 
-    // Omitted in PROD (present but empty)
-    printSection('Omitted (=) in PROD (.env.production.full)');
-    if (prodOmitted.length === 0) {
-      console.log('✓ None (no schema keys in prod are set to empty values).');
-    } else {
-      prodOmitted.forEach((key) => {
-        const info = schema[key] || {};
-        const required = info.required ? 'required' : 'optional';
-        console.log(`- ${key} (${required}) =`);
-      });
-    }
+    printSection('Omitted (=) REQUIRED in PROD (.env.production.full)');
+    if (prod.omittedRequired.length === 0) console.log('✓ None.');
+    else prod.omittedRequired.forEach((k) => console.log(`- ${k} =`));
 
-    // Extra in DEV
+    // Conditional
+    printSection('Conditional missing (matches config validation posture)');
+    console.log('DEV:');
+    if (devConditionalMissing.length === 0) console.log('✓ None.');
+    else devConditionalMissing.forEach((k) => console.log(`- ${k}`));
+
+    console.log('');
+    console.log('PROD:');
+    if (prodConditionalMissing.length === 0) console.log('✓ None.');
+    else prodConditionalMissing.forEach((k) => console.log(`- ${k}`));
+
+    // Optional (informational)
+    printSection('Missing optional (informational)');
+    console.log('DEV:');
+    if (dev.missingOptional.length === 0) console.log('✓ None.');
+    else dev.missingOptional.forEach((k) => console.log(`- ${k}`));
+
+    console.log('');
+    console.log('PROD:');
+    if (prod.missingOptional.length === 0) console.log('✓ None.');
+    else prod.missingOptional.forEach((k) => console.log(`- ${k}`));
+
+    // Extras
     printSection('Extra keys in DEV (not in schema)');
-    if (devExtras.length === 0) {
-      console.log('✓ None.');
-    } else {
-      devExtras.forEach((key) => console.log(`- ${key}`));
-    }
+    if (devExtras.length === 0) console.log('✓ None.');
+    else devExtras.forEach((k) => console.log(`- ${k}`));
 
-    // Extra in PROD
     printSection('Extra keys in PROD (not in schema)');
-    if (prodExtras.length === 0) {
-      console.log('✓ None.');
-    } else {
-      prodExtras.forEach((key) => console.log(`- ${key}`));
-    }
+    if (prodExtras.length === 0) console.log('✓ None.');
+    else prodExtras.forEach((k) => console.log(`- ${k}`));
 
-    // Build structured report for JSON/CSV
+    // Structured report
     const report = {
       generatedAt: new Date().toISOString(),
       schemaPath: SCHEMA_PATH,
       devEnvPath: DEV_ENV_PATH,
       prodEnvPath: PROD_ENV_PATH,
       summary: {
-        schemaKeys: schemaKeys.length,
-        devKeys: devKeys.length,
-        prodKeys: prodKeys.length,
-        devMissing: devMissing.length,
-        prodMissing: prodMissing.length,
-        devOmitted: devOmitted.length,
-        prodOmitted: prodOmitted.length,
+        schemaKeys: Object.keys(schema).length,
+        devKeys: Object.keys(devEnv).length,
+        prodKeys: Object.keys(prodEnv).length,
+        devMissingRequired: dev.missingRequired.length,
+        prodMissingRequired: prod.missingRequired.length,
+        devMissingOptional: dev.missingOptional.length,
+        prodMissingOptional: prod.missingOptional.length,
+        devOmittedRequired: dev.omittedRequired.length,
+        prodOmittedRequired: prod.omittedRequired.length,
+        devOmittedOptional: dev.omittedOptional.length,
+        prodOmittedOptional: prod.omittedOptional.length,
+        devConditionalMissing: devConditionalMissing.length,
+        prodConditionalMissing: prodConditionalMissing.length,
         devExtras: devExtras.length,
         prodExtras: prodExtras.length
       },
-      schema,       // full schema object (for context)
-      devMissing,
-      prodMissing,
-      devOmitted,
-      prodOmitted,
+      schema,
+      devMissingRequired: dev.missingRequired.sort(),
+      prodMissingRequired: prod.missingRequired.sort(),
+      devMissingOptional: dev.missingOptional.sort(),
+      prodMissingOptional: prod.missingOptional.sort(),
+      devOmittedRequired: dev.omittedRequired.sort(),
+      prodOmittedRequired: prod.omittedRequired.sort(),
+      devOmittedOptional: dev.omittedOptional.sort(),
+      prodOmittedOptional: prod.omittedOptional.sort(),
+      devConditionalMissing,
+      prodConditionalMissing,
       devExtras,
       prodExtras
     };
@@ -427,9 +457,9 @@ function main() {
 
     console.log('');
     console.log('Done. Use this report to:');
-    console.log('- Add missing keys to the env files;');
-    console.log('- Decide if omitted (=) keys should be given real values; or');
-    console.log('- Fix config/env.schema.yml if the schema is out of date.');
+    console.log('- Add missing REQUIRED keys (these should block boot);');
+    console.log('- Review conditional missing keys (depends on feature toggles / DB_PROVIDER);');
+    console.log('- Decide if optional keys should be set for your environment.');
     console.log('INFO: env-doctor finished successfully.');
   } catch (err) {
     console.error('FATAL: Unhandled error in env-doctor.');

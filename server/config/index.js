@@ -56,6 +56,11 @@ const KNOWN_ENV = new Set([
   'MAINTENANCE_KEY','MAINTENANCE_BYPASS_TOKEN','MAINTENANCE_ALLOWED_PATHS','OPS_HEALTH_TOKEN','OPS_HEALTH_IPS','OPS_DB_PROBE_TABLE','OPS_DB_PROBE_RPC','HEALTH_PUBLIC',
   'FIREWALL_FAIL_CLOSED',
   'TURNSTILE_SITE_KEY','TURNSTILE_SECRET_KEY',
+
+  // NEW: set-cookie posture controls
+  'AUTH_SET_COOKIE_ENFORCE_LOCKOUT',
+  'AUTH_SET_COOKIE_ENFORCE_TURNSTILE',
+
   // Shared success/cancel paths
   'STRIPE_SUCCESS_PATH','STRIPE_CANCEL_PATH',
   // Dual-set Stripe (LIVE/TEST)
@@ -387,7 +392,15 @@ const config = {
     // WHAT: Fresh token grace period in seconds when watermark is unavailable
     // WHY: Allows fresh interactive logins to pass even when sentinel is active
     // HOW: Used by authCookie routes to allow tokens issued within this window
-    freshLoginGraceSec: int(process.env.AUTH_FRESH_GRACE_SEC, 20)
+    freshLoginGraceSec: int(process.env.AUTH_FRESH_GRACE_SEC, 20),
+
+    // WHAT: /auth/set-cookie posture controls
+    // WHY: Per-environment toggles without hardcoding behavior in routes
+    // HOW: Driven by env; defaults are safe and predictable
+    setCookie: {
+      enforceLockout: bool(process.env.AUTH_SET_COOKIE_ENFORCE_LOCKOUT, nodeEnv === 'production'),
+      enforceTurnstile: bool(process.env.AUTH_SET_COOKIE_ENFORCE_TURNSTILE, false)
+    }
   },
 
   // Ops health DB probe configuration
@@ -592,6 +605,12 @@ function validateConfig() {
   const hasTurnstileSecretKey = !!turnstileSecretKey;
   if (hasTurnstileSiteKey !== hasTurnstileSecretKey) {
     errors.push('TURNSTILE_SITE_KEY and TURNSTILE_SECRET_KEY must both be set or both be empty');
+  }
+
+  // If you enforce Turnstile on /auth/set-cookie, Turnstile must be configured.
+  const enforceSetCookieTurnstile = bool(process.env.AUTH_SET_COOKIE_ENFORCE_TURNSTILE, false);
+  if (enforceSetCookieTurnstile && !turnstileEnabled) {
+    errors.push('AUTH_SET_COOKIE_ENFORCE_TURNSTILE=true requires TURNSTILE_SITE_KEY and TURNSTILE_SECRET_KEY');
   }
 
   return errors;

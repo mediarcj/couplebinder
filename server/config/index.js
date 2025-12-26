@@ -39,52 +39,138 @@ if (NODE_ENV === 'development') {
 // ──────────────────────────────────────────────────────────────────────────────
 // Env audit (optional, off by default)
 // ──────────────────────────────────────────────────────────────────────────────
-
+// Philosophy: env.schema.yml is an inventory of everything allowed in env files
+// for this repo (app + infra). KNOWN_ENV should include those keys too so that
+// CONFIG_ENV_AUDIT can warn only on truly-unknown app/infra keys.
 const KNOWN_ENV = new Set([
-  'ALLOWED_ORIGINS','APP_DESCRIPTION','APP_LIMITERS_ENABLED','APP_NAME','APP_VERSION',
-  'AUTH_COOKIE_NAME','AUTH_COOKIE_ALIASES','AUTH_COOKIE_BASENAME','AUTH_COOKIE_DOMAIN','AUTH_DEBUG','BASE_DOMAIN','APP_SUBDOMAIN','LEGACY_COOKIE_DOMAIN','X_CLIENT_INFO',
-  'COOKIE_SAMESITE','COOKIE_SECURE','COOKIE_SET_ATTEMPTS','COOKIE_SET_MAX','COOKIE_SET_WINDOW_MS',
-  'COOKIE_SET_WINDOW_SEC','CORS_ORIGINS','CSRF_COOKIE_NAME','CSRF_HEADER_NAME','CSRF_SECRET','DB_PROVIDER',
-  'ENFORCE_HTTPS','HOST','IMAGE_TAG','IP_BLOCKLIST','JWT_CLOCK_SKEW_SEC','JWT_ALLOWED_ALGS','LOCAL_LIMITERS_ENABLED','LOGIN_ATTEMPTS',
-  'LOGIN_MAX','LOGIN_WINDOW_MS','LOGIN_WINDOW_MIN','LOGOUT_MAX','LOGOUT_WINDOW_MS','MAX_SUBMISSIONS','NODE_ENV','PORT','PUBLIC_ORIGIN',
-  'RATE_LIMIT_ENABLED','RATE_LIMIT_MAX','RATE_LIMIT_WINDOW_MS','REDIS_HOST','REDIS_PASSWORD','REDIS_PORT','REDIS_URL','REPAIR_QUEUE_CONCURRENCY',
-  'REPAIR_QUEUE_ENABLED','REPAIR_QUEUE_NAME','SELF_HOST_SUPABASE_JS','SESSION_SECRET','SIGNUP_ATTEMPTS',
-  'SIGNUP_MAX','SIGNUP_WINDOW_MS','SIGNUP_WINDOW_MIN','SUPABASE_ANON_KEY','SUPABASE_DB_URL',
-  'SUPABASE_EXPECTED_AUD','SUPABASE_ISSUER','SUPABASE_JWKS_URL','SUPABASE_JWT_SECRET',
-  'SUPABASE_SERVICE_ROLE_KEY','SUPABASE_URL','TEXT_MAX_LENGTH','TEXT_MIN_LENGTH','MAINTENANCE_DEFAULT',
-  'MAINTENANCE_ALLOWLIST','MAINTENANCE_RETRY_AFTER','MAINTENANCE_PAGE','MAINTENANCE_MESSAGE',
-  'MAINTENANCE_KEY','MAINTENANCE_BYPASS_TOKEN','MAINTENANCE_ALLOWED_PATHS','OPS_HEALTH_TOKEN','OPS_HEALTH_IPS','OPS_DB_PROBE_TABLE','OPS_DB_PROBE_RPC','HEALTH_PUBLIC',
-  'FIREWALL_FAIL_CLOSED',
-  'TURNSTILE_SITE_KEY','TURNSTILE_SECRET_KEY',
-
-  // NEW: set-cookie posture controls
+  'ALLOWED_ORIGINS',
+  'ALLOW_LEGACY_LOGIN',
+  'APP_DESCRIPTION',
+  'APP_LIMITERS_ENABLED',
+  'APP_NAME',
+  'APP_SUBDOMAIN',
+  'APP_VERSION',
+  'ASSET_VERSION',
+  'AUTH_COOKIE_ALIASES',
+  'AUTH_COOKIE_BASENAME',
+  'AUTH_COOKIE_DOMAIN',
+  'AUTH_COOKIE_NAME',
+  'AUTH_DEBUG',
+  'AUTH_FRESH_GRACE_SEC',
+  'AUTH_SENTINEL_MS',
   'AUTH_SET_COOKIE_ENFORCE_LOCKOUT',
   'AUTH_SET_COOKIE_ENFORCE_TURNSTILE',
-
-  // Shared success/cancel paths
-  'STRIPE_SUCCESS_PATH','STRIPE_CANCEL_PATH',
-  // Dual-set Stripe (LIVE/TEST)
-  'STRIPE_SECRET_KEY_LIVE','STRIPE_PUBLISHABLE_KEY_LIVE','STRIPE_WEBHOOK_SECRET_LIVE',
-  'STRIPE_SECRET_KEY_TEST','STRIPE_PUBLISHABLE_KEY_TEST','STRIPE_WEBHOOK_SECRET_TEST',
-  'STRIPE_PRICE_RESUME_ONE_TIME_LIVE','STRIPE_PRICE_RESUME_EXPERT_LIVE',
-  'STRIPE_PRICE_RESUME_ONE_TIME_TEST','STRIPE_PRICE_RESUME_EXPERT_TEST',
-  'STRIPE_API_VERSION',
-  // audit toggle
+  'AWS_REGION',
+  'BASE_DOMAIN',
+  'CANONICAL_HOST',
   'CONFIG_ENV_AUDIT',
-  // Storage
+  'COOKIE_SAMESITE',
+  'COOKIE_SECURE',
+  'COOKIE_SET_MAX',
+  'COOKIE_SET_WINDOW_MS',
+  'COOKIE_SET_WINDOW_SEC',
+  'CORS_ORIGINS',
+  'CSRF_COOKIE_NAME',
+  'CSRF_HEADER_NAME',
+  'CSRF_SECRET',
+  'DB_PROVIDER',
+  'ENFORCE_HTTPS',
+  'FEATURE_ARCHIVE_RECEIPTS',
+  'FEATURE_ARCHIVE_RECEIPTS_TABLE',
+  'FIREWALL_FAIL_CLOSED',
+  'HEALTH_PUBLIC',
+  'HOST',
+  'IMAGE_TAG',
+  'IP_BLOCKLIST',
+  'JWT_ALLOWED_ALGS',
+  'JWT_CLOCK_SKEW_SEC',
+  'LOCAL_LIMITERS_ENABLED',
+  'LOG_LEVEL',
+  'LOGIN_ATTEMPTS',
+  'LOGIN_MAX',
+  'LOGIN_WINDOW_MIN',
+  'LOGIN_WINDOW_MS',
+  'LOGOUT_MAX',
+  'LOGOUT_WINDOW_MS',
+  'MAINTENANCE_ALLOWLIST',
+  'MAINTENANCE_ALLOWED_PATHS',
+  'MAINTENANCE_BYPASS_TOKEN',
+  'MAINTENANCE_DEFAULT',
+  'MAINTENANCE_KEY',
+  'MAINTENANCE_MESSAGE',
+  'MAINTENANCE_PAGE',
+  'MAINTENANCE_RETRY_AFTER',
+  'MAX_SUBMISSIONS',
+
+  // Infra: nginx proxy toggle (used by docker/nginx container entry command, not by Node app)
+  // Kept here so CONFIG_ENV_AUDIT doesn't flag it as unknown when present in env files.
+  'NGINX_USE_SSL',
+
+  'NODE_ENV',
+  'OPS_DB_PROBE_RPC',
+  'OPS_DB_PROBE_TABLE',
+  'OPS_HEALTH_IPS',
+  'OPS_HEALTH_TOKEN',
+  'PASSWORD_RESET_REDIRECT_URL',
+  'PORT',
+  'PUBLIC_ORIGIN',
+  'RATE_LIMIT_ENABLED',
+  'RATE_LIMIT_MAX',
+  'RATE_LIMIT_WINDOW_MS',
+  'REDIS_HOST',
+  'REDIS_PASSWORD',
+  'REDIS_PORT',
+  'REDIS_URL',
+  'SELF_HOST_SUPABASE_JS',
+  'SESSION_SECRET',
+  'SHUTDOWN_GRACE_MS',
+  'SIGNUP_ATTEMPTS',
+  'SIGNUP_MAX',
+  'SIGNUP_WINDOW_MIN',
+  'SIGNUP_WINDOW_MS',
+  'SKIP_RATE_LIMIT_IN_DEV',
+  'SKIP_RATE_LIMIT_IN_TEST',
   'STORAGE_PROVIDER',
-  'STORAGE_S3_BUCKET',
-  'STORAGE_S3_REGION',
   'STORAGE_S3_BASE_PATH',
-  'STORAGE_S3_PUBLIC_BASE_URL'
+  'STORAGE_S3_BUCKET',
+  'STORAGE_S3_PUBLIC_BASE_URL',
+  'STORAGE_S3_REGION',
+  'STRIPE_API_VERSION',
+  'STRIPE_CANCEL_PATH',
+  'STRIPE_PRICE_RESUME_EXPERT_LIVE',
+  'STRIPE_PRICE_RESUME_EXPERT_TEST',
+  'STRIPE_PRICE_RESUME_ONE_TIME_LIVE',
+  'STRIPE_PRICE_RESUME_ONE_TIME_TEST',
+  'STRIPE_PUBLISHABLE_KEY_LIVE',
+  'STRIPE_PUBLISHABLE_KEY_TEST',
+  'STRIPE_SECRET_KEY_LIVE',
+  'STRIPE_SECRET_KEY_TEST',
+  'STRIPE_SUCCESS_PATH',
+  'STRIPE_WEBHOOK_SECRET_LIVE',
+  'STRIPE_WEBHOOK_SECRET_TEST',
+  'SUPABASE_ANON_KEY',
+  'SUPABASE_DB_URL',
+  'SUPABASE_EXPECTED_AUD',
+  'SUPABASE_ISSUER',
+  'SUPABASE_JWKS_URL',
+  'SUPABASE_JWT_SECRET',
+  'SUPABASE_SERVICE_ROLE_KEY',
+  'SUPABASE_URL',
+  'TEXT_MAX_LENGTH',
+  'TEXT_MIN_LENGTH',
+  'TRUST_PROXY_HOPS',
+  'TURNSTILE_SECRET_KEY',
+  'TURNSTILE_SITE_KEY',
+  'X_CLIENT_INFO'
 ]);
 
 const APP_PREFIXES = [
-  'ALLOWED_','APP_','AUTH_','BASE_','COOKIE_','CORS_','CSRF_','DB_',
+  'ALLOWED_','APP_','AUTH_','AWS_','BASE_','COOKIE_','CORS_','CSRF_','DB_',
   'ENFORCE_','FEATURE_','FIREWALL_','IMAGE_','JWT_','LEGACY_','LOGIN_','LOGOUT_',
-  'MAINTENANCE_','NGINX_','OPS_','PUBLIC_','RATE_','REDIS_','REPAIR_',
-  'SELF_HOST_','SESSION_','SHUTDOWN_','SIGNUP_','SKIP_','STRIPE_','SUPABASE_','TEXT_','X_',
-  'STORAGE_'
+  'MAINTENANCE_','NGINX_','OPS_','PUBLIC_','RATE_','REDIS_',
+  'SELF_HOST_','SESSION_','SHUTDOWN_','SIGNUP_','SKIP_','STRIPE_','SUPABASE_','TEXT_','TRUST_','X_',
+  'STORAGE_',
+  'LOG_'
 ];
 
 function warnUnknownEnv() {
@@ -100,7 +186,7 @@ function warnUnknownEnv() {
     .filter((k) => !KNOWN_ENV.has(k));
 
   if (unknown.length) {
-    console.warn(`[config] Unknown app env keys present (ignored): ${unknown.sort().join(', ')}`);
+    console.warn(`[config] Unknown app/infra env keys present (ignored): ${unknown.sort().join(', ')}`);
   }
 }
 
@@ -257,18 +343,9 @@ const config = {
 
   // Auth / JWT verification
   jwt: {
-    // WHAT: Custom JWKS URL override (optional, defaults to Supabase standard path)
-    // WHY: Allows custom JWKS endpoints for non-standard Supabase setups
-    // HOW: Used by supabaseJwt middleware to fetch public keys for token verification
     jwksUrl: process.env.SUPABASE_JWKS_URL,
     issuer: process.env.SUPABASE_ISSUER,
-    // WHAT: Expected JWT audience claim value
-    // WHY: Validates tokens are intended for this application
-    // HOW: Used by supabaseJwt middleware to verify token audience (default: 'authenticated')
     expectedAud: process.env.SUPABASE_EXPECTED_AUD || 'authenticated',
-    // WHAT: Clock skew tolerance in seconds for JWT expiration checks
-    // WHY: Accounts for time drift between servers and token issuers
-    // HOW: Used by supabaseJwt middleware during token verification (default: 60s)
     clockSkewSec: int(process.env.JWT_CLOCK_SKEW_SEC, 60),
     secret: process.env.SUPABASE_JWT_SECRET
   },
@@ -361,9 +438,6 @@ const config = {
     test: stripeTest,
     active: stripeActive,
     apiVersion: stripeApiVersion,
-    // WHAT: Dashboard paths for successful and cancelled Stripe checkouts.
-    // WHY: We want one source of truth for where Stripe redirects after payment.
-    // HOW: Read from env with safe defaults; runtime code will use config.stripe.successPath/cancelPath only.
     successPath: process.env.STRIPE_SUCCESS_PATH || '/dashboard/purchase/confirmation',
     cancelPath: process.env.STRIPE_CANCEL_PATH || '/dashboard/billing'
   },
@@ -385,18 +459,12 @@ const config = {
     debug: bool(process.env.AUTH_DEBUG, false),
     passwordResetRedirect: process.env.PASSWORD_RESET_REDIRECT_URL ||
       (derivedPublicOrigin ? `${derivedPublicOrigin}/auth/forgot-password` : '/auth/forgot-password'),
-    // WHAT: Sentinel cookie fallback duration in milliseconds (0 = disabled)
-    // WHY: Provides a small client-side fallback when Redis watermark is unavailable
-    // HOW: Used by authCookie routes to set a temporary sentinel cookie after logout
+
+    // Logout sentinel posture
     sentinelMs: int(process.env.AUTH_SENTINEL_MS, 0),
-    // WHAT: Fresh token grace period in seconds when watermark is unavailable
-    // WHY: Allows fresh interactive logins to pass even when sentinel is active
-    // HOW: Used by authCookie routes to allow tokens issued within this window
     freshLoginGraceSec: int(process.env.AUTH_FRESH_GRACE_SEC, 20),
 
-    // WHAT: /auth/set-cookie posture controls
-    // WHY: Per-environment toggles without hardcoding behavior in routes
-    // HOW: Driven by env; defaults are safe and predictable
+    // /auth/set-cookie posture controls
     setCookie: {
       enforceLockout: bool(process.env.AUTH_SET_COOKIE_ENFORCE_LOCKOUT, nodeEnv === 'production'),
       enforceTurnstile: bool(process.env.AUTH_SET_COOKIE_ENFORCE_TURNSTILE, false)
@@ -470,11 +538,6 @@ const config = {
 
   // Logging configuration
   logging: {
-    /**
-     * WHAT: Minimum log level for the app-wide logger (e.g. 'debug', 'info', 'warn', 'error').
-     * WHY: Centralizes logging verbosity in one place so we can control logs per environment.
-     * HOW: Read from LOG_LEVEL env var, default to 'info'. Runtime code reads config.logging.logLevel only.
-     */
     logLevel: (process.env.LOG_LEVEL || 'info').toLowerCase()
   }
 };

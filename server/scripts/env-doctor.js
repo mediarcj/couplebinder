@@ -16,6 +16,8 @@
 // - Applies conditional rules that match server/config/index.js validation posture:
 //     - DB_PROVIDER=postgres => SUPABASE_DB_URL required
 //     - AUTH_SET_COOKIE_ENFORCE_TURNSTILE=true => TURNSTILE_SITE_KEY and TURNSTILE_SECRET_KEY required
+//     - STORAGE_PROVIDER=s3 => STORAGE_S3_BUCKET required; (STORAGE_S3_REGION or AWS_REGION) required
+//     - If Stripe prices are configured for the active mode => PUBLIC_ORIGIN required
 //
 // Evidence files written to repo root:
 //   - env-doctor-report-YYYYMMDD-HHmmss.json
@@ -94,6 +96,18 @@ function loadSchema(filePath) {
   return doc;
 }
 
+function stripOuterQuotes(v) {
+  const s = String(v ?? '');
+  if (s.length >= 2) {
+    const a = s[0];
+    const b = s[s.length - 1];
+    if ((a === '"' && b === '"') || (a === "'" && b === "'")) {
+      return s.slice(1, -1);
+    }
+  }
+  return s;
+}
+
 function loadEnvFile(filePath, label) {
   if (!fs.existsSync(filePath)) {
     console.warn(`WARN: Env file not found at ${filePath} (treating as empty).`);
@@ -106,8 +120,11 @@ function loadEnvFile(filePath, label) {
   let skippedInvalidLines = 0;
 
   for (const line of lines) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith('#')) continue;
+    const trimmed0 = line.trim();
+    if (!trimmed0 || trimmed0.startsWith('#')) continue;
+
+    // Allow: export KEY=value
+    const trimmed = trimmed0.startsWith('export ') ? trimmed0.slice('export '.length).trim() : trimmed0;
 
     const eqIdx = trimmed.indexOf('=');
     if (eqIdx === -1) {
@@ -116,7 +133,8 @@ function loadEnvFile(filePath, label) {
     }
 
     const key = trimmed.slice(0, eqIdx).trim();
-    const value = trimmed.slice(eqIdx + 1).trim();
+    const valueRaw = trimmed.slice(eqIdx + 1).trim();
+    const value = stripOuterQuotes(valueRaw);
 
     if (!key) {
       skippedInvalidLines++;
@@ -245,10 +263,6 @@ function hasKey(envObj, key) {
   return Object.prototype.hasOwnProperty.call(envObj, key);
 }
 
-function isEmpty(envObj, key) {
-  return hasKey(envObj, key) && String(envObj[key]) === '';
-}
-
 function computeMissingAndOmitted(schema, envObj, envLabel) {
   const schemaKeys = Object.keys(schema);
 
@@ -303,6 +317,20 @@ function computeConditionalMissing(envObj, envLabel) {
     }
     if (!hasKey(envObj, 'TURNSTILE_SECRET_KEY') || String(envObj.TURNSTILE_SECRET_KEY) === '') {
       missing.push('TURNSTILE_SECRET_KEY');
+    }
+  }
+
+  // Match config validation: STORAGE_PROVIDER=s3 => require bucket and region (STORAGE_S3_REGION or AWS_REGION)
+  const storageProvider = String(envObj.STORAGE_PROVIDER || 'local').trim().toLowerCase();
+  if (storageProvider === 's3') {
+    if (!hasKey(envObj, 'STORAGE_S3_BUCKET') || String(envObj.STORAGE_S3_BUCKET) === '') {
+      missing.push('STORAGE_S3_BUCKET');
+    }
+    const region = (envObj.STORAGE_S3_REGION || envObj.AWS_REGION || '').toString().trim();
+    if (!region) {
+      // Prefer prompting for STORAGE_S3_REGION, but accept AWS_REGION as fallback.
+      missing.push('STORAGE_S3_REGION');
+      missing.push('AWS_REGION');
     }
   }
 
@@ -458,7 +486,7 @@ function main() {
     console.log('');
     console.log('Done. Use this report to:');
     console.log('- Add missing REQUIRED keys (these should block boot);');
-    console.log('- Review conditional missing keys (depends on feature toggles / DB_PROVIDER);');
+    console.log('- Review conditional missing keys (depends on feature toggles / DB_PROVIDER / STORAGE_PROVIDER / Stripe prices);');
     console.log('- Decide if optional keys should be set for your environment.');
     console.log('INFO: env-doctor finished successfully.');
   } catch (err) {

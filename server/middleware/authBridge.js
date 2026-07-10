@@ -1,270 +1,542 @@
 // File: server/middleware/authBridge.js
 // Description: Verifies Supabase JWT access tokens and attaches user identity to req.user
-// Purpose: Stateless authentication using HS256 signature verification
-// Notes: Reads token from HttpOnly cookie, verifies signature/claims, never logs tokens
+// Purpose: Stateless authentication using configured asymmetric JWT algorithms and Supabase JWKS
+// Notes: Reads tokens from HttpOnly cookies or API Bearer headers and never logs token values
+
+'use strict';
 
 /**
  * WHAT:
- * We verify Supabase access tokens to identify users on every request.
- * 
+ * Verify Supabase access tokens and identify the authenticated user.
+ *
  * WHY:
- * Stateless authentication means no server-side sessions. We trust tokens
- * only after verifying their cryptographic signature and claims.
- * 
+ * Stateless authentication does not trust browser-provided identity data.
+ * Every token must pass signature and claim verification before req.user
+ * is populated.
+ *
  * HOW:
- * 1. Read token from HttpOnly cookie (or Bearer header for API tools)
- * 2. Verify signature using SUPABASE_JWT_SECRET (HS256) or JWKS (RS256)
- * 3. Validate issuer, audience, and expiration with clock skew tolerance
- * 4. Attach verified user data to req.user for downstream middleware
+ * 1. Read the access token from an HttpOnly cookie.
+ * 2. For non-SSR/API requests, optionally accept Authorization: Bearer.
+ * 3. Decode only the protected header to inspect the requested algorithm.
+ * 4. Reject algorithms not allowed by config.jwt.allowedAlgorithms.
+ * 5. Verify the signature through Supabase JWKS.
+ * 6. Validate issuer, audience, expiration, not-before, and clock tolerance.
+ * 7. Attach the verified identity to req.user.
  */
 
-const { createRemoteJWKSet, jwtVerify, decodeProtectedHeader } = require('jose');
+const {
+  createRemoteJWKSet,
+  jwtVerify,
+  decodeProtectedHeader
+} = require('jose');
+
 const { config } = require('../config');
 const logger = require('../utils/logger');
 
-// JWKS fetcher with automatic caching and key rotation support
-let jwks;
-function jwksFetcher() {
-  if (!jwks) jwks = createRemoteJWKSet(new URL(config.jwt.jwksUrl));
-  return jwks;
+// ──────────────────────────────────────────────────────────────────────────────
+// JWT configuration
+// ──────────────────────────────────────────────────────────────────────────────
+const JWKS_URL = (
+  config.jwt?.jwksUrl || ''
+).trim();
+
+const EXPECTED_ISSUER = (
+  config.jwt?.issuer || ''
+).trim();
+
+const EXPECTED_AUDIENCE =
+  config.jwt?.expectedAud ||
+  'authenticated';
+
+const CLOCK_SKEW_SEC =
+  config.jwt?.clockSkewSec ?? 60;
+
+const ALLOWED_ALGORITHMS =
+  Array.isArray(config.jwt?.allowedAlgorithms)
+    ? config.jwt.allowedAlgorithms
+    : [];
+
+if (!JWKS_URL) {
+  throw new Error(
+    'SUPABASE_JWKS_URL configuration is required by authBridge'
+  );
 }
 
+if (!EXPECTED_ISSUER) {
+  throw new Error(
+    'SUPABASE_ISSUER configuration is required by authBridge'
+  );
+}
+
+if (!ALLOWED_ALGORITHMS.length) {
+  throw new Error(
+    'At least one JWT algorithm must be configured for authBridge'
+  );
+}
+
+// authBridge verifies tokens using the public JWKS endpoint.
+// Symmetric HS algorithms cannot be verified through JWKS.
+const unsupportedAlgorithms =
+  ALLOWED_ALGORITHMS.filter(
+    (algorithm) =>
+      !['RS256', 'ES256'].includes(algorithm)
+  );
+
+if (unsupportedAlgorithms.length) {
+  throw new Error(
+    'authBridge received unsupported JWKS algorithms: ' +
+      unsupportedAlgorithms.join(', ')
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// JWKS resolver
+// ──────────────────────────────────────────────────────────────────────────────
+// createRemoteJWKSet performs public-key lookup by JWT kid and caches keys.
+// It can refresh automatically when Supabase rotates signing keys.
+const JWKS = createRemoteJWKSet(
+  new URL(JWKS_URL),
+  {
+    cooldownDuration: 600_000
+  }
+);
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Route classification
+// ──────────────────────────────────────────────────────────────────────────────
 /**
- * Read access token from HttpOnly cookie or Authorization header
- * 
- * WHAT:
- * Extract the Supabase access token from the request.
- * 
- * WHY:
- * For SSR pages (HTML), we ONLY use HttpOnly cookies to prevent hidden re-authentication.
- * For API routes (JSON), we support Bearer tokens for API tools/CLI.
- * 
- * HOW:
- * 1. Always check HttpOnly cookie first (cookie-only for SSR)
- * 2. For API routes only: fallback to Authorization: Bearer header
- * 3. Return null if no token found
+ * Determine whether a request must use cookie-only authentication.
+ *
+ * SSR routes must not silently authenticate through a Bearer header.
+ * /api/auth/status is also cookie-only so it reports the browser's real
+ * application-cookie state.
+ */
+function isCookieOnlyRequest(req) {
+  const path = req.path || '';
+  const acceptsHtml =
+    req.headers.accept?.includes('text/html');
+
+  const isPageRoute =
+    !path.startsWith('/api/') &&
+    !path.startsWith('/auth/') &&
+    (
+      acceptsHtml ||
+      path.startsWith('/dashboard') ||
+      path === '/' ||
+      path === '/login'
+    );
+
+  return (
+    isPageRoute ||
+    path === '/api/auth/status'
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Token extraction
+// ──────────────────────────────────────────────────────────────────────────────
+/**
+ * Read an access token without logging its contents.
+ *
+ * Priority:
+ * 1. Current HttpOnly application cookie.
+ * 2. Legacy cookies retained for migration compatibility.
+ * 3. Bearer header for non-cookie-only requests.
  */
 function readAccessToken(req, cookieOnly = false) {
-  const { AUTH_COOKIE_NAME } = require('../lib/authCookie');
+  const {
+    AUTH_COOKIE_NAME
+  } = require('../lib/authCookie');
+
   const cookieName = AUTH_COOKIE_NAME;
-  const hostPrefixed = `__Host-${cookieName}`;
-  
-  // Priority 1: HttpOnly cookie (web pages) - env-driven name + legacy fallback
-  const cookieToken = req.cookies?.[hostPrefixed]
-    || req.cookies?.[cookieName]
-    || (() => {
-      // Check for legacy cookies and log usage
-      const legacyToken = req.cookies?.['sb-access-token'] || req.cookies?.['sb_session'];
-      if (legacyToken) {
-        logger.info({
-          event: 'legacy.cookie_used',
-          cookieName: req.cookies?.['sb-access-token'] ? 'sb-access-token' : 'sb_session'
-        }, 'Legacy auth cookie was accepted');
-      }
-      return legacyToken;
-    })()
-    || null;
+  const hostPrefixedName =
+    `__Host-${cookieName}`;
 
-  // Debug logging for cookie read attempt (only when AUTH_DEBUG=true)
+  const hostPrefixedToken =
+    req.cookies?.[hostPrefixedName];
+
+  const plainCookieToken =
+    req.cookies?.[cookieName];
+
+  const legacyAccessToken =
+    req.cookies?.['sb-access-token'];
+
+  const legacySessionToken =
+    req.cookies?.['sb_session'];
+
+  const legacyToken =
+    legacyAccessToken ||
+    legacySessionToken ||
+    null;
+
+  if (legacyToken) {
+    logger.info(
+      {
+        event: 'legacy.cookie_used',
+        cookieName: legacyAccessToken
+          ? 'sb-access-token'
+          : 'sb_session'
+      },
+      'Legacy auth cookie was accepted'
+    );
+  }
+
+  const cookieToken =
+    hostPrefixedToken ||
+    plainCookieToken ||
+    legacyToken ||
+    null;
+
   if (config.auth.debug) {
-    logger.debug({
-      event: 'auth.cookie.read.attempt',
-      cookieOnly,
-      hasHostPrefixed: !!(req.cookies?.[hostPrefixed]),
-      hasPlain: !!(req.cookies?.[cookieName]),
-      hasLegacy1: !!(req.cookies?.['sb-access-token']),
-      hasLegacy2: !!(req.cookies?.['sb_session']),
-      allCookieNames: req.cookies ? Object.keys(req.cookies) : []
-    }, 'Cookie read attempt');
+    logger.debug(
+      {
+        event: 'auth.cookie.read.attempt',
+        cookieOnly,
+        hasHostPrefixed:
+          Boolean(hostPrefixedToken),
+        hasPlain:
+          Boolean(plainCookieToken),
+        hasLegacyAccessToken:
+          Boolean(legacyAccessToken),
+        hasLegacySessionToken:
+          Boolean(legacySessionToken),
+        cookieNames:
+          req.cookies
+            ? Object.keys(req.cookies)
+            : []
+      },
+      'Cookie read attempt'
+    );
   }
 
-  if (cookieToken) return cookieToken;
-  
-  // Priority 2: Bearer header (API tools, CLI) - ONLY for API routes, not SSR
-  if (!cookieOnly) {
-    const auth = req.headers.authorization || '';
-    if (auth.startsWith('Bearer ')) return auth.slice(7).trim();
+  if (cookieToken) {
+    return {
+      token: cookieToken,
+      source: 'cookie'
+    };
   }
-  
-  return null;
+
+  if (!cookieOnly) {
+    const authorizationHeader =
+      req.headers.authorization || '';
+
+    const bearerMatch =
+      authorizationHeader.match(
+        /^Bearer\s+(.+)$/i
+      );
+
+    if (bearerMatch?.[1]) {
+      return {
+        token: bearerMatch[1].trim(),
+        source: 'bearer'
+      };
+    }
+  }
+
+  return {
+    token: null,
+    source: 'none'
+  };
 }
 
-/**
- * Main middleware: Verify Supabase JWT and attach req.user
- * 
- * WHAT:
- * We check if the request has a valid Supabase access token and verify it.
- * 
- * WHY:
- * This is our gatekeeper. Protected routes need to know WHO is making the request.
- * We verify cryptographically so we can trust the identity without sessions.
- * 
- * HOW:
- * 1. Read token from HttpOnly cookie (web) or Bearer header (API tools)
- * 2. Decode header to check algorithm (HS256, RS256, ES256)
- * 3. Verify signature + claims (iss, aud, exp) using appropriate method
- * 4. On success: attach req.user with verified identity
- * 5. On failure: set req.user = null and continue (let requireAuth block if needed)
- */
-module.exports = async function authBridge(req, res, next) {
-  try {
-    // Determine if this is an SSR route (HTML) or API route (JSON)
-    // SSR routes must ONLY use cookies to prevent hidden re-authentication
-    // Status endpoint is special: cookie-only to reflect actual cookie state
-    const isSSR = (!req.path.startsWith('/api/') && 
-                   !req.path.startsWith('/auth/') &&
-                   (req.headers.accept?.includes('text/html') || 
-                    req.path.startsWith('/dashboard') ||
-                    req.path === '/' ||
-                    req.path === '/login')) ||
-                  req.path === '/api/auth/status'; // Status endpoint is cookie-only
-    
-    // Debug logging (controlled by config.auth.debug)
-    if (config.auth.debug) {
-      const { AUTH_COOKIE_NAME } = require('../lib/authCookie');
-      const cookieName = AUTH_COOKIE_NAME;
-      const hasBearer = /^Bearer\s+/.test(req.headers.authorization || '');
-      const hasCookie = !!(req.cookies && Object.prototype.hasOwnProperty.call(req.cookies, cookieName));
-      
-      logger.debug({
-        event: 'auth.debug',
-        method: req.method,
+// ──────────────────────────────────────────────────────────────────────────────
+// Rejection helper
+// ──────────────────────────────────────────────────────────────────────────────
+function continueUnauthenticated(
+  req,
+  next,
+  reason,
+  metadata = {}
+) {
+  req.user = null;
+
+  if (config.auth.debug) {
+    logger.debug(
+      {
+        event: 'auth.bridge.rejected',
+        reason,
         path: req.originalUrl,
-        isSSR,
-        hasBearer,
-        hasCookie,
-        cookieName,
-        authSource: hasCookie ? 'cookie' : (hasBearer ? 'bearer' : 'none')
-      }, 'Auth bridge debug info');
-    }
-    
-    // Step 1: Read token - cookie-only for SSR, cookie+header for API
-    const token = readAccessToken(req, isSSR);
-    if (!token) {
-      req.user = null;
-      // Log auth source for SSR routes (debug level only - expected when not logged in)
-      if (isSSR && config.auth.debug) {
-        const { AUTH_COOKIE_NAME } = require('../lib/authCookie');
-        const cookieName = AUTH_COOKIE_NAME;
-        const hostPrefixed = `__Host-${cookieName}`;
-        logger.debug({
-          event: 'auth.ssr.no_token',
-          path: req.path,
-          requestId: req.requestId,
-          authSource: 'none',
+        requestId: req.requestId,
+        ...metadata
+      },
+      'Authentication token was not accepted'
+    );
+  }
+
+  return next();
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Main middleware
+// ──────────────────────────────────────────────────────────────────────────────
+module.exports = async function authBridge(
+  req,
+  res,
+  next
+) {
+  const cookieOnly =
+    isCookieOnlyRequest(req);
+
+  try {
+    const {
+      AUTH_COOKIE_NAME
+    } = require('../lib/authCookie');
+
+    const cookieName =
+      AUTH_COOKIE_NAME;
+
+    const hostPrefixedName =
+      `__Host-${cookieName}`;
+
+    const hasBearer =
+      /^Bearer\s+/.test(
+        req.headers.authorization || ''
+      );
+
+    const hasCurrentCookie =
+      Boolean(
+        req.cookies?.[hostPrefixedName] ||
+        req.cookies?.[cookieName]
+      );
+
+    const hasLegacyCookie =
+      Boolean(
+        req.cookies?.['sb-access-token'] ||
+        req.cookies?.['sb_session']
+      );
+
+    if (config.auth.debug) {
+      logger.debug(
+        {
+          event: 'auth.debug',
+          method: req.method,
+          path: req.originalUrl,
+          cookieOnly,
+          hasBearer,
+          hasCurrentCookie,
+          hasLegacyCookie,
           cookieName,
-          hostPrefixed,
-          hasHostPrefixed: !!(req.cookies?.[hostPrefixed]),
-          hasPlain: !!(req.cookies?.[cookieName]),
-          hasLegacy1: !!(req.cookies?.['sb-access-token']),
-          hasLegacy2: !!(req.cookies?.['sb_session']),
-          allCookieNames: req.cookies ? Object.keys(req.cookies) : [],
-          cookieHeaderLength: req.headers.cookie ? req.headers.cookie.length : 0,
-          cookieHeaderPreview: req.headers.cookie ? req.headers.cookie.substring(0, 100) : '(none)',
-          cookiesObjectKeys: req.cookies ? Object.keys(req.cookies) : [],
-          cookiesObjectSize: req.cookies ? Object.keys(req.cookies).length : 0
-        }, 'SSR route: no auth cookie (cookie-only) - expected when not logged in');
+          authSource:
+            hasCurrentCookie ||
+            hasLegacyCookie
+              ? 'cookie'
+              : hasBearer
+                ? 'bearer'
+                : 'none'
+        },
+        'Auth bridge debug information'
+      );
+    }
+
+    // Step 1: Read token.
+    const {
+      token,
+      source
+    } = readAccessToken(
+      req,
+      cookieOnly
+    );
+
+    if (!token) {
+      if (
+        cookieOnly &&
+        config.auth.debug
+      ) {
+        logger.debug(
+          {
+            event: 'auth.ssr.no_token',
+            path: req.path,
+            requestId: req.requestId,
+            authSource: 'none',
+            cookieName,
+            hostPrefixedName,
+            hasHostPrefixed:
+              Boolean(
+                req.cookies?.[
+                  hostPrefixedName
+                ]
+              ),
+            hasPlain:
+              Boolean(
+                req.cookies?.[cookieName]
+              ),
+            hasLegacyAccessToken:
+              Boolean(
+                req.cookies?.[
+                  'sb-access-token'
+                ]
+              ),
+            hasLegacySessionToken:
+              Boolean(
+                req.cookies?.[
+                  'sb_session'
+                ]
+              ),
+            cookieNames:
+              req.cookies
+                ? Object.keys(
+                    req.cookies
+                  )
+                : [],
+            cookieCount:
+              req.cookies
+                ? Object.keys(
+                    req.cookies
+                  ).length
+                : 0
+          },
+          'Cookie-only route has no authentication cookie'
+        );
       }
+
+      req.user = null;
       return next();
     }
-    
-    // Log auth source (debug level, PII-safe)
-    const { AUTH_COOKIE_NAME } = require('../lib/authCookie');
-    const cookieName = AUTH_COOKIE_NAME;
-    const hostPrefixed = `__Host-${cookieName}`;
-    // Check all cookie variants to determine source
-    const hasCookie = !!(req.cookies?.[hostPrefixed] || 
-                        req.cookies?.[cookieName] || 
-                        req.cookies?.['sb-access-token'] || 
-                        req.cookies?.['sb_session']);
-    const authSource = hasCookie ? 'cookie' : 'bearer';
-    logger.debug({
-      event: 'auth.verified',
-      path: req.path,
-      isSSR,
-      authSource,
-      requestId: req.requestId
-    }, `Auth verified (${isSSR ? 'SSR' : 'API'}, source: ${authSource})`);
 
-    // Step 2: Decode header to check algorithm (don't verify yet)
-    let header;
+    // Step 2: Decode only the protected header so we can enforce the
+    // configured algorithm allowlist before attempting verification.
+    let protectedHeader;
+
     try {
-      header = decodeProtectedHeader(token);
-    } catch (e) {
-      // Invalid JWT format - silently reject
-      req.user = null;
-      return next();
+      protectedHeader =
+        decodeProtectedHeader(token);
+    } catch {
+      return continueUnauthenticated(
+        req,
+        next,
+        'invalid_jwt_header',
+        {
+          authSource: source,
+          cookieOnly
+        }
+      );
     }
 
-    const alg = header.alg || 'unknown';
-    
-    // Step 3: Verify based on algorithm
-    let payload;
-    
-    if (alg.startsWith('HS')) {
-      /**
-       * HS256 Verification (symmetric key)
-       * 
-       * WHAT: Verify token signature using shared secret (SUPABASE_JWT_SECRET)
-       * WHY: Supabase projects use HS256 by default for simplicity
-       * HOW: Use jose.jwtVerify with secret key and validate all claims
-       */
-      if (!config.jwt.secret) {
-        // Missing secret - silently reject
-        req.user = null;
-        return next();
+    const algorithm =
+      protectedHeader.alg || '';
+
+    // Step 3: Centralized algorithm enforcement.
+    //
+    // The config module is the source of truth. A token using an algorithm
+    // outside JWT_ALLOWED_ALGS is rejected before key lookup.
+    if (
+      !ALLOWED_ALGORITHMS.includes(
+        algorithm
+      )
+    ) {
+      return continueUnauthenticated(
+        req,
+        next,
+        'algorithm_not_allowed',
+        {
+          algorithm:
+            algorithm || 'missing',
+          authSource: source,
+          cookieOnly
+        }
+      );
+    }
+
+    // Step 4: Verify the token through Supabase JWKS.
+    //
+    // jose validates:
+    // - Cryptographic signature
+    // - Allowed algorithm
+    // - Issuer
+    // - Audience
+    // - exp
+    // - nbf
+    // - Clock tolerance
+    const {
+      payload
+    } = await jwtVerify(
+      token,
+      JWKS,
+      {
+        algorithms:
+          ALLOWED_ALGORITHMS,
+        issuer:
+          EXPECTED_ISSUER,
+        audience:
+          EXPECTED_AUDIENCE,
+        clockTolerance:
+          CLOCK_SKEW_SEC
       }
-      
-      const secret = new TextEncoder().encode(config.jwt.secret);
-      const result = await jwtVerify(token, secret, {
-        algorithms: ['HS256'],  // Only accept HS256 for symmetric verification
-        issuer: config.jwt.issuer,  // e.g., https://xxx.supabase.co/auth/v1
-        audience: config.jwt.expectedAud,  // usually "authenticated"
-        clockTolerance: config.jwt.clockSkewSec  // allow small time drift (default: 30s)
-      });
-      payload = result.payload;
-      
-    } else if (alg.startsWith('RS') || alg.startsWith('ES')) {
-      /**
-       * RS256/ES256 Verification (asymmetric key)
-       * 
-       * WHAT: Verify token signature using Supabase JWKS (public keys)
-       * WHY: Production-grade, supports key rotation automatically
-       * HOW: Use jose.jwtVerify with JWKS fetcher and validate all claims
-       */
-      const result = await jwtVerify(token, jwksFetcher(), {
-        issuer: config.jwt.issuer,
-        audience: config.jwt.expectedAud,
-        clockTolerance: config.jwt.clockSkewSec
-      });
-      payload = result.payload;
-      
-    } else {
-      // Unsupported algorithm - silently reject
-      req.user = null;
-      return next();
+    );
+
+    // Supabase user JWTs must contain sub.
+    if (!payload?.sub) {
+      return continueUnauthenticated(
+        req,
+        next,
+        'missing_sub',
+        {
+          algorithm,
+          authSource: source,
+          cookieOnly
+        }
+      );
     }
 
-    // Step 4: Attach verified user identity to request
+    // Step 5: Attach only verified identity claims.
     req.user = {
-      id: payload.sub,  // Supabase user ID
-      email: payload.email || null,
-      role: payload.role || 'authenticated',
-      app_metadata: payload.app_metadata || {},
-      user_metadata: payload.user_metadata || {}
+      id: payload.sub,
+      email:
+        payload.email || null,
+      role:
+        payload.role ||
+        payload.user_role ||
+        'authenticated',
+      app_metadata:
+        payload.app_metadata || {},
+      user_metadata:
+        payload.user_metadata || {}
     };
 
+    if (config.auth.debug) {
+      logger.debug(
+        {
+          event: 'auth.verified',
+          path: req.path,
+          requestId: req.requestId,
+          cookieOnly,
+          authSource: source,
+          algorithm
+        },
+        `Authentication verified (${cookieOnly ? 'cookie-only' : 'API-capable'}, source: ${source})`
+      );
+    }
+
     return next();
-    
   } catch (error) {
-    /**
-     * Verification failed
-     * 
-     * WHAT: Token signature invalid, expired, or claims don't match
-     * WHY: Could be tampered token, expired session, or wrong issuer/audience
-     * HOW: Silently reject (don't log error details or tokens)
-     */
+    // Verification failures are treated as unauthenticated requests.
+    //
+    // requireAuth remains responsible for deciding whether the current
+    // route permits anonymous access or returns a redirect/401 response.
+    const reason =
+      error?.code ||
+      error?.message ||
+      'verification_failed';
+
     req.user = null;
+
+    if (config.auth.debug) {
+      logger.debug(
+        {
+          event:
+            'auth.bridge.verification_failed',
+          reason,
+          name: error?.name,
+          code: error?.code,
+          claim: error?.claim,
+          path: req.originalUrl,
+          requestId: req.requestId,
+          cookieOnly
+        },
+        'JWT verification failed'
+      );
+    }
+
     return next();
   }
 };

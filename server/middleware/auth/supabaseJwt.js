@@ -1,182 +1,278 @@
 /**
  * File: server/middleware/auth/supabaseJwt.js
- * Description: Verify Supabase JWT via JWKS (signature + iss + aud). Adds req.user on success.
- * Notes: Uses jose with remote JWKS. Works with Supabase RS256 keys. Keep comments short and clear.
+ * Description: Verify Supabase JWTs through JWKS.
+ * Notes: Validates signature, issuer, audience, time claims, and subject.
  *
  * ============================================================
  * WHAT
- * Validate Supabase Auth tokens on the server using Supabases JWKS (public keys).
+ * Validate Supabase Auth access tokens on the server.
  *
  * WHY
- * The browser is not trusted. Every protected route must verify the tokens signature and claims.
+ * The browser is not trusted. Protected routes must verify the
+ * token signature and claims before trusting the user's identity.
  *
  * HOW
- * 1) Build a JWKS URL for this project.
- * 2) Fetch and cache the keys (server only).
- * 3) Verify signature (RS256), issuer, audience, and time.
- * 4) On success: set req.user = { id, email, role }. On failure: return 401.
+ * 1. Resolve the project's JWKS endpoint.
+ * 2. Fetch and cache public signing keys.
+ * 3. Restrict verification to config.jwt.allowedAlgorithms.
+ * 4. Validate issuer, audience, expiration, not-before, and subject.
+ * 5. Attach the verified identity to req.user.
  * ============================================================
  */
 
-const { createRemoteJWKSet, jwtVerify } = require('jose');
+'use strict';
+
+const {
+  createRemoteJWKSet,
+  jwtVerify
+} = require('jose');
+
 const { audit } = require('../../lib/audit');
 const logger = require('../../utils/logger');
 const { config } = require('../../config');
 
 // ============================================================
-// STEP 1: Read config (fail fast on missing core vars)
-// ------------------------------------------------------------
-// WHAT: Resolve base URL and anon key. Normalize URL (no trailing slash).
-// WHY: We need the project URL to reach JWKS, and many projects require apikey to read JWKS.
-// HOW: Read from config.supabase.url and config.supabase.anonKey. Warn if anon key is missing (JWKS may 401).
+// STEP 1: Read and validate configuration
 // ============================================================
-const SUPABASE_URL = config.supabase?.url?.replace(/\/+$/, '');
-if (!SUPABASE_URL) throw new Error('SUPABASE_URL env is required');
+const SUPABASE_URL = (
+  config.supabase?.url || ''
+).replace(/\/+$/, '');
 
-const SUPABASE_ANON_KEY = config.supabase?.anonKey || '';
+if (!SUPABASE_URL) {
+  throw new Error(
+    'SUPABASE_URL configuration is required'
+  );
+}
+
+const JWKS_URL =
+  (
+    config.jwt?.jwksUrl || ''
+  ).trim() ||
+  `${SUPABASE_URL}/auth/v1/.well-known/jwks.json`;
+
+const EXPECTED_ISSUER = (
+  config.jwt?.issuer || ''
+).trim();
+
+if (!EXPECTED_ISSUER) {
+  throw new Error(
+    'SUPABASE_ISSUER configuration is required'
+  );
+}
+
+const EXPECTED_AUDIENCE =
+  config.jwt?.expectedAud ||
+  'authenticated';
+
+const CLOCK_SKEW_SEC =
+  config.jwt?.clockSkewSec ?? 60;
+
+const ALLOWED_ALGORITHMS =
+  Array.isArray(
+    config.jwt?.allowedAlgorithms
+  )
+    ? config.jwt.allowedAlgorithms
+    : [];
+
+if (!ALLOWED_ALGORITHMS.length) {
+  throw new Error(
+    'At least one JWT verification algorithm must be configured'
+  );
+}
+
+// This middleware verifies tokens through a public JWKS endpoint.
+// Symmetric algorithms such as HS256 cannot be verified through JWKS.
+const invalidAlgorithms =
+  ALLOWED_ALGORITHMS.filter(
+    (algorithm) =>
+      !['RS256', 'ES256'].includes(
+        algorithm
+      )
+  );
+
+if (invalidAlgorithms.length) {
+  throw new Error(
+    'Unsupported JWKS algorithms configured: ' +
+      invalidAlgorithms.join(', ')
+  );
+}
+
+// The anon key is not required to read the standard public JWKS endpoint.
+// Keep this warning because other Supabase client operations may still need it.
+const SUPABASE_ANON_KEY =
+  config.supabase?.anonKey || '';
+
 if (!SUPABASE_ANON_KEY) {
-  // We can still boot, but some projects will reject JWKS without an apikey.
-  logger.warn({
-    event: 'auth.config.anon_key_missing',
-    warning: 'JWKS fetch may be unauthorized'
-  }, 'SUPABASE_ANON_KEY missing');
+  logger.warn(
+    {
+      event: 'auth.config.anon_key_missing',
+      warning:
+        'Supabase client operations may fail even though JWKS verification can still work'
+    },
+    'SUPABASE_ANON_KEY missing'
+  );
 }
 
 // ============================================================
-// STEP 2: Build JWKS endpoint
-// ------------------------------------------------------------
-// WHAT: Use the GoTrue JWKS path. Add apikey query so Supabase authorizes the read.
-// WHY: Without apikey, many projects return 401. This call is server-side only.
-// HOW: Prefer config.jwt.jwksUrl override, otherwise build from SUPABASE_URL. Allow SUPABASE_JWKS_URL override for rare setups.
+// STEP 2: Create remote JWKS resolver
 // ============================================================
-const JWKS_URL =
-  config.jwt?.jwksUrl?.trim() ||
-  `${SUPABASE_URL}/auth/v1/jwks${SUPABASE_ANON_KEY ? `?apikey=${encodeURIComponent(SUPABASE_ANON_KEY)}` : ''}`;
-
-const JWKS = createRemoteJWKSet(new URL(JWKS_URL), {
-  cache: true,
-  cooldownDuration: 600_000 // 10 minutes between failed refetch attempts
-});
+const JWKS = createRemoteJWKSet(
+  new URL(JWKS_URL),
+  {
+    cooldownDuration: 600_000
+  }
+);
 
 // ============================================================
-// STEP 3: Expected claims
-// ------------------------------------------------------------
-// WHAT: Set the issuer(s), audience, and clock tolerance.
-// WHY: These claims help prove the token came from your project and is still valid.
-// HOW: Supabase default aud is "authenticated"; issuer usually ends with /auth/v1.
-// ============================================================
-const EXPECTED_AUD = config.jwt?.expectedAud || 'authenticated';
-const ALLOWED_ISSUERS = [
-  `${SUPABASE_URL}/auth/v1`, // common shape
-  SUPABASE_URL               // lenient fallback (some tokens may use base URL)
-];
-
-const CLOCK_SKEW_SEC = config.jwt?.clockSkewSec || 60; // allow 60s time drift
-
-// ============================================================
-// STEP 4: Read token from request
-// ------------------------------------------------------------
-// WHAT: Try "Authorization: Bearer <token>" first, then cookie.
-// WHY: Supports both API clients (header) and browsers (cookie).
-// HOW: Cookie name is configurable; default "sb_session" (Supabase new default).
+// STEP 3: Read token from request
 // ============================================================
 function readToken(req) {
-  // 1) Preferred: Authorization header
-  const h = req.headers.authorization || '';
-  const m = h.match(/^Bearer\s+(.+)$/i);
-  if (m && m[1]) return m[1].trim();
+  // API clients use the Authorization header first.
+  const authorizationHeader =
+    req.headers.authorization || '';
 
-  // 2) Cookie fallback (config-driven + legacy for migration safety)
-  const cookieName = config.auth?.cookieName || 'sb_session';
+  const bearerMatch =
+    authorizationHeader.match(
+      /^Bearer\s+(.+)$/i
+    );
+
+  if (bearerMatch?.[1]) {
+    return bearerMatch[1].trim();
+  }
+
+  // Browser fallback: application HttpOnly cookie.
+  const cookieName =
+    config.auth?.cookieName ||
+    'sb_session';
+
+  const hostCookieName =
+    `__Host-${cookieName}`;
+
   return (
+    req.cookies?.[hostCookieName] ||
     req.cookies?.[cookieName] ||
-    req.cookies?.['sb-access-token'] || // legacy
-    req.cookies?.['sb_session'] ||      // legacy
+    req.cookies?.['sb-access-token'] ||
+    req.cookies?.['sb_session'] ||
     null
   );
 }
 
 // ============================================================
-// STEP 5: Verify token
-// ------------------------------------------------------------
-// WHAT: Validate signature, issuer, audience, exp/nbf with jose and remote JWKS.
-// WHY: This is the core security gate. Reject anything that does not match.
-// HOW: Limit algorithms to RS256 (matches your current Supabase setup).
-//      If you later rotate to ES256, update algorithms accordingly.
+// STEP 4: Verify token
 // ============================================================
 async function verifyToken(token) {
   if (!token) {
-    const err = new Error('missing_token');
-    err.code = 'missing_token';
-    throw err;
+    const error = new Error(
+      'missing_token'
+    );
+
+    error.code = 'missing_token';
+    throw error;
   }
 
   try {
-    const { payload } = await jwtVerify(token, JWKS, {
-      algorithms: ['RS256'],
-      issuer: ALLOWED_ISSUERS,
-      audience: EXPECTED_AUD,
-      clockTolerance: CLOCK_SKEW_SEC
-    });
+    const { payload } = await jwtVerify(
+      token,
+      JWKS,
+      {
+        algorithms: ALLOWED_ALGORITHMS,
+        issuer: EXPECTED_ISSUER,
+        audience: EXPECTED_AUDIENCE,
+        clockTolerance: CLOCK_SKEW_SEC
+      }
+    );
 
-    // Basic sanity: sub must exist
     if (!payload?.sub) {
-      const err = new Error('missing_sub');
-      err.code = 'missing_sub';
-      throw err;
+      const error = new Error(
+        'missing_sub'
+      );
+
+      error.code = 'missing_sub';
+      throw error;
     }
 
     return payload;
-  } catch (err) {
-    // Keep details in server logs only
-    const reason = err?.code || err?.message || 'verify_failed';
-    const meta = {
-      name: err?.name,
-      code: err?.code,
-      claim: err?.claim,
-      iss: err?.payload?.iss,
-      aud: err?.payload?.aud
+  } catch (error) {
+    const reason =
+      error?.code ||
+      error?.message ||
+      'verify_failed';
+
+    const metadata = {
+      name: error?.name,
+      code: error?.code,
+      claim: error?.claim,
+      iss: error?.payload?.iss,
+      aud: error?.payload?.aud
     };
-    logger.warn({
-      event: 'auth.jwt_verification.failed',
-      reason,
-      ...meta
-    }, 'JWT verification failed');
-    
-    // ============================================================
-    // Audit log: JWT verification failure
-    // ============================================================
-    audit('auth.verify.fail', { reason, claim: err?.claim }, null);
-    
-    // Return a generic error to client
-    const clientErr = new Error('invalid_token');
-    clientErr.code = reason;
-    clientErr.cause = err;
-    throw clientErr;
+
+    logger.warn(
+      {
+        event:
+          'auth.jwt_verification.failed',
+        reason,
+        ...metadata
+      },
+      'JWT verification failed'
+    );
+
+    audit(
+      'auth.verify.fail',
+      {
+        reason,
+        claim: error?.claim
+      },
+      null
+    );
+
+    const clientError = new Error(
+      'invalid_token'
+    );
+
+    clientError.code = reason;
+    clientError.cause = error;
+
+    throw clientError;
   }
 }
 
 // ============================================================
-// STEP 6: Express middleware (authRequired)
-// ------------------------------------------------------------
-// WHAT: Require a valid Supabase JWT for protected routes.
-// WHY: Enforces auth on the server even if the UI hides things.
-// HOW: Read  verify  set req.user  next(), else 401.
+// STEP 5: Express middleware
 // ============================================================
 function authRequired(req, res, next) {
   const token = readToken(req);
-  if (!token) return res.status(401).json({ error: 'missing token' });
+
+  if (!token) {
+    return res.status(401).json({
+      error: 'missing token'
+    });
+  }
 
   verifyToken(token)
     .then((payload) => {
       req.user = {
         id: payload.sub,
-        email: payload.email,
-        role: payload.role || payload.user_role || 'user'
+        email: payload.email || null,
+        role:
+          payload.role ||
+          payload.user_role ||
+          'user',
+        app_metadata:
+          payload.app_metadata || {},
+        user_metadata:
+          payload.user_metadata || {}
       };
-      next();
+
+      return next();
     })
-    .catch(() => res.status(401).json({ error: 'invalid token' }));
+    .catch(() =>
+      res.status(401).json({
+        error: 'invalid token'
+      })
+    );
 }
 
-module.exports = { authRequired, verifyToken };
+module.exports = {
+  authRequired,
+  verifyToken
+};

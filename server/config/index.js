@@ -12,14 +12,14 @@ const path = require('path');
 // ──────────────────────────────────────────────────────────────────────────────
 // Goal:
 //   - In development: read .env.development.local at repo root
-//   - In production (EC2/SSS/Docker): read .env.production.full at repo root
+//   - In production (EC2/SSM/Docker): read .env.production.full at repo root
 //   - Never read the legacy .env file anymore.
 //
 // Note:
 //   - Values already present in process.env (from Docker / systemd / shell)
 //     always win; dotenv only fills in missing keys.
 const NODE_ENV = process.env.NODE_ENV || 'development';
-const ROOT_DIR = path.join(__dirname, '..', '..'); // repo root
+const ROOT_DIR = path.join(__dirname, '..', '..');
 
 if (NODE_ENV === 'development') {
   const devEnvPath = path.join(ROOT_DIR, '.env.development.local');
@@ -30,18 +30,16 @@ if (NODE_ENV === 'development') {
   require('dotenv').config({ path: prodEnvPath });
   console.log(`[config] Loaded production env from ${prodEnvPath}`);
 } else {
-  // For test/other NODE_ENV values we rely entirely on the existing process.env.
-  console.log(`[config] NODE_ENV=${NODE_ENV} – no dotenv file loaded (process.env only).`);
+  console.log(
+    `[config] NODE_ENV=${NODE_ENV} – no dotenv file loaded (process.env only).`
+  );
 }
 
-// Note: consoleLogger is loaded lazily in logConfigSummary() to avoid circular requires
+// consoleLogger is loaded lazily in logConfigSummary() to avoid circular requires.
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Env audit (optional, off by default)
 // ──────────────────────────────────────────────────────────────────────────────
-// Philosophy: env.schema.yml is an inventory of everything allowed in env files
-// for this repo (app + infra). KNOWN_ENV should include those keys too so that
-// CONFIG_ENV_AUDIT can warn only on truly-unknown app/infra keys.
 const KNOWN_ENV = new Set([
   'ALLOWED_ORIGINS',
   'ALLOW_LEGACY_LOGIN',
@@ -102,8 +100,7 @@ const KNOWN_ENV = new Set([
   'MAINTENANCE_RETRY_AFTER',
   'MAX_SUBMISSIONS',
 
-  // Infra: nginx proxy toggle (used by docker/nginx container entry command, not by Node app)
-  // Kept here so CONFIG_ENV_AUDIT doesn't flag it as unknown when present in env files.
+  // Infra: nginx proxy toggle.
   'NGINX_USE_SSL',
 
   'NODE_ENV',
@@ -165,72 +162,162 @@ const KNOWN_ENV = new Set([
 ]);
 
 const APP_PREFIXES = [
-  'ALLOWED_','APP_','AUTH_','AWS_','BASE_','COOKIE_','CORS_','CSRF_','DB_',
-  'ENFORCE_','FEATURE_','FIREWALL_','IMAGE_','JWT_','LEGACY_','LOGIN_','LOGOUT_',
-  'MAINTENANCE_','NGINX_','OPS_','PUBLIC_','RATE_','REDIS_',
-  'SELF_HOST_','SESSION_','SHUTDOWN_','SIGNUP_','SKIP_','STRIPE_','SUPABASE_','TEXT_','TRUST_','X_',
+  'ALLOWED_',
+  'APP_',
+  'AUTH_',
+  'AWS_',
+  'BASE_',
+  'COOKIE_',
+  'CORS_',
+  'CSRF_',
+  'DB_',
+  'ENFORCE_',
+  'FEATURE_',
+  'FIREWALL_',
+  'IMAGE_',
+  'JWT_',
+  'LEGACY_',
+  'LOGIN_',
+  'LOGOUT_',
+  'MAINTENANCE_',
+  'NGINX_',
+  'OPS_',
+  'PUBLIC_',
+  'RATE_',
+  'REDIS_',
+  'SELF_HOST_',
+  'SESSION_',
+  'SHUTDOWN_',
+  'SIGNUP_',
+  'SKIP_',
+  'STRIPE_',
+  'SUPABASE_',
+  'TEXT_',
+  'TRUST_',
+  'X_',
   'STORAGE_',
   'LOG_'
 ];
 
 function warnUnknownEnv() {
   const knownSize = KNOWN_ENV.size;
-  if (!knownSize) console.warn('[config] KNOWN_ENV is empty inside the container');
 
-  const isAppKey = (k) =>
-    k === 'NODE_ENV' || k === 'PORT' || APP_PREFIXES.some((p) => k.startsWith(p));
+  if (!knownSize) {
+    console.warn('[config] KNOWN_ENV is empty inside the container');
+  }
+
+  const isAppKey = (key) =>
+    key === 'NODE_ENV' ||
+    key === 'PORT' ||
+    APP_PREFIXES.some((prefix) => key.startsWith(prefix));
 
   const unknown = Object.keys(process.env)
-    .filter((k) => /^[A-Z0-9_]+$/.test(k))
+    .filter((key) => /^[A-Z0-9_]+$/.test(key))
     .filter(isAppKey)
-    .filter((k) => !KNOWN_ENV.has(k));
+    .filter((key) => !KNOWN_ENV.has(key));
 
   if (unknown.length) {
-    console.warn(`[config] Unknown app/infra env keys present (ignored): ${unknown.sort().join(', ')}`);
+    console.warn(
+      `[config] Unknown app/infra env keys present (ignored): ${unknown
+        .sort()
+        .join(', ')}`
+    );
   }
 }
 
-// Turn audit on only when you explicitly opt in.
 const ENABLE_ENV_AUDIT = process.env.CONFIG_ENV_AUDIT === '1';
-if (ENABLE_ENV_AUDIT) warnUnknownEnv();
+
+if (ENABLE_ENV_AUDIT) {
+  warnUnknownEnv();
+}
 
 // ──────────────────────────────────────────────────────────────────────────────
-// Helpers: small and predictable
+// Helpers
 // ──────────────────────────────────────────────────────────────────────────────
-function int(v, def) {
-  const n = Number.parseInt(v, 10);
-  return Number.isFinite(n) ? n : def;
-}
-function bool(v, def = false) {
-  if (v === undefined || v === null) return def;
-  const s = String(v).trim().toLowerCase();
-  if (['1','true','yes','on','y'].includes(s)) return true;
-  if (['0','false','no','off','n'].includes(s)) return false;
-  return def;
-}
-function csv(v) {
-  return v ? String(v).split(',').map((s) => s.trim()).filter(Boolean) : [];
+function int(value, defaultValue) {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) ? parsed : defaultValue;
 }
 
+function bool(value, defaultValue = false) {
+  if (value === undefined || value === null) {
+    return defaultValue;
+  }
+
+  const normalized = String(value).trim().toLowerCase();
+
+  if (['1', 'true', 'yes', 'on', 'y'].includes(normalized)) {
+    return true;
+  }
+
+  if (['0', 'false', 'no', 'off', 'n'].includes(normalized)) {
+    return false;
+  }
+
+  return defaultValue;
+}
+
+function csv(value) {
+  return value
+    ? String(value)
+        .split(',')
+        .map((item) => item.trim())
+        .filter(Boolean)
+    : [];
+}
+
+// JWKS verification currently supports the asymmetric algorithms used by
+// Supabase signing keys.
+const SUPPORTED_JWKS_ALGORITHMS = Object.freeze(['RS256', 'ES256']);
+
+function parseJwtAlgorithms(value) {
+  const requested = value
+    ? csv(value).map((algorithm) => algorithm.toUpperCase())
+    : [...SUPPORTED_JWKS_ALGORITHMS];
+
+  const uniqueRequested = [...new Set(requested)];
+
+  return {
+    requested: uniqueRequested,
+    allowed: uniqueRequested.filter((algorithm) =>
+      SUPPORTED_JWKS_ALGORITHMS.includes(algorithm)
+    ),
+    invalid: uniqueRequested.filter(
+      (algorithm) => !SUPPORTED_JWKS_ALGORITHMS.includes(algorithm)
+    )
+  };
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Database display metadata
 // ──────────────────────────────────────────────────────────────────────────────
 function deriveDbParts(provider, env) {
   try {
     if (provider === 'supabase-http') {
-      const u = new URL(env.SUPABASE_URL);
-      const host = u.host;
-      const port = u.port ? int(u.port, 443) : (u.protocol === 'https:' ? 443 : 80);
-      const name = (host.split('.')[0] || 'supabase');
+      const url = new URL(env.SUPABASE_URL);
+      const host = url.host;
+      const port = url.port
+        ? int(url.port, 443)
+        : url.protocol === 'https:'
+          ? 443
+          : 80;
+      const name = host.split('.')[0] || 'supabase';
+
       return { host, port, name };
     }
 
-    // provider === 'postgres'
-    const url = env.SUPABASE_DB_URL;
-    if (url) {
-      const u = new URL(url);
-      const host = u.hostname;
-      const port = u.port ? int(u.port, 5432) : 5432;
-      const name = (u.pathname || '/').replace(/^\//, '') || 'postgres';
-      return { host, port, name };
+    if (provider === 'postgres') {
+      const databaseUrl = env.SUPABASE_DB_URL;
+
+      if (databaseUrl) {
+        const url = new URL(databaseUrl);
+        const host = url.hostname;
+        const port = url.port ? int(url.port, 5432) : 5432;
+        const name =
+          (url.pathname || '/').replace(/^\//, '') || 'postgres';
+
+        return { host, port, name };
+      }
     }
 
     return { host: 'unknown', port: 0, name: 'unknown' };
@@ -240,305 +327,596 @@ function deriveDbParts(provider, env) {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// Provider selection and DB pretty parts (computed once, no races)
+// Provider and typed values
 // ──────────────────────────────────────────────────────────────────────────────
-const DB_PROVIDER = (process.env.DB_PROVIDER || 'supabase-http').toLowerCase();
+const DB_PROVIDER = (
+  process.env.DB_PROVIDER || 'supabase-http'
+).toLowerCase();
+
 const derivedDb = deriveDbParts(DB_PROVIDER, process.env);
 
-// ──────────────────────────────────────────────────────────────────────────────
-// Typed configuration object
-// ──────────────────────────────────────────────────────────────────────────────
-const nodeEnv = (process.env.NODE_ENV || 'development');
+const nodeEnv = process.env.NODE_ENV || 'development';
 const isDev = nodeEnv === 'development';
 const isTest = nodeEnv === 'test';
-const turnstileSiteKey = (process.env.TURNSTILE_SITE_KEY || '').trim();
-const turnstileSecretKey = (process.env.TURNSTILE_SECRET_KEY || '').trim();
-const turnstileEnabled = Boolean(turnstileSiteKey && turnstileSecretKey);
 
-const rateLimitEnabled        = bool(process.env.RATE_LIMIT_ENABLED, true);
-const localLimitersEnabled    = bool(process.env.LOCAL_LIMITERS_ENABLED, true);
-const appLimitersEnabled      = bool(process.env.APP_LIMITERS_ENABLED, true);
-const skipRateLimitInDev      = bool(process.env.SKIP_RATE_LIMIT_IN_DEV, false);
-const skipRateLimitInTest     = bool(process.env.SKIP_RATE_LIMIT_IN_TEST, false);
-const rateLimitActiveThisBoot = rateLimitEnabled && !(isDev && skipRateLimitInDev) && !(isTest && skipRateLimitInTest);
+const jwtAlgorithmConfig = parseJwtAlgorithms(
+  process.env.JWT_ALLOWED_ALGS
+);
+
+const turnstileSiteKey = (
+  process.env.TURNSTILE_SITE_KEY || ''
+).trim();
+
+const turnstileSecretKey = (
+  process.env.TURNSTILE_SECRET_KEY || ''
+).trim();
+
+const turnstileEnabled = Boolean(
+  turnstileSiteKey && turnstileSecretKey
+);
+
+const rateLimitEnabled = bool(
+  process.env.RATE_LIMIT_ENABLED,
+  true
+);
+
+const localLimitersEnabled = bool(
+  process.env.LOCAL_LIMITERS_ENABLED,
+  true
+);
+
+const appLimitersEnabled = bool(
+  process.env.APP_LIMITERS_ENABLED,
+  true
+);
+
+const skipRateLimitInDev = bool(
+  process.env.SKIP_RATE_LIMIT_IN_DEV,
+  false
+);
+
+const skipRateLimitInTest = bool(
+  process.env.SKIP_RATE_LIMIT_IN_TEST,
+  false
+);
+
+const rateLimitActiveThisBoot =
+  rateLimitEnabled &&
+  !(isDev && skipRateLimitInDev) &&
+  !(isTest && skipRateLimitInTest);
 
 // Ops / health posture
-const DEFAULT_LOCAL_ALLOWLIST = ['127.0.0.1', '::1', '192.168.65.1']; // Docker Desktop host
-const derivedOpsToken = (process.env.OPS_HEALTH_TOKEN || '').trim();
-const derivedOpsIps = csv(process.env.OPS_HEALTH_IPS);
-const effectiveAllowlist = derivedOpsIps.length ? derivedOpsIps : DEFAULT_LOCAL_ALLOWLIST;
-const devPublicHealth = isDev && !derivedOpsToken; // public only in dev when no token is set
+const DEFAULT_LOCAL_ALLOWLIST = [
+  '127.0.0.1',
+  '::1',
+  '192.168.65.1'
+];
 
-const derivedPublicOrigin = process.env.PUBLIC_ORIGIN || (isDev ? `http://localhost:${int(process.env.PORT, 3000)}` : '');
+const derivedOpsToken = (
+  process.env.OPS_HEALTH_TOKEN || ''
+).trim();
+
+const derivedOpsIps = csv(process.env.OPS_HEALTH_IPS);
+
+const effectiveAllowlist = derivedOpsIps.length
+  ? derivedOpsIps
+  : DEFAULT_LOCAL_ALLOWLIST;
+
+const devPublicHealth = isDev && !derivedOpsToken;
+
+const derivedPublicOrigin =
+  process.env.PUBLIC_ORIGIN ||
+  (isDev
+    ? `http://localhost:${int(process.env.PORT, 3000)}`
+    : '');
 
 // ──────────────────────────────────────────────────────────────────────────────
-// Stripe configuration (dual-set) — active mode is derived from NODE_ENV
+// Stripe configuration
 // ──────────────────────────────────────────────────────────────────────────────
 const stripeLive = {
-  secretKey:          (process.env.STRIPE_SECRET_KEY_LIVE || '').trim(),
-  publishableKey:     (process.env.STRIPE_PUBLISHABLE_KEY_LIVE || '').trim(),
-  webhookSecret:      (process.env.STRIPE_WEBHOOK_SECRET_LIVE || '').trim(),
-  priceResumeOneTime: (process.env.STRIPE_PRICE_RESUME_ONE_TIME_LIVE || '').trim(),
-  priceResumeExpert:  (process.env.STRIPE_PRICE_RESUME_EXPERT_LIVE || '').trim()
+  secretKey: (
+    process.env.STRIPE_SECRET_KEY_LIVE || ''
+  ).trim(),
+
+  publishableKey: (
+    process.env.STRIPE_PUBLISHABLE_KEY_LIVE || ''
+  ).trim(),
+
+  webhookSecret: (
+    process.env.STRIPE_WEBHOOK_SECRET_LIVE || ''
+  ).trim(),
+
+  priceResumeOneTime: (
+    process.env.STRIPE_PRICE_RESUME_ONE_TIME_LIVE || ''
+  ).trim(),
+
+  priceResumeExpert: (
+    process.env.STRIPE_PRICE_RESUME_EXPERT_LIVE || ''
+  ).trim()
 };
 
 const stripeTest = {
-  secretKey:          (process.env.STRIPE_SECRET_KEY_TEST || '').trim(),
-  publishableKey:     (process.env.STRIPE_PUBLISHABLE_KEY_TEST || '').trim(),
-  webhookSecret:      (process.env.STRIPE_WEBHOOK_SECRET_TEST || '').trim(),
-  priceResumeOneTime: (process.env.STRIPE_PRICE_RESUME_ONE_TIME_TEST || '').trim(),
-  priceResumeExpert:  (process.env.STRIPE_PRICE_RESUME_EXPERT_TEST || '').trim()
+  secretKey: (
+    process.env.STRIPE_SECRET_KEY_TEST || ''
+  ).trim(),
+
+  publishableKey: (
+    process.env.STRIPE_PUBLISHABLE_KEY_TEST || ''
+  ).trim(),
+
+  webhookSecret: (
+    process.env.STRIPE_WEBHOOK_SECRET_TEST || ''
+  ).trim(),
+
+  priceResumeOneTime: (
+    process.env.STRIPE_PRICE_RESUME_ONE_TIME_TEST || ''
+  ).trim(),
+
+  priceResumeExpert: (
+    process.env.STRIPE_PRICE_RESUME_EXPERT_TEST || ''
+  ).trim()
 };
 
 // ──────────────────────────────────────────────────────────────────────────────
-// Storage configuration (binder photos, etc.)
+// Storage configuration
 // ──────────────────────────────────────────────────────────────────────────────
 const storageConfig = {
-  // 'local' or 's3'
-  provider: (process.env.STORAGE_PROVIDER || 'local').toLowerCase(),
+  provider: (
+    process.env.STORAGE_PROVIDER || 'local'
+  ).toLowerCase(),
+
   s3: {
-    bucket: (process.env.STORAGE_S3_BUCKET || '').trim(),
-    region: (process.env.STORAGE_S3_REGION || process.env.AWS_REGION || 'us-west-2').trim(),
-    // stored as "binders" instead of "/binders/" etc.
-    basePath: (process.env.STORAGE_S3_BASE_PATH || 'binders')
+    bucket: (
+      process.env.STORAGE_S3_BUCKET || ''
+    ).trim(),
+
+    region: (
+      process.env.STORAGE_S3_REGION ||
+      process.env.AWS_REGION ||
+      'us-west-2'
+    ).trim(),
+
+    basePath: (
+      process.env.STORAGE_S3_BASE_PATH || 'binders'
+    )
       .replace(/^\/+/, '')
       .replace(/\/+$/, ''),
-    // Optional: explicit public base URL ONLY if the bucket is genuinely public
-    // e.g. https://my-public-bucket.s3.us-west-2.amazonaws.com
-    publicBaseUrl: (process.env.STORAGE_S3_PUBLIC_BASE_URL || '').trim()
+
+    publicBaseUrl: (
+      process.env.STORAGE_S3_PUBLIC_BASE_URL || ''
+    ).trim()
   }
 };
 
-// Clean, intuitive logic:
-// - development  → test mode (test keys + STRIPE_WEBHOOK_SECRET_TEST; pairs with `stripe listen`)
-// - production   → live mode (live keys + STRIPE_WEBHOOK_SECRET_LIVE; Stripe hits couplebinder.com directly)
-const stripeMode = (nodeEnv === 'development') ? 'test' : 'live';
-const stripeActive = stripeMode === 'live' ? stripeLive : stripeTest;
-const stripeApiVersion = (process.env.STRIPE_API_VERSION || '').trim() || undefined;
+const stripeMode =
+  nodeEnv === 'development' ? 'test' : 'live';
+
+const stripeActive =
+  stripeMode === 'live' ? stripeLive : stripeTest;
+
+const stripeApiVersion = (
+  process.env.STRIPE_API_VERSION || ''
+).trim() || undefined;
 
 // ──────────────────────────────────────────────────────────────────────────────
-
+// Typed configuration
+// ──────────────────────────────────────────────────────────────────────────────
 const config = {
-  // Server
   server: {
     port: int(process.env.PORT, 3000),
     nodeEnv,
     host: process.env.HOST || '0.0.0.0',
-    trustProxy: true,                  // we're behind a proxy in prod
-    trustProxyHops: int(process.env.TRUST_PROXY_HOPS, 2),
-    canonicalHost: process.env.CANONICAL_HOST || undefined,
+    trustProxy: true,
+    trustProxyHops: int(
+      process.env.TRUST_PROXY_HOPS,
+      2
+    ),
+    canonicalHost:
+      process.env.CANONICAL_HOST || undefined,
     requestIdHeader: 'x-request-id'
   },
 
-  // Database
   database: {
-    provider: DB_PROVIDER,             // 'supabase-http' | 'postgres'
-    url: DB_PROVIDER === 'supabase-http'
-      ? process.env.SUPABASE_URL
-      : process.env.SUPABASE_DB_URL,
+    provider: DB_PROVIDER,
+    url:
+      DB_PROVIDER === 'supabase-http'
+        ? process.env.SUPABASE_URL
+        : process.env.SUPABASE_DB_URL,
     host: derivedDb.host,
     port: derivedDb.port,
     name: derivedDb.name
   },
 
-  // Auth / JWT verification
+  // Supabase Auth JWT verification.
   jwt: {
-    jwksUrl: process.env.SUPABASE_JWKS_URL,
-    issuer: process.env.SUPABASE_ISSUER,
-    expectedAud: process.env.SUPABASE_EXPECTED_AUD || 'authenticated',
-    clockSkewSec: int(process.env.JWT_CLOCK_SKEW_SEC, 60),
-    secret: process.env.SUPABASE_JWT_SECRET
+    jwksUrl: (
+      process.env.SUPABASE_JWKS_URL || ''
+    ).trim(),
+
+    issuer: (
+      process.env.SUPABASE_ISSUER || ''
+    ).trim(),
+
+    expectedAud: (
+      process.env.SUPABASE_EXPECTED_AUD ||
+      'authenticated'
+    ).trim(),
+
+    allowedAlgorithms: jwtAlgorithmConfig.allowed,
+
+    clockSkewSec: int(
+      process.env.JWT_CLOCK_SKEW_SEC,
+      60
+    ),
+
+    // Retained for legacy code paths that may still verify HS256 tokens.
+    // The JWKS verifier does not use this value.
+    secret: (
+      process.env.SUPABASE_JWT_SECRET || ''
+    ).trim()
   },
 
-  // Security (non-PII)
   security: {
     sessionSecret: process.env.SESSION_SECRET,
-    enforceHttps: bool(process.env.ENFORCE_HTTPS, true),
+    enforceHttps: bool(
+      process.env.ENFORCE_HTTPS,
+      true
+    ),
     hstsEnabled: true,
     cspNonce: true,
     referrerPolicy: 'no-referrer',
-    allowedOrigins: csv(process.env.ALLOWED_ORIGINS)
+    allowedOrigins: csv(
+      process.env.ALLOWED_ORIGINS
+    )
   },
 
-  // CSRF protection
   csrf: {
-    cookieName: process.env.CSRF_COOKIE_NAME || 'csrf_token',
-    headerName: (process.env.CSRF_HEADER_NAME || 'x-csrf-token').toLowerCase(),
+    cookieName:
+      process.env.CSRF_COOKIE_NAME ||
+      'csrf_token',
+
+    headerName: (
+      process.env.CSRF_HEADER_NAME ||
+      'x-csrf-token'
+    ).toLowerCase(),
+
     secret: process.env.CSRF_SECRET
   },
 
-  // Redis
   redis: {
     url: process.env.REDIS_URL,
-    host: process.env.REDIS_HOST || 'localhost',
-    port: int(process.env.REDIS_PORT, 6379),
+    host:
+      process.env.REDIS_HOST ||
+      'localhost',
+    port: int(
+      process.env.REDIS_PORT,
+      6379
+    ),
     password: process.env.REDIS_PASSWORD
   },
 
-  // User input limits
   limits: {
-    textMaxLength: int(process.env.TEXT_MAX_LENGTH, 5000),
-    textMinLength: int(process.env.TEXT_MIN_LENGTH, 20),
-    maxSubmissions: int(process.env.MAX_SUBMISSIONS, 10)
+    textMaxLength: int(
+      process.env.TEXT_MAX_LENGTH,
+      5000
+    ),
+    textMinLength: int(
+      process.env.TEXT_MIN_LENGTH,
+      20
+    ),
+    maxSubmissions: int(
+      process.env.MAX_SUBMISSIONS,
+      10
+    )
   },
 
-  // Maintenance mode
   maintenance: {
-    key: process.env.MAINTENANCE_KEY || 'maintenance:mode',
-    default: process.env.MAINTENANCE_DEFAULT || 'off',
-    allowlist: csv(process.env.MAINTENANCE_ALLOWLIST) || ['127.0.0.1', '::1'],
-    retryAfter: int(process.env.MAINTENANCE_RETRY_AFTER, 120),
-    pagePath: process.env.MAINTENANCE_PAGE || '/app/server/public/maintenance.html',
-    message: process.env.MAINTENANCE_MESSAGE || 'We will be back soon.',
-    bypassToken: process.env.MAINTENANCE_BYPASS_TOKEN || '',
+    key:
+      process.env.MAINTENANCE_KEY ||
+      'maintenance:mode',
+
+    default:
+      process.env.MAINTENANCE_DEFAULT ||
+      'off',
+
+    allowlist:
+      csv(process.env.MAINTENANCE_ALLOWLIST) ||
+      ['127.0.0.1', '::1'],
+
+    retryAfter: int(
+      process.env.MAINTENANCE_RETRY_AFTER,
+      120
+    ),
+
+    pagePath:
+      process.env.MAINTENANCE_PAGE ||
+      '/app/server/public/maintenance.html',
+
+    message:
+      process.env.MAINTENANCE_MESSAGE ||
+      'We will be back soon.',
+
+    bypassToken:
+      process.env.MAINTENANCE_BYPASS_TOKEN ||
+      '',
+
     allowedPaths: [
       '/health/liveness',
       '/health/readiness',
       '/health',
       '/.well-known/acme-challenge/',
       '/api/stripe/webhook',
-      ...csv(process.env.MAINTENANCE_ALLOWED_PATHS)
+      ...csv(
+        process.env.MAINTENANCE_ALLOWED_PATHS
+      )
     ]
   },
 
-  // Ops access to private health endpoints
   ops: {
     token: derivedOpsToken,
     ips: effectiveAllowlist,
-    headerNames: ['X-Ops-Health-Token','X-Ops-Token','X-Health-Token']
+    headerNames: [
+      'X-Ops-Health-Token',
+      'X-Ops-Token',
+      'X-Health-Token'
+    ]
   },
+
   health: {
     public: devPublicHealth,
     token: derivedOpsToken,
     allowlist: effectiveAllowlist
   },
 
-  // Branding
   branding: {
-    appName: process.env.APP_NAME || 'Application',
-    appDescription: process.env.APP_DESCRIPTION || 'A secure modern web application',
-    appVersion: process.env.APP_VERSION || '1.0.0',
-    baseDomain: process.env.BASE_DOMAIN || '',
-    appSubdomain: process.env.APP_SUBDOMAIN || 'app',
-    legacyCookieDomain: process.env.LEGACY_COOKIE_DOMAIN || '',
-    xClientInfo: process.env.X_CLIENT_INFO || 'app-server/1.0.0'
+    appName:
+      process.env.APP_NAME ||
+      'Application',
+
+    appDescription:
+      process.env.APP_DESCRIPTION ||
+      'A secure modern web application',
+
+    appVersion:
+      process.env.APP_VERSION ||
+      '1.0.0',
+
+    baseDomain:
+      process.env.BASE_DOMAIN ||
+      '',
+
+    appSubdomain:
+      process.env.APP_SUBDOMAIN ||
+      'app',
+
+    legacyCookieDomain:
+      process.env.LEGACY_COOKIE_DOMAIN ||
+      '',
+
+    xClientInfo:
+      process.env.X_CLIENT_INFO ||
+      'app-server/1.0.0'
   },
 
-  // Supabase client keys (for client-side init only)
   supabase: {
     url: process.env.SUPABASE_URL,
-    anonKey: process.env.SUPABASE_ANON_KEY,
-    serviceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY
+    anonKey:
+      process.env.SUPABASE_ANON_KEY,
+    serviceRoleKey:
+      process.env.SUPABASE_SERVICE_ROLE_KEY
   },
 
-  // Stripe configuration
   stripe: {
-    mode: stripeMode, // 'live' | 'test', derived from NODE_ENV
+    mode: stripeMode,
     live: stripeLive,
     test: stripeTest,
     active: stripeActive,
     apiVersion: stripeApiVersion,
-    successPath: process.env.STRIPE_SUCCESS_PATH || '/dashboard/purchase/confirmation',
-    cancelPath: process.env.STRIPE_CANCEL_PATH || '/dashboard/billing'
+
+    successPath:
+      process.env.STRIPE_SUCCESS_PATH ||
+      '/dashboard/purchase/confirmation',
+
+    cancelPath:
+      process.env.STRIPE_CANCEL_PATH ||
+      '/dashboard/billing'
   },
 
-  // Storage (binder photos, etc.)
   storage: storageConfig,
 
-  // Public origin (for redirects and client-side URLs)
   publicOrigin: derivedPublicOrigin,
 
-  // Auth cookie configuration
   auth: {
-    cookieName: (process.env.AUTH_COOKIE_BASENAME || process.env.AUTH_COOKIE_NAME || 'sb_session').replace(/^__Host-/, ''),
-    cookieAliases: csv(process.env.AUTH_COOKIE_ALIASES),
-    cookieDomain: process.env.AUTH_COOKIE_DOMAIN || undefined,
-    cookieSameSite: (process.env.COOKIE_SAMESITE || 'Lax').toLowerCase() === 'strict' ? 'Strict' : 'Lax',
-    cookieSecure: process.env.COOKIE_SECURE ? (process.env.COOKIE_SECURE === 'true') : undefined,
-    allowLegacyLogin: bool(process.env.ALLOW_LEGACY_LOGIN, false),
-    debug: bool(process.env.AUTH_DEBUG, false),
-    passwordResetRedirect: process.env.PASSWORD_RESET_REDIRECT_URL ||
-      (derivedPublicOrigin ? `${derivedPublicOrigin}/auth/forgot-password` : '/auth/forgot-password'),
+    cookieName: (
+      process.env.AUTH_COOKIE_BASENAME ||
+      process.env.AUTH_COOKIE_NAME ||
+      'sb_session'
+    ).replace(/^__Host-/, ''),
 
-    // Logout sentinel posture
-    sentinelMs: int(process.env.AUTH_SENTINEL_MS, 0),
-    freshLoginGraceSec: int(process.env.AUTH_FRESH_GRACE_SEC, 20),
+    cookieAliases: csv(
+      process.env.AUTH_COOKIE_ALIASES
+    ),
 
-    // /auth/set-cookie posture controls
+    cookieDomain:
+      process.env.AUTH_COOKIE_DOMAIN ||
+      undefined,
+
+    cookieSameSite:
+      (
+        process.env.COOKIE_SAMESITE ||
+        'Lax'
+      ).toLowerCase() === 'strict'
+        ? 'Strict'
+        : 'Lax',
+
+    cookieSecure:
+      process.env.COOKIE_SECURE
+        ? process.env.COOKIE_SECURE === 'true'
+        : undefined,
+
+    allowLegacyLogin: bool(
+      process.env.ALLOW_LEGACY_LOGIN,
+      false
+    ),
+
+    debug: bool(
+      process.env.AUTH_DEBUG,
+      false
+    ),
+
+    passwordResetRedirect:
+      process.env.PASSWORD_RESET_REDIRECT_URL ||
+      (derivedPublicOrigin
+        ? `${derivedPublicOrigin}/auth/forgot-password`
+        : '/auth/forgot-password'),
+
+    sentinelMs: int(
+      process.env.AUTH_SENTINEL_MS,
+      0
+    ),
+
+    freshLoginGraceSec: int(
+      process.env.AUTH_FRESH_GRACE_SEC,
+      20
+    ),
+
     setCookie: {
-      enforceLockout: bool(process.env.AUTH_SET_COOKIE_ENFORCE_LOCKOUT, nodeEnv === 'production'),
-      enforceTurnstile: bool(process.env.AUTH_SET_COOKIE_ENFORCE_TURNSTILE, false)
+      enforceLockout: bool(
+        process.env.AUTH_SET_COOKIE_ENFORCE_LOCKOUT,
+        nodeEnv === 'production'
+      ),
+
+      enforceTurnstile: bool(
+        process.env.AUTH_SET_COOKIE_ENFORCE_TURNSTILE,
+        false
+      )
     }
   },
 
-  // Ops health DB probe configuration
   opsHealth: {
-    dbProbeTable: process.env.OPS_DB_PROBE_TABLE || 'profiles',
-    dbProbeRpc: process.env.OPS_DB_PROBE_RPC || ''
+    dbProbeTable:
+      process.env.OPS_DB_PROBE_TABLE ||
+      'profiles',
+
+    dbProbeRpc:
+      process.env.OPS_DB_PROBE_RPC ||
+      ''
   },
 
-  // Feature flags
   features: {
-    archiveReceipts: bool(process.env.FEATURE_ARCHIVE_RECEIPTS, false),
-    archiveReceiptsTable: process.env.FEATURE_ARCHIVE_RECEIPTS_TABLE || 'receipt_archives'
+    archiveReceipts: bool(
+      process.env.FEATURE_ARCHIVE_RECEIPTS,
+      false
+    ),
+
+    archiveReceiptsTable:
+      process.env.FEATURE_ARCHIVE_RECEIPTS_TABLE ||
+      'receipt_archives'
   },
 
-  // Graceful shutdown
   shutdown: {
-    graceMs: int(process.env.SHUTDOWN_GRACE_MS, 15000)
+    graceMs: int(
+      process.env.SHUTDOWN_GRACE_MS,
+      15000
+    )
   },
 
-  // Rate-limit posture
   rateLimit: {
     enabled: rateLimitEnabled,
     skipInDev: skipRateLimitInDev,
     skipInTest: skipRateLimitInTest,
+
     windows: {
       general: {
-        windowMs: int(process.env.RATE_LIMIT_WINDOW_MS, 60_000),
-        max: int(process.env.RATE_LIMIT_MAX, 300)
+        windowMs: int(
+          process.env.RATE_LIMIT_WINDOW_MS,
+          60_000
+        ),
+        max: int(
+          process.env.RATE_LIMIT_MAX,
+          300
+        )
       },
+
       login: {
-        windowMs: int(process.env.LOGIN_WINDOW_MS, 15 * 60_000),
-        max: int(process.env.LOGIN_MAX, 10)
+        windowMs: int(
+          process.env.LOGIN_WINDOW_MS,
+          15 * 60_000
+        ),
+        max: int(
+          process.env.LOGIN_MAX,
+          10
+        )
       },
+
       signup: {
-        windowMs: int(process.env.SIGNUP_WINDOW_MS, 60 * 60_000),
-        max: int(process.env.SIGNUP_MAX, 5)
+        windowMs: int(
+          process.env.SIGNUP_WINDOW_MS,
+          60 * 60_000
+        ),
+        max: int(
+          process.env.SIGNUP_MAX,
+          5
+        )
       },
-      // Note: signup config kept for backward compatibility with env vars
-      // Internal code uses 'register' but env vars remain SIGNUP_* for compatibility
+
       logout: {
-        windowMs: int(process.env.LOGOUT_WINDOW_MS, 10 * 60_000),
-        max: int(process.env.LOGOUT_MAX, 120)
+        windowMs: int(
+          process.env.LOGOUT_WINDOW_MS,
+          10 * 60_000
+        ),
+        max: int(
+          process.env.LOGOUT_MAX,
+          120
+        )
       },
+
       cookieSet: {
-        windowMs: int(process.env.COOKIE_SET_WINDOW_MS, 60_000),
-        max: int(process.env.COOKIE_SET_MAX, 300)
+        windowMs: int(
+          process.env.COOKIE_SET_WINDOW_MS,
+          60_000
+        ),
+        max: int(
+          process.env.COOKIE_SET_MAX,
+          300
+        )
       }
     },
-    ...(rateLimitActiveThisBoot ? {
-      primary: 'cloudflare',
-      secondary: (localLimitersEnabled && appLimitersEnabled) ? 'redis-origin' : undefined
-    } : {})
+
+    ...(rateLimitActiveThisBoot
+      ? {
+          primary: 'cloudflare',
+          secondary:
+            localLimitersEnabled &&
+            appLimitersEnabled
+              ? 'redis-origin'
+              : undefined
+        }
+      : {})
   },
 
-  // Firewall configuration
   firewall: {
-    failClosed: bool(process.env.FIREWALL_FAIL_CLOSED, true),
-    staticBlocklist: csv(process.env.IP_BLOCKLIST)
+    failClosed: bool(
+      process.env.FIREWALL_FAIL_CLOSED,
+      true
+    ),
+
+    staticBlocklist: csv(
+      process.env.IP_BLOCKLIST
+    )
   },
 
-  // Turnstile challenge configuration
   turnstile: {
     enabled: turnstileEnabled,
     siteKey: turnstileSiteKey,
     secretKey: turnstileSecretKey
   },
 
-  // Logging configuration
   logging: {
-    logLevel: (process.env.LOG_LEVEL || 'info').toLowerCase()
+    logLevel: (
+      process.env.LOG_LEVEL ||
+      'info'
+    ).toLowerCase()
   }
 };
 
@@ -546,150 +924,362 @@ const config = {
 // Alignment shims
 // ──────────────────────────────────────────────────────────────────────────────
 if (config.database?.provider === 'supabase-http') {
-  const dbUrl = config.database.url || process.env.SUPABASE_URL || '';
-  config.supabase = config.supabase || {};
-  if (!config.supabase.url)            config.supabase.url = dbUrl;
-  if (!config.supabase.anonKey)        config.supabase.anonKey = process.env.SUPABASE_ANON_KEY || '';
-  if (!config.supabase.serviceRoleKey) config.supabase.serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+  const dbUrl =
+    config.database.url ||
+    process.env.SUPABASE_URL ||
+    '';
+
+  config.supabase =
+    config.supabase || {};
+
+  if (!config.supabase.url) {
+    config.supabase.url = dbUrl;
+  }
+
+  if (!config.supabase.anonKey) {
+    config.supabase.anonKey =
+      process.env.SUPABASE_ANON_KEY || '';
+  }
+
+  if (!config.supabase.serviceRoleKey) {
+    config.supabase.serviceRoleKey =
+      process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+  }
 }
 
-// publicOrigin always present
 if (!('publicOrigin' in config) || !config.publicOrigin) {
-  config.publicOrigin = process.env.PUBLIC_ORIGIN || (isDev ? `http://localhost:${int(process.env.PORT, 3000)}` : '');
+  config.publicOrigin =
+    process.env.PUBLIC_ORIGIN ||
+    (isDev
+      ? `http://localhost:${int(
+          process.env.PORT,
+          3000
+        )}`
+      : '');
 }
 
-// Optional HEALTH_PUBLIC -> config.health.public
 if (typeof config.health?.public !== 'boolean') {
-  const on = (v) => ['1','true','yes','on','y'].includes(String(v||'').trim().toLowerCase());
-  config.health.public = on(process.env.HEALTH_PUBLIC);
+  const on = (value) =>
+    ['1', 'true', 'yes', 'on', 'y'].includes(
+      String(value || '')
+        .trim()
+        .toLowerCase()
+    );
+
+  config.health.public = on(
+    process.env.HEALTH_PUBLIC
+  );
 }
 
+// ──────────────────────────────────────────────────────────────────────────────
 // Deep-freeze config
-(function deepFreeze(o) {
-  Object.freeze(o);
-  Object.getOwnPropertyNames(o).forEach((p) => {
-    const v = o[p];
-    if (v && typeof v === 'object' && !Object.isFrozen(v)) deepFreeze(v);
-  });
+// ──────────────────────────────────────────────────────────────────────────────
+(function deepFreeze(object) {
+  Object.freeze(object);
+
+  Object.getOwnPropertyNames(object).forEach(
+    (property) => {
+      const value = object[property];
+
+      if (
+        value &&
+        typeof value === 'object' &&
+        !Object.isFrozen(value)
+      ) {
+        deepFreeze(value);
+      }
+    }
+  );
 })(config);
 
 // ──────────────────────────────────────────────────────────────────────────────
-// Validation (provider-aware, fast-fail)
+// Validation
 // ──────────────────────────────────────────────────────────────────────────────
 function validateConfig() {
   const errors = [];
 
   const required = [
-    'PORT', 'NODE_ENV', 'HOST',
-    'TEXT_MIN_LENGTH', 'TEXT_MAX_LENGTH', 'MAX_SUBMISSIONS',
-    'SUPABASE_JWKS_URL', 'SUPABASE_ISSUER', 'SUPABASE_EXPECTED_AUD'
+    'PORT',
+    'NODE_ENV',
+    'HOST',
+    'TEXT_MIN_LENGTH',
+    'TEXT_MAX_LENGTH',
+    'MAX_SUBMISSIONS',
+    'SUPABASE_JWKS_URL',
+    'SUPABASE_ISSUER',
+    'SUPABASE_EXPECTED_AUD'
   ];
 
   if (DB_PROVIDER === 'supabase-http') {
     if (!process.env.SUPABASE_URL) {
-      errors.push('SUPABASE_URL is required for DB_PROVIDER=supabase-http');
+      errors.push(
+        'SUPABASE_URL is required for DB_PROVIDER=supabase-http'
+      );
     }
   } else if (DB_PROVIDER === 'postgres') {
     if (!process.env.SUPABASE_DB_URL) {
-      errors.push('SUPABASE_DB_URL is required for DB_PROVIDER=postgres');
+      errors.push(
+        'SUPABASE_DB_URL is required for DB_PROVIDER=postgres'
+      );
     }
   } else {
-    errors.push(`Unsupported DB_PROVIDER "${DB_PROVIDER}" (use "supabase-http" or "postgres")`);
+    errors.push(
+      `Unsupported DB_PROVIDER "${DB_PROVIDER}" ` +
+        '(use "supabase-http" or "postgres")'
+    );
   }
 
-  for (const varName of required) {
-    if (!process.env[varName]) errors.push(`${varName} environment variable is required`);
+  for (const variableName of required) {
+    if (!process.env[variableName]) {
+      errors.push(
+        `${variableName} environment variable is required`
+      );
+    }
   }
 
-  // Only consider Stripe validation when prices are configured
+  if (jwtAlgorithmConfig.invalid.length) {
+    errors.push(
+      'JWT_ALLOWED_ALGS contains unsupported algorithms: ' +
+        jwtAlgorithmConfig.invalid.join(', ') +
+        `. Supported values: ${SUPPORTED_JWKS_ALGORITHMS.join(', ')}`
+    );
+  }
+
+  if (!config.jwt.allowedAlgorithms.length) {
+    errors.push(
+      'JWT_ALLOWED_ALGS must contain at least one supported ' +
+        `algorithm: ${SUPPORTED_JWKS_ALGORITHMS.join(', ')}`
+    );
+  }
+
+  if (
+    config.jwt.allowedAlgorithms.length &&
+    !config.jwt.jwksUrl
+  ) {
+    errors.push(
+      'SUPABASE_JWKS_URL is required when JWT_ALLOWED_ALGS ' +
+        'contains RS256 or ES256'
+    );
+  }
+
+  try {
+    if (config.jwt.jwksUrl) {
+      const jwksUrl = new URL(config.jwt.jwksUrl);
+
+      if (
+        !['https:', 'http:'].includes(
+          jwksUrl.protocol
+        )
+      ) {
+        errors.push(
+          'SUPABASE_JWKS_URL must use http or https'
+        );
+      }
+    }
+  } catch {
+    errors.push(
+      'SUPABASE_JWKS_URL must be a valid URL'
+    );
+  }
+
+  try {
+    if (config.jwt.issuer) {
+      const issuerUrl = new URL(config.jwt.issuer);
+
+      if (
+        !['https:', 'http:'].includes(
+          issuerUrl.protocol
+        )
+      ) {
+        errors.push(
+          'SUPABASE_ISSUER must use http or https'
+        );
+      }
+    }
+  } catch {
+    errors.push(
+      'SUPABASE_ISSUER must be a valid URL'
+    );
+  }
+
   const hasStripe =
     config.stripe &&
     config.stripe.active &&
-    (config.stripe.active.priceResumeOneTime || config.stripe.active.priceResumeExpert);
+    (
+      config.stripe.active.priceResumeOneTime ||
+      config.stripe.active.priceResumeExpert
+    );
 
-  const usingStripePrices = !!hasStripe;
-  const isProd = (config.server.nodeEnv || '').toLowerCase() === 'production';
+  const usingStripePrices = Boolean(hasStripe);
+
+  const isProd =
+    (
+      config.server.nodeEnv || ''
+    ).toLowerCase() === 'production';
 
   if (usingStripePrices && isProd) {
     if (!config.stripe.active.secretKey) {
-      errors.push('STRIPE_SECRET_KEY_LIVE is required in production when Stripe prices are configured');
+      errors.push(
+        'STRIPE_SECRET_KEY_LIVE is required in production ' +
+          'when Stripe prices are configured'
+      );
     }
+
     if (!config.stripe.live.webhookSecret) {
-      errors.push('STRIPE_WEBHOOK_SECRET_LIVE (or legacy STRIPE_WEBHOOK_SECRET) is required in production when Stripe prices are configured');
+      errors.push(
+        'STRIPE_WEBHOOK_SECRET_LIVE is required in production ' +
+          'when Stripe prices are configured'
+      );
     }
+
     if (!config.stripe.test.webhookSecret) {
-      errors.push('STRIPE_WEBHOOK_SECRET_TEST should also be set for test endpoint verification');
+      errors.push(
+        'STRIPE_WEBHOOK_SECRET_TEST should also be set for ' +
+          'test endpoint verification'
+      );
     }
   }
 
-  // Storage validation
   if (storageConfig.provider === 's3') {
     if (!storageConfig.s3.bucket) {
-      errors.push('STORAGE_S3_BUCKET is required when STORAGE_PROVIDER=s3');
+      errors.push(
+        'STORAGE_S3_BUCKET is required when STORAGE_PROVIDER=s3'
+      );
     }
+
     if (!storageConfig.s3.region) {
-      errors.push('STORAGE_S3_REGION (or AWS_REGION) is required when STORAGE_PROVIDER=s3');
+      errors.push(
+        'STORAGE_S3_REGION (or AWS_REGION) is required ' +
+          'when STORAGE_PROVIDER=s3'
+      );
     }
   }
 
-  // Validate publicOrigin when Stripe is configured
   if (usingStripePrices) {
-    if (!config.publicOrigin || !config.publicOrigin.trim()) {
-      errors.push('PUBLIC_ORIGIN is required when Stripe prices are configured (needed for checkout redirect URLs)');
+    if (
+      !config.publicOrigin ||
+      !config.publicOrigin.trim()
+    ) {
+      errors.push(
+        'PUBLIC_ORIGIN is required when Stripe prices are configured'
+      );
     } else {
       try {
-        const testUrl = config.publicOrigin.replace(/\/+$/, '') + '/test';
+        const testUrl =
+          config.publicOrigin.replace(/\/+$/, '') +
+          '/test';
+
         new URL(testUrl);
-      } catch (urlError) {
-        errors.push(`PUBLIC_ORIGIN must be a valid URL (e.g., http://localhost:3000 or https://example.com). Current value: "${config.publicOrigin}"`);
+      } catch {
+        errors.push(
+          'PUBLIC_ORIGIN must be a valid URL. ' +
+            `Current value: "${config.publicOrigin}"`
+        );
       }
     }
   }
 
-  if (config.server.port < 1 || config.server.port > 65535) {
-    errors.push('PORT must be between 1 and 65535');
-  }
-  const validEnvs = ['development', 'production', 'test'];
-  if (!validEnvs.includes(config.server.nodeEnv)) {
-    errors.push(`NODE_ENV must be one of: ${validEnvs.join(', ')}`);
+  if (
+    config.server.port < 1 ||
+    config.server.port > 65535
+  ) {
+    errors.push(
+      'PORT must be between 1 and 65535'
+    );
   }
 
-  if (config.limits.textMaxLength < config.limits.textMinLength) {
-    errors.push('TEXT_MAX_LENGTH must be greater than TEXT_MIN_LENGTH');
+  const validEnvironments = [
+    'development',
+    'production',
+    'test'
+  ];
+
+  if (
+    !validEnvironments.includes(
+      config.server.nodeEnv
+    )
+  ) {
+    errors.push(
+      `NODE_ENV must be one of: ${validEnvironments.join(', ')}`
+    );
   }
+
+  if (
+    config.limits.textMaxLength <
+    config.limits.textMinLength
+  ) {
+    errors.push(
+      'TEXT_MAX_LENGTH must be greater than TEXT_MIN_LENGTH'
+    );
+  }
+
   if (config.limits.textMinLength < 1) {
-    errors.push('TEXT_MIN_LENGTH must be at least 1');
+    errors.push(
+      'TEXT_MIN_LENGTH must be at least 1'
+    );
   }
+
   if (config.limits.maxSubmissions < 1) {
-    errors.push('MAX_SUBMISSIONS must be at least 1');
+    errors.push(
+      'MAX_SUBMISSIONS must be at least 1'
+    );
   }
 
-  const hasTurnstileSiteKey = !!turnstileSiteKey;
-  const hasTurnstileSecretKey = !!turnstileSecretKey;
-  if (hasTurnstileSiteKey !== hasTurnstileSecretKey) {
-    errors.push('TURNSTILE_SITE_KEY and TURNSTILE_SECRET_KEY must both be set or both be empty');
+  const hasTurnstileSiteKey =
+    Boolean(turnstileSiteKey);
+
+  const hasTurnstileSecretKey =
+    Boolean(turnstileSecretKey);
+
+  if (
+    hasTurnstileSiteKey !==
+    hasTurnstileSecretKey
+  ) {
+    errors.push(
+      'TURNSTILE_SITE_KEY and TURNSTILE_SECRET_KEY ' +
+        'must both be set or both be empty'
+    );
   }
 
-  // If you enforce Turnstile on /auth/set-cookie, Turnstile must be configured.
-  const enforceSetCookieTurnstile = bool(process.env.AUTH_SET_COOKIE_ENFORCE_TURNSTILE, false);
-  if (enforceSetCookieTurnstile && !turnstileEnabled) {
-    errors.push('AUTH_SET_COOKIE_ENFORCE_TURNSTILE=true requires TURNSTILE_SITE_KEY and TURNSTILE_SECRET_KEY');
+  const enforceSetCookieTurnstile = bool(
+    process.env.AUTH_SET_COOKIE_ENFORCE_TURNSTILE,
+    false
+  );
+
+  if (
+    enforceSetCookieTurnstile &&
+    !turnstileEnabled
+  ) {
+    errors.push(
+      'AUTH_SET_COOKIE_ENFORCE_TURNSTILE=true requires ' +
+        'TURNSTILE_SITE_KEY and TURNSTILE_SECRET_KEY'
+    );
   }
 
   return errors;
 }
 
-// Run validation immediately
 const validationErrors = validateConfig();
+
 if (validationErrors.length > 0) {
-  console.error('Configuration validation failed:');
-  validationErrors.forEach((error) => console.error(`  - ${error}`));
-  const isTestEnv = process.env.NODE_ENV === 'test';
-  if (isTestEnv) {
-    throw new Error(`Configuration validation failed: ${validationErrors.join('; ')}`);
-  } else {
-    process.exit(1);
+  console.error(
+    'Configuration validation failed:'
+  );
+
+  validationErrors.forEach((error) =>
+    console.error(`  - ${error}`)
+  );
+
+  const isTestEnvironment =
+    process.env.NODE_ENV === 'test';
+
+  if (isTestEnvironment) {
+    throw new Error(
+      `Configuration validation failed: ${validationErrors.join('; ')}`
+    );
   }
+
+  process.exit(1);
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -697,33 +1287,67 @@ if (validationErrors.length > 0) {
 // ──────────────────────────────────────────────────────────────────────────────
 function logConfigSummary() {
   try {
-    const consoleLogger = require('../utils/consoleLogger');
-    if (consoleLogger && typeof consoleLogger.formatConfigSummary === 'function') {
+    const consoleLogger = require(
+      '../utils/consoleLogger'
+    );
+
+    if (
+      consoleLogger &&
+      typeof consoleLogger.formatConfigSummary ===
+        'function'
+    ) {
       consoleLogger.formatConfigSummary(config);
       return;
     }
   } catch {
-    // ignore and fall back
+    // Fall through to plain console summary.
   }
 
   const dbSummary = config.database?.name
     ? `${config.database.host}:${config.database.port}/${config.database.name}`
     : 'unknown';
+
   console.log('\nCONFIGURATION LOADED');
-  console.log(`   Server: ${config.server?.host}:${config.server?.port} (${config.server?.nodeEnv})`);
-  console.log(`   Database: ${dbSummary}`);
-  console.log(`   Auth: Stateless (Supabase RS256 + JWKS)`);
-  console.log(`   Rate Limiting: handled at Cloudflare edge (PRIMARY) + Redis app limiters (SECONDARY)`);
-  console.log(`   Text Limits: ${config.limits?.textMinLength || 'unknown'}-${config.limits?.textMaxLength || 'unknown'} chars`);
-  console.log(`   Max Submissions: ${config.limits?.maxSubmissions || 'unknown'}`);
+  console.log(
+    `   Server: ${config.server?.host}:${config.server?.port} ` +
+      `(${config.server?.nodeEnv})`
+  );
+  console.log(
+    `   Database: ${dbSummary}`
+  );
+  console.log(
+    '   Auth: Stateless ' +
+      `(Supabase JWT + JWKS; algorithms: ${config.jwt.allowedAlgorithms.join(', ')})`
+  );
+  console.log(
+    '   Rate Limiting: handled at Cloudflare edge (PRIMARY) ' +
+      '+ Redis app limiters (SECONDARY)'
+  );
+  console.log(
+    `   Text Limits: ${config.limits?.textMinLength || 'unknown'}-` +
+      `${config.limits?.textMaxLength || 'unknown'} chars`
+  );
+  console.log(
+    `   Max Submissions: ${config.limits?.maxSubmissions || 'unknown'}`
+  );
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-const rawAssetVersion = (process.env.ASSET_VERSION || '').trim();
-const rawImageTag = (process.env.IMAGE_TAG || '').trim();
-const ASSET_VERSION = rawAssetVersion || rawImageTag || String(Date.now());
-
+// Asset version
 // ──────────────────────────────────────────────────────────────────────────────
+const rawAssetVersion = (
+  process.env.ASSET_VERSION || ''
+).trim();
+
+const rawImageTag = (
+  process.env.IMAGE_TAG || ''
+).trim();
+
+const ASSET_VERSION =
+  rawAssetVersion ||
+  rawImageTag ||
+  String(Date.now());
+
 module.exports = {
   config,
   validateConfig,

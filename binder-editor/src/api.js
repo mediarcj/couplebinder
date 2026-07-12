@@ -1,323 +1,239 @@
 // File: binder-editor/src/api.js
 // Description: API client for binder layout operations
-// Purpose: Centralized fetch calls with CSRF handling
+// Purpose: Centralized same-origin fetch calls with CSRF handling + session-expired redirects.
 
-/**
- * WHAT:
- * Check if an error is a network error that might indicate session expiry.
- *
- * WHY:
- * Allows callers to check errors directly if they need to.
- *
- * HOW:
- * Exports the same logic used internally for error detection.
- */
-export function isNetworkErrorLikelySessionExpiry(error) {
-  return isSessionExpiryError(error, true);
+let CACHED_CSRF_TOKEN = '';
+
+export function setCsrfToken(token) {
+  CACHED_CSRF_TOKEN = (token || '').trim();
 }
 
-/**
- * WHAT:
- * Check if an error indicates session expiry.
- *
- * WHY:
- * Network errors (Failed to fetch) can occur before we get a response status.
- *
- * HOW:
- * Checks error message, type, and name to detect likely session expiry scenarios.
- * Only treats network errors as session expiry for critical operations (autosave, layout).
- */
+function readCsrfTokenFromDom() {
+  return (
+    document
+      .querySelector('#binder-editor-root')
+      ?.getAttribute('data-csrf-token') || ''
+  ).trim();
+}
+
+function getCsrfToken() {
+  return CACHED_CSRF_TOKEN || readCsrfTokenFromDom();
+}
+
 function isSessionExpiryError(error, isCriticalOperation = false) {
   if (!error) return false;
 
-  // Check for explicit SESSION_EXPIRED error
   if (error.message === 'SESSION_EXPIRED') return true;
+  if (!isCriticalOperation) return false;
 
-  // For critical operations (autosave, layout), treat network errors as likely session expiry
-  if (isCriticalOperation) {
-    // Check error type and name (TypeError for "Failed to fetch")
-    if (error instanceof TypeError || error.name === 'TypeError') {
-      const errorMsg = error.message || String(error);
-      if (
-        errorMsg.includes('Failed to fetch') ||
-        errorMsg.includes('NetworkError') ||
-        errorMsg.includes('Network request failed') ||
-        errorMsg.toLowerCase().includes('fetch')
-      ) {
-        // These can occur when session expires and server rejects the request
-        return true;
-      }
-    }
+  const msg = (error.message || String(error) || '').toLowerCase();
 
-    // Also check error message string directly
-    const errorMsg = error.message || String(error);
-    if (errorMsg.includes('Failed to fetch') || errorMsg.includes('NetworkError')) {
+  if (error instanceof TypeError || error.name === 'TypeError') {
+    if (
+      msg.includes('failed to fetch') ||
+      msg.includes('networkerror') ||
+      msg.includes('network request failed')
+    ) {
       return true;
     }
   }
 
+  if (msg.includes('failed to fetch') || msg.includes('networkerror')) return true;
+
   return false;
 }
 
-/**
- * WHAT:
- * Redirect to login on session expiry.
- *
- * WHY:
- * We want a single, consistent behavior: user is kicked out and sent to the
- * dedicated login page, which shows the inactivity banner and can redirect back.
- *
- * HOW:
- * Build /login URL with reason=session_expired and returnTo=current path/query,
- * then hard-navigate with location.replace() so back button doesn’t bounce.
- */
+export function isNetworkErrorLikelySessionExpiry(error) {
+  return isSessionExpiryError(error, true);
+}
+
 function redirectToLoginForSessionExpiry() {
   try {
     const returnTo = window.location.pathname + window.location.search;
     const loginUrl = `/login?reason=session_expired&returnTo=${encodeURIComponent(returnTo)}`;
-    // replace() so the user doesn't go back into a dead editor state
     window.location.replace(loginUrl);
   } catch {
-    // Fallback in very old browsers
     window.location.href = '/login?reason=session_expired';
   }
 }
 
-/**
- * WHAT:
- * Handle session expiry.
- *
- * WHY:
- * Used whenever we detect 401/403 or network patterns that look like expired
- * sessions. We centralize the redirect here.
- *
- * HOW:
- * Redirects immediately, then throws a sentinel error so callers can bail out.
- */
 function handleSessionExpiry() {
   redirectToLoginForSessionExpiry();
   throw new Error('SESSION_EXPIRED');
 }
 
-/**
- * WHAT:
- * Make API request with CSRF token and error handling.
- *
- * WHY:
- * Keeps all API calls consistent and secure.
- *
- * HOW:
- * Adds CSRF header, handles JSON, returns parsed response or throws.
- * Detects session expiry (401/403) and redirects to login.
- */
-async function apiRequest(url, options = {}) {
-  const csrfToken =
-    document
-      .querySelector('#binder-editor-root')
-      ?.getAttribute('data-csrf-token') || '';
+function buildHeaders({
+  accept,
+  contentType,
+  includeCsrf = true,
+  extraHeaders = {}
+} = {}) {
+  const headers = { ...extraHeaders };
 
-  const headers = {
-    'Content-Type': 'application/json',
-    'X-CSRF-Token': csrfToken,
-    ...options.headers
-  };
+  if (accept) headers.Accept = accept;
+  if (contentType) headers['Content-Type'] = contentType;
 
+  if (includeCsrf) {
+    const csrfToken = getCsrfToken();
+    if (csrfToken) headers['X-CSRF-Token'] = csrfToken;
+  }
+
+  return headers;
+}
+
+function wasRedirectedToLogin(response) {
   try {
-    const response = await fetch(url, {
-      ...options,
-      headers,
-      credentials: 'same-origin'
-    });
-
-    // Handle session expiry (401 Unauthorized or 403 Forbidden)
-    if (response.status === 401 || response.status === 403) {
-      handleSessionExpiry();
-    }
-
-    if (!response.ok) {
-      const error = await response
-        .json()
-        .catch(() => ({ ok: false, message: `HTTP ${response.status}` }));
-      throw new Error(error.message || `HTTP ${response.status}`);
-    }
-
-    return response.json();
-  } catch (error) {
-    // Handle network errors that might indicate session expiry (for critical operations)
-    if (isSessionExpiryError(error, true)) {
-      // handleSessionExpiry() throws SESSION_EXPIRED, so this will stop execution
-      handleSessionExpiry();
-    }
-    // Re-throw other errors (only reached if handleSessionExpiry wasn't called)
-    throw error;
+    if (!response) return false;
+    if (!response.redirected) return false;
+    const u = new URL(response.url, window.location.origin);
+    return u.pathname === '/login' || u.pathname.startsWith('/login');
+  } catch {
+    return false;
   }
 }
 
 /**
- * WHAT:
- * Fetch current layout for a binder.
+ * Low-level request wrapper.
  *
- * WHY:
- * Loads existing layout on editor mount.
- *
- * HOW:
- * GET request to layout endpoint.
+ * Rules:
+ *  - If fetch throws (network), treat it as session expiry for critical ops.
+ *  - If response is redirected to /login (commonly from 302), treat as session expired.
+ *  - 401 is always session expired.
  */
-export async function getLayout(binderId) {
-  return apiRequest(`/dashboard/binder/${binderId}/layout`);
+async function request(url, options = {}) {
+  const {
+    method = 'GET',
+    headers = {},
+    body,
+    includeCsrf = true
+  } = options;
+
+  let response;
+  try {
+    response = await fetch(url, {
+      method,
+      credentials: 'same-origin',
+      headers: buildHeaders({
+        includeCsrf,
+        extraHeaders: headers
+      }),
+      body
+    });
+  } catch (err) {
+    if (isSessionExpiryError(err, true)) handleSessionExpiry();
+    throw err;
+  }
+
+  // IMPORTANT: handle 302->/login (fetch follows and returns HTML login page)
+  if (wasRedirectedToLogin(response)) {
+    handleSessionExpiry();
+  }
+
+  if (response.status === 401) {
+    handleSessionExpiry();
+  }
+
+  return response;
 }
 
-/**
- * WHAT:
- * Save layout changes to server.
- *
- * WHY:
- * Persists user edits to database.
- *
- * HOW:
- * POST request with layout JSON in body.
- */
+async function apiRequestJson(url, options = {}) {
+  const response = await request(url, {
+    ...options,
+    headers: {
+      ...options.headers,
+      ...(options.body && typeof options.body === 'string'
+        ? { 'Content-Type': 'application/json' }
+        : {})
+    }
+  });
+
+  if (!response.ok) {
+    let message = `HTTP ${response.status}`;
+    try {
+      const data = await response.json();
+      if (data && typeof data.message === 'string') message = data.message;
+      else if (data && typeof data.error === 'string') message = data.error;
+    } catch {
+      // ignore
+    }
+    throw new Error(message);
+  }
+
+  return response.json();
+}
+
+export async function getLayout(binderId) {
+  return apiRequestJson(`/dashboard/binder/${encodeURIComponent(binderId)}/layout`, {
+    method: 'GET'
+  });
+}
+
 export async function applyLayout(binderId, layout) {
-  return apiRequest(`/dashboard/binder/${binderId}/layout/apply`, {
+  return apiRequestJson(`/dashboard/binder/${encodeURIComponent(binderId)}/layout/apply`, {
     method: 'POST',
     body: JSON.stringify(layout)
   });
 }
 
-// Auto layout API removed: layout is now controlled entirely client-side.
-
-/**
- * WHAT:
- * Export binder as PDF and trigger browser download.
- *
- * WHY:
- * Users need to download their binder as a PDF file.
- *
- * HOW:
- * POST request to export endpoint, returns blob.
- * Handles session expiry same as other API calls.
- */
 export async function exportBinderPdf(binderId) {
-  if (!binderId) {
-    throw new Error('Missing binderId for export');
-  }
-
-  const csrfToken =
-    document
-      .querySelector('#binder-editor-root')
-      ?.getAttribute('data-csrf-token') || '';
+  if (!binderId) throw new Error('Missing binderId for export');
 
   const url = `/dashboard/binder/${encodeURIComponent(binderId)}/export`;
 
-  try {
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: {
-        Accept: 'application/pdf',
-        ...(csrfToken ? { 'X-CSRF-Token': csrfToken } : {})
-      },
-      credentials: 'same-origin'
-    });
+  const res = await request(url, {
+    method: 'POST',
+    includeCsrf: true,
+    headers: buildHeaders({
+      accept: 'application/pdf',
+      includeCsrf: true
+    })
+  });
 
-    // Handle session expiry (401 Unauthorized or 403 Forbidden)
-    if (res.status === 401 || res.status === 403) {
-      handleSessionExpiry();
-    }
-
-    if (!res.ok) {
-      const text = await res.text().catch(() => '');
-      throw new Error(
-        `Export failed (${res.status}): ${text || 'Server error'}`
-      );
-    }
-
-    return await res.blob();
-  } catch (error) {
-    if (isSessionExpiryError(error, true)) {
-      handleSessionExpiry();
-    }
-    throw error;
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`Export failed (${res.status}): ${text || 'Server error'}`);
   }
+
+  return res.blob();
 }
 
-/**
- * WHAT:
- * Delete a binder photo from storage and database.
- *
- * WHY:
- * Users need to permanently delete photos from their binders.
- *
- * HOW:
- * DELETE request with storageKey query parameter.
- * Handles session expiry same as other API calls.
- */
 export async function deleteBinderPhoto(binderId, storageKey) {
   if (!binderId || !storageKey) {
     throw new Error('Missing binderId or storageKey for photo delete');
   }
 
-  const csrfToken =
-    document
-      .querySelector('#binder-editor-root')
-      ?.getAttribute('data-csrf-token') || '';
-  const url = `/dashboard/binder/${encodeURIComponent(
-    binderId
-  )}/photos?storageKey=${encodeURIComponent(storageKey)}`;
+  const url =
+    `/dashboard/binder/${encodeURIComponent(binderId)}` +
+    `/photos?storageKey=${encodeURIComponent(storageKey)}`;
 
-  try {
-    const res = await fetch(url, {
-      method: 'DELETE',
-      headers: {
-        Accept: 'application/json',
-        ...(csrfToken ? { 'X-CSRF-Token': csrfToken } : {})
-      },
-      credentials: 'same-origin'
-    });
+  const res = await request(url, {
+    method: 'DELETE',
+    includeCsrf: true,
+    headers: buildHeaders({
+      accept: 'application/json',
+      includeCsrf: true
+    })
+  });
 
-    // Handle session expiry (401 Unauthorized only - 403 can mean resource not found)
-    if (res.status === 401) {
-      handleSessionExpiry();
-    }
-
-    if (!res.ok) {
-      const text = await res.text().catch(() => '');
-      throw new Error(
-        `Delete failed (${res.status}): ${text || 'Server error'}`
-      );
-    }
-
-    const data = await res.json().catch(() => ({ ok: false }));
-    if (!data || !data.ok) {
-      throw new Error('Delete endpoint returned an error response');
-    }
-
-    return data;
-  } catch (error) {
-    // Handle network errors that might indicate session expiry (for critical operations)
-    if (isSessionExpiryError(error, true)) {
-      handleSessionExpiry();
-    }
-    throw error;
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`Delete failed (${res.status}): ${text || 'Server error'}`);
   }
+
+  const data = await res.json().catch(() => ({ ok: false }));
+  if (!data || !data.ok) {
+    throw new Error('Delete endpoint returned an error response');
+  }
+
+  return data;
 }
 
-/**
- * WHAT:
- * Update the caption for a binder photo.
- *
- * WHY:
- * Users need to add descriptive captions to photos for visa applications.
- *
- * HOW:
- * PATCH request with storageKey and caption in body.
- * Backend validates and sanitizes caption (no HTML, no emoji).
- */
 export async function updatePhotoCaption(binderId, storageKey, caption) {
   if (!binderId || !storageKey) {
     throw new Error('Missing binderId or storageKey for caption update');
   }
 
-  return apiRequest(
+  return apiRequestJson(
     `/dashboard/binder/${encodeURIComponent(binderId)}/photos/caption`,
     {
       method: 'PATCH',
@@ -327,147 +243,116 @@ export async function updatePhotoCaption(binderId, storageKey, caption) {
 }
 
 /**
- * WHAT:
- * Get signed S3 URL for a photo storage key.
- *
- * WHY:
- * Photos are stored in S3 with signed URLs for security.
- *
- * HOW:
- * GET request with storageKey query parameter.
+ * Upload photos (multipart/form-data).
+ * Returns server JSON { ok:true, photos:[...] }.
  */
+export async function uploadBinderPhotos(binderId, files) {
+  if (!binderId) throw new Error('Missing binderId for upload');
+  if (!Array.isArray(files) || files.length === 0) return { ok: true, photos: [] };
 
-// Simple in-memory cache for photo view URLs (per browser tab) WITH TTL
+  const formData = new FormData();
+  files.forEach((f) => formData.append('photos', f));
+
+  const res = await request(`/dashboard/binder/${encodeURIComponent(binderId)}/photos`, {
+    method: 'POST',
+    includeCsrf: true,
+    headers: buildHeaders({
+      accept: 'application/json',
+      includeCsrf: true
+    }),
+    body: formData
+  });
+
+  if (!res.ok) {
+    let message = `Upload failed (${res.status})`;
+    try {
+      const data = await res.json();
+      if (data?.message) message = data.message;
+      else if (data?.error) message = data.error;
+    } catch {
+      const text = await res.text().catch(() => '');
+      if (text) message = `${message}: ${text}`;
+    }
+    throw new Error(message);
+  }
+
+  return res.json();
+}
+
+// -----------------------------------------------------------------------------
+// Photo view-url with per-tab cache (TTL)
+// -----------------------------------------------------------------------------
+
 const PHOTO_URL_CACHE_TTL_MS = 3 * 60 * 60 * 1000; // 3 hours
 const photoViewUrlCache = new Map();
-// cacheKey = `${binderId}:${storageKey}`
-// value = { url: string, expiresAt: number }
-// cacheKey = `${binderId}:${storageKey}`
-// Value = final URL string we can put directly into <img src="...">
 
-// Fetch a signed S3 view URL for a given storageKey
-// Handles plain text and multiple JSON shapes, with a per-tab cache.
-export async function getPhotoViewUrl(
-  binderId,
-  storageKey,
-  options = {}
-) {
+function isUsableUrl(s) {
+  return typeof s === 'string' && s && (s.startsWith('/') || /^https?:\/\//i.test(s));
+}
+
+export async function getPhotoViewUrl(binderId, storageKey, options = {}) {
   const { forceRefresh = false } = options;
-
-  const isUsableUrl = (s) =>
-    typeof s === 'string' && s && (s.startsWith('/') || /^https?:\/\//i.test(s));
 
   if (!binderId || !storageKey) return null;
 
   const cacheKey = `${binderId}:${storageKey}`;
 
-  // 1) Fast path: reuse cached URL if still valid
   if (!forceRefresh) {
     const cached = photoViewUrlCache.get(cacheKey);
-    if (cached && cached.url && Date.now() < cached.expiresAt) {
-      return cached.url;
-    }
-    // Expired → remove
+    if (cached && cached.url && Date.now() < cached.expiresAt) return cached.url;
     if (cached) photoViewUrlCache.delete(cacheKey);
   }
 
-  const url = `/dashboard/binder/${encodeURIComponent(
-    binderId
-  )}/photos/view-url?storageKey=${encodeURIComponent(storageKey)}`;
+  const url =
+    `/dashboard/binder/${encodeURIComponent(binderId)}` +
+    `/photos/view-url?storageKey=${encodeURIComponent(storageKey)}`;
 
+  let res;
   try {
-    const res = await fetch(url, {
+    res = await request(url, {
       method: 'GET',
-      credentials: 'same-origin'
+      includeCsrf: true,
+      headers: buildHeaders({
+        accept: 'application/json',
+        includeCsrf: true
+      })
     });
-
-    // Session expired → redirect once, then bail
-    if (res.status === 401) {
-      handleSessionExpiry();
-      return null;
-    }
-
-    if (!res.ok) {
-      if (res.status === 403) {
-        console.warn('[BinderEditor] Photo not found or access denied:', {
-          binderId,
-          storageKey,
-          status: res.status
-        });
-      } else {
-        console.error('[BinderEditor] Error fetching photo URL:', {
-          binderId,
-          storageKey,
-          status: res.status
-        });
-      }
-      return null;
-    }
-
-    const raw = (await res.text()).trim();
-    console.log('[view-url raw body]', { binderId, storageKey, raw });
-
-    if (!raw) return null;
-
-    let finalUrl = null;
-
-    // Try to parse JSON first
-    try {
-      const parsed = JSON.parse(raw);
-
-      // 4) JSON string: "https://..."  (or "/dashboard/...")
-      if (typeof parsed === 'string') {
-        if (isUsableUrl(parsed)) finalUrl = parsed;
-      } else if (parsed && typeof parsed === 'object') {
-        // Preferred new shape from server: { photoPath: "/dashboard/binder/.../photos/raw?..." }
-        if (isUsableUrl(parsed.photoPath)) {
-          finalUrl = parsed.photoPath;
-        } else if (isUsableUrl(parsed.url)) {
-          finalUrl = parsed.url;
-        } else if (isUsableUrl(parsed.signedUrl)) {
-          finalUrl = parsed.signedUrl;
-        } else if (parsed.data && isUsableUrl(parsed.data)) {
-          // Some older shapes: { ok: true, data: "https://..." } OR { ok:true, data:"/dashboard/..." }
-          finalUrl = parsed.data;
-        } else if (
-          parsed.data &&
-          typeof parsed.data === 'object' &&
-          isUsableUrl(parsed.data.signedUrl)
-        ) {
-          // Extra safety: { ok: true, data: { signedUrl: "https://..." } }
-          finalUrl = parsed.data.signedUrl;
-        }
-      }
-    } catch {
-      // Not JSON → might just be a plain URL
-      if (isUsableUrl(raw)) finalUrl = raw;
-    }
-
-    // Fallback: if it looks like a URL, accept it
-    if (!finalUrl && isUsableUrl(raw)) {
-      finalUrl = raw;
-    }
-
-    if (!finalUrl) {
-      console.warn(
-        '[BinderEditor] view-url response did not contain a usable URL',
-        { binderId, storageKey, raw }
-      );
-      return null;
-    }
-
-    // Store in in-memory cache so page switches don't keep hitting the server
-    photoViewUrlCache.set(cacheKey, {
-      url: finalUrl,
-      expiresAt: Date.now() + PHOTO_URL_CACHE_TTL_MS
-    });
-    return finalUrl;
-  } catch (err) {
-    console.error('[BinderEditor] Exception while fetching photo URL:', {
-      binderId,
-      storageKey,
-      error: err?.message || String(err)
-    });
+  } catch {
     return null;
   }
+
+  if (!res.ok) return null;
+
+  const raw = (await res.text().catch(() => '')).trim();
+  if (!raw) return null;
+
+  let finalUrl = null;
+
+  try {
+    const parsed = JSON.parse(raw);
+
+    if (typeof parsed === 'string') {
+      if (isUsableUrl(parsed)) finalUrl = parsed;
+    } else if (parsed && typeof parsed === 'object') {
+      if (isUsableUrl(parsed.photoPath)) finalUrl = parsed.photoPath;
+      else if (isUsableUrl(parsed.url)) finalUrl = parsed.url;
+      else if (isUsableUrl(parsed.signedUrl)) finalUrl = parsed.signedUrl;
+      else if (isUsableUrl(parsed.data)) finalUrl = parsed.data;
+      else if (parsed.data && typeof parsed.data === 'object' && isUsableUrl(parsed.data.signedUrl)) {
+        finalUrl = parsed.data.signedUrl;
+      }
+    }
+  } catch {
+    if (isUsableUrl(raw)) finalUrl = raw;
+  }
+
+  if (!finalUrl && isUsableUrl(raw)) finalUrl = raw;
+  if (!finalUrl) return null;
+
+  photoViewUrlCache.set(cacheKey, {
+    url: finalUrl,
+    expiresAt: Date.now() + PHOTO_URL_CACHE_TTL_MS
+  });
+
+  return finalUrl;
 }

@@ -3,7 +3,14 @@
 // Purpose: Canvas editor with pages, layers, drag/resize + autosave
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { getLayout, applyLayout, exportBinderPdf, deleteBinderPhoto } from './api';
+import {
+  getLayout,
+  applyLayout,
+  exportBinderPdf,
+  deleteBinderPhoto,
+  uploadBinderPhotos,
+  getPhotoViewUrl
+} from './api';
 import { useModal } from './ModalProvider';
 import Canvas from './Canvas';
 import PageList from './PageList';
@@ -14,51 +21,15 @@ import { preloadBinderPhotos } from './preloadPhotos';
 import MobileMenu from './MobileMenu';
 import { captureImageDimensions } from './utils/imageDimensions';
 
-const AUTOSAVE_DEBOUNCE_MS = 1500; // 1.5s after last change
+const AUTOSAVE_DEBOUNCE_MS = 1500;
 
 // A4 at 96 DPI (same as elsewhere)
 const PAGE_WIDTH = 794;
 const PAGE_HEIGHT = 1122;
 
 // Photo layers store TOTAL height (image area + caption).
-// This must match the minimum caption height in CSS (.layer-caption-shell).
+// Must match CSS (.layer-caption-shell).
 const CAPTION_H = 88;
-
-function computeCascadingPhotoFrame({ index, aspectRatio = 1 }) {
-  const safeAr = typeof aspectRatio === 'number' && aspectRatio > 0 ? aspectRatio : 1;
-
-  let w = Math.round(PAGE_WIDTH * 0.55);
-  let imageH = Math.round(w / safeAr);
-  const maxImageH = Math.round(PAGE_HEIGHT * 0.55);
-
-  if (imageH > maxImageH) {
-    imageH = maxImageH;
-    w = Math.round(imageH * safeAr);
-        }
-
-  const totalH = imageH + CAPTION_H;
-
-  const baseX = Math.round((PAGE_WIDTH - w) / 2);
-  const baseY = Math.round((PAGE_HEIGHT - totalH) / 2);
-  const step = 24;
-  const offset = (index % 8) * step;
-
-  const x = Math.min(Math.max(baseX + offset, 0), PAGE_WIDTH - w);
-  const y = Math.min(Math.max(baseY + offset, 0), PAGE_HEIGHT - totalH);
-
-  return { x, y, width: w, height: totalH };
-}
-
-// Shared helper: compute login URL and redirect on session expiry
-function redirectToLoginForSessionExpiry() {
-  try {
-    const returnTo = window.location.pathname + window.location.search;
-    const loginUrl = `/login?reason=session_expired&returnTo=${encodeURIComponent(returnTo)}`;
-    window.location.replace(loginUrl);
-  } catch {
-    window.location.href = '/login?reason=session_expired';
-  }
-}
 
 function isSessionExpiredError(err) {
   return !!err && err.message === 'SESSION_EXPIRED';
@@ -73,7 +44,7 @@ function uuidv4Fallback() {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
-function makePageId() {
+function makeId() {
   try {
     if (crypto?.randomUUID) return crypto.randomUUID();
   } catch {}
@@ -82,10 +53,35 @@ function makePageId() {
 
 function ensurePageIds(pages) {
   const arr = Array.isArray(pages) ? pages : [];
-  return arr.map((p) => ({ ...p, id: p?.id || makePageId() }));
+  return arr.map((p) => ({ ...p, id: p?.id || makeId() }));
 }
 
-function App({ binderId /*, csrfToken */ }) {
+function computeCascadingPhotoFrame({ index, aspectRatio = 1 }) {
+  const safeAr = typeof aspectRatio === 'number' && aspectRatio > 0 ? aspectRatio : 1;
+
+  let w = Math.round(PAGE_WIDTH * 0.55);
+  let imageH = Math.round(w / safeAr);
+  const maxImageH = Math.round(PAGE_HEIGHT * 0.55);
+
+  if (imageH > maxImageH) {
+    imageH = maxImageH;
+    w = Math.round(imageH * safeAr);
+  }
+
+  const totalH = imageH + CAPTION_H;
+
+  const baseX = Math.round((PAGE_WIDTH - w) / 2);
+  const baseY = Math.round((PAGE_HEIGHT - totalH) / 2);
+  const step = 24;
+  const offset = (index % 8) * step;
+
+  const x = Math.min(Math.max(baseX + offset, 0), PAGE_WIDTH - w);
+  const y = Math.min(Math.max(baseY + offset, 0), PAGE_HEIGHT - totalH);
+
+  return { x, y, width: w, height: totalH };
+}
+
+function App({ binderId }) {
   const [layout, setLayout] = useState(null);
   const [selectedPage, setSelectedPage] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -98,15 +94,33 @@ function App({ binderId /*, csrfToken */ }) {
   const [isDirty, setIsDirty] = useState(false);
   const [hasLoadedInitialLayout, setHasLoadedInitialLayout] = useState(false);
   const [lastSavedAt, setLastSavedAt] = useState(null);
+
   const [selectedLayerId, setSelectedLayerId] = useState(null);
+
   const [exporting, setExporting] = useState(false);
+  const [previewing, setPreviewing] = useState(false);
+
   const [zoom, setZoom] = useState(1);
   const canvasStageRef = useRef(null);
   const fileInputRef = useRef(null);
   const [mobilePageListOpen, setMobilePageListOpen] = useState(false);
 
-  // PDF Preview state (only the “busy” flag remains)
-  const [previewing, setPreviewing] = useState(false);
+  // Keep latest layout in a ref (for saves that run later).
+  const layoutRef = useRef(layout);
+  useEffect(() => {
+    layoutRef.current = layout;
+  }, [layout]);
+
+  // Revision counter to avoid autosave races.
+  const dirtyRevRef = useRef(0);
+  const markDirty = useCallback(() => {
+    dirtyRevRef.current += 1;
+    setIsDirty(true);
+  }, []);
+
+  // Prevent overlapping saves; queue at most one follow-up.
+  const saveInFlightRef = useRef(false);
+  const saveQueuedRef = useRef(false);
 
   const applySectionDefaults = useCallback((pages) => {
     if (!Array.isArray(pages)) return [];
@@ -123,6 +137,57 @@ function App({ binderId /*, csrfToken */ }) {
       return { ...page, sectionKey };
     });
   }, []);
+
+  const flushSaveNow = useCallback(
+    async ({ reason } = {}) => {
+      if (!binderId) return;
+      if (!layoutRef.current) return;
+
+      if (saveInFlightRef.current) {
+        saveQueuedRef.current = true;
+        return;
+      }
+
+      saveInFlightRef.current = true;
+      saveQueuedRef.current = false;
+
+      const startRev = dirtyRevRef.current;
+      const snapshot = layoutRef.current;
+
+      try {
+        setSaving(true);
+        setError(null);
+
+        const result = await applyLayout(binderId, snapshot);
+
+        if (result?.ok) {
+          setLayout((prev) => (prev ? { ...prev, updatedAt: result.updatedAt } : prev));
+          setLastSavedAt(result.updatedAt || new Date().toISOString());
+        }
+
+        // Only clear dirty if nothing changed since we started this save.
+        if (dirtyRevRef.current === startRev) {
+          setIsDirty(false);
+        }
+      } catch (err) {
+        if (isSessionExpiredError(err)) return;
+        setError(err.message || `Save failed${reason ? ` (${reason})` : ''}`);
+        console.error('[BinderEditor] Save failed:', err);
+      } finally {
+        setSaving(false);
+        saveInFlightRef.current = false;
+
+        if (saveQueuedRef.current) {
+          saveQueuedRef.current = false;
+          // Run queued save on next tick.
+          setTimeout(() => {
+            flushSaveNow({ reason: 'queued' }).catch(() => {});
+          }, 0);
+        }
+      }
+    },
+    [binderId]
+  );
 
   useEffect(() => {
     const handleGlobalMouseDown = (e) => {
@@ -171,10 +236,15 @@ function App({ binderId /*, csrfToken */ }) {
   }
 
   useEffect(() => {
+    let mounted = true;
+    const ac = new AbortController();
+
     async function load() {
       try {
         setLoading(true);
+
         const data = await getLayout(binderId);
+        if (!mounted) return;
 
         if (data.ok && data.layout) {
           const safeLayout = {
@@ -195,12 +265,16 @@ function App({ binderId /*, csrfToken */ }) {
           setLastSavedAt(safeLayout.updatedAt);
           if (safeLayout.pages.length > 0) setSelectedPage(pickInitialPage(safeLayout.pages));
 
-          const ac = new AbortController();
+          // Reset dirty state after initial load.
+          dirtyRevRef.current = 0;
+          setIsDirty(false);
+
           const result = await preloadBinderPhotos({
             binderId,
             layout: safeLayout,
             signal: ac.signal,
             onProgress: (p) => {
+              if (!mounted) return;
               setPreloadProgress({
                 done: Number(p.done || 0),
                 total: Number(p.total || 0)
@@ -216,15 +290,23 @@ function App({ binderId /*, csrfToken */ }) {
 
         setHasLoadedInitialLayout(true);
       } catch (err) {
+        if (!mounted) return;
         if (isSessionExpiredError(err)) return;
         setError(err.message);
         console.error('[BinderEditor] Failed to load layout:', err);
       } finally {
-        setLoading(false);
+        if (mounted) setLoading(false);
       }
     }
 
     load();
+
+    return () => {
+      mounted = false;
+      try {
+        ac.abort();
+      } catch {}
+    };
   }, [binderId, applySectionDefaults]);
 
   useEffect(() => {
@@ -232,33 +314,25 @@ function App({ binderId /*, csrfToken */ }) {
       if (!canvasStageRef.current) return;
 
       const stageRect = canvasStageRef.current.getBoundingClientRect();
-      // Account for padding (24px on each side = 48px total, but use smaller padding on mobile)
       const isMobile = window.innerWidth <= 900;
       const padding = isMobile ? 16 : 24;
       const paddingTotal = padding * 2;
-      
+
       const availableWidth = Math.max(200, stageRect.width - paddingTotal);
       const availableHeight = Math.max(200, stageRect.height - paddingTotal);
 
-      const a4Width = 794;
-      const a4Height = 1122;
-
-      const zoomX = availableWidth / a4Width;
-      const zoomY = availableHeight / a4Height;
-      // Cap at 1.0 to prevent upscaling beyond actual size
+      const zoomX = availableWidth / PAGE_WIDTH;
+      const zoomY = availableHeight / PAGE_HEIGHT;
       const fitZoom = Math.min(zoomX, zoomY, 1);
 
-      // Only update if zoom changed significantly (avoid jitter)
       setZoom((prevZoom) => {
         if (Math.abs(prevZoom - fitZoom) < 0.01) return prevZoom;
         return fitZoom;
       });
     };
 
-    // Initial calculation
     const timeoutId = setTimeout(calculateFitZoom, 100);
 
-    // Debounced resize handler
     let resizeTimeout;
     const handleResize = () => {
       clearTimeout(resizeTimeout);
@@ -266,14 +340,12 @@ function App({ binderId /*, csrfToken */ }) {
     };
 
     window.addEventListener('resize', handleResize);
-    // Also recalculate when stage becomes visible or size changes
+
     const observer = new ResizeObserver(() => {
       clearTimeout(resizeTimeout);
       resizeTimeout = setTimeout(calculateFitZoom, 150);
     });
-    if (canvasStageRef.current) {
-      observer.observe(canvasStageRef.current);
-    }
+    if (canvasStageRef.current) observer.observe(canvasStageRef.current);
 
     return () => {
       clearTimeout(timeoutId);
@@ -292,10 +364,8 @@ function App({ binderId /*, csrfToken */ }) {
     const stageRect = canvasStageRef.current.getBoundingClientRect();
     const availableWidth = stageRect.width - 48;
     const availableHeight = stageRect.height - 48;
-    const a4Width = 794;
-    const a4Height = 1122;
-    const zoomX = availableWidth / a4Width;
-    const zoomY = availableHeight / a4Height;
+    const zoomX = availableWidth / PAGE_WIDTH;
+    const zoomY = availableHeight / PAGE_HEIGHT;
     const fitZoom = Math.min(zoomX, zoomY, 1);
     setZoom(fitZoom);
   }, []);
@@ -306,28 +376,11 @@ function App({ binderId /*, csrfToken */ }) {
     if (!isDirty) return;
 
     const timer = setTimeout(() => {
-      (async () => {
-        try {
-          setSaving(true);
-          setError(null);
-          const result = await applyLayout(binderId, layout);
-          if (result.ok) {
-            setLayout((prev) => ({ ...(prev || {}), updatedAt: result.updatedAt }));
-            setIsDirty(false);
-            setLastSavedAt(result.updatedAt || new Date().toISOString());
-          }
-        } catch (err) {
-          if (isSessionExpiredError(err)) return;
-          setError(err.message);
-          console.error('[BinderEditor] Autosave failed:', err);
-        } finally {
-          setSaving(false);
-        }
-      })();
+      flushSaveNow({ reason: 'autosave' }).catch(() => {});
     }, AUTOSAVE_DEBOUNCE_MS);
 
     return () => clearTimeout(timer);
-  }, [binderId, layout, isDirty, hasLoadedInitialLayout]);
+  }, [layout, isDirty, hasLoadedInitialLayout, flushSaveNow]);
 
   const updateLayer = useCallback(
     (layerId, updates) => {
@@ -343,15 +396,13 @@ function App({ binderId /*, csrfToken */ }) {
 
         return { ...prev, pages: newPages };
       });
-      setIsDirty(true);
+      markDirty();
     },
-    [selectedPage]
+    [selectedPage, markDirty]
   );
 
-  const handleAddPhoto = useCallback(() => {
-    // kept for compatibility (unused)
-      setIsDirty(true);
-  }, []);
+  // Kept for Canvas prop compatibility; should be a no-op unless you actually implement it.
+  const handleAddPhoto = useCallback(() => {}, []);
 
   const handleAddPhotosClick = useCallback(() => {
     fileInputRef.current?.click();
@@ -362,52 +413,36 @@ function App({ binderId /*, csrfToken */ }) {
       if (!files || !files.length) return;
       if (!binderId) return;
 
-      const csrfToken =
-        document.querySelector('#binder-editor-root')?.getAttribute('data-csrf-token') || '';
-
-      const formData = new FormData();
-      files.forEach((file) => formData.append('photos', file));
-
       try {
-        const res = await fetch(`/dashboard/binder/${encodeURIComponent(binderId)}/photos`, {
-            method: 'POST',
-            body: formData,
-            headers: csrfToken ? { 'X-CSRF-Token': csrfToken } : undefined,
-            credentials: 'same-origin'
-        });
-
-        if (res.status === 401 || res.status === 403) {
-          redirectToLoginForSessionExpiry();
-          return;
-        }
-
-        if (!res.ok) {
-          console.error('[BinderEditor] Upload failed', res.status);
-          setError('Upload failed. Please try again.');
-          return;
-        }
-
-        const data = await res.json().catch(() => null);
+        const data = await uploadBinderPhotos(binderId, files);
         if (!data || !Array.isArray(data.photos)) return;
 
         const photoDataWithAspectRatios = await Promise.all(
           data.photos.map(async (photo) => {
-            const url =
+            const storageKey = photo.storageKey || null;
+
+            // Prefer server-provided url, otherwise ask view-url endpoint.
+            let url =
+              photo.url ||
               photo.signedUrl ||
               photo.publicUrl ||
-              photo.url ||
               photo.previewUrl ||
               photo.src ||
               null;
 
-            if (!url) return { ...photo, aspectRatio: 1 };
+            if (!url && storageKey) {
+              url = await getPhotoViewUrl(binderId, storageKey).catch(() => null);
+            }
+
+            if (!url) {
+              return { ...photo, url: null, aspectRatio: 1, naturalWidth: 0, naturalHeight: 0 };
+            }
 
             try {
-              // Prep work: capture natural dimensions for future crop implementation
               const { naturalWidth, naturalHeight, aspectRatio } = await captureImageDimensions(url);
-              return { ...photo, aspectRatio, naturalWidth, naturalHeight, url };
+              return { ...photo, url, aspectRatio, naturalWidth, naturalHeight };
             } catch {
-              return { ...photo, aspectRatio: 1, naturalWidth: 0, naturalHeight: 0, url };
+              return { ...photo, url, aspectRatio: 1, naturalWidth: 0, naturalHeight: 0 };
             }
           })
         );
@@ -416,20 +451,16 @@ function App({ binderId /*, csrfToken */ }) {
           const base = prev || { binderId, pages: [], updatedAt: new Date().toISOString() };
           const pages = [...(base.pages || [])];
 
-          if (!pages[selectedPage]) pages[selectedPage] = { pageIndex: selectedPage, layers: [] };
+          if (!pages[selectedPage]) {
+            pages[selectedPage] = { id: makeId(), pageIndex: selectedPage, layers: [] };
+          }
 
           const page = { ...pages[selectedPage] };
           page.layers = Array.isArray(page.layers) ? [...page.layers] : [];
           const nextLayers = [...page.layers];
 
-          photoDataWithAspectRatios.forEach((photo, idx) => {
-            const url =
-              photo.url ||
-              photo.signedUrl ||
-              photo.publicUrl ||
-              photo.previewUrl ||
-              photo.src ||
-              null;
+          photoDataWithAspectRatios.forEach((photo) => {
+            const url = photo.url || null;
 
             const imageAspectRatio =
               typeof photo.aspectRatio === 'number' && photo.aspectRatio > 0
@@ -437,12 +468,12 @@ function App({ binderId /*, csrfToken */ }) {
                 : 1;
 
             const totalFrame = computeCascadingPhotoFrame({
-              index: nextLayers.length + idx,
+              index: nextLayers.length,
               aspectRatio: imageAspectRatio
             });
 
             nextLayers.push({
-              id: `layer-upload-${Date.now()}-${idx}`,
+              id: makeId(),
               type: 'photo',
               x: totalFrame.x,
               y: totalFrame.y,
@@ -450,11 +481,10 @@ function App({ binderId /*, csrfToken */ }) {
               height: totalFrame.height,
               rotation: 0,
               zIndex: nextLayers.length,
-              photoId: null,
+              photoId: photo.photoId || null,
               storageKey: photo.storageKey || null,
               src: url,
               photoAspectRatio: imageAspectRatio,
-              // Prep work: store natural dimensions for future crop implementation
               photoNaturalWidth: photo.naturalWidth || 0,
               photoNaturalHeight: photo.naturalHeight || 0
             });
@@ -465,13 +495,14 @@ function App({ binderId /*, csrfToken */ }) {
           return { ...base, pages: applySectionDefaults(pages) };
         });
 
-        setIsDirty(true);
+        markDirty();
       } catch (err) {
+        if (isSessionExpiredError(err)) return;
         console.error('[BinderEditor] Upload exception', err);
-        setError('Upload failed due to a network error. Please try again.');
+        setError(err.message || 'Upload failed due to a network error. Please try again.');
       }
     },
-    [binderId, selectedPage, applySectionDefaults]
+    [binderId, selectedPage, applySectionDefaults, markDirty]
   );
 
   const handleFileChange = useCallback(
@@ -487,191 +518,172 @@ function App({ binderId /*, csrfToken */ }) {
     setSelectedLayerId(layerId || null);
   }, []);
 
-  const handleSectionChange = useCallback((pageIndex, sectionKey) => {
-    setLayout((prev) => {
-      if (!prev || !prev.pages || !prev.pages[pageIndex]) return prev;
-      const pages = [...prev.pages];
-      pages[pageIndex] = { ...pages[pageIndex], sectionKey };
-      return { ...prev, pages };
-    });
-    setIsDirty(true);
-  }, []);
+  const handleSectionChange = useCallback(
+    (pageIndex, sectionKey) => {
+      setLayout((prev) => {
+        if (!prev || !prev.pages || !prev.pages[pageIndex]) return prev;
+        const pages = [...prev.pages];
+        pages[pageIndex] = { ...pages[pageIndex], sectionKey };
+        return { ...prev, pages };
+      });
+      markDirty();
+    },
+    [markDirty]
+  );
 
-  const handleTidyLayout = useCallback(() => {
-    // unchanged (kept as-is in your original)
-      setIsDirty(true);
-  }, []);
+  // Placeholder: only mark dirty if you actually change layout.
+  const handleTidyLayout = useCallback(() => {}, []);
 
   const removeLayer = useCallback(
     async (layerId) => {
-      const currentPage = layout?.pages?.[selectedPage];
-      const layer = currentPage?.layers?.find((l) => l.id === layerId);
+      const current = layoutRef.current;
+      const page = current?.pages?.[selectedPage];
+      const layer = page?.layers?.find((l) => l.id === layerId);
       if (!layer) throw new Error('Layer not found');
 
       if (layer?.storageKey && binderId) {
-        try {
-          await deleteBinderPhoto(binderId, layer.storageKey);
-        } catch (err) {
-          if (isSessionExpiredError(err)) return;
-          setError(`Failed to delete photo from storage: ${err.message}`);
-        }
+        await deleteBinderPhoto(binderId, layer.storageKey);
       }
 
       setLayout((prev) => {
         if (!prev || !prev.pages || !prev.pages[selectedPage]) return prev;
         const newPages = [...prev.pages];
-        const page = { ...newPages[selectedPage] };
-        page.layers = (page.layers || []).filter((l) => l.id !== layerId);
-        newPages[selectedPage] = page;
+        const p = { ...newPages[selectedPage] };
+        p.layers = (p.layers || []).filter((l) => l.id !== layerId);
+        newPages[selectedPage] = p;
         return { ...prev, pages: newPages };
       });
 
-      setIsDirty(true);
+      markDirty();
     },
-    [selectedPage, layout, binderId]
+    [selectedPage, binderId, markDirty]
   );
 
-  const handleReorderPages = useCallback((fromIndex, toIndex) => {
-    if (typeof fromIndex !== 'number' || typeof toIndex !== 'number') return;
+  const handleReorderPages = useCallback(
+    (fromIndex, toIndex) => {
+      if (typeof fromIndex !== 'number' || typeof toIndex !== 'number') return;
       if (fromIndex === toIndex) return;
 
-    // Update selected page index so selection "follows" the moved tab
-    setSelectedPage((prevSelected) => {
-      if (prevSelected === fromIndex) return toIndex;
+      setSelectedPage((prevSelected) => {
+        if (prevSelected === fromIndex) return toIndex;
 
-      // If a page is moved down, pages between shift up by 1
-      if (fromIndex < toIndex && prevSelected > fromIndex && prevSelected <= toIndex) {
-        return prevSelected - 1;
-      }
+        if (fromIndex < toIndex && prevSelected > fromIndex && prevSelected <= toIndex) {
+          return prevSelected - 1;
+        }
 
-      // If a page is moved up, pages between shift down by 1
-      if (toIndex < fromIndex && prevSelected >= toIndex && prevSelected < fromIndex) {
-        return prevSelected + 1;
-      }
+        if (toIndex < fromIndex && prevSelected >= toIndex && prevSelected < fromIndex) {
+          return prevSelected + 1;
+        }
 
-      return prevSelected;
-    });
+        return prevSelected;
+      });
 
-    // Reorder the pages array in layout
-    setLayout((prev) => {
-      if (!prev || !Array.isArray(prev.pages)) return prev;
+      setLayout((prev) => {
+        if (!prev || !Array.isArray(prev.pages)) return prev;
 
-      const pages = [...prev.pages];
-      if (!pages[fromIndex] || toIndex < 0 || toIndex >= pages.length) return prev;
+        const pages = [...prev.pages];
+        if (!pages[fromIndex] || toIndex < 0 || toIndex >= pages.length) return prev;
 
-      const [moved] = pages.splice(fromIndex, 1);
-      pages.splice(toIndex, 0, moved);
+        const [moved] = pages.splice(fromIndex, 1);
+        pages.splice(toIndex, 0, moved);
 
-      // Keep pageIndex consistent with the visual order
-      const normalizedPages = pages.map((p, idx) => ({
-        ...p,
-        pageIndex: idx
-      }));
+        const normalizedPages = pages.map((p, idx) => ({
+          ...p,
+          pageIndex: idx
+        }));
 
-      return { ...prev, pages: normalizedPages };
-    });
+        return { ...prev, pages: normalizedPages };
+      });
 
-    setIsDirty(true);
-  }, []);
-
- const handleDeletePage = useCallback(
-   async (pageIndexToDelete) => {
-     if (!layout || !Array.isArray(layout.pages)) return;
-     if (typeof pageIndexToDelete !== 'number') return;
-     if (pageIndexToDelete < 0 || pageIndexToDelete >= layout.pages.length) return;
-
-     const pagesBefore = layout.pages;
-     const pageToDelete = pagesBefore[pageIndexToDelete];
-     const layers = Array.isArray(pageToDelete?.layers) ? pageToDelete.layers : [];
-
-     // 1) Collect photo storageKeys on the page being deleted
-     const keysOnDeletedPage = new Set(
-       layers
-         .filter((l) => l && l.type === 'photo' && l.storageKey)
-         .map((l) => String(l.storageKey))
-     );
-
-     // 2) Collect photo storageKeys used on OTHER pages (so we don't delete shared photos)
-     const keysUsedElsewhere = new Set();
-     pagesBefore.forEach((p, idx) => {
-       if (!p || idx === pageIndexToDelete) return;
-       const otherLayers = Array.isArray(p.layers) ? p.layers : [];
-       otherLayers.forEach((l) => {
-         if (l && l.type === 'photo' && l.storageKey) {
-           keysUsedElsewhere.add(String(l.storageKey));
-         }
-       });
-     });
-
-     // 3) Only delete photos that are not referenced anywhere else
-     const keysToDelete = [...keysOnDeletedPage].filter((k) => !keysUsedElsewhere.has(k));
-
-     // Best-effort delete from storage+DB (keep going even if some fail)
-     const failures = [];
-     if (binderId && keysToDelete.length > 0) {
-       for (const storageKey of keysToDelete) {
-         try {
-           await deleteBinderPhoto(binderId, storageKey);
-      } catch (err) {
-        if (isSessionExpiredError(err)) return;
-           failures.push(storageKey);
-         }
-       }
-     }
-
-     // 4) Remove the page from local layout + normalize pageIndex
-     const newPages = pagesBefore
-       .filter((_, idx) => idx !== pageIndexToDelete)
-       .map((p, idx) => ({
-         ...p,
-         pageIndex: idx,
-         layers: Array.isArray(p?.layers) ? p.layers : []
-       }));
-
-     setLayout((prev) => {
-       if (!prev) return prev;
-       return { ...prev, pages: applySectionDefaults(newPages) };
-     });
-
-     // 5) Fix selection after deletion
-     const nextLen = newPages.length;
-     let nextSelected = selectedPage;
-     if (selectedPage === pageIndexToDelete) {
-       nextSelected = nextLen > 0 ? Math.min(pageIndexToDelete, nextLen - 1) : 0;
-     } else if (selectedPage > pageIndexToDelete) {
-       nextSelected = selectedPage - 1;
-     }
-     setSelectedPage(nextSelected);
-     setSelectedLayerId(null);
-
-     // 6) Mark dirty so autosave persists the new pages array
-        setIsDirty(true);
-
-     // Optional: surface failures (page still deletes even if some photo deletes fail)
-     if (failures.length > 0) {
-       setError(
-         `Page deleted, but ${failures.length} photo(s) could not be deleted from storage. Please retry deleting those photos later.`
-       );
-      }
+      markDirty();
     },
-   [layout, binderId, selectedPage, applySectionDefaults]
+    [markDirty]
   );
 
-  // Preview PDF handler (now opens via ModalProvider)
+  const handleDeletePage = useCallback(
+    async (pageIndexToDelete) => {
+      const current = layoutRef.current;
+      if (!current || !Array.isArray(current.pages)) return;
+      if (typeof pageIndexToDelete !== 'number') return;
+      if (pageIndexToDelete < 0 || pageIndexToDelete >= current.pages.length) return;
+
+      const pagesBefore = current.pages;
+      const pageToDelete = pagesBefore[pageIndexToDelete];
+      const layers = Array.isArray(pageToDelete?.layers) ? pageToDelete.layers : [];
+
+      const keysOnDeletedPage = new Set(
+        layers
+          .filter((l) => l && l.type === 'photo' && l.storageKey)
+          .map((l) => String(l.storageKey))
+      );
+
+      const keysUsedElsewhere = new Set();
+      pagesBefore.forEach((p, idx) => {
+        if (!p || idx === pageIndexToDelete) return;
+        const otherLayers = Array.isArray(p.layers) ? p.layers : [];
+        otherLayers.forEach((l) => {
+          if (l && l.type === 'photo' && l.storageKey) {
+            keysUsedElsewhere.add(String(l.storageKey));
+          }
+        });
+      });
+
+      const keysToDelete = [...keysOnDeletedPage].filter((k) => !keysUsedElsewhere.has(k));
+
+      const failures = [];
+      if (binderId && keysToDelete.length > 0) {
+        for (const storageKey of keysToDelete) {
+          try {
+            await deleteBinderPhoto(binderId, storageKey);
+          } catch (err) {
+            if (isSessionExpiredError(err)) return;
+            failures.push(storageKey);
+          }
+        }
+      }
+
+      const newPages = pagesBefore
+        .filter((_, idx) => idx !== pageIndexToDelete)
+        .map((p, idx) => ({
+          ...p,
+          pageIndex: idx,
+          layers: Array.isArray(p?.layers) ? p.layers : []
+        }));
+
+      setLayout((prev) => {
+        if (!prev) return prev;
+        return { ...prev, pages: applySectionDefaults(newPages) };
+      });
+
+      const nextLen = newPages.length;
+      setSelectedPage((prevSelected) => {
+        if (prevSelected === pageIndexToDelete) {
+          return nextLen > 0 ? Math.min(pageIndexToDelete, nextLen - 1) : 0;
+        }
+        if (prevSelected > pageIndexToDelete) return prevSelected - 1;
+        return prevSelected;
+      });
+
+      setSelectedLayerId(null);
+      markDirty();
+
+      if (failures.length > 0) {
+        setError(
+          `Page deleted, but ${failures.length} photo(s) could not be deleted from storage. Please retry deleting those photos later.`
+        );
+      }
+    },
+    [binderId, applySectionDefaults, markDirty]
+  );
+
   const handlePreviewPdf = useCallback(async () => {
-    if (previewing || !binderId || !layout) return;
+    if (previewing || !binderId || !layoutRef.current) return;
 
     let url = null;
 
     try {
-      // Save pending changes first so preview matches export output
       if (isDirty) {
-        const result = await applyLayout(binderId, layout);
-        if (result?.ok) {
-          setLayout((prev) => ({ ...(prev || layout), updatedAt: result.updatedAt }));
-          setIsDirty(false);
-          setLastSavedAt(result.updatedAt || new Date().toISOString());
-      }
+        await flushSaveNow({ reason: 'preview' });
       }
 
       setPreviewing(true);
@@ -695,7 +707,6 @@ function App({ binderId /*, csrfToken */ }) {
     } catch (err) {
       if (isSessionExpiredError(err)) return;
 
-      // If we created a blob URL but failed later, revoke it
       if (url) {
         try {
           window.URL.revokeObjectURL(url);
@@ -707,36 +718,35 @@ function App({ binderId /*, csrfToken */ }) {
     } finally {
       setPreviewing(false);
     }
-  }, [previewing, binderId, layout, isDirty, openModal]);
+  }, [previewing, binderId, isDirty, flushSaveNow, openModal]);
 
   const handleExportPdf = useCallback(async () => {
-      if (exporting || !binderId || !layout) return;
+    if (exporting || !binderId || !layoutRef.current) return;
 
-      try {
-        if (isDirty) {
-          await applyLayout(binderId, layout);
-          setIsDirty(false);
-        }
-
-        setExporting(true);
-        const blob = await exportBinderPdf(binderId);
-
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `binder-${binderId || 'export'}.pdf`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        window.URL.revokeObjectURL(url);
-      } catch (err) {
-      if (isSessionExpiredError(err)) return;
-        setError(`Export failed: ${err.message}`);
-        console.error('[BinderEditor] Export failed:', err);
-      } finally {
-        setExporting(false);
+    try {
+      if (isDirty) {
+        await flushSaveNow({ reason: 'export' });
       }
-  }, [binderId, layout, isDirty, exporting]);
+
+      setExporting(true);
+      const blob = await exportBinderPdf(binderId);
+
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `binder-${binderId || 'export'}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      if (isSessionExpiredError(err)) return;
+      setError(`Export failed: ${err.message}`);
+      console.error('[BinderEditor] Export failed:', err);
+    } finally {
+      setExporting(false);
+    }
+  }, [binderId, isDirty, exporting, flushSaveNow]);
 
   if (loading) {
     const done = preloadProgress?.done || 0;
@@ -800,7 +810,6 @@ function App({ binderId /*, csrfToken */ }) {
 
       <div className="binder-editor-workspace flex-1">
         <div className="binder-binder-card flex h-full bg-white border border-slate-200 shadow-sm rounded-xl overflow-hidden">
-          {/* Mobile overlay backdrop - positioned relative to binder card */}
           {mobilePageListOpen && (
             <div
               className="mobile-page-list-overlay"
@@ -808,21 +817,19 @@ function App({ binderId /*, csrfToken */ }) {
               aria-hidden="true"
             />
           )}
+
           <PageList
             pages={layout?.pages || []}
             selectedPageIndex={selectedPage}
             sectionLabels={SECTION_LABELS}
-            onSelectPage={(idx) => {
-              setSelectedPage(idx);
-              // Keep menu open so user can see page changes
-            }}
+            onSelectPage={(idx) => setSelectedPage(idx)}
             onReorderPages={handleReorderPages}
             onAddPage={() => {
               setLayout((prev) => {
                 if (!prev) {
                   return {
                     binderId,
-                    pages: applySectionDefaults([{ id: makePageId(), pageIndex: 0, layers: [] }]),
+                    pages: applySectionDefaults([{ id: makeId(), pageIndex: 0, layers: [] }]),
                     updatedAt: new Date().toISOString()
                   };
                 }
@@ -832,12 +839,12 @@ function App({ binderId /*, csrfToken */ }) {
 
                 const newPages = [
                   ...pages,
-                  { id: makePageId(), pageIndex: nextIndex, layers: [] }
+                  { id: makeId(), pageIndex: nextIndex, layers: [] }
                 ];
 
                 return { ...prev, pages: applySectionDefaults(newPages) };
               });
-              setIsDirty(true);
+              markDirty();
             }}
             onDeletePage={handleDeletePage}
             mobileOverlayOpen={mobilePageListOpen}
@@ -867,7 +874,7 @@ function App({ binderId /*, csrfToken */ }) {
                   if (!prev) {
                     return {
                       binderId,
-                      pages: applySectionDefaults([{ id: makePageId(), pageIndex: 0, layers: [] }]),
+                      pages: applySectionDefaults([{ id: makeId(), pageIndex: 0, layers: [] }]),
                       updatedAt: new Date().toISOString()
                     };
                   }
@@ -877,12 +884,12 @@ function App({ binderId /*, csrfToken */ }) {
 
                   const newPages = [
                     ...pages,
-                    { id: makePageId(), pageIndex: nextIndex, layers: [] }
+                    { id: makeId(), pageIndex: nextIndex, layers: [] }
                   ];
 
                   return { ...prev, pages: applySectionDefaults(newPages) };
                 });
-                setIsDirty(true);
+                markDirty();
               }}
               onDeletePage={handleDeletePage}
             />
@@ -904,8 +911,8 @@ function App({ binderId /*, csrfToken */ }) {
               return;
             }
 
-            const currentPage = layout?.pages?.[selectedPage];
-            const layer = currentPage?.layers?.find((l) => l.id === selectedLayerId);
+            const p = layoutRef.current?.pages?.[selectedPage];
+            const layer = p?.layers?.find((l) => l.id === selectedLayerId);
 
             if (!layer) {
               setError('Photo not found. Please refresh the page.');

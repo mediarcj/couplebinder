@@ -3,20 +3,21 @@
 //
 // WHAT:
 //  - saveBinderPhoto({ userId, binderId, file }) -> { provider, storageKey, ... }
-//  - storeBinderPhotos({ userId, binderId, files }) -> array for the binder route
+//  - storeBinderPhotos({ userId, binderId, files }) -> array helper (kept for compatibility)
 //  - getBinderPhotoViewUrl(storageKey) -> presigned URL (legacy, optional)
 //  - getBinderPhotoStream(storageKey) -> { stream, contentType, contentLength }
 //  - getBinderPhotoBuffer(storageKey) -> { buffer, contentType }
 //  - deleteBinderPhoto(storageKey) -> delete from S3/local
+//  - getBinderPhotoPublicUrl(storageKey) -> CDN/public URL when explicitly configured
 //
 // HOW:
-//  - Today: supports 's3' and a fallback 'local' mode.
-//  - S3 configuration is read from the central config (config.storage)
+//  - Supports 's3' and a fallback 'local' mode.
+//  - S3 configuration is read from central config (config.storage)
 //    so this module never touches process.env directly.
 //
-// AWS credentials:
-//  - Use standard AWS env vars (AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY / AWS_SESSION_TOKEN)
-//    or an IAM role when running on EC2. We do NOT log secrets.
+// Credentials:
+//  - Uses the AWS SDK default credential resolution (IAM role, web identity,
+//    or environment variables if you choose). This module never logs secrets.
 
 'use strict';
 
@@ -35,8 +36,6 @@ const logger = require('../utils/logger');
 // Optional: AWS SDK v3 presigner for short-lived view URLs
 let getSignedUrl = null;
 try {
-  // This package must exist in your dependencies:
-  //   npm install @aws-sdk/s3-request-presigner
   ({ getSignedUrl } = require('@aws-sdk/s3-request-presigner'));
 } catch (err) {
   logger.warn(
@@ -56,7 +55,6 @@ const storageCfg = config.storage || { provider: 'local', s3: {} };
 const provider = (storageCfg.provider || 'local').toLowerCase();
 const s3Cfg = storageCfg.s3 || {};
 
-// NEW: derive base path once from config
 const s3BasePath = (s3Cfg.basePath || 'binders')
   .replace(/^\/+/, '')
   .replace(/\/+$/, '');
@@ -64,17 +62,10 @@ const s3BasePath = (s3Cfg.basePath || 'binders')
 const s3Region = s3Cfg.region || 'us-west-2';
 const s3Bucket = s3Cfg.bucket || '';
 
-// IMPORTANT:
-// - We *only* use a public base URL if you explicitly configure one
-//   (STORAGE_S3_PUBLIC_BASE_URL / config.storage.s3.publicBaseUrl).
-// - We NO LONGER auto-build https://bucket.s3.region.amazonaws.com,
-//   because most buckets are private and that URL will 403/AccessDenied.
+// Only use a public base URL if explicitly configured
 const s3PublicBaseUrl = (() => {
   const fromConfig = (s3Cfg.publicBaseUrl || '').trim();
-  if (fromConfig) {
-    return fromConfig.replace(/\/+$/, '');
-  }
-  return null;
+  return fromConfig ? fromConfig.replace(/\/+$/, '') : null;
 })();
 
 function buildS3PublicUrlForKey(storageKey) {
@@ -106,7 +97,7 @@ function getS3() {
   if (!s3Bucket) {
     logger.warn(
       { event: 'storage.s3.missing_bucket', provider },
-      '[storageProvider] S3 selected but bucket is not configured; falling back to local provider'
+      '[storageProvider] S3 selected but bucket is not configured; falling back to local provider behavior'
     );
     return null;
   }
@@ -114,7 +105,7 @@ function getS3() {
   if (!s3Client) {
     s3Client = new S3Client({
       region: s3Region
-      // Credentials are picked up from env/role; we don’t pass them explicitly.
+      // Credentials are picked up via AWS SDK default provider chain.
     });
   }
   return s3Client;
@@ -126,7 +117,6 @@ function getS3() {
 
 function sanitizeFilename(name) {
   if (!name) return 'file';
-  // Remove directory parts and anything weird
   const base = path.basename(name);
   return base.replace(/[^a-zA-Z0-9._-]/g, '_');
 }
@@ -136,7 +126,7 @@ function sanitizeFilename(name) {
  *
  * INPUT:
  *  - userId: string (Supabase auth user id)
- *  - binderId: string (binder uuid or default-<userId>)
+ *  - binderId: string (binder uuid)
  *  - file: multer file object
  *
  * OUTPUT:
@@ -152,9 +142,7 @@ function sanitizeFilename(name) {
  *  }
  */
 async function saveBinderPhoto({ userId, binderId, file }) {
-  if (!file) {
-    throw new Error('saveBinderPhoto called without file');
-  }
+  if (!file) throw new Error('saveBinderPhoto called without file');
 
   const originalFilename = sanitizeFilename(file.originalname);
   const sizeBytes = file.size || 0;
@@ -167,12 +155,11 @@ async function saveBinderPhoto({ userId, binderId, file }) {
   if (provider === 's3' && s3) {
     const key = `${s3BasePath}/${userId}/${binderId}/${Date.now()}_${originalFilename}`;
 
-    // Read file contents from local temp path written by multer
     const body = await fs.readFile(file.path);
 
     const cacheControl = s3PublicBaseUrl
-      ? 'public, max-age=31536000, immutable' // long-lived CDN / browser cache
-      : 'private, max-age=300';               // safer default when no CDN base is set
+      ? 'public, max-age=31536000, immutable'
+      : 'private, max-age=300';
 
     const putCmd = new PutObjectCommand({
       Bucket: s3Bucket,
@@ -188,12 +175,9 @@ async function saveBinderPhoto({ userId, binderId, file }) {
 
     try {
       await s3.send(putCmd);
+
       // Best-effort: remove local temp file
-      try {
-        await fs.unlink(file.path);
-      } catch (_) {
-        // non-fatal
-      }
+      try { await fs.unlink(file.path); } catch (_) {}
 
       logger.info(
         {
@@ -207,28 +191,16 @@ async function saveBinderPhoto({ userId, binderId, file }) {
         'Uploaded binder photo to S3'
       );
 
-      // build a stable CDN URL for this object.
       const publicUrl = buildS3PublicUrlForKey(key);
 
-      // ALWAYS try to generate a short-lived signed URL for private buckets.
-      // This works even when bucket-level public access is fully blocked.
       let signedUrl = null;
       if (getSignedUrl) {
         try {
-          const getCmd = new GetObjectCommand({
-            Bucket: s3Bucket,
-            Key: key
-          });
-          // 1 hour is fine for interactive editing; adjust later if needed.
+          const getCmd = new GetObjectCommand({ Bucket: s3Bucket, Key: key });
           signedUrl = await getSignedUrl(s3, getCmd, { expiresIn: 60 * 60 });
         } catch (err) {
           logger.warn(
-            {
-              event: 'storage.s3.signed_url_failed',
-              bucket: s3Bucket,
-              key,
-              error: err.message
-            },
+            { event: 'storage.s3.signed_url_failed', bucket: s3Bucket, key, error: err.message },
             'Failed to generate signed URL for binder photo'
           );
         }
@@ -246,23 +218,15 @@ async function saveBinderPhoto({ userId, binderId, file }) {
       };
     } catch (err) {
       logger.error(
-        {
-          event: 'storage.s3.upload_failed',
-          bucket: s3Bucket,
-          key,
-          userId,
-          binderId,
-          error: err.message
-        },
-        'Failed to upload binder photo to S3; falling back to local path'
+        { event: 'storage.s3.upload_failed', bucket: s3Bucket, key, userId, binderId, error: err.message },
+        'Failed to upload binder photo to S3; using local provider behavior'
       );
-      // If S3 fails, we fall back to treating the local path as the storage key.
-      // The caller can decide how to handle this.
+      // fall through to local behavior
     }
   }
 
   // ----------------------------------------------------------
-  // Local provider (or S3 misconfigured)
+  // Local provider behavior
   // ----------------------------------------------------------
   const localKey = file.path;
 
@@ -284,7 +248,7 @@ async function saveBinderPhoto({ userId, binderId, file }) {
     sizeBytes,
     mimeType,
     originalFilename,
-    publicUrl: null, // no direct URL for local files (not web-served)
+    publicUrl: null,
     signedUrl: null
   };
 }
@@ -292,9 +256,7 @@ async function saveBinderPhoto({ userId, binderId, file }) {
 /**
  * storeBinderPhotos
  *
- * WHAT:
- *  Helper used by binderRoutes.js. It takes the array of multer files and returns
- *  a normalized array shaped for the binder photo route.
+ * Kept for compatibility (some callers may still use it).
  */
 async function storeBinderPhotos({ userId, binderId, files }) {
   if (!Array.isArray(files) || files.length === 0) return [];
@@ -325,7 +287,6 @@ async function storeBinderPhotos({ userId, binderId, files }) {
         },
         'Failed to save binder photo (file skipped)'
       );
-      // We skip this one file but continue others
     }
   }
 
@@ -335,173 +296,70 @@ async function storeBinderPhotos({ userId, binderId, files }) {
 /**
  * getBinderPhotoViewUrl
  *
- * Given a storageKey, return a short-lived signed URL so the browser can view it.
- *
- * NOTE:
- *  This is now mostly legacy. The binder editor and PDF pipeline can use
- *  getBinderPhotoStream/getBinderPhotoBuffer instead to avoid presigned URLs.
+ * Legacy helper: presigned URL for S3 objects.
  */
 async function getBinderPhotoViewUrl(storageKey) {
-  if (!storageKey) {
-    throw new Error('getBinderPhotoViewUrl called without storageKey');
-  }
+  if (!storageKey) throw new Error('getBinderPhotoViewUrl called without storageKey');
 
-  // Only meaningful for S3; local provider has no HTTP URL
   const s3 = getS3();
-  if (provider !== 's3' || !s3) {
-    logger.warn(
-      { event: 'storage.view_url_unsupported', provider },
-      '[storageProvider] getBinderPhotoViewUrl called but provider is not s3'
-    );
-    return null;
-  }
+  if (provider !== 's3' || !s3) return null;
+  if (!getSignedUrl) return null;
 
-  if (!getSignedUrl) {
-    logger.warn(
-      { event: 'storage.s3.presigner_missing' },
-      '[storageProvider] getBinderPhotoViewUrl: presigner not available'
-    );
-    return null;
-  }
+  const cmd = new GetObjectCommand({
+    Bucket: s3Bucket,
+    Key: storageKey
+  });
 
-  try {
-    const cmd = new GetObjectCommand({
-      Bucket: s3Bucket,
-      Key: storageKey
-    });
-
-    // 1 hour is fine for editing sessions
-    const url = await getSignedUrl(s3, cmd, { expiresIn: 60 * 60 });
-
-    logger.info(
-      {
-        event: 'storage.s3.view_url_ok',
-        bucket: s3Bucket,
-        storageKey
-      },
-      'Generated fresh signed URL for binder photo'
-    );
-
-    return url;
-  } catch (err) {
-    logger.error(
-      {
-        event: 'storage.s3.view_url_failed',
-        bucket: s3Bucket,
-        storageKey,
-        error: err.message
-      },
-      'Failed to generate view URL for binder photo'
-    );
-    throw err;
-  }
+  return getSignedUrl(s3, cmd, { expiresIn: 60 * 60 });
 }
 
 /**
  * getBinderPhotoStream
  *
- * Given a storageKey, return a readable stream and basic metadata
- * so routes can pipe the image directly to the browser.
+ * Returns a readable stream + basic metadata so routes can pipe bytes directly.
  */
 async function getBinderPhotoStream(storageKey) {
-  if (!storageKey) {
-    throw new Error('getBinderPhotoStream called without storageKey');
-  }
+  if (!storageKey) throw new Error('getBinderPhotoStream called without storageKey');
 
   const s3 = getS3();
 
-  // S3 provider
   if (provider === 's3' && s3) {
-    try {
-      const cmd = new GetObjectCommand({
-        Bucket: s3Bucket,
-        Key: storageKey
-      });
+    const cmd = new GetObjectCommand({
+      Bucket: s3Bucket,
+      Key: storageKey
+    });
 
-      const data = await s3.send(cmd);
+    const data = await s3.send(cmd);
 
-      const stream = data.Body; // Readable stream
-      const contentType = data.ContentType || 'application/octet-stream';
-      const contentLength = typeof data.ContentLength === 'number'
-        ? data.ContentLength
-        : undefined;
-
-      logger.info(
-        {
-          event: 'storage.s3.stream_ok',
-          bucket: s3Bucket,
-          storageKey
-        },
-        'Streaming binder photo from S3'
-      );
-
-      return { stream, contentType, contentLength };
-    } catch (err) {
-      logger.error(
-        {
-          event: 'storage.s3.stream_failed',
-          bucket: s3Bucket,
-          storageKey,
-          error: err.message
-        },
-        'Failed to stream binder photo from S3'
-      );
-      throw err;
-    }
+    return {
+      stream: data.Body,
+      contentType: data.ContentType || 'application/octet-stream',
+      contentLength: typeof data.ContentLength === 'number' ? data.ContentLength : undefined
+    };
   }
 
-  // Local provider
   if (provider === 'local') {
-    try {
-      const stream = fsNative.createReadStream(storageKey);
-      // Best-effort content type based on extension
-      let contentType = 'application/octet-stream';
-      const ext = path.extname(storageKey || '').toLowerCase();
-      if (ext === '.jpg' || ext === '.jpeg') contentType = 'image/jpeg';
-      else if (ext === '.png') contentType = 'image/png';
-      else if (ext === '.webp') contentType = 'image/webp';
-      else if (ext === '.heic') contentType = 'image/heic';
-      else if (ext === '.heif') contentType = 'image/heif';
-      else if (ext === '.avif') contentType = 'image/avif';
+    const stream = fsNative.createReadStream(storageKey);
 
-      logger.info(
-        {
-          event: 'storage.local.stream_ok',
-          path: storageKey
-        },
-        'Streaming binder photo from local filesystem'
-      );
+    let contentType = 'application/octet-stream';
+    const ext = path.extname(storageKey || '').toLowerCase();
+    if (ext === '.jpg' || ext === '.jpeg') contentType = 'image/jpeg';
+    else if (ext === '.png') contentType = 'image/png';
+    else if (ext === '.webp') contentType = 'image/webp';
+    else if (ext === '.heic') contentType = 'image/heic';
+    else if (ext === '.heif') contentType = 'image/heif';
+    else if (ext === '.avif') contentType = 'image/avif';
 
-      return { stream, contentType, contentLength: undefined };
-    } catch (err) {
-      logger.error(
-        {
-          event: 'storage.local.stream_failed',
-          path: storageKey,
-          error: err.message
-        },
-        'Failed to stream binder photo from local filesystem'
-      );
-      throw err;
-    }
+    return { stream, contentType, contentLength: undefined };
   }
 
-  logger.warn(
-    {
-      event: 'storage.stream_unsupported_provider',
-      provider,
-      storageKey
-    },
-    '[storageProvider] getBinderPhotoStream: unsupported provider'
-  );
   throw new Error('getBinderPhotoStream: unsupported provider');
 }
 
 /**
  * getBinderPhotoBuffer
  *
- * Convenience wrapper on getBinderPhotoStream: reads the whole object
- * into a Buffer. Used by PDF export.
+ * Reads the entire object into a Buffer (used by PDF export).
  */
 async function getBinderPhotoBuffer(storageKey) {
   const { stream, contentType } = await getBinderPhotoStream(storageKey);
@@ -511,103 +369,38 @@ async function getBinderPhotoBuffer(storageKey) {
     chunks.push(chunk);
   }
 
-  const buffer = Buffer.concat(chunks);
-  return { buffer, contentType };
+  return { buffer: Buffer.concat(chunks), contentType };
 }
 
 /**
  * deleteBinderPhoto
  *
- * Given a storageKey, delete the underlying object from storage.
- * - For S3: DeleteObject
- * - For local: fs.unlink()
+ * Deletes an object from storage (S3/local).
  */
 async function deleteBinderPhoto(storageKey) {
-  if (!storageKey) {
-    throw new Error('deleteBinderPhoto called without storageKey');
-  }
+  if (!storageKey) throw new Error('deleteBinderPhoto called without storageKey');
 
-  // S3 delete
   const s3 = getS3();
+
   if (provider === 's3' && s3) {
-    try {
-      const cmd = new DeleteObjectCommand({
-        Bucket: s3Bucket,
-        Key: storageKey
-      });
+    const cmd = new DeleteObjectCommand({
+      Bucket: s3Bucket,
+      Key: storageKey
+    });
 
-      await s3.send(cmd);
-
-      logger.info(
-        {
-          event: 'storage.s3.delete_ok',
-          bucket: s3Bucket,
-          storageKey
-        },
-        'Deleted binder photo from S3'
-      );
-
-      return { provider: 's3', deleted: true };
-    } catch (err) {
-      logger.error(
-        {
-          event: 'storage.s3.delete_failed',
-          bucket: s3Bucket,
-          storageKey,
-          error: err.message
-        },
-        'Failed to delete binder photo from S3'
-      );
-      throw err;
-    }
+    await s3.send(cmd);
+    return { provider: 's3', deleted: true };
   }
 
-  // Local provider: storageKey is a filesystem path
   if (provider === 'local') {
     try {
       await fs.unlink(storageKey);
-      logger.info(
-        {
-          event: 'storage.local.delete_ok',
-          path: storageKey
-        },
-        'Deleted binder photo from local filesystem'
-      );
       return { provider: 'local', deleted: true };
     } catch (err) {
-      // If it's already gone, treat as success
-      if (err.code === 'ENOENT') {
-        logger.warn(
-          {
-            event: 'storage.local.delete_missing',
-            path: storageKey
-          },
-          'Local binder photo file did not exist at delete time'
-        );
-        return { provider: 'local', deleted: false };
-      }
-
-      logger.error(
-        {
-          event: 'storage.local.delete_failed',
-          path: storageKey,
-          error: err.message
-        },
-        'Failed to delete binder photo from local filesystem'
-      );
+      if (err.code === 'ENOENT') return { provider: 'local', deleted: false };
       throw err;
     }
   }
-
-  // Some other provider / mis-config
-  logger.warn(
-    {
-      event: 'storage.delete_unsupported_provider',
-      provider,
-      storageKey
-    },
-    '[storageProvider] deleteBinderPhoto: provider does not support deletes'
-  );
 
   return { provider, deleted: false };
 }
@@ -616,9 +409,9 @@ module.exports = {
   provider,
   saveBinderPhoto,
   storeBinderPhotos,
-  getBinderPhotoViewUrl,   // legacy, kept for compatibility
-  getBinderPhotoStream,    // NEW
-  getBinderPhotoBuffer,    // NEW
+  getBinderPhotoViewUrl,
+  getBinderPhotoStream,
+  getBinderPhotoBuffer,
   deleteBinderPhoto,
-  getBinderPhotoPublicUrl  // NEW: used by binderRoutes for CDN URLs
+  getBinderPhotoPublicUrl
 };

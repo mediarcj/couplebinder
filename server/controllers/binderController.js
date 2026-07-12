@@ -11,6 +11,10 @@ const logger = require('../utils/logger');
 const { supabaseAdmin } = require('../utils/supabaseClient');
 const { validateCaptionServerSide } = require('../middleware/security');
 const { buildDashboardPageModel } = require('../ui_contract/presenters');
+const {
+  validateAndNormalizeLayout,
+  assertOwnedPhotoReferences
+} = require('../services/binderLayoutValidator');
 
 // Storage provider (safe-load so the app can boot even if not configured)
 let storageProvider = null;
@@ -252,10 +256,7 @@ async function renderBinderPageBody({
   const contentWidth = pageWidth;
   const contentHeight = pageHeight;
 
-  const scale = Math.min(
-    contentWidth / LAYOUT_LOGICAL_WIDTH,
-    contentHeight / LAYOUT_LOGICAL_HEIGHT
-  );
+  const scale = Math.min(contentWidth / LAYOUT_LOGICAL_WIDTH, contentHeight / LAYOUT_LOGICAL_HEIGHT);
 
   const surfaceWidth = LAYOUT_LOGICAL_WIDTH * scale;
   const surfaceHeight = LAYOUT_LOGICAL_HEIGHT * scale;
@@ -706,7 +707,7 @@ async function exportPdf(req, res, next) {
 
     const { data: photoRows, error: photosErr } = await client
       .from('binder_photos')
-      .select('storage_key, caption')
+      .select('id, storage_key, caption')
       .eq('binder_id', binderId)
       .eq('user_id', userId);
 
@@ -715,21 +716,31 @@ async function exportPdf(req, res, next) {
     }
 
     const captionByStorageKey = new Map();
+    const ownedPhotoById = new Map();
+    const ownedPhotoByStorageKey = new Map();
     (photoRows || []).forEach((row) => {
+      if (row.id) ownedPhotoById.set(String(row.id), row);
+      if (row.storage_key) ownedPhotoByStorageKey.set(String(row.storage_key), row);
       if (row.storage_key && typeof row.caption === 'string') {
         captionByStorageKey.set(row.storage_key, row.caption);
       }
     });
 
     let pages = (layoutRows || []).map((row, idx) => {
-      const layoutJson = row.layout_json && typeof row.layout_json === 'string'
-        ? safeJsonParse(row.layout_json)
-        : row.layout_json;
+      const layoutJson =
+        row.layout_json && typeof row.layout_json === 'string' ? safeJsonParse(row.layout_json) : row.layout_json;
 
       return {
         pageIndex: typeof row.page_number === 'number' ? row.page_number - 1 : idx,
         sectionKey: layoutJson?.sectionKey || null,
-        layers: layoutJson?.layers || []
+        layers: (layoutJson?.layers || []).map((layer) => {
+          if (layer?.type !== 'photo') return layer;
+          const owned =
+            (layer.photoId && ownedPhotoById.get(String(layer.photoId))) ||
+            (layer.storageKey && ownedPhotoByStorageKey.get(String(layer.storageKey)));
+          if (!owned) return { ...layer, photoId: null, storageKey: null };
+          return { ...layer, photoId: String(owned.id), storageKey: String(owned.storage_key) };
+        })
       };
     });
 
@@ -860,10 +871,274 @@ async function renderBinderEditor(req, res, next) {
 }
 
 /**
+ * GET /dashboard/binder/:binderId/photos/view-url?storageKey=...
+ */
+async function getPhotoViewUrl(req, res, next) {
+  const binderIdParam = String(req.params.binderId || '');
+  const storageKey = String(req.query.storageKey || '');
+
+  try {
+    const { userId, client } = getContext(req);
+
+    if (!storageKey) {
+      return res.status(400).json({ ok: false, message: 'storageKey query parameter is required' });
+    }
+
+    const { binderId: binderUuid } = await resolveBinder({
+      client,
+      userId,
+      binderIdParam,
+      createIfMissing: false
+    });
+
+    const { data: photo, error: photoErr } = await client
+      .from('binder_photos')
+      .select('id')
+      .eq('binder_id', binderUuid)
+      .eq('user_id', userId)
+      .eq('storage_key', storageKey)
+      .maybeSingle();
+
+    if (photoErr) {
+      logger.error(
+        {
+          event: 'binder.view_url.photo_lookup_failed',
+          binderIdParam,
+          binderUuid,
+          storageKey,
+          userId,
+          error: photoErr.message
+        },
+        'Failed to verify photo ownership for view-url'
+      );
+      return res.status(500).json({ ok: false, message: 'Unable to verify photo ownership.' });
+    }
+
+    if (!photo) {
+      return res.status(404).json({ ok: false, message: 'Photo not found for this binder.' });
+    }
+
+    // Cache the resolved URL response (browser-side) for faster tab switches.
+    res.setHeader('Cache-Control', 'private, max-age=10800'); // 3 hours
+    res.setHeader('Vary', 'Cookie');
+
+    let publicUrl = null;
+    if (storageProvider && typeof storageProvider.getBinderPhotoPublicUrl === 'function') {
+      publicUrl = storageProvider.getBinderPhotoPublicUrl(storageKey);
+    }
+
+    if (publicUrl) {
+      return res.json({ ok: true, url: publicUrl, via: 'cdn' });
+    }
+
+    const rawPath =
+      `/dashboard/binder/${encodeURIComponent(binderIdParam)}` +
+      `/photos/raw?storageKey=${encodeURIComponent(storageKey)}`;
+
+    return res.json({ ok: true, url: rawPath, via: 'raw' });
+  } catch (err) {
+    logger.error(
+      {
+        event: 'binder.view_url.error',
+        binderIdParam,
+        storageKey,
+        userId: getUserIdFromReq(req),
+        status: err.status || 500,
+        error: err.message,
+        stack: err.stack
+      },
+      'Failed to generate view url for binder photo'
+    );
+    next(err);
+  }
+}
+
+/**
+ * GET /dashboard/binder/:binderId/photos/raw?storageKey=...
+ * Streams the photo bytes from S3/local to the browser.
+ */
+async function streamPhotoRaw(req, res, next) {
+  const binderIdParam = String(req.params.binderId || '');
+  const storageKey = String(req.query.storageKey || '');
+
+  try {
+    const { userId, client } = getContext(req);
+
+    if (!storageKey) return res.status(400).send('storageKey is required');
+    if (!storageProvider || typeof storageProvider.getBinderPhotoStream !== 'function') {
+      return res.status(503).send('Photo storage is not configured.');
+    }
+
+    const { binderId: binderUuid } = await resolveBinder({
+      client,
+      userId,
+      binderIdParam,
+      createIfMissing: false
+    });
+
+    const { data: photoRow, error: photoErr } = await client
+      .from('binder_photos')
+      .select('id, mime_type')
+      .eq('binder_id', binderUuid)
+      .eq('storage_key', storageKey)
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    if (photoErr) {
+      logger.error(
+        {
+          event: 'binder.raw.photo_lookup_failed',
+          binderIdParam,
+          binderUuid,
+          storageKey,
+          userId,
+          error: photoErr.message
+        },
+        'Failed to verify photo ownership for raw endpoint'
+      );
+      return res.status(500).send('Unable to verify photo ownership.');
+    }
+
+    if (!photoRow) {
+      return res.status(404).send('Photo not found for this binder.');
+    }
+
+    const { stream, contentType, contentLength } = await storageProvider.getBinderPhotoStream(storageKey);
+    const finalContentType = contentType || photoRow.mime_type || 'application/octet-stream';
+
+    res.setHeader('Content-Type', finalContentType);
+    if (contentLength) res.setHeader('Content-Length', String(contentLength));
+    res.setHeader('Cache-Control', 'private, max-age=10800'); // 3 hours
+    res.setHeader('Vary', 'Cookie');
+
+    stream.on('error', (e) => {
+      logger.error(
+        {
+          event: 'binder.raw.stream_error',
+          binderIdParam,
+          binderUuid,
+          storageKey,
+          userId,
+          error: e.message
+        },
+        'Error while streaming binder photo'
+      );
+      if (!res.headersSent) res.status(500).end('Error streaming photo');
+      else res.end();
+    });
+
+    stream.pipe(res);
+  } catch (err) {
+    logger.error(
+      {
+        event: 'binder.raw.unhandled_error',
+        binderIdParam,
+        storageKey,
+        userId: getUserIdFromReq(req),
+        status: err.status || 500,
+        error: err.message,
+        stack: err.stack
+      },
+      'Unhandled error in raw photo endpoint'
+    );
+    next(err);
+  }
+}
+
+/**
+ * DELETE /dashboard/binder/:binderId/photos?storageKey=...
+ */
+async function deletePhoto(req, res, next) {
+  const binderIdParam = String(req.params.binderId || '');
+  const storageKey = String((req.query && req.query.storageKey) || (req.body && req.body.storageKey) || '');
+
+  try {
+    const { userId, client } = getContext(req);
+
+    if (!storageKey) {
+      return res.status(400).json({ ok: false, message: 'storageKey is required to delete a photo.' });
+    }
+    if (!storageProvider || typeof storageProvider.deleteBinderPhoto !== 'function') {
+      return res.status(503).json({ ok: false, message: 'Photo storage is not configured.' });
+    }
+
+    const { binderId: binderUuid } = await resolveBinder({
+      client,
+      userId,
+      binderIdParam,
+      createIfMissing: false
+    });
+
+    const { data: photoRow, error: photoErr } = await client
+      .from('binder_photos')
+      .select('id')
+      .eq('binder_id', binderUuid)
+      .eq('storage_key', storageKey)
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    if (photoErr) {
+      logger.error(
+        {
+          event: 'binder.delete.photo_lookup_failed',
+          binderIdParam,
+          binderUuid,
+          storageKey,
+          userId,
+          error: photoErr.message,
+          code: photoErr.code
+        },
+        'Failed to verify photo ownership for delete'
+      );
+      return res.status(500).json({ ok: false, message: 'Unable to verify photo ownership.' });
+    }
+
+    if (!photoRow) {
+      return res.status(404).json({ ok: false, message: 'Photo not found for this binder.' });
+    }
+
+    await storageProvider.deleteBinderPhoto(storageKey);
+
+    const { error: dbErr } = await client.from('binder_photos').delete().eq('id', photoRow.id).eq('user_id', userId).select('id');
+
+    if (dbErr) {
+      logger.error(
+        {
+          event: 'binder.photo_db_delete_failed',
+          binderIdParam,
+          binderUuid,
+          storageKey,
+          userId,
+          error: dbErr.message,
+          code: dbErr.code
+        },
+        'Failed to delete binder photo metadata from DB'
+      );
+      return res.status(500).json({ ok: false, message: 'Unable to delete photo metadata right now.' });
+    }
+
+    return res.json({ ok: true });
+  } catch (err) {
+    logger.error(
+      {
+        event: 'binder.delete.error',
+        binderIdParam,
+        storageKey,
+        userId: getUserIdFromReq(req),
+        status: err.status || 500,
+        error: err.message,
+        stack: err.stack
+      },
+      'Failed to delete binder photo'
+    );
+    next(err);
+  }
+}
+
+/**
  * GET /dashboard/binder/:binderId/layout
  */
 async function getBinderLayout(req, res, next) {
-  // (Your existing implementation is fine; leaving as-is except for minor dedupe hardening)
   const binderIdParam = String(req.params.binderId || '');
 
   try {
@@ -1002,8 +1277,8 @@ async function getBinderLayout(req, res, next) {
         let enriched = layer;
 
         if (enriched?.type === 'photo' && enriched.photoId && !enriched.storageKey) {
-          const storageKey = photoStorageMap[String(enriched.photoId)];
-          if (storageKey) enriched = { ...enriched, storageKey };
+          const storageKey2 = photoStorageMap[String(enriched.photoId)];
+          if (storageKey2) enriched = { ...enriched, storageKey: storageKey2 };
         }
 
         if (enriched?.type === 'photo' && enriched.storageKey) {
@@ -1072,7 +1347,7 @@ async function getBinderLayout(req, res, next) {
 }
 
 // -----------------------------------------------------------------------------
-// Pages reorder helper + applyBinderLayout (unchanged)
+// Pages reorder helper + applyBinderLayout
 // -----------------------------------------------------------------------------
 
 async function syncPagesTableOrder({ client, userId, binderId, layoutPages }) {
@@ -1170,34 +1445,44 @@ async function applyBinderLayout(req, res, next) {
 
   try {
     const { userId, client } = getContext(req);
-    const layout = req.body;
+    const layout = validateAndNormalizeLayout(req.body);
 
-    if (!layout || typeof layout !== 'object') {
-      return res.status(400).json({ ok: false, message: 'Invalid layout data' });
-    }
-
-    if (!Array.isArray(layout.pages)) {
-      return res.status(400).json({ ok: false, message: 'Layout pages must be an array' });
-    }
-
-    const { binder, binderId } = await resolveBinder({
+    const { binderId } = await resolveBinder({
       client,
       userId,
       binderIdParam,
       createIfMissing: true
     });
 
-    const normalizedPages = layout.pages.map((page, idx) => {
-      const pageId = String(page?.pageId || page?.id || page?.page_id || crypto.randomUUID());
-      return {
-        ...page,
-        pageId,
-        id: pageId,
-        pageIndex: typeof page.pageIndex === 'number' ? page.pageIndex : idx,
-        layers: Array.isArray(page.layers) ? page.layers : [],
-        sectionKey: page.sectionKey || null
-      };
-    });
+    if (layout.binderId && layout.binderId !== binderIdParam && layout.binderId !== binderId) {
+      return res.status(400).json({ ok: false, message: 'Binder ID mismatch' });
+    }
+
+    const normalizedPages = layout.pages;
+    const incomingPageIds = normalizedPages.map((page) => page.pageId);
+    if (incomingPageIds.length > 0) {
+      const { data: claimedPages, error: claimedPagesErr } = await client
+        .from('pages')
+        .select('id, binder_id, user_id')
+        .in('id', incomingPageIds);
+      if (claimedPagesErr) {
+        return res.status(500).json({ ok: false, message: 'Unable to verify page ownership' });
+      }
+      const foreignPage = (claimedPages || []).find(
+        (row) => String(row.binder_id) !== String(binderId) || String(row.user_id) !== String(userId)
+      );
+      if (foreignPage) return res.status(400).json({ ok: false, message: 'Invalid pageId provided' });
+    }
+
+    const { data: ownedPhotos, error: ownedPhotosErr } = await client
+      .from('binder_photos')
+      .select('id, storage_key')
+      .eq('binder_id', binderId)
+      .eq('user_id', userId);
+    if (ownedPhotosErr) {
+      return res.status(500).json({ ok: false, message: 'Unable to verify photo ownership' });
+    }
+    assertOwnedPhotoReferences(layout, ownedPhotos || []);
 
     try {
       await syncPagesTableOrder({
@@ -1213,10 +1498,6 @@ async function applyBinderLayout(req, res, next) {
         'Failed to persist page order to pages table'
       );
       return res.status(status).json({ ok: false, message: e.message || 'Unable to reorder pages right now.' });
-    }
-
-    if (layout.binderId && layout.binderId !== binderIdParam && layout.binderId !== binderId) {
-      return res.status(400).json({ ok: false, message: 'Binder ID mismatch' });
     }
 
     const { error: deleteErr } = await client
@@ -1260,7 +1541,8 @@ async function applyBinderLayout(req, res, next) {
     return res.json({
       ok: true,
       updatedAt,
-      pageIds: normalizedPages.map((p) => p.pageId)
+      pageIds: normalizedPages.map((p) => p.pageId),
+      layout: { ...layout, binderId, updatedAt }
     });
   } catch (err) {
     logger.error({ event: 'binder.layout.apply.failed', error: err.message, binderId: binderIdParam, userId: getUserIdFromReq(req) }, 'Binder layout apply failed');
@@ -1284,6 +1566,9 @@ module.exports = {
   updatePhotoCaption,
   exportPdf,
   renderBinderEditor,
+  getPhotoViewUrl,
+  streamPhotoRaw,
+  deletePhoto,
   getBinderLayout,
   applyBinderLayout,
   resolveBinder

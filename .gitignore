@@ -50,6 +50,7 @@ jar.txt
 .env
 docker-compose.local.yml
 certs/docs/audit/
+/docs/
 docs/audit/docs/audit/
 .env.development.local
 .env.production.full

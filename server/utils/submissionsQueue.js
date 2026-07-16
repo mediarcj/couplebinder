@@ -1,4 +1,3 @@
-// File: server/utils/submissionsQueue.js
 // Description: Promise-based queue for atomic submissions operations
 // Purpose: Provides clean concurrency control without busy-waiting
 // Notes: Single-instance queue for development; for horizontal scaling, use DB atomic operations
@@ -6,17 +5,14 @@
 const logger = require('./logger');
 
 /**
- * WHAT:
  * This is an in-memory promise-based queue that ensures atomic operations
  * within a single Node.js process. It serializes submission operations to
  * prevent race conditions and ensure data consistency.
  * 
- * WHY:
  * The previous busy-wait mutex pattern works but is noisy and inefficient.
  * This approach is cleaner and more maintainable for single-instance deployments.
  * It provides serialization without busy-waiting or spin-locks.
  * 
- * HOW:
  * We maintain a chain of promises, where each operation waits for
  * the previous one to complete before executing. This ensures operations
  * run one at a time in the order they were enqueued.
@@ -38,14 +34,11 @@ const logger = require('./logger');
 let queue = Promise.resolve();
 
 /**
- * WHAT:
  * Enqueue an async operation to ensure atomic execution within the queue.
  * 
- * WHY:
  * Serializes operations so they run one at a time, preventing race conditions
  * on shared resources like database writes.
  * 
- * HOW:
  * Chains operations onto an internal promise queue. If an operation fails,
  * the caller's promise rejects (so they see the error), but the queue chain
  * continues from a resolved state so later operations can still execute.
@@ -56,20 +49,14 @@ let queue = Promise.resolve();
 function enqueue(operation) {
   // Create a promise that will be resolved/rejected based on the operation result
   let resolveCaller, rejectCaller;
-  // I am saving `callerPromise` here so the nearby steps can reuse the same value without rebuilding it each time.
   const callerPromise = new Promise((resolve, reject) => {
-    // I am keeping this line here because the surrounding submissionsQueue.js workflow expects this value or operation before it continues.
     resolveCaller = resolve;
-    // I am keeping this line here because the surrounding submissionsQueue.js workflow expects this value or operation before it continues.
     rejectCaller = reject;
-  // This closing line ends the block, list, object, or call that started above so the next step can continue outside it.
   });
 
   // Chain the operation onto the queue
   queue = queue
-    // I am defining this small callback here so the surrounding API can run it with the value it supplies.
     .then(async () => {
-      // I am starting a guarded operation here because a request, parser, or dependency used below may fail.
       try {
         // Execute the operation
         const result = await operation();
@@ -77,17 +64,12 @@ function enqueue(operation) {
         resolveCaller(result);
         // Return result to keep the queue chain resolved
         return result;
-      // I am handling a failure here so this file keeps its existing error response instead of losing the error silently.
       } catch (error) {
         // Log the error for observability
         logger.error({
-          // I am keeping the `event` field in this object so the receiving code can read that value by its expected name.
           event: 'submissions.queue.operation_failed',
-          // I am keeping the `error` field in this object so the receiving code can read that value by its expected name.
           error: error.message,
-          // I am keeping the `stack` field in this object so the receiving code can read that value by its expected name.
           stack: error.stack
-        // I am keeping this line here because the surrounding submissionsQueue.js workflow expects this value or operation before it continues.
         }, 'Queue operation failed');
         
         // Reject the caller's promise so they see the error
@@ -95,31 +77,22 @@ function enqueue(operation) {
         
         // Re-throw to maintain queue chain, but we'll catch it below
         throw error;
-      // This closing line ends the block, list, object, or call that started above so the next step can continue outside it.
       }
-    // This closing line ends the block, list, object, or call that started above so the next step can continue outside it.
     })
-    // I am defining this small callback here so the surrounding API can run it with the value it supplies.
     .catch((error) => {
       // If the queue chain itself fails (shouldn't happen after our try/catch,
       // but safety net), log it and ensure the chain continues from a resolved state
       logger.error({
-        // I am keeping the `event` field in this object so the receiving code can read that value by its expected name.
         event: 'submissions.queue.chain_error',
-        // I am keeping the `error` field in this object so the receiving code can read that value by its expected name.
         error: error.message
-      // I am keeping this line here because the surrounding submissionsQueue.js workflow expects this value or operation before it continues.
       }, 'Queue chain error (unexpected)');
       
       // Return undefined to keep the chain resolved, allowing future operations
       return undefined;
-    // This closing line ends the block, list, object, or call that started above so the next step can continue outside it.
     });
 
   // Return the caller's promise (they'll see success or failure)
   return callerPromise;
-// This closing line ends the block, list, object, or call that started above so the next step can continue outside it.
 }
 
-// I am exporting this value here so another module can deliberately reuse the completed piece from submissionsQueue.js.
 module.exports = { enqueue };

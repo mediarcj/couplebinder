@@ -2,10 +2,7 @@
    Description: Tailwind entry for binder editor React app
    Notes: Must load before App.css so local overrides still win */
 
-/* I am keeping this `@tailwind` instruction here so tailwind.css preserves the stylesheet behavior configured by `base`. */
 @tailwind base;
-/* I am keeping this `@tailwind` instruction here so tailwind.css preserves the stylesheet behavior configured by `components`. */
 @tailwind components;
-/* I am keeping this `@tailwind` instruction here so tailwind.css preserves the stylesheet behavior configured by `utilities`. */
 @tailwind utilities;
 

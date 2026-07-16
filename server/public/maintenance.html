@@ -1,14 +1,9 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8">
-<!-- I am keeping the doctype, English language, head, and UTF-8 metadata together above because this small fallback page is served without the normal template system. -->
-<!-- I am matching the viewport to the device here so the maintenance card stays readable on small screens. -->
+<!-- This standalone fallback is served when the normal template stack is unavailable. -->
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<!-- I am naming the browser tab here so a visitor can identify the maintenance response. -->
 <title>Maintenance</title>
-<!-- The inline body rule removes browser margin, uses a system-font fallback list, and keeps the existing light background and dark text colors. -->
-<!-- The inline .wrap rule limits the card width, centers it with vertical room, and preserves its white background, padding, rounded corners, shadow, and centered text. -->
-<!-- The inline h1 rule preserves the heading margin, size, and weight, while the p rule preserves paragraph spacing, line height, and softer text color. -->
+<!-- Inline styles keep the maintenance card readable without depending on the main CSS bundle. -->
 <style>body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,"Helvetica Neue",Arial,sans-serif;background:#f5f5f5;color:#111}
 .wrap{max-width:640px;margin:12vh auto;background:#fff;padding:32px 28px;border-radius:10px;box-shadow:0 2px 12px rgba(0,0,0,.08);text-align:center}
 h1{margin:0 0 8px 0;font-size:26px;font-weight:700}p{margin:8px 0 0 0;line-height:1.55;color:#444}</style>
-<!-- This final source line closes the metadata section, starts the visible body, shows the centered heading and paragraph, and then closes the main card, body, and document. -->
 </head><body><main class="wrap"><h1>We&rsquo;re doing maintenance</h1><p>Please check back shortly.</p></main></body></html>

@@ -1,23 +1,13 @@
 <!DOCTYPE html>
-<!-- I am declaring HTML here so the browser uses the normal standards-based parsing rules for this editor page. -->
 <html lang="en">
-<!-- I am starting the document head here because the metadata below describes the page before any visible editor content appears. -->
 <head>
-  <!-- I am using UTF-8 here so the browser can display the editor text and symbols with the expected character encoding. -->
   <meta charset="UTF-8">
-  <!-- I am matching the layout width to the device here so the responsive editor can size itself correctly on phones and desktops. -->
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <!-- I am naming this browser tab here so a user can recognize the Binder Editor page. -->
   <title>Binder Editor</title>
-<!-- This closing head tag ends the metadata section that started above. -->
 </head>
-<!-- I am starting the visible body here because the React mount point and development script belong in the rendered page. -->
 <body>
   <!-- main.jsx reads this exact ID, then reads the binder and CSRF values from these data attributes before mounting App. -->
   <div id="binder-editor-root" data-binder-id="test-binder" data-csrf-token="test-token"></div>
-  <!-- I am loading the Vite development entry here so main.jsx can mount the React editor into the root element above. -->
   <script type="module" src="/src/main.jsx"></script>
-<!-- This closing body tag ends the visible editor content that started above. -->
 </body>
-<!-- This closing html tag ends the document that started after the doctype. -->
 </html>

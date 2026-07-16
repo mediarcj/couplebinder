@@ -42,19 +42,29 @@ function parseCookies(req, res, next) {
 
     // Step 4.3: Only continue if both key and value exist
     if (key && val.length > 0) {
+      // I am starting a guarded operation here because a request, parser, or dependency used below may fail.
       try {
         // Step 4.4: Decode the value using decodeURIComponent to handle special characters and encoding
         parsed[key] = decodeURIComponent(val.join('='));
+      // I am handling a failure here so this file keeps its existing error response instead of losing the error silently.
       } catch (err) {
         // Step 4.5: If decoding fails, store the raw string value to avoid crashing the middleware
         logger.warn('Failed to decode cookie value', {
+          // I am keeping the `key` field in this object so the receiving code can read that value by its expected name.
           key: key,
+          // I am keeping the `error` field in this object so the receiving code can read that value by its expected name.
           error: err.message,
+          // I am keeping the `requestId` field in this object so the receiving code can read that value by its expected name.
           requestId: req.requestId
+        // This closing line ends the block, list, object, or call that started above so the next step can continue outside it.
         });
+        // I am keeping this line here because the surrounding cookieGuardian.js workflow expects this value or operation before it continues.
         parsed[key] = val.join('=');
+      // This closing line ends the block, list, object, or call that started above so the next step can continue outside it.
       }
+    // This closing line ends the block, list, object, or call that started above so the next step can continue outside it.
     }
+  // This closing line ends the block, list, object, or call that started above so the next step can continue outside it.
   });
 
   // Step 5: Attach the final parsed cookie object to the request so other modules can use it
@@ -75,6 +85,8 @@ function parseCookies(req, res, next) {
 
   // Step 6: Move on to the next middleware in the Express chain
   next();
+// This closing line ends the block, list, object, or call that started above so the next step can continue outside it.
 }
 
+// I am exporting this value here so another module can deliberately reuse the completed piece from cookieGuardian.js.
 module.exports = parseCookies;

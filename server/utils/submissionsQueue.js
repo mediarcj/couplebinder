@@ -56,14 +56,20 @@ let queue = Promise.resolve();
 function enqueue(operation) {
   // Create a promise that will be resolved/rejected based on the operation result
   let resolveCaller, rejectCaller;
+  // I am saving `callerPromise` here so the nearby steps can reuse the same value without rebuilding it each time.
   const callerPromise = new Promise((resolve, reject) => {
+    // I am keeping this line here because the surrounding submissionsQueue.js workflow expects this value or operation before it continues.
     resolveCaller = resolve;
+    // I am keeping this line here because the surrounding submissionsQueue.js workflow expects this value or operation before it continues.
     rejectCaller = reject;
+  // This closing line ends the block, list, object, or call that started above so the next step can continue outside it.
   });
 
   // Chain the operation onto the queue
   queue = queue
+    // I am defining this small callback here so the surrounding API can run it with the value it supplies.
     .then(async () => {
+      // I am starting a guarded operation here because a request, parser, or dependency used below may fail.
       try {
         // Execute the operation
         const result = await operation();
@@ -71,12 +77,17 @@ function enqueue(operation) {
         resolveCaller(result);
         // Return result to keep the queue chain resolved
         return result;
+      // I am handling a failure here so this file keeps its existing error response instead of losing the error silently.
       } catch (error) {
         // Log the error for observability
         logger.error({
+          // I am keeping the `event` field in this object so the receiving code can read that value by its expected name.
           event: 'submissions.queue.operation_failed',
+          // I am keeping the `error` field in this object so the receiving code can read that value by its expected name.
           error: error.message,
+          // I am keeping the `stack` field in this object so the receiving code can read that value by its expected name.
           stack: error.stack
+        // I am keeping this line here because the surrounding submissionsQueue.js workflow expects this value or operation before it continues.
         }, 'Queue operation failed');
         
         // Reject the caller's promise so they see the error
@@ -84,22 +95,31 @@ function enqueue(operation) {
         
         // Re-throw to maintain queue chain, but we'll catch it below
         throw error;
+      // This closing line ends the block, list, object, or call that started above so the next step can continue outside it.
       }
+    // This closing line ends the block, list, object, or call that started above so the next step can continue outside it.
     })
+    // I am defining this small callback here so the surrounding API can run it with the value it supplies.
     .catch((error) => {
       // If the queue chain itself fails (shouldn't happen after our try/catch,
       // but safety net), log it and ensure the chain continues from a resolved state
       logger.error({
+        // I am keeping the `event` field in this object so the receiving code can read that value by its expected name.
         event: 'submissions.queue.chain_error',
+        // I am keeping the `error` field in this object so the receiving code can read that value by its expected name.
         error: error.message
+      // I am keeping this line here because the surrounding submissionsQueue.js workflow expects this value or operation before it continues.
       }, 'Queue chain error (unexpected)');
       
       // Return undefined to keep the chain resolved, allowing future operations
       return undefined;
+    // This closing line ends the block, list, object, or call that started above so the next step can continue outside it.
     });
 
   // Return the caller's promise (they'll see success or failure)
   return callerPromise;
+// This closing line ends the block, list, object, or call that started above so the next step can continue outside it.
 }
 
+// I am exporting this value here so another module can deliberately reuse the completed piece from submissionsQueue.js.
 module.exports = { enqueue };

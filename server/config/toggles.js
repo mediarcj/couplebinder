@@ -18,6 +18,7 @@
 
 // Truthy and falsy string sets for consistent parsing
 const truthy = new Set(['1', 'true', 'yes', 'on', 'y']);
+// I am saving `falsy` here so the nearby steps can reuse the same value without rebuilding it each time.
 const falsy = new Set(['0', 'false', 'no', 'off', 'n']);
 
 /**
@@ -28,12 +29,17 @@ const falsy = new Set(['0', 'false', 'no', 'off', 'n']);
  */
 
 function bool(name, def = false) {
+  // I am saving `v` here so the nearby steps can reuse the same value without rebuilding it each time.
   const v = (process.env[name] ?? '').trim().toLowerCase();
+  // This check helps me choose or stop the next path before any work that depends on this condition runs.
   if (v === '') return def;
+  // This check helps me choose or stop the next path before any work that depends on this condition runs.
   if (truthy.has(v)) return true;
+  // This check helps me choose or stop the next path before any work that depends on this condition runs.
   if (falsy.has(v)) return false;
   // Fallback: any non-empty string enables
   return true;
+// This closing line ends the block, list, object, or call that started above so the next step can continue outside it.
 }
 
 /**
@@ -43,8 +49,11 @@ function bool(name, def = false) {
  * @returns {string}
  */
 function str(name, def = '') {
+  // I am saving `v` here so the nearby steps can reuse the same value without rebuilding it each time.
   const v = process.env[name];
+  // This return sends the completed value or response back to the code that called this function.
   return (v === undefined || v === '') ? def : v;
+// This closing line ends the block, list, object, or call that started above so the next step can continue outside it.
 }
 
 /**
@@ -63,6 +72,7 @@ function str(name, def = '') {
 const toggles = {
   // Environment and logging
   env: str('NODE_ENV', 'production'),
+  // I am keeping the `logLevel` field in this object so the receiving code can read that value by its expected name.
   logLevel: str('LOG_LEVEL', 'info'),
 
   // Security/traffic hygiene
@@ -78,7 +88,9 @@ const toggles = {
   billing: bool('BILLING_ENABLED', true),   // Stripe billing (default on)
   register: bool('SIGNUP_ENABLED', true),   // User registration (default on, env var kept for backward compatibility)
   pricing: bool('PRICING_ENABLED', false),  // Pricing page (default off, hidden until ready)
+// This closing line ends the block, list, object, or call that started above so the next step can continue outside it.
 };
 
+// I am exporting this value here so another module can deliberately reuse the completed piece from toggles.js.
 module.exports = toggles;
 

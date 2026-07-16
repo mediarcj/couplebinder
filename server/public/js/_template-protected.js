@@ -37,8 +37,11 @@ document.addEventListener('DOMContentLoaded', () => {
    * Read from DOM; backend injects this meta tag dynamically.
    */
   function getCsrfToken() {
+    // I am saving `meta` here so the nearby steps can reuse the same value without rebuilding it each time.
     const meta = document.querySelector('meta[name="csrf-token"]');
+    // This return sends the completed value or response back to the code that called this function.
     return meta ? meta.getAttribute('content') : '';
+  // This closing line ends the block, list, object, or call that started above so the next step can continue outside it.
   }
 
   /**
@@ -48,18 +51,30 @@ document.addEventListener('DOMContentLoaded', () => {
    * Keeps all future form submissions consistent and CSRF-protected.
    */
   async function safeRequest(url, options = {}) {
+    // I am saving `csrfToken` here so the nearby steps can reuse the same value without rebuilding it each time.
     const csrfToken = getCsrfToken();
+    // I am saving `headers` here so the nearby steps can reuse the same value without rebuilding it each time.
     const headers = Object.assign({}, options.headers || {}, {
+      // I am listing this entry here because the surrounding collection processes each allowed value in order.
       'Content-Type': 'application/json',
+      // I am keeping this line here because the surrounding _template-protected.js workflow expects this value or operation before it continues.
       'x-csrf-token': csrfToken
+    // This closing line ends the block, list, object, or call that started above so the next step can continue outside it.
     });
 
+    // I am saving `res` here so the nearby steps can reuse the same value without rebuilding it each time.
     const res = await fetch(url, { ...options, headers });
+    // This check helps me choose or stop the next path before any work that depends on this condition runs.
     if (!res.ok) {
+      // I am calling this helper here so the current workflow performs this step before it moves on.
       console.warn('[TemplateProtected] Request failed', res.status);
+      // I am stopping this path with the existing error here because the caller should not continue with an invalid result.
       throw new Error(`HTTP ${res.status}`);
+    // This closing line ends the block, list, object, or call that started above so the next step can continue outside it.
     }
+    // This return sends the completed value or response back to the code that called this function.
     return res.json().catch(() => ({}));
+  // This closing line ends the block, list, object, or call that started above so the next step can continue outside it.
   }
 
   // ============================================================

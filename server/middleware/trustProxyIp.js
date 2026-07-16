@@ -30,11 +30,17 @@ module.exports = function trustProxyIp(app) {
     // Cloudflare provides cf-connecting-ip with the real client IP
     // Fall back to x-forwarded-for (first IP) or req.ip
     req.clientIp =
+      // I am keeping this line here because the surrounding trustProxyIp.js workflow expects this value or operation before it continues.
       req.headers['cf-connecting-ip'] ||
+      // I am keeping this line here because the surrounding trustProxyIp.js workflow expects this value or operation before it continues.
       (req.headers['x-forwarded-for'] || '').split(',')[0].trim() ||
+      // I am keeping this line here because the surrounding trustProxyIp.js workflow expects this value or operation before it continues.
       req.ip;
     
+    // I am calling this helper here so the current workflow performs this step before it moves on.
     next();
+  // This closing line ends the block, list, object, or call that started above so the next step can continue outside it.
   };
+// This closing line ends the block, list, object, or call that started above so the next step can continue outside it.
 };
 

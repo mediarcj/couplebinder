@@ -24,6 +24,7 @@
  */
 
 const logger = require('../utils/logger');
+// I am loading `../config` into `config` so this file can reuse that dependency below.
 const { config } = require('../config');
 
 // ============================================================
@@ -44,13 +45,18 @@ const { config } = require('../config');
  * - config.firewall.failClosed (default: true) to enable fail-closed
  */
 const SENSITIVE_PREFIXES = ['/dashboard', '/api', '/auth', '/payments'];
+// I am saving `FAIL_CLOSED` here so the nearby steps can reuse the same value without rebuilding it each time.
 const FAIL_CLOSED = config.firewall.failClosed;
 
+// I am keeping `isSensitive` as a named helper so the surrounding workflow can call this step when it needs it.
 function isSensitive(req) {
+  // I am saving `p` here so the nearby steps can reuse the same value without rebuilding it each time.
   const p = req.path || req.originalUrl || '/';
+  // I am saving `prefixMatch` here so the nearby steps can reuse the same value without rebuilding it each time.
   const prefixMatch = SENSITIVE_PREFIXES.some((pre) => p.startsWith(pre));
   // Any non-GET is considered sensitive (write-ish)
   return prefixMatch || req.method !== 'GET';
+// This closing line ends the block, list, object, or call that started above so the next step can continue outside it.
 }
 
 // ============================================================
@@ -70,29 +76,45 @@ function isSensitive(req) {
  * Defaults: 60 req / 60s per IP for GETs only when Redis is unavailable/errored.
  */
 const WINDOW_MS = 60_000;
+// I am saving `MAX_REQ` here so the nearby steps can reuse the same value without rebuilding it each time.
 const MAX_REQ = 60;
+// I am saving `memBucket` here so the nearby steps can reuse the same value without rebuilding it each time.
 const memBucket = new Map();
 
+// I am keeping `allowViaMemory` as a named helper so the surrounding workflow can call this step when it needs it.
 function allowViaMemory(ip) {
+  // I am saving `now` here so the nearby steps can reuse the same value without rebuilding it each time.
   const now = Date.now();
+  // I am saving `rec` here so the nearby steps can reuse the same value without rebuilding it each time.
   const rec = memBucket.get(ip) || { count: 0, reset: now + WINDOW_MS };
+  // This check helps me choose or stop the next path before any work that depends on this condition runs.
   if (now > rec.reset) {
+    // I am keeping this line here because the surrounding ipFirewall.js workflow expects this value or operation before it continues.
     rec.count = 0;
+    // I am keeping this line here because the surrounding ipFirewall.js workflow expects this value or operation before it continues.
     rec.reset = now + WINDOW_MS;
+  // This closing line ends the block, list, object, or call that started above so the next step can continue outside it.
   }
+  // I am keeping this line here because the surrounding ipFirewall.js workflow expects this value or operation before it continues.
   rec.count += 1;
+  // I am calling this helper here so the current workflow performs this step before it moves on.
   memBucket.set(ip, rec);
+  // This return sends the completed value or response back to the code that called this function.
   return rec.count <= MAX_REQ;
+// This closing line ends the block, list, object, or call that started above so the next step can continue outside it.
 }
 
 // ============================================================
 // Redis Client Setup
 // ============================================================
 let redis = null;
+// I am starting a guarded operation here because a request, parser, or dependency used below may fail.
 try {
+  // I am loading `../utils/redisClient` into `client` so this file can reuse that dependency below.
   const { client } = require('../utils/redisClient');
   // Prefer known API (node-redis v4 has ping); if not present, still try to use it
   redis = client && typeof client.exists === 'function' ? client : null;
+// I am handling a failure here so this file keeps its existing error response instead of losing the error silently.
 } catch {
   // No Redis available, firewall will operate in degraded mode
 }
@@ -150,21 +172,33 @@ const LIST_KEY = 'ip:block:list';
  * @returns {Promise<boolean>} True if blocked, false otherwise
  */
 async function isBlocked(ip) {
+  // This check helps me choose or stop the next path before any work that depends on this condition runs.
   if (!redis || !ip) return false;
 
+  // I am starting a guarded operation here because a request, parser, or dependency used below may fail.
   try {
+    // I am saving `exists` here so the nearby steps can reuse the same value without rebuilding it each time.
     const exists = await redis.exists(KEY(ip));
+    // This return sends the completed value or response back to the code that called this function.
     return exists === 1;
+  // I am handling a failure here so this file keeps its existing error response instead of losing the error silently.
   } catch (error) {
+    // I am calling this helper here so the current workflow performs this step before it moves on.
     logger.error({
+      // I am keeping the `event` field in this object so the receiving code can read that value by its expected name.
       event: 'ip_firewall.check_error',
+      // I am keeping this line here because the surrounding ipFirewall.js workflow expects this value or operation before it continues.
       ip,
+      // I am keeping the `error` field in this object so the receiving code can read that value by its expected name.
       error: error.message
+    // I am keeping this line here because the surrounding ipFirewall.js workflow expects this value or operation before it continues.
     }, 'IP firewall check failed');
     // NOTE: Do not change legacy behavior here to avoid regressions.
     // Fail-closed is enforced in the middleware’s catch/unavailable path.
     return false;
+  // This closing line ends the block, list, object, or call that started above so the next step can continue outside it.
   }
+// This closing line ends the block, list, object, or call that started above so the next step can continue outside it.
 }
 
 /**
@@ -186,29 +220,50 @@ async function isBlocked(ip) {
  * @returns {Promise<void>}
  */
 async function blockIp(ip, ttlSec = 3600, reason = 'abuse') {
+  // This check helps me choose or stop the next path before any work that depends on this condition runs.
   if (!redis || !ip) return;
 
+  // I am starting a guarded operation here because a request, parser, or dependency used below may fail.
   try {
+    // I am waiting for this asynchronous step here so the next line does not use its result before it is ready.
     await redis.multi()
+      // I am continuing the existing call chain here so this option stays attached to the same operation started above.
       .set(KEY(ip), reason, { EX: ttlSec })
+      // I am continuing the existing call chain here so this option stays attached to the same operation started above.
       .sAdd(LIST_KEY, ip)
       .expire(LIST_KEY, 24 * 3600) // Keep list for 24 hours
+      // I am continuing the existing call chain here so this option stays attached to the same operation started above.
       .exec();
 
+    // I am calling this helper here so the current workflow performs this step before it moves on.
     logger.warn({
+      // I am keeping the `event` field in this object so the receiving code can read that value by its expected name.
       event: 'ip_firewall.blocked',
+      // I am keeping this line here because the surrounding ipFirewall.js workflow expects this value or operation before it continues.
       ip,
+      // I am keeping this line here because the surrounding ipFirewall.js workflow expects this value or operation before it continues.
       reason,
+      // I am keeping this line here because the surrounding ipFirewall.js workflow expects this value or operation before it continues.
       ttlSec
+    // I am keeping this line here because the surrounding ipFirewall.js workflow expects this value or operation before it continues.
     }, `IP blocked for ${ttlSec}s`);
+  // I am handling a failure here so this file keeps its existing error response instead of losing the error silently.
   } catch (error) {
+    // I am calling this helper here so the current workflow performs this step before it moves on.
     logger.error({
+      // I am keeping the `event` field in this object so the receiving code can read that value by its expected name.
       event: 'ip_firewall.block_error',
+      // I am keeping this line here because the surrounding ipFirewall.js workflow expects this value or operation before it continues.
       ip,
+      // I am keeping this line here because the surrounding ipFirewall.js workflow expects this value or operation before it continues.
       reason,
+      // I am keeping the `error` field in this object so the receiving code can read that value by its expected name.
       error: error.message
+    // I am keeping this line here because the surrounding ipFirewall.js workflow expects this value or operation before it continues.
     }, 'Failed to block IP');
+  // This closing line ends the block, list, object, or call that started above so the next step can continue outside it.
   }
+// This closing line ends the block, list, object, or call that started above so the next step can continue outside it.
 }
 
 /**
@@ -226,25 +281,43 @@ async function blockIp(ip, ttlSec = 3600, reason = 'abuse') {
  * @returns {Promise<void>}
  */
 async function unblockIp(ip) {
+  // This check helps me choose or stop the next path before any work that depends on this condition runs.
   if (!redis || !ip) return;
 
+  // I am starting a guarded operation here because a request, parser, or dependency used below may fail.
   try {
+    // I am waiting for this asynchronous step here so the next line does not use its result before it is ready.
     await redis.multi()
+      // I am continuing the existing call chain here so this option stays attached to the same operation started above.
       .del(KEY(ip))
+      // I am continuing the existing call chain here so this option stays attached to the same operation started above.
       .sRem(LIST_KEY, ip)
+      // I am continuing the existing call chain here so this option stays attached to the same operation started above.
       .exec();
 
+    // I am calling this helper here so the current workflow performs this step before it moves on.
     logger.info({
+      // I am keeping the `event` field in this object so the receiving code can read that value by its expected name.
       event: 'ip_firewall.unblocked',
+      // I am keeping this line here because the surrounding ipFirewall.js workflow expects this value or operation before it continues.
       ip
+    // I am keeping this line here because the surrounding ipFirewall.js workflow expects this value or operation before it continues.
     }, 'IP unblocked');
+  // I am handling a failure here so this file keeps its existing error response instead of losing the error silently.
   } catch (error) {
+    // I am calling this helper here so the current workflow performs this step before it moves on.
     logger.error({
+      // I am keeping the `event` field in this object so the receiving code can read that value by its expected name.
       event: 'ip_firewall.unblock_error',
+      // I am keeping this line here because the surrounding ipFirewall.js workflow expects this value or operation before it continues.
       ip,
+      // I am keeping the `error` field in this object so the receiving code can read that value by its expected name.
       error: error.message
+    // I am keeping this line here because the surrounding ipFirewall.js workflow expects this value or operation before it continues.
     }, 'Failed to unblock IP');
+  // This closing line ends the block, list, object, or call that started above so the next step can continue outside it.
   }
+// This closing line ends the block, list, object, or call that started above so the next step can continue outside it.
 }
 
 // ============================================================
@@ -286,11 +359,16 @@ const STATIC_BLOCKLIST = config.firewall.staticBlocklist || [];
  * Prefer X-Forwarded-For (first IP), then X-Real-IP, then Express fallback.
  */
 function getClientIp(req) {
+  // I am saving `xf` here so the nearby steps can reuse the same value without rebuilding it each time.
   const xf = req.headers['x-forwarded-for'];
+  // This check helps me choose or stop the next path before any work that depends on this condition runs.
   if (xf) return xf.split(',')[0].trim();
+  // I am saving `xr` here so the nearby steps can reuse the same value without rebuilding it each time.
   const xr = req.headers['x-real-ip'];
+  // This check helps me choose or stop the next path before any work that depends on this condition runs.
   if (xr) return xr.trim();
   return req.ip; // Express' parsed fallback
+// This closing line ends the block, list, object, or call that started above so the next step can continue outside it.
 }
 
 /**
@@ -304,20 +382,34 @@ function getClientIp(req) {
  * Check static blocklist first, then Redis if available.
  */
 async function isBlockedIp(ip, redis) {
+  // This check helps me choose or stop the next path before any work that depends on this condition runs.
   if (STATIC_BLOCKLIST.includes(ip)) return true;
+  // This check helps me choose or stop the next path before any work that depends on this condition runs.
   if (redis) {
+    // I am starting a guarded operation here because a request, parser, or dependency used below may fail.
     try {
+      // I am saving `exists` here so the nearby steps can reuse the same value without rebuilding it each time.
       const exists = await redis.exists(KEY(ip));
+      // This return sends the completed value or response back to the code that called this function.
       return exists === 1;
+    // I am handling a failure here so this file keeps its existing error response instead of losing the error silently.
     } catch {
+      // This return sends the completed value or response back to the code that called this function.
       return false;
+    // This closing line ends the block, list, object, or call that started above so the next step can continue outside it.
     }
+  // This closing line ends the block, list, object, or call that started above so the next step can continue outside it.
   }
+  // This return sends the completed value or response back to the code that called this function.
   return false;
+// This closing line ends the block, list, object, or call that started above so the next step can continue outside it.
 }
 
+// I am keeping `ipFirewall` as a named helper so the surrounding workflow can call this step when it needs it.
 function ipFirewall() {
+  // This return sends the completed value or response back to the code that called this function.
   return async (req, res, next) => {
+    // I am saving `ip` here so the nearby steps can reuse the same value without rebuilding it each time.
     const ip = getClientIp(req);
 
     // Helper: handle fail mode depending on sensitivity and env
@@ -327,48 +419,79 @@ function ipFirewall() {
 
       // Fail-closed for sensitive or any non-GET when enabled
       if (FAIL_CLOSED && isSensitive(req)) {
+        // I am calling this helper here so the current workflow performs this step before it moves on.
         logger.warn({
+          // I am keeping the `event` field in this object so the receiving code can read that value by its expected name.
           event: 'ip_firewall.fail_closed',
+          // I am keeping this line here because the surrounding ipFirewall.js workflow expects this value or operation before it continues.
           ip,
+          // I am keeping the `path` field in this object so the receiving code can read that value by its expected name.
           path: req.originalUrl || req.path,
+          // I am keeping the `method` field in this object so the receiving code can read that value by its expected name.
           method: req.method,
+          // I am keeping the `requestId` field in this object so the receiving code can read that value by its expected name.
           requestId: req.requestId
+        // I am keeping this line here because the surrounding ipFirewall.js workflow expects this value or operation before it continues.
         }, 'Redis unavailable/error → fail-closed (503) on sensitive path');
 
+        // This return sends the completed value or response back to the code that called this function.
         return res.status(503).json({
+          // I am keeping the `ok` field in this object so the receiving code can read that value by its expected name.
           ok: false,
+          // I am keeping the `error` field in this object so the receiving code can read that value by its expected name.
           error: 'Service temporarily unavailable'
+        // This closing line ends the block, list, object, or call that started above so the next step can continue outside it.
         });
+      // This closing line ends the block, list, object, or call that started above so the next step can continue outside it.
       }
 
       // For public GETs, allow through with tiny memory limiter
       if (!allowViaMemory(ip)) {
+        // I am building or sending the Express response here with the status, data, or page already chosen by this route.
         res.set('Retry-After', '60');
+        // This return sends the completed value or response back to the code that called this function.
         return res.status(429).json({ ok: false, error: 'Too many requests' });
+      // This closing line ends the block, list, object, or call that started above so the next step can continue outside it.
       }
+      // This return sends the completed value or response back to the code that called this function.
       return next();
+    // This closing line ends the block, list, object, or call that started above so the next step can continue outside it.
     };
 
     // If Redis client is missing, operate in degraded mode
     if (!redis) {
+      // I am calling this helper here so the current workflow performs this step before it moves on.
       logger.warn({
+        // I am keeping the `event` field in this object so the receiving code can read that value by its expected name.
         event: 'ip_firewall.redis_unavailable',
+        // I am keeping this line here because the surrounding ipFirewall.js workflow expects this value or operation before it continues.
         ip,
+        // I am keeping the `path` field in this object so the receiving code can read that value by its expected name.
         path: req.originalUrl || req.path,
+        // I am keeping the `method` field in this object so the receiving code can read that value by its expected name.
         method: req.method,
+        // I am keeping the `requestId` field in this object so the receiving code can read that value by its expected name.
         requestId: req.requestId
+      // I am keeping this line here because the surrounding ipFirewall.js workflow expects this value or operation before it continues.
       }, 'Redis not available for firewall; entering degraded mode');
+      // This return sends the completed value or response back to the code that called this function.
       return handleFailMode();
+    // This closing line ends the block, list, object, or call that started above so the next step can continue outside it.
     }
 
     // Unknown IPs: preserve legacy behavior
     if (ip === 'unknown') {
+      // This return sends the completed value or response back to the code that called this function.
       return next();
+    // This closing line ends the block, list, object, or call that started above so the next step can continue outside it.
     }
 
+    // I am starting a guarded operation here because a request, parser, or dependency used below may fail.
     try {
+      // I am saving `blocked` here so the nearby steps can reuse the same value without rebuilding it each time.
       const blocked = await isBlockedIp(ip, redis);
 
+      // This check helps me choose or stop the next path before any work that depends on this condition runs.
       if (blocked) {
         /**
          * WHAT:
@@ -384,24 +507,38 @@ function ipFirewall() {
          * Log the blocked attempt for monitoring.
          */
         logger.warn({
+          // I am keeping the `event` field in this object so the receiving code can read that value by its expected name.
           event: 'ip_firewall.blocked_attempt',
+          // I am keeping this line here because the surrounding ipFirewall.js workflow expects this value or operation before it continues.
           ip,
+          // I am keeping the `path` field in this object so the receiving code can read that value by its expected name.
           path: req.originalUrl || req.path,
+          // I am keeping the `method` field in this object so the receiving code can read that value by its expected name.
           method: req.method,
+          // I am keeping the `requestId` field in this object so the receiving code can read that value by its expected name.
           requestId: req.requestId,
           reason: 'blocklist', // Distinguish from rate limit (429)
+          // I am keeping the `source` field in this object so the receiving code can read that value by its expected name.
           source: STATIC_BLOCKLIST.includes(ip) ? 'static' : 'redis'
+        // I am keeping this line here because the surrounding ipFirewall.js workflow expects this value or operation before it continues.
         }, 'Blocked IP attempted access (blocklist, not rate limit)');
 
+        // I am building or sending the Express response here with the status, data, or page already chosen by this route.
         res.set('Retry-After', '3600');
+        // This return sends the completed value or response back to the code that called this function.
         return res.status(429).json({
+          // I am keeping the `ok` field in this object so the receiving code can read that value by its expected name.
           ok: false,
+          // I am keeping the `error` field in this object so the receiving code can read that value by its expected name.
           error: 'Too many requests'
+        // This closing line ends the block, list, object, or call that started above so the next step can continue outside it.
         });
+      // This closing line ends the block, list, object, or call that started above so the next step can continue outside it.
       }
 
       // IP is not blocked, continue
       return next();
+    // I am handling a failure here so this file keeps its existing error response instead of losing the error silently.
     } catch (error) {
       /**
        * WHAT:
@@ -414,16 +551,27 @@ function ipFirewall() {
        * Fail-closed (503) for sensitive or non-GET; public GETs allowed via memory limiter.
        */
       logger.warn({
+        // I am keeping the `event` field in this object so the receiving code can read that value by its expected name.
         event: 'ip_firewall.redis_error',
+        // I am keeping this line here because the surrounding ipFirewall.js workflow expects this value or operation before it continues.
         ip,
+        // I am keeping the `path` field in this object so the receiving code can read that value by its expected name.
         path: req.originalUrl || req.path,
+        // I am keeping the `method` field in this object so the receiving code can read that value by its expected name.
         method: req.method,
+        // I am keeping the `requestId` field in this object so the receiving code can read that value by its expected name.
         requestId: req.requestId,
+        // I am keeping the `error` field in this object so the receiving code can read that value by its expected name.
         error: error.message
+      // I am keeping this line here because the surrounding ipFirewall.js workflow expects this value or operation before it continues.
       }, 'Firewall Redis error; entering degraded mode');
+      // This return sends the completed value or response back to the code that called this function.
       return handleFailMode();
+    // This closing line ends the block, list, object, or call that started above so the next step can continue outside it.
     }
+  // This closing line ends the block, list, object, or call that started above so the next step can continue outside it.
   };
+// This closing line ends the block, list, object, or call that started above so the next step can continue outside it.
 }
 
 // ============================================================
@@ -431,8 +579,13 @@ function ipFirewall() {
 // ============================================================
 
 module.exports = {
+  // I am keeping this line here because the surrounding ipFirewall.js workflow expects this value or operation before it continues.
   ipFirewall,
+  // I am keeping this line here because the surrounding ipFirewall.js workflow expects this value or operation before it continues.
   blockIp,
+  // I am keeping this line here because the surrounding ipFirewall.js workflow expects this value or operation before it continues.
   unblockIp,
+  // I am keeping this line here because the surrounding ipFirewall.js workflow expects this value or operation before it continues.
   isBlocked
+// This closing line ends the block, list, object, or call that started above so the next step can continue outside it.
 };

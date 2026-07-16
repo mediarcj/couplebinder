@@ -34,20 +34,31 @@ export const CAPTION_HEIGHT = 88;
  * @returns {Object} Frame metrics { frameWidth, frameHeight, captionHeight }
  */
 export function getPhotoFrameRectFromLayer(layer) {
+  // This check helps me choose or stop the next path before any work that depends on this condition runs.
   if (!layer || typeof layer !== 'object') {
+    // This return sends the completed value or response back to the code that called this function.
     return { frameWidth: 0, frameHeight: 0, captionHeight: 0 };
+  // This closing line ends the block, list, object, or call that started above so the next step can continue outside it.
   }
 
+  // I am saving `width` here so the nearby steps can reuse the same value without rebuilding it each time.
   const width = typeof layer.width === 'number' && layer.width > 0 ? layer.width : 0;
+  // I am saving `totalHeight` here so the nearby steps can reuse the same value without rebuilding it each time.
   const totalHeight = typeof layer.height === 'number' && layer.height > 0 ? layer.height : 0;
 
+  // This check helps me choose or stop the next path before any work that depends on this condition runs.
   if (layer.type === 'photo') {
+    // I am saving `captionHeight` here so the nearby steps can reuse the same value without rebuilding it each time.
     const captionHeight = CAPTION_HEIGHT;
+    // I am saving `frameHeight` here so the nearby steps can reuse the same value without rebuilding it each time.
     const frameHeight = Math.max(0, totalHeight - captionHeight);
+    // This return sends the completed value or response back to the code that called this function.
     return { frameWidth: width, frameHeight, captionHeight };
+  // This closing line ends the block, list, object, or call that started above so the next step can continue outside it.
   }
 
   // Non-photo layers have no caption
   return { frameWidth: width, frameHeight: totalHeight, captionHeight: 0 };
+// This closing line ends the block, list, object, or call that started above so the next step can continue outside it.
 }
 

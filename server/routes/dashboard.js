@@ -15,8 +15,9 @@ const { assertUser } = require('../utils/authz');
 const logger = require('../utils/logger');
 const { config } = require('../config');
 const { formatDateForDisplay, formatCurrency, sanitizeUrl, formatPrice } = require('../ui_contract/presenters/helpers/viewFormatters');
+const { serializeForHtmlScript } = require('../utils/serializeForHtmlScript');
 
-function applyProtectedPageDefaults({ req, res, pageModel, title }) {
+function applyProtectedPageDefaults({ req: _req, res, pageModel, title }) {
   // Protected pages share nonce, CSRF, asset-version, and browser client settings. Applying
   // them here keeps individual route models consistent with the main dashboard shell.
   pageModel.page = pageModel.page || {};
@@ -55,11 +56,6 @@ router.get('/', async (req, res) => {
 
     applyProtectedPageDefaults({ req, res, pageModel });
 
-    if (pageModel.user) {
-      pageModel.user.created_at_formatted = formatDateForDisplay(pageModel.user.created_at);
-      pageModel.user.last_sign_in_at_formatted = formatDateForDisplay(pageModel.user.last_sign_in_at);
-    }
-
     return res.render('dashboard', pageModel);
   } catch (error) {
     logger.error(
@@ -83,6 +79,7 @@ router.get('/profile-edit', async (req, res) => {
       pageModel,
       title: `Edit Profile - ${config.branding.appName}`
     });
+    pageModel.profileBootstrapJson = serializeForHtmlScript(pageModel.user);
     return res.render('profile-edit', pageModel);
   } catch (error) {
     logger.error(
@@ -219,6 +216,18 @@ router.get('/billing/buy', async (req, res) => {
   return res.redirect(302, `/dashboard/checkout/review?product=${encodeURIComponent(product)}&qty=${encodeURIComponent(q)}`);
 });
 
+function activePriceIdsForProductKey(key) {
+  const ids = new Set();
+  const add = (value) => {
+    const normalized = String(value || '').trim();
+    if (normalized) ids.add(normalized);
+  };
+
+  if (key === 'resume_one_time') add(config?.stripe?.active?.priceResumeOneTime);
+  if (key === 'resume_expert') add(config?.stripe?.active?.priceResumeExpert);
+  return ids;
+}
+
 /**
  * GET /dashboard/checkout/review?product=<productKey>&qty=1
  */
@@ -239,28 +248,7 @@ router.get('/checkout/review', async (req, res, next) => {
 
     const catalog = await getPricingCatalog();
 
-    function priceCandidatesForKey(key) {
-      // Match by stable product key first, while accepting configured live/test IDs so an
-      // older purchase link still resolves after the active Stripe mode changes.
-      const ids = new Set();
-      const add = (v) => { const s = String(v || '').trim(); if (s) ids.add(s); };
-
-      if (key === 'resume_one_time') add(config?.stripe?.active?.priceResumeOneTime);
-      if (key === 'resume_expert')   add(config?.stripe?.active?.priceResumeExpert);
-
-      if (key === 'resume_one_time') {
-        add(config?.stripe?.live?.priceResumeOneTime);
-        add(config?.stripe?.test?.priceResumeOneTime);
-      }
-      if (key === 'resume_expert') {
-        add(config?.stripe?.live?.priceResumeExpert);
-        add(config?.stripe?.test?.priceResumeExpert);
-      }
-
-      return ids;
-    }
-
-    const candidateIds = priceCandidatesForKey(productKey);
+    const candidateIds = activePriceIdsForProductKey(productKey);
 
     const product = catalog.find(p =>
       p.product_key === productKey || candidateIds.has(p.priceId)

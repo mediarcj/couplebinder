@@ -5,6 +5,7 @@
 'use strict';
 
 const express = require('express');
+const { timedMiddleware } = require('../middleware/requestTiming');
 
 /**
  * Register all core middleware in the correct boot order for enterprise-grade protection.
@@ -22,7 +23,7 @@ const express = require('express');
  */
 function registerCoreMiddleware({
   app,
-  config, // unused here (kept for signature consistency)
+  config: _config, // unused here (kept for signature consistency)
   toggles,
   logger,
   consoleLogger,
@@ -38,7 +39,7 @@ function registerCoreMiddleware({
   corsDebugMiddleware,
   rateLimiters,
   authBridge,
-  requireAuth, // unused here (kept for signature consistency)
+  requireAuth: _requireAuth, // unused here (kept for signature consistency)
   cookieGuardian,
   appConfig,
   mountStripeWebhook,
@@ -146,7 +147,7 @@ function registerCoreMiddleware({
 
   // 9) IP firewall
   if (ipFirewall && typeof ipFirewall === 'function') {
-    app.use(ipFirewall());
+    app.use(timedMiddleware('redis_firewall', ipFirewall()));
     log.info({ event: 'boot.middleware_registered', middleware: 'ipFirewall' }, 'Security: IP firewall enabled');
   } else {
     log.warn({ event: 'boot.middleware_skipped', middleware: 'ipFirewall' }, 'IP firewall unavailable (skipped)');
@@ -157,7 +158,7 @@ function registerCoreMiddleware({
     try {
       const mg = createMaintenanceGuard(redisClient);
       if (typeof mg === 'function') {
-        app.use(mg);
+        app.use(timedMiddleware('redis_maintenance', mg));
         log.info(
           { event: 'boot.middleware_registered', middleware: 'maintenanceGuard' },
           'Security: Maintenance guard enabled'
@@ -238,7 +239,7 @@ function registerCoreMiddleware({
 
   // Cookies (must be before CSRF)
   if (typeof cookieGuardian === 'function') {
-    app.use(cookieGuardian);
+    app.use(timedMiddleware('cookie', cookieGuardian));
     log.info({ event: 'boot.middleware_registered', middleware: 'cookieGuardian' }, 'Cookies: parsing/guard enabled');
   } else {
     log.warn({ event: 'boot.middleware_skipped', middleware: 'cookieGuardian' }, 'Cookie guardian unavailable (skipped)');
@@ -252,25 +253,11 @@ function registerCoreMiddleware({
 
   // Auth bridge (stateless)
   if (typeof authBridge === 'function') {
-    app.use(authBridge);
+    app.use(timedMiddleware('auth', authBridge));
     log.info({ event: 'boot.auth_mode', mode: 'stateless' }, 'Authentication: Stateless only (Supabase JWT tokens)');
   } else {
     log.warn({ event: 'boot.middleware_skipped', middleware: 'authBridge' }, 'Auth bridge unavailable (skipped)');
   }
-
-  // Request timing → pretty terminal logging (must not crash if consoleLogger is missing)
-  app.use((req, res, next) => {
-    const startTime = Date.now();
-
-    res.on('finish', () => {
-      const duration = Date.now() - startTime;
-      if (consoleLogger && typeof consoleLogger.formatRequest === 'function') {
-        consoleLogger.formatRequest(req, res, duration);
-      }
-    });
-
-    next();
-  });
 
   if (consoleLogger && typeof consoleLogger.formatMiddlewareRegistration === 'function') {
     consoleLogger.formatMiddlewareRegistration('Core middleware');

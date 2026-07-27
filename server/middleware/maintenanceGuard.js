@@ -18,7 +18,6 @@
  */
 
 const fs = require('fs');
-const path = require('path');
 const crypto = require('crypto');
 const logger = require('../utils/logger');
 const { config } = require('../config');
@@ -99,9 +98,9 @@ function escapeHtml(s) {
   return false;
 }
 
-/** Prefer Cloudflare’s real IP header, with IPv6-mapped IPv4 normalization */
+/** Use only the address already resolved by the trusted proxy boundary. */
 function clientIp(req) {
-  const raw = req.get('CF-Connecting-IP') || req.ip || '';
+  const raw = req.clientIp || req.ip || '';
   return raw.replace(/^::ffff:/, '');
 }
 

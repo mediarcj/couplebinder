@@ -29,14 +29,6 @@ const clearLogoutHold = () => {
 
 // AUTH_IN_PROGRESS moved to login.js (login page specific)
 
-async function waitUntil(pred, { tries = 15, intervalMs = 100 } = {}) {
-  for (let i = 0; i < tries; i++) {
-    try { if (await pred()) return true; } catch {}
-    await new Promise(r => setTimeout(r, intervalMs));
-  }
-  return false;
-}
-
 async function getSessionSafe() {
   try {
     const client = window.SB || window.supabase;
@@ -103,7 +95,12 @@ const logger = {
         if (typeof obj === 'object' && obj !== null) {
             const redacted = {};
             for (const [key, value] of Object.entries(obj)) {
-                if (['email', 'phone', 'token', 'password', 'auth'].some(pii => key.toLowerCase().includes(pii))) {
+                if (
+                  ['email', 'phone', 'token', 'password', 'auth', 'body', 'url', 'href', 'error'].some(
+                    pii => key.toLowerCase().includes(pii)
+                  ) ||
+                  /(^|_)(user|profile|session|binder)?_?id$/i.test(key)
+                ) {
                     redacted[key] = '[REDACTED]';
                 } else if (typeof value === 'string') {
                     redacted[key] = logger._redact(value);
@@ -286,7 +283,18 @@ document.addEventListener('DOMContentLoaded', function() {
                 // User explicitly logged in (handled by handleLoginSubmit)
                 updateUIForLoggedInUser(session.user.email);
             }
-            // Ignore INITIAL_SESSION, TOKEN_REFRESHED - let checkSessionStatus handle it
+            if (event === 'TOKEN_REFRESHED' && session?.access_token && !logoutHoldActive()) {
+                try {
+                    const result = await postAuthCookieWithBackoff({
+                        headers: { 'Authorization': `Bearer ${session.access_token}` },
+                        body: {}
+                    });
+                    if (!result.ok) logger.warn('Refreshed session cookie bridge was rejected');
+                } catch {
+                    logger.warn('Refreshed session cookie bridge failed');
+                }
+            }
+            // INITIAL_SESSION never overrides server-rendered authentication state.
         });
     });
     
@@ -620,6 +628,16 @@ async function postAuthCookieWithBackoff(payload, opts) {
  */
 async function checkSessionStatus() {
     try {
+        const hydrationMode = document.body?.dataset?.authHydrate || 'none';
+        if (hydrationMode === 'ssr-authenticated') {
+            logger.info('Session hydration skipped - server already authenticated this document');
+            return;
+        }
+        if (hydrationMode !== 'recover') {
+            logger.info('Session hydration skipped - page did not opt into recovery');
+            return;
+        }
+
         // Early server-truth check (before client re-hydration)
         // This prevents flicker and ensures logout state is immediately reflected
         try {
@@ -628,6 +646,10 @@ async function checkSessionStatus() {
                 headers: { 'Accept': 'application/json' }
             }).then(r => r.json()).catch(() => null);
             
+            if (status?.authenticated) {
+                updateUIForLoggedInUser();
+                return;
+            }
             if (status && !status.authenticated) {
                 logger.info('Server status: not authenticated - updating UI immediately');
                 updateUIForLoggedOutUser();
@@ -636,15 +658,6 @@ async function checkSessionStatus() {
             }
         } catch (e) {
             logger.info('Server status check failed (non-fatal)', e);
-        }
-        
-        // OPT-IN CHECK: Only run hydration if page explicitly opts in
-        const shouldHydrate = document.body?.dataset?.authHydrate === 'true' || 
-                             document.querySelector('meta[name="auth-hydrate"]')?.content === 'true';
-        
-        if (!shouldHydrate) {
-            logger.info('Session hydration skipped - page did not opt in');
-            return;
         }
         
         // Check for logout sentinel before attempting re-hydration
@@ -701,13 +714,7 @@ async function checkSessionStatus() {
             if (result.ok) {
                 // Server accepted the token - session is valid
                 logger.info('Session restored');
-                // Get fresh user data to update UI
-                const { data: { user } } = await client.auth.getUser();
-                if (user) {
-                    updateUIForLoggedInUser(user.email);
-                } else {
-                    updateUIForLoggedOutUser();
-                }
+                updateUIForLoggedInUser(session.user?.email);
                 return;
             }
             
@@ -871,9 +878,9 @@ function updateUIForLoggedOutUser() {
  * when logout is detected from another tab.
  */
 (function setupCrossTabLogoutSync() {
-  // Only run on pages that have data-auth-hydrate="true" (authenticated pages)
+  // Run on server-authenticated pages and the anonymous recovery shell.
   const body = document.body;
-  if (!body || body.getAttribute('data-auth-hydrate') !== 'true') {
+  if (!body || !['ssr-authenticated', 'recover'].includes(body.getAttribute('data-auth-hydrate'))) {
     return;
   }
 

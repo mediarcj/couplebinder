@@ -20,7 +20,7 @@
 </head>
 
 <body
-  data-auth-hydrate="true"
+  data-auth-hydrate="ssr-authenticated"
   data-binder-id="<%= (binder && binder.id) || '' %>"
 >
   <%- include('partials/nav', { nav: page.nav, app_info: app_info }) %>
@@ -138,11 +138,10 @@
   nonce="<%= cspNonce %>"
 ></script>
   <script src="/js/sbClient.js?v=<%= (page && page.assetVersion) || assetVersion || '' %>" nonce="<%= cspNonce %>"></script>
-  <script src="/js/logout.js?v=<%= (page && page.assetVersion) || assetVersion || '' %>" nonce="<%= cspNonce %>"></script>
   <script src="/js/modalManager.js?v=<%= (page && page.assetVersion) || assetVersion || '' %>" nonce="<%= cspNonce %>"></script>
   <script src="/js/nav-client.js?v=<%= (page && page.assetVersion) || assetVersion || '' %>" nonce="<%= cspNonce %>"></script>
 
   <script src="/js/dashboard.js?v=<%= (page && page.assetVersion) || assetVersion || '' %>" nonce="<%= cspNonce %>"></script>
-  <script src="/js/main.js?v=<%= (page && page.assetVersion) || assetVersion || '' %>" nonce="<%= cspNonce %>"></script>
+  <script src="/js/protected-shell.js?v=<%= (page && page.assetVersion) || assetVersion || '' %>" nonce="<%= cspNonce %>"></script>
 </body>
 </html>

@@ -19,7 +19,8 @@
  * stays usable during transient cache incidents.
  */
 
-const logger = require('../utils/logger');
+const defaultLogger = require('../utils/logger');
+let logger = defaultLogger;
 const { config } = require('../config');
 
 // Config / Sensitivity
@@ -80,6 +81,7 @@ try {
 } catch {
   // No Redis available, firewall will operate in degraded mode
 }
+const defaultRedis = redis;
 
 // Redis Key Helpers
 
@@ -237,17 +239,11 @@ const STATIC_BLOCKLIST = config.firewall.staticBlocklist || [];
 /**
  * Extract client IP with robust header support for tests/dev.
  *
- * Tests set X-Forwarded-For, so we need to respect it.
- * Production uses Cloudflare headers.
- *
- * Prefer X-Forwarded-For (first IP), then X-Real-IP, then Express fallback.
+ * trustProxyIp establishes req.clientIp from Express's trusted proxy boundary.
+ * Forwarding headers are never consumed directly by this security control.
  */
 function getClientIp(req) {
-  const xf = req.headers['x-forwarded-for'];
-  if (xf) return xf.split(',')[0].trim();
-  const xr = req.headers['x-real-ip'];
-  if (xr) return xr.trim();
-  return req.ip; // Express' parsed fallback
+  return req.clientIp || req.ip || 'unknown';
 }
 
 /**
@@ -260,12 +256,8 @@ function getClientIp(req) {
 async function isBlockedIp(ip, redis) {
   if (STATIC_BLOCKLIST.includes(ip)) return true;
   if (redis) {
-    try {
-      const exists = await redis.exists(KEY(ip));
-      return exists === 1;
-    } catch {
-      return false;
-    }
+    const exists = await redis.exists(KEY(ip));
+    return exists === 1;
   }
   return false;
 }
@@ -374,11 +366,23 @@ function ipFirewall() {
   };
 }
 
+function setTestDependencies({ redisClient, testLogger } = {}) {
+  if (redisClient !== undefined) redis = redisClient;
+  if (testLogger !== undefined) logger = testLogger;
+}
+
+function resetTestDependencies() {
+  redis = defaultRedis;
+  logger = defaultLogger;
+}
+
 // Exports
 
 module.exports = {
   ipFirewall,
   blockIp,
   unblockIp,
-  isBlocked
+  isBlocked,
+  _setTestDependencies: setTestDependencies,
+  _resetTestDependencies: resetTestDependencies
 };

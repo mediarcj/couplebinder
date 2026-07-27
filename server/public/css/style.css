@@ -2630,3 +2630,27 @@ nav ul li a.active {
     flex-wrap: wrap;
   }
 }
+html.navigation-pending::before {
+  background: currentColor;
+  content: "";
+  height: 3px;
+  left: 0;
+  position: fixed;
+  top: 0;
+  width: 35%;
+  z-index: 10000;
+  animation: navigation-progress 1.2s ease-in-out infinite;
+}
+
+@keyframes navigation-progress {
+  0% { transform: translateX(-100%); }
+  60% { transform: translateX(180%); }
+  100% { transform: translateX(320%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html.navigation-pending::before {
+    animation: none;
+    width: 100%;
+  }
+}

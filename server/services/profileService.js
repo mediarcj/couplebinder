@@ -1,16 +1,17 @@
 // server/services/profileService.js
 // Fetch canonical profile info from v_profiles_full (read-optimized view)
 
-const { supabaseAdmin } = require('../utils/supabaseClient');
 const { createClient } = require('@supabase/supabase-js');
 const logger = require('../utils/logger');
 const { updateProfileTransactional } = require('./profileSyncService');
 const { config } = require('../config');
+const PROFILE_QUERY_TIMEOUT_MS = 5_000;
 
-function ensureAdmin() {
-  if (!supabaseAdmin) {
-    throw new Error('Supabase admin client not configured. Check SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.');
-  }
+function fetchWithProfileTimeout(input, init = {}) {
+  return fetch(input, {
+    ...init,
+    signal: init.signal || AbortSignal.timeout(PROFILE_QUERY_TIMEOUT_MS),
+  });
 }
 
 /**
@@ -32,8 +33,14 @@ async function getProfileByUserId(userId, userAccessToken) {
       config.supabase.anonKey,
       {
         global: {
-          headers: { Authorization: `Bearer ${userAccessToken}` }
-        }
+          headers: { Authorization: `Bearer ${userAccessToken}` },
+          fetch: fetchWithProfileTimeout,
+        },
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false,
+          detectSessionInUrl: false
+        },
       }
     );
 
@@ -47,41 +54,19 @@ async function getProfileByUserId(userId, userAccessToken) {
       logger.warn({
         event: 'profile.fetch.user_context_failed',
         userId,
-        error: error.message
-      }, 'Profile fetch with user context failed, falling back to admin');
-      // Fall back to admin client if user context fails
-      return await getProfileByUserIdAdmin(userId);
+        status: error.status || null,
+        code: error.code || null
+      }, 'Profile fetch with user context failed');
+      return null;
     }
     return data || null;
   }
   
-  // Fallback to admin client if no access token provided
-  return await getProfileByUserIdAdmin(userId);
-}
-
-/**
- * Admin-only fallback for profile fetching
- * Used when user context is not available or fails
- */
-async function getProfileByUserIdAdmin(userId) {
-  ensureAdmin();
-  if (!userId) return null;
-
-  const { data, error } = await supabaseAdmin
-    .from('v_profiles_full')
-    .select('*')
-    .eq('user_id', userId)
-    .single();
-
-  if (error) {
-    logger.error({
-      event: 'profile.fetch.admin_failed',
-      userId,
-      error: error.message
-    }, 'Profile fetch with admin client failed');
-    return null;
-  }
-  return data || null;
+  logger.warn(
+    { event: 'profile.fetch.missing_user_context' },
+    'Profile fetch skipped because verified user context is unavailable'
+  );
+  return null;
 }
 
 // Allowlist - all allowed profile fields

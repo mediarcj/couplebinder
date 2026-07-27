@@ -2,15 +2,14 @@
  * Description: Strict CORS allowlist with environment-based configuration
  *
  * Configures CORS to only allow requests from explicitly approved origins.
- * Supports explicit list, subdomain patterns, and development localhost.
+ * Supports an explicit origin list and development localhost.
  *
  * We never trust the client. Only our own domains should be able to make
  * cross-origin requests to our API.
  *
  * 1. Check explicit CORS_ORIGINS env var
- * 2. Allow BASE_DOMAIN (if set) and all subdomains, or fallback to couplebinder.com (legacy)
- * 3. Allow localhost in development
- * 4. Deny all others with error
+ * 2. Allow localhost in development
+ * 3. Deny all others with error
  */
 
 const cors = require('cors');
@@ -19,20 +18,6 @@ const { config } = require('../config');
 
 // Parse explicit allowed origins from config
 const allowedList = (config.security.allowedOrigins || []);
-
-// Helper to escape regex special characters
-function escapeRegex(s) {
-  return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-// Build regex from BASE_DOMAIN if set, otherwise null
-const BASE_DOMAIN = config.branding.baseDomain;
-const allowBaseDomain = BASE_DOMAIN
-  ? new RegExp(`^https?:\\/\\/([a-z0-9-]+\\.)?${escapeRegex(BASE_DOMAIN)}(?::\\d+)?$`, 'i')
-  : null;
-
-// Regex to match any subdomain of couplebinder.com (legacy fallback)
-const allowCouplebinder = /^https?:\/\/([a-z0-9-]+\.)?couplebinder\.com(?::\d+)?$/i;
 
 const corsOptions = {
   origin: (origin, callback) => {
@@ -44,14 +29,12 @@ const corsOptions = {
       return callback(null, true);
     }
     
-    // Allow *.BASE_DOMAIN if set; otherwise fallback to *.couplebinder.com (legacy)
-    if ((allowBaseDomain && allowBaseDomain.test(origin)) || allowCouplebinder.test(origin)) {
-      return callback(null, true);
-    }
-    
     // Development: allow localhost
     const nodeEnv = config.server.nodeEnv;
-    if (nodeEnv === 'development' && origin.includes('localhost')) {
+    if (
+      nodeEnv === 'development' &&
+      /^https?:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?$/i.test(origin)
+    ) {
       return callback(null, true);
     }
     

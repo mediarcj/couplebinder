@@ -9,11 +9,7 @@
 
 const express = require('express');
 const { getClientIP } = require('../middleware/security');
-const { hasUser, getUserId, getUserEmail } = require('../utils/authz');
-// Import rate limiters (SECONDARY layer - Cloudflare edge is PRIMARY layer)
-// NOTE: These are imported but rate limiting is applied at the route level in zorvalon.js
-// See zorvalon.js lines 594-600 for actual rate limiter application
-const { loginLimiter, registerLimiter } = require('../middleware/rateLimiter');
+const { hasUser } = require('../utils/authz');
 const { validateUserRegistration } = require('../middleware/validation');
 const logger = require('../utils/logger');
 const { config } = require('../config');
@@ -34,7 +30,7 @@ const router = express.Router();
  * In development: return 400 with message (for debugging).
  * Optional: allow via ALLOW_LEGACY_LOGIN=true for testing.
  */
-router.post('/login', loginLimiter(), async (req, res) => {
+router.post('/login', async (req, res) => {
     try {
         const isProd = config.server.nodeEnv === 'production';
         const allowLegacy = config.auth.allowLegacyLogin;
@@ -141,11 +137,7 @@ router.get('/status', (req, res) => {
         // Return format that matches test expectations
         res.json({
             success: true,
-            authenticated: isAuthenticated,
-            ...(isAuthenticated ? {
-                userId: getUserId(req),
-                userEmail: getUserEmail(req)
-            } : {})
+            authenticated: isAuthenticated
         });
     } catch (error) {
         logger.error('Auth status route error', {
@@ -164,7 +156,7 @@ router.get('/status', (req, res) => {
  * Creates a new user account using Supabase Auth
  * Note: This is a server-side validation endpoint - actual user creation is handled by Supabase
  */
-router.post('/register', registerLimiter(), validateUserRegistration, async (req, res) => {
+router.post('/register', validateUserRegistration, async (req, res) => {
     try {
         const turnstileCheck = await verifyTurnstileRequest(req, {
             intent: 'interactive-register'

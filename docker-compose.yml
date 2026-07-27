@@ -42,7 +42,7 @@ services:
       context: .
       dockerfile: server/Dockerfile
       args:
-        NODE_VERSION: "20"
+        NODE_VERSION: "22"
 
     environment:
       HOST: 0.0.0.0

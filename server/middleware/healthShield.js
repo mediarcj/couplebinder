@@ -18,29 +18,12 @@ const { config } = require('../config');
  */
 
 /**
- * Extract client IP from request
- * Respects Cloudflare and other proxies
+ * Read the address already resolved by the trusted Express/Nginx proxy boundary.
  * @param {Object} req - Express request object
  * @returns {string} - Normalized IP address
  */
 function getClientIp(req) {
-  const cfIp = req.headers['cf-connecting-ip'];
-  if (cfIp) return cfIp;
-
-  const xff = req.headers['x-forwarded-for'];
-  if (xff) {
-    // Take first IP if multiple
-    const firstIp = String(xff).split(',')[0].trim();
-    if (firstIp) return firstIp;
-  }
-
-  const directIp = req.ip;
-  if (directIp) return directIp.replace('::ffff:', '');
-
-  const remote = req.connection && req.connection.remoteAddress;
-  if (remote) return remote.replace('::ffff:', '');
-
-  return '';
+  return String(req.clientIp || req.ip || '').replace(/^::ffff:/, '');
 }
 
 /**
@@ -112,4 +95,3 @@ function healthShield(req, res, next) {
 }
 
 module.exports = healthShield;
-

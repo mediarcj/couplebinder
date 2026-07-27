@@ -17,7 +17,7 @@
   <link rel="icon" href="/images/favicon.ico">
   <link rel="stylesheet" href="/css/style.css?v=<%= page.assetVersion || assetVersion || '' %>">
 </head>
-<body data-auth-hydrate="true">
+<body data-auth-hydrate="ssr-authenticated">
   <%- include('partials/nav', { nav: page.nav, app_info: app_info }) %>
 
   <main>
@@ -97,7 +97,7 @@
 
   <script src="/js/modalManager.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= cspNonce %>"></script>
   <script src="/js/purchase-confirmation.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= cspNonce %>"></script>
-  <script src="/js/main.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= cspNonce %>"></script>
+  <script src="/js/protected-shell.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= cspNonce %>"></script>
 
   <style nonce="<%= cspNonce %>">
     .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 0.875rem; }

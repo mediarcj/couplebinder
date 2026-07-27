@@ -24,6 +24,16 @@ if (!log) {
                     .replace(/(\b\d{7,}\b)/g, '[PHONE]')
                     .replace(/(sb-access-token=[^;]+)/g, '[TOKEN]');
             }
+            if (typeof obj === 'object' && obj !== null) {
+                const safe = {};
+                const allowed = new Set(['status', 'count', 'fileCount', 'found', 'field', 'operation']);
+                for (const [key, value] of Object.entries(obj)) {
+                    safe[key] = allowed.has(key) && ['string', 'number', 'boolean'].includes(typeof value)
+                        ? fallbackLogger.redact(String(value))
+                        : '[REDACTED]';
+                }
+                return safe;
+            }
             return obj;
         },
         info: (message, data = {}) => {
@@ -162,7 +172,7 @@ document.addEventListener('DOMContentLoaded', function() {
     initializeDeletePhotoButton();
     initializeReactEditorButton();
 
-    log.info('Dashboard page initialized - logout handled by logout.js module');
+    log.info('Dashboard page initialized');
 });
 
 // Dashboard basics

@@ -37,6 +37,7 @@ const logoutLogger = {
 // Shared logout DOM and navigation helpers
 const LOGOUT_HOLD_KEY = 'logout.ui.hold';
 const MODAL_ID = 'logoutModal'; // Unique ID to avoid collisions with other modals
+const LOGOUT_PATH = '/auth/clear-cookie';
 
 function getCsrfToken() {
   const meta = document.querySelector('meta[name="csrf-token"]');
@@ -234,47 +235,6 @@ async function performLogout() {
       logoutLogger.warn('Server cookie clear failed; proceeding');
     }
 
-    // 1b) Verify server sees us signed-out (with retry for race conditions)
-    try {
-      let status = await fetch('/api/auth/status', { 
-        credentials: 'include',
-        headers: { 'Accept': 'application/json' }
-      }).then(r => r.json()).catch(() => null);
-      
-      if (status?.authenticated) {
-        // One more attempt (race with proxy/cache)
-        logoutLogger.info('Status still authenticated, retrying clear...');
-        await new Promise(r => setTimeout(r, 150));
-        await fetch('/auth/clear-cookie', {
-          method: 'POST',
-          credentials: 'include',
-          headers: {
-            'Accept': 'application/json',
-            ...(csrf ? { 'X-CSRF-Token': csrf } : {})
-          }
-        });
-        status = await fetch('/api/auth/status', { 
-          credentials: 'include',
-          headers: { 'Accept': 'application/json' }
-        }).then(r => r.json()).catch(() => null);
-        
-        if (status?.authenticated) {
-          // Fallback: try clear-all variant
-          logoutLogger.warn('Status still authenticated after retry, trying clear-all...');
-          await fetch('/auth/clear-cookie?all=1', {
-            method: 'POST',
-            credentials: 'include',
-            headers: {
-              'Accept': 'application/json',
-              ...(csrf ? { 'X-CSRF-Token': csrf } : {})
-            }
-          });
-        }
-      }
-    } catch (e) {
-      logoutLogger.warn('Status verification failed (non-fatal)', { error: e?.message || String(e) });
-    }
-
     // 2) Supabase signOut (use the shared singleton)
     try {
       if (window.SB?.auth?.signOut) {
@@ -337,6 +297,14 @@ async function performLogout() {
       }
     } catch { /* Older browsers may reject this optional credential API during logout. */ }
 
+    try {
+      const channel = new BroadcastChannel('auth');
+      channel.postMessage({ type: 'LOGOUT' });
+      channel.close();
+    } catch {
+      // BroadcastChannel is optional; the server cookie remains authoritative.
+    }
+
     // 4) Set flash flag and redirect (modal shown on next page)
     try { sessionStorage.setItem('logout.flash', '1'); } catch (_) {}
     
@@ -374,132 +342,7 @@ function attachLogoutHandler(selector = '#logoutBtn') {
   return false;
 }
 
-/**
- * Bulletproof interceptor for logout - catches ALL logout attempts.
- * 
- * Even if a page forgets data-logout="true", we still intercept forms posting to /auth/clear-cookie.
- * Ensures Supabase auth.signOut() is called before clearing cookies to prevent re-login race.
- * 
- * Listen for clicks on [data-logout] buttons AND form submits to /auth/clear-cookie.
- * Intercept and call Supabase signOut() FIRST, then clear cookies, then redirect.
- */
-(function setupDataLogoutInterceptor() {
-  const LOGOUT_PATH = '/auth/clear-cookie';
-  const CSL = '[logout]'; // console log tag
-
-  function getSB() {
-    return (window.sb && window.sb.auth && window.sb) ||
-           (window.supabase && window.supabase.auth && window.supabase) ||
-           (window.SB && window.SB.auth && window.SB) ||
-           null;
-  }
-
-  function getCsrf(el) {
-    try {
-      const form = el && el.closest && el.closest('form');
-      if (form) {
-        const hid = form.querySelector('input[name="_csrf"]');
-        if (hid && hid.value) return hid.value;
-      }
-      const meta = document.querySelector('meta[name="csrf-token"]');
-      if (meta) return meta.getAttribute('content');
-    } catch (_) {}
-    return undefined;
-  }
-
-  async function doLogout(triggerEl) {
-    // Mark intent so boot-time code won't re-set cookie
-    try { 
-      sessionStorage.setItem('justLoggedOut', '1'); 
-      localStorage.setItem('logout.ui.hold', '1');
-    } catch (_) {}
-    try { 
-      document.cookie = 'auth_logout=1; Path=/; Max-Age=10; SameSite=Lax'; 
-    } catch (_) {}
-
-    // Best-effort Supabase sign out FIRST (so there's no client session to re-hydrate)
-    try {
-      const sb = getSB();
-      if (sb && sb.auth && typeof sb.auth.signOut === 'function') {
-        console.debug(CSL, 'signOut()…');
-        await sb.auth.signOut(); // Removes local session + revokes refresh
-        console.debug(CSL, 'signOut completed');
-      } else {
-        console.debug(CSL, 'no sb client available');
-      }
-    } catch (e) {
-      console.warn(CSL, 'signOut error', e);
-    }
-
-    // Clear server cookies with CSRF token
-    const csrf = getCsrf(triggerEl);
-    try {
-      const res = await fetch(LOGOUT_PATH, {
-        method: 'POST',
-        headers: Object.assign(
-          { 'Accept': 'application/json', 'X-Requested-With': 'fetch' },
-          csrf ? { 'X-CSRF-Token': csrf } : {}
-        ),
-        credentials: 'include'
-      });
-      if (!res.ok && res.status !== 204) {
-        console.warn(CSL, 'clear-cookie failed', res.status);
-      } else {
-        console.debug(CSL, 'server cookie cleared');
-      }
-    } catch (e) {
-      console.warn(CSL, 'clear-cookie fetch error', e);
-    }
-
-    // Verify server sees us signed-out (with retry for race conditions)
-    try {
-      let status = await fetch('/api/auth/status', { 
-        credentials: 'include',
-        headers: { 'Accept': 'application/json' }
-      }).then(r => r.json()).catch(() => null);
-      
-      if (status?.authenticated) {
-        // One more attempt (race with proxy/cache)
-        console.debug(CSL, 'status still authenticated, retrying clear...');
-        await new Promise(r => setTimeout(r, 150));
-        await fetch(LOGOUT_PATH, {
-          method: 'POST',
-          credentials: 'include',
-          headers: Object.assign(
-            { 'Accept': 'application/json', 'X-Requested-With': 'fetch' },
-            csrf ? { 'X-CSRF-Token': csrf } : {}
-          )
-        });
-        status = await fetch('/api/auth/status', { 
-          credentials: 'include',
-          headers: { 'Accept': 'application/json' }
-        }).then(r => r.json()).catch(() => null);
-        
-        if (status?.authenticated) {
-          // Fallback: try clear-all variant
-          console.warn(CSL, 'status still authenticated after retry, trying clear-all...');
-          await fetch(`${LOGOUT_PATH}?all=1`, {
-            method: 'POST',
-            credentials: 'include',
-            headers: Object.assign(
-              { 'Accept': 'application/json', 'X-Requested-With': 'fetch' },
-              csrf ? { 'X-CSRF-Token': csrf } : {}
-            )
-          });
-        }
-      }
-    } catch (e) {
-      console.warn(CSL, 'status verification failed (non-fatal)', e);
-    }
-
-    // Set flash flag for modal on next page load
-    try { sessionStorage.setItem('logout.flash', '1'); } catch (_) {}
-
-    // Land on public home (server will 303 here too if we hit it by form)
-    window.location.replace('/');
-  }
-
-  function isLogoutButton(target) {
+function isLogoutButton(target) {
     if (!target) return false;
     const btn = target.closest && target.closest('button,[role="button"],a');
     const form = target.closest && target.closest('form');
@@ -509,18 +352,17 @@ function attachLogoutHandler(selector = '#logoutBtn') {
       if (action.endsWith(LOGOUT_PATH)) return true;
     }
     return false;
-  }
+}
 
-  // Capture both click and submit so we win races with native navigation
-  document.addEventListener('click', function (e) {
+// Capture both click and submit so native form navigation cannot interrupt cleanup.
+document.addEventListener('click', function (e) {
     if (!isLogoutButton(e.target)) return;
     e.preventDefault();
     e.stopPropagation();
-    console.debug(CSL, 'logout click intercepted');
-    doLogout(e.target);
-  }, true);
+    performLogout();
+}, true);
 
-  document.addEventListener('submit', function (e) {
+document.addEventListener('submit', function (e) {
     const form = e.target;
     if (!form) return;
     const action = (form.getAttribute && form.getAttribute('action')) || '';
@@ -528,10 +370,8 @@ function attachLogoutHandler(selector = '#logoutBtn') {
     if (!action.endsWith(LOGOUT_PATH) && !containsLogoutBtn) return;
     e.preventDefault();
     e.stopPropagation();
-    console.debug(CSL, 'logout form submit intercepted');
-    doLogout(form);
-  }, true);
-})();
+    performLogout();
+}, true);
 
 function initializeLogout() {
   logoutLogger.info('Initializing logout');

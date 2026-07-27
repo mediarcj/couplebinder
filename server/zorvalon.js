@@ -118,6 +118,13 @@ app.disable('x-powered-by');
 // Shutdown posture flags (used by readiness/guards if you add them later)
 app.locals.isShuttingDown = false;
 
+// Start privacy-safe total request timing before preflight, Redis, cookies, or auth.
+const { requestTiming } = require('./middleware/requestTiming');
+app.use(requestTiming({ logger }));
+
+const { registerStaticAssets } = require('./bootstrap/staticAssets');
+registerStaticAssets(app, { logger });
+
 // Initialize Redis status tracking
 app.locals.redisReady = false;
 app.locals.rateLimitStoreReady = false;
@@ -372,90 +379,15 @@ if (config?.server?.nodeEnv === 'production') {
   );
 }
 
-const PUBLIC_DIR_PRIMARY = path.resolve(__dirname, '../public');
-const PUBLIC_DIR_LEGACY = path.resolve(__dirname, 'public');
-
-logger.info(
-  { event: 'boot.static_paths', primary: PUBLIC_DIR_PRIMARY, legacy: PUBLIC_DIR_LEGACY },
-  'Static files configured'
-);
-
-function mountStatic(prefix, subdir, maxAge, immutable = false) {
-  const opts = { etag: true, maxAge, fallthrough: true };
-  if (immutable) opts.immutable = true;
-
-  app.use(prefix, express.static(path.join(PUBLIC_DIR_PRIMARY, subdir), opts));
-
-  // Legacy second; optional logging only if enabled
-  app.use(
-    prefix,
-    (req, res, next) => {
-      if (!toggles.logLegacyStaticHits) return next();
-
-      const fs = require('fs');
-      const filePath = req.path.replace(prefix, '');
-      const legacyPath = path.join(PUBLIC_DIR_LEGACY, subdir, filePath);
-      try {
-        if (fs.existsSync(legacyPath) && fs.statSync(legacyPath).isFile()) {
-          logger.info(
-            {
-              event: 'legacy.static_path_used',
-              url: req.url,
-              pathRoot: '/server/public',
-              subdir,
-            },
-            'Legacy static asset path served'
-          );
-        }
-      } catch {
-        // Static-path diagnostics must not prevent Express from trying the requested asset.
-      }
-      next();
-    },
-    express.static(path.join(PUBLIC_DIR_LEGACY, subdir), opts)
-  );
-}
-
-mountStatic('/images', 'images', '30d', true);
-mountStatic('/css', 'css', '7d');
-mountStatic('/js', 'js', '7d');
-
-app.use(express.static(PUBLIC_DIR_PRIMARY, { etag: true, maxAge: '7d', fallthrough: true }));
-
-app.use(
-  (req, res, next) => {
-    if (!toggles.logLegacyStaticHits) return next();
-
-    const fs = require('fs');
-    const legacyPath = path.join(PUBLIC_DIR_LEGACY, req.path);
-    try {
-      if (fs.existsSync(legacyPath) && fs.statSync(legacyPath).isFile()) {
-        logger.info(
-          { event: 'legacy.static_path_used', url: req.url, pathRoot: '/server/public' },
-          'Legacy static asset path served'
-        );
-      }
-    } catch {
-      // Static-path diagnostics must not prevent Express from trying the requested asset.
-    }
-    next();
-  },
-  express.static(PUBLIC_DIR_LEGACY, { etag: true, maxAge: '7d', fallthrough: true })
-);
-
-app.get('/favicon.ico', (req, res) => {
-  res.sendFile(path.resolve(__dirname, '../public/images/favicon.ico'));
-});
-
-app.get(['/images/*', '/css/*', '/js/*', '/robots.txt'], (req, res) => {
-  res.status(404).end();
-});
-
 consoleLogger.formatMiddlewareRegistration('View engine and static assets');
 
 // STEP 7: Routes Registration
 
 const { registerRoutes } = require('./bootstrap/routes');
+const { routeTiming } = require('./middleware/requestTiming');
+
+// Measure routing, page-model work, and rendering after shared middleware has completed.
+app.use(routeTiming);
 
 registerRoutes({
   app,

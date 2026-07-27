@@ -1,10 +1,10 @@
 /**
  * Description: Client-side JavaScript for user profile edit page
  * Purpose: Handles profile editing with read/edit mode toggle
- * Notes: Fetches canonical profile via /api/profile/me; respects CSRF; PII-safe logging
+ * Notes: Uses the escaped SSR profile model; respects CSRF; PII-safe logging
  */
 
-// main.js loads after this file, so early profile logs use the PII-safe fallback below.
+// Keep a PII-safe local logger because the protected shell deliberately has no general logger.
 // Use 'log' instead of 'logger' to avoid conflicts
 const log = (typeof window !== 'undefined' && window.logger) ? window.logger : {
   isDebugEnabled: () => localStorage.getItem('debugProfile') === '1',
@@ -18,7 +18,10 @@ const log = (typeof window !== 'undefined' && window.logger) ? window.logger : {
     if (typeof obj === 'object' && obj !== null) {
       const redacted = {};
       for (const [key, value] of Object.entries(obj)) {
-        if (['email', 'phone', 'token', 'password', 'auth'].some(pii => key.toLowerCase().includes(pii))) {
+        if (
+          ['email', 'phone', 'token', 'password', 'auth', 'body', 'url'].some(pii => key.toLowerCase().includes(pii)) ||
+          /(^|_)(user|profile|session|binder)?_?id$/i.test(key)
+        ) {
           redacted[key] = '[REDACTED]';
         } else if (typeof value === 'string') {
           redacted[key] = log.redact(value);
@@ -165,48 +168,30 @@ function backendFieldFor(fieldName, rawValue) {
  */
 document.addEventListener('DOMContentLoaded', () => {
   log.info('Profile edit page loaded');
-  loadUserProfile().then(() => {
-    attachEventHandlers();
-    // Initialize password, delete-account, and visibility toggles AFTER profile loads
-    initPasswordManager();
-    initDeleteAccountFlow();
-    initPasswordToggles();
-  });
-  log.info('Profile edit page initialized - logout handled by logout.js module');
+  userProfile = readProfileBootstrap();
+  attachEventHandlers();
+  initPasswordManager();
+  initDeleteAccountFlow();
+  initPasswordToggles();
+  if (userProfile) displayProfileData();
+  else showError('Profile data is unavailable. Please refresh the page.');
+  log.info('Profile edit page initialized');
 });
 
 // Profile loading and rendering
 
 /**
- * Load user profile data from server API (canonical view)
+ * Read the server-rendered canonical profile without an additional network request.
  */
-async function loadUserProfile() {
-  // Load the server's canonical profile instead of trusting values embedded in the page;
-  // this gives every editable field the same starting point.
-  // profile.js scopes /api/profile/me to req.user and profileService returns its canonical view.
+function readProfileBootstrap() {
   try {
-    const response = await fetch('/api/profile/me', {
-      method: 'GET',
-      credentials: 'include',
-      headers: { 'Content-Type': 'application/json' }
-    });
-
-    if (!response.ok) {
-      if (response.status === 401) throw new Error('Authentication required. Please login again.');
-      throw new Error(`Failed to load profile: ${response.status}`);
-    }
-
-    const result = await response.json();
-    // Keep one server-confirmed object as the source for read mode, edit defaults, and cancel.
-    if (!result.success) throw new Error(result.message || 'Failed to load profile');
-
-    userProfile = result.profile;
-    log.info('Profile data loaded', { user_id: userProfile?.id });
-
-    displayProfileData();
+    const element = document.getElementById('profile-bootstrap');
+    if (!element) return null;
+    const parsed = JSON.parse(element.textContent || '{}');
+    return parsed && typeof parsed === 'object' ? parsed : null;
   } catch (error) {
-    log.error('Failed to load user profile:', error);
-    showError('Failed to load profile data. Please refresh the page.');
+    log.error('Failed to parse server-rendered profile data', { error: error.message });
+    return null;
   }
 }
 
@@ -219,7 +204,7 @@ function displayProfileData() {
     log.warn('No user profile data available');
     return;
   }
-  log.info('Displaying profile data', { user_id: userProfile.id });
+  log.info('Displaying profile data');
   FIELD_ORDER.forEach((fn) => displayField(fn, profileValueFor(fn, userProfile)));
 }
 
@@ -569,7 +554,7 @@ function validateDisplayName(value, fieldName) {
 
 function validatePhone(value) {
   if (!value) return '';
-  const phoneRegex = /^[\d\-\+\(\)\s]+$/;
+  const phoneRegex = /^[\d+()\s-]+$/;
   if (!phoneRegex.test(value)) return 'Phone number contains invalid characters';
   if (value.length > 15) return 'Phone number must be 15 characters or less';
   return '';

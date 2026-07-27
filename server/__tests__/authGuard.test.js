@@ -150,7 +150,7 @@ describe('Auth Guard Utilities', () => {
       mockReq.user = { id: '', email: 'test@example.com' };
       
       expect(hasUser(mockReq)).toBe(false);
-      expect(getUserId(mockReq)).toBe('');
+      expect(getUserId(mockReq)).toBe(null);
       expect(getUserEmail(mockReq)).toBe('test@example.com');
       expect(() => assertUser(mockReq)).toThrow();
     });

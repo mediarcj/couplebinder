@@ -3,7 +3,12 @@
 // Notes: Tests both success and failure scenarios with rollback
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { updateProfileTransactional, reconcileProfileData } from '../services/profileSyncService';
+import {
+  updateProfileTransactional,
+  reconcileProfileData,
+  _setTestDependencies,
+  _resetTestDependencies
+} from '../services/profileSyncService';
 
 // Mock Supabase admin client
 const mockSupabaseAdmin = {
@@ -46,10 +51,12 @@ vi.mock('../utils/logger', () => mockLogger);
 describe('Profile Synchronization Service', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    _setTestDependencies({ adminClient: mockSupabaseAdmin, testLogger: mockLogger });
   });
 
   afterEach(() => {
     vi.resetAllMocks();
+    _resetTestDependencies();
   });
 
   describe('updateProfileTransactional', () => {
@@ -80,6 +87,14 @@ describe('Profile Synchronization Service', () => {
       });
       
       mockSupabaseAdmin.from.mockReturnValue({
+        select: vi.fn().mockReturnValue({
+          eq: vi.fn().mockReturnValue({
+            single: vi.fn().mockResolvedValue({
+              data: { user_id: userId, display_name_override: 'Old Name', phone: '+0987654321' },
+              error: null
+            })
+          })
+        }),
         update: vi.fn().mockReturnValue({
           eq: vi.fn().mockReturnValue({
             select: vi.fn().mockReturnValue({
@@ -156,6 +171,14 @@ describe('Profile Synchronization Service', () => {
       });
       
       mockSupabaseAdmin.from.mockReturnValue({
+        select: vi.fn().mockReturnValue({
+          eq: vi.fn().mockReturnValue({
+            single: vi.fn().mockResolvedValue({
+              data: { user_id: userId, display_name_override: 'Original Name', phone: '+0000000000' },
+              error: null
+            })
+          })
+        }),
         update: vi.fn().mockReturnValue({
           eq: vi.fn().mockReturnValue({
             select: vi.fn().mockReturnValue({
@@ -219,6 +242,14 @@ describe('Profile Synchronization Service', () => {
       });
       
       mockSupabaseAdmin.from.mockReturnValue({
+        select: vi.fn().mockReturnValue({
+          eq: vi.fn().mockReturnValue({
+            single: vi.fn().mockResolvedValue({
+              data: { user_id: userId, display_name_override: '', given_name: '', family_name: '' },
+              error: null
+            })
+          })
+        }),
         update: vi.fn().mockReturnValue({
           eq: vi.fn().mockReturnValue({
             select: vi.fn().mockReturnValue({
@@ -259,6 +290,14 @@ describe('Profile Synchronization Service', () => {
       });
       
       mockSupabaseAdmin.from.mockReturnValue({
+        select: vi.fn().mockReturnValue({
+          eq: vi.fn().mockReturnValue({
+            single: vi.fn().mockResolvedValue({
+              data: { user_id: userId, hobbies: [], music: [], fav_food: [] },
+              error: null
+            })
+          })
+        }),
         update: vi.fn().mockReturnValue({
           eq: vi.fn().mockReturnValue({
             select: vi.fn().mockReturnValue({
@@ -282,13 +321,13 @@ describe('Profile Synchronization Service', () => {
 
       // Mock profiles query
       const mockProfilesSelect = vi.fn().mockResolvedValue({
-        data: [{
+        data: {
           user_id: userId,
           display_name_override: 'Profile Name',
           phone: '+1111111111',
           given_name: 'Profile',
           family_name: 'Name'
-        }],
+        },
         error: null
       });
 
@@ -329,13 +368,13 @@ describe('Profile Synchronization Service', () => {
 
       // Mock profiles query
       const mockProfilesSelect = vi.fn().mockResolvedValue({
-        data: [{
+        data: {
           user_id: userId,
           display_name_override: 'Same Name',
           phone: '+1111111111',
           given_name: 'Same',
           family_name: 'Name'
-        }],
+        },
         error: null
       });
 

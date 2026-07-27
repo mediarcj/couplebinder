@@ -2,7 +2,8 @@
 // Purpose: Ensures auth.users and profiles table stay consistent with rollback capability
 // Notes: Implements saga pattern for distributed transaction safety
 
-const logger = require('../utils/logger');
+const defaultLogger = require('../utils/logger');
+let logger = defaultLogger;
 const { storeEvent } = require('./outboxService');
 
 /**
@@ -19,7 +20,8 @@ const { storeEvent } = require('./outboxService');
  * 5. Log all operations for audit trail
  */
 
-const { supabaseAdmin } = require('../utils/supabaseClient');
+const { supabaseAdmin: defaultSupabaseAdmin } = require('../utils/supabaseClient');
+let supabaseAdmin = defaultSupabaseAdmin;
 
 /**
  * Transactional profile update with rollback capability.
@@ -455,7 +457,19 @@ async function reconcileProfileData(userId = null) {
   }
 }
 
+function setTestDependencies({ adminClient, testLogger } = {}) {
+  if (adminClient !== undefined) supabaseAdmin = adminClient;
+  if (testLogger !== undefined) logger = testLogger;
+}
+
+function resetTestDependencies() {
+  supabaseAdmin = defaultSupabaseAdmin;
+  logger = defaultLogger;
+}
+
 module.exports = {
   updateProfileTransactional,
-  reconcileProfileData
+  reconcileProfileData,
+  _setTestDependencies: setTestDependencies,
+  _resetTestDependencies: resetTestDependencies
 };

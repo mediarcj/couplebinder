@@ -60,6 +60,10 @@ describe('Maintenance Guard', () => {
     // Create fresh Express app for each test
     app = express();
     app.use(express.json());
+    app.use((req, _res, next) => {
+      req.clientIp = req.get('X-Test-Client-IP') || '198.51.100.30';
+      next();
+    });
     
     // Import the middleware after mocking
     createMaintenanceGuard = require('../middleware/maintenanceGuard');
@@ -90,32 +94,24 @@ describe('Maintenance Guard', () => {
 
     it('blocks requests when maintenance mode is on', async () => {
       mockRedisClient.get.mockResolvedValue('on');
-      // ensure mock config provides allowedPaths that include the webhook
-      const { config } = require('../config');
-      config.maintenance.allowedPaths = [
-        '/health/liveness',
-        '/health/readiness',
-        '/health',
-        '/.well-known/acme-challenge/',
-        '/api/stripe/webhook'
-      ];      
       
       app.use(createMaintenanceGuard(mockRedisClient));
       app.get('/test', (req, res) => res.json({ success: true }));
       
       const response = await request(app)
         .get('/test')
+        .set('Accept', 'application/json')
         .expect(503);
       
       expect(response.headers['retry-after']).toBe('120');
       expect(response.body.error).toBe('maintenance_mode');
     });
 
-    it('uses environment fallback when Redis is unavailable', async () => {
+    it('uses the immutable configured fallback when Redis is unavailable', async () => {
       mockRedisClient.isReady = false;
       mockRedisClient.get.mockRejectedValue(new Error('Redis unavailable'));
       
-      // Set env fallback to 'on'
+      // Mutating process.env after config load must not change the frozen runtime policy.
       process.env.MAINTENANCE_DEFAULT = 'on';
       
       app.use(createMaintenanceGuard(mockRedisClient));
@@ -123,7 +119,7 @@ describe('Maintenance Guard', () => {
       
       await request(app)
         .get('/test')
-        .expect(503);
+        .expect(200);
       
       delete process.env.MAINTENANCE_DEFAULT;
     });
@@ -135,7 +131,7 @@ describe('Maintenance Guard', () => {
       app.use(createMaintenanceGuard(mockRedisClient));
       app.get('/health/liveness', (req, res) => res.json({ status: 'ok' }));
       app.get('/health/readiness', (req, res) => res.json({ status: 'ready' }));
-      app.get('/.well-known/acme-challenge/test', (req, res) => res.text('challenge'));
+      app.get('/.well-known/acme-challenge/test', (_req, res) => res.send('challenge'));
       app.post('/api/stripe/webhook', (req, res) => res.status(200).end());
     });
 
@@ -167,18 +163,18 @@ describe('Maintenance Guard', () => {
       app.get('/test', (req, res) => res.json({ success: true }));
     });
 
-    it('allows allowlisted IPs during maintenance', async () => {
+    it('does not trust a raw Cloudflare IP header', async () => {
       await request(app)
         .get('/test')
         .set('CF-Connecting-IP', '127.0.0.1')
-        .expect(200);
+        .expect(503);
     });
 
-    it('allows IPv6 allowlisted IPs during maintenance', async () => {
+    it('does not trust a raw IPv6 Cloudflare IP header', async () => {
       await request(app)
         .get('/test')
         .set('CF-Connecting-IP', '::1')
-        .expect(200);
+        .expect(503);
     });
 
     it('blocks non-allowlisted IPs during maintenance', async () => {
@@ -234,7 +230,7 @@ describe('Maintenance Guard', () => {
       app.get('/test', (req, res) => res.json({ success: true }));
     });
 
-    it('uses maintenance page file when available', async () => {
+    it('uses the safe fallback when the configured page is unavailable', async () => {
       const mockPageContent = '<html><body>Custom maintenance page</body></html>';
       mockFs.existsSync.mockReturnValue(true);
       mockFs.readFileSync.mockReturnValue(mockPageContent);
@@ -243,7 +239,7 @@ describe('Maintenance Guard', () => {
         .get('/test')
         .expect(503);
       
-      expect(response.text).toContain('Custom maintenance page');
+      expect(response.text).toContain('Maintenance Mode');
     });
 
     it('falls back to minimal HTML when page file missing', async () => {
@@ -254,7 +250,7 @@ describe('Maintenance Guard', () => {
         .expect(503);
       
       expect(response.text).toContain('Maintenance Mode');
-      expect(response.text).toContain('We\'ll be back soon');
+      expect(response.text).toContain('We will be back soon');
     });
   });
 
@@ -265,15 +261,18 @@ describe('Maintenance Guard', () => {
       
       app.use(createMaintenanceGuard(mockRedisClient));
       app.get('/test', (req, res) => res.json({ success: true }));
-      
-      // Should log error but allow request through
+
+      const logger = require('../utils/logger');
+      const debug = vi.spyOn(logger, 'debug').mockImplementation(() => {});
+
+      // The immutable configured fallback is off, so a Redis error remains available.
       await request(app)
         .get('/test')
         .expect(200);
-      
-      expect(mockLogger.error).toHaveBeenCalledWith(
+
+      expect(debug).toHaveBeenCalledWith(
         expect.objectContaining({
-          event: 'maintenance.guard_error'
+          event: 'maintenance.redis_check_failed'
         }),
         expect.any(String)
       );
@@ -283,16 +282,18 @@ describe('Maintenance Guard', () => {
   describe('Logging', () => {
     it('logs maintenance blocks', async () => {
       mockRedisClient.get.mockResolvedValue('on');
+      const logger = require('../utils/logger');
+      const info = vi.spyOn(logger, 'info').mockImplementation(() => {});
       
       app.use(createMaintenanceGuard(mockRedisClient));
       app.get('/test', (req, res) => res.json({ success: true }));
       
       await request(app)
         .get('/test')
-        .set('CF-Connecting-IP', '192.168.1.100')
+        .set('X-Test-Client-IP', '192.168.1.100')
         .expect(503);
       
-      expect(mockLogger.info).toHaveBeenCalledWith(
+      expect(info).toHaveBeenCalledWith(
         expect.objectContaining({
           event: 'maintenance.block',
           clientIp: '192.168.1.100',
@@ -303,7 +304,7 @@ describe('Maintenance Guard', () => {
       );
     });
 
-    it('logs allowlist passthrough at debug level', async () => {
+    it('ignores spoofed allowlist headers', async () => {
       mockRedisClient.get.mockResolvedValue('on');
       
       app.use(createMaintenanceGuard(mockRedisClient));
@@ -312,15 +313,7 @@ describe('Maintenance Guard', () => {
       await request(app)
         .get('/test')
         .set('CF-Connecting-IP', '127.0.0.1')
-        .expect(200);
-      
-      expect(mockLogger.debug).toHaveBeenCalledWith(
-        expect.objectContaining({
-          event: 'maintenance.allow_passthrough',
-          clientIp: '127.0.0.1'
-        }),
-        expect.any(String)
-      );
+        .expect(503);
     });
   });
 });

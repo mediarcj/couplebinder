@@ -22,8 +22,9 @@ describe('Redis Degrade Guard', () => {
     // Mock app.locals
     app.locals.redisReady = false;
     app.locals.rateLimitStoreReady = false;
-    
-    // Add test routes
+  });
+
+  function addTestRoutes() {
     app.get('/api/auth/login', (req, res) => res.json({ success: true }));
     app.get('/api/users/profile', (req, res) => res.json({ success: true }));
     app.get('/api/profile/me', (req, res) => res.json({ success: true }));
@@ -32,7 +33,7 @@ describe('Redis Degrade Guard', () => {
     app.get('/profile', (req, res) => res.json({ success: true }));
     app.get('/public', (req, res) => res.json({ success: true }));
     app.get('/health/liveness', (req, res) => res.json({ success: true }));
-  });
+  }
 
   afterEach(() => {
     vi.clearAllMocks();
@@ -42,6 +43,7 @@ describe('Redis Degrade Guard', () => {
     beforeEach(() => {
       app.locals.redisReady = false;
       app.use(degradeGuard);
+      addTestRoutes();
     });
 
     it('should block sensitive API paths with 503', async () => {
@@ -90,10 +92,11 @@ describe('Redis Degrade Guard', () => {
 
     it('should log blocked requests', async () => {
       const logger = require('../utils/logger');
+      const warn = vi.spyOn(logger, 'warn').mockImplementation(() => {});
       
       await request(app).get('/api/auth/login');
       
-      expect(logger.warn).toHaveBeenCalledWith(
+      expect(warn).toHaveBeenCalledWith(
         expect.objectContaining({
           event: 'degrade.blocked_sensitive_path',
           path: '/api/auth/login',
@@ -109,6 +112,7 @@ describe('Redis Degrade Guard', () => {
     beforeEach(() => {
       app.locals.redisReady = true;
       app.use(degradeGuard);
+      addTestRoutes();
     });
 
     it('should allow all paths', async () => {
@@ -133,6 +137,7 @@ describe('Redis Degrade Guard', () => {
     beforeEach(() => {
       app.locals.redisReady = false;
       app.use(degradeGuard);
+      addTestRoutes();
     });
 
     it('should detect API auth paths as sensitive', async () => {

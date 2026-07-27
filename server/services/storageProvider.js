@@ -95,11 +95,7 @@ function getS3() {
   if (provider !== 's3') return null;
 
   if (!s3Bucket) {
-    logger.warn(
-      { event: 'storage.s3.missing_bucket', provider },
-      '[storageProvider] S3 selected but bucket is not configured; falling back to local provider behavior'
-    );
-    return null;
+    throw new Error('S3 storage is selected but its bucket is not configured');
   }
 
   if (!s3Client) {
@@ -219,13 +215,16 @@ async function saveBinderPhoto({ userId, binderId, file }) {
         signedUrl
       };
     } catch (err) {
-      // Keep the multer temp file intact so the local fallback below can still use it.
       logger.error(
-        { event: 'storage.s3.upload_failed', bucket: s3Bucket, key, userId, binderId, error: err.message },
-        'Failed to upload binder photo to S3; using local provider behavior'
+        { event: 'storage.s3.upload_failed', bucket: s3Bucket, key, userId, binderId },
+        'Failed to upload binder photo to S3'
       );
-      // fall through to local behavior
+      throw new Error('Durable photo storage is temporarily unavailable', { cause: err });
     }
+  }
+
+  if (provider !== 'local') {
+    throw new Error(`Unsupported storage provider: ${provider}`);
   }
 
   // Local provider behavior

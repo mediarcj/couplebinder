@@ -8,6 +8,8 @@ const { buildCanonicalUser } = require('./helpers/buildCanonicalUser');
 const { getProfileByUserId } = require('../../services/profileService');
 const logger = require('../../utils/logger');
 const { buildAppInfo } = require('./helpers/buildAppInfo');
+const { startSpan } = require('../../middleware/requestTiming');
+const { getVerifiedAuth } = require('../../lib/verifiedAuth');
 
 /**
  * Build page model for dashboard page
@@ -27,6 +29,9 @@ async function buildDashboardPageModel(req, res) {
   const user = await buildCanonicalUser(req);
   const isAuthenticated = !!user?.id;
   const isAdmin = (user.roles || []).includes('admin') || false;
+  const endNavigation = startSpan(req, 'navigation');
+  const navigation = navManager.compose(req, res);
+  endNavigation();
 
   return {
     page: {
@@ -35,7 +40,7 @@ async function buildDashboardPageModel(req, res) {
       type: 'dashboard',
       nonce: res.locals.nonce || '',
       assetVersion: ASSET_VERSION,
-      nav: navManager.compose(req, res)
+      nav: navigation
     },
     user,
     ui_instructions: {
@@ -105,9 +110,7 @@ async function buildUserProfilePageModel(req, res, userId) {
   let viewed = null;
   try {
     // Extract user access token for RLS-compliant profile fetching
-    const userAccessToken = req.cookies?.['sb-access-token'] || 
-                           (req.headers.authorization?.startsWith('Bearer ') ? 
-                            req.headers.authorization.slice(7) : null);
+    const userAccessToken = getVerifiedAuth(req)?.token || null;
     viewed = await getProfileByUserId(userId, userAccessToken);
   } catch (e) { 
     logger.warn({
@@ -169,4 +172,3 @@ module.exports = {
   buildUserProfilePageModel, 
   buildSettingsPageModel 
 };
-

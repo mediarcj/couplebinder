@@ -162,8 +162,9 @@ function mountStripeWebhook(app) {
               currency,
               sessionId: fullSession?.id
             }, 'Missing required fields for payment persistence');
-            // Return 200 so Stripe stops retrying; nothing to persist yet
-            return res.status(200).send('[ok] skipped incomplete session');
+            // An authenticated but incomplete event may reflect a transient expansion or
+            // line-item failure. Return a retryable error instead of silently losing payment state.
+            return res.status(500).send('Unable to persist checkout session');
           }
 
           // Idempotent upsert in case Stripe retries or UI fallback already persisted

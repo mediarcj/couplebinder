@@ -15,7 +15,7 @@
  * 4. Return safe navigation model for templates
  */
 
-const { hasUser } = require('../../utils/authz');
+const { assertUser, hasUser } = require('../../utils/authz');
 
 // Safe module loader with fallback
 function safeLoad(modPath, fallback = {}) {
@@ -48,10 +48,11 @@ function featureEnabled(name) {
  * Check req.user.roles array for matching role.
  */
 function userHasRole(req, role) {
-  if (!req.user) return false;
+  if (!hasUser(req)) return false;
   if (!role) return true;
   const r = String(role).toLowerCase();
-  return Array.isArray(req.user.roles) ? req.user.roles.map(x => String(x).toLowerCase()).includes(r) : false;
+  const user = assertUser(req);
+  return Array.isArray(user.roles) ? user.roles.map(x => String(x).toLowerCase()).includes(r) : false;
 }
 
 /**
@@ -69,6 +70,7 @@ function userHasRole(req, role) {
 function compose(req, res) {
   const schema = require('./navSchema');
   const isAuthed = hasUser(req);
+  const authenticatedUser = isAuthed ? assertUser(req) : null;
 
   // Merge all relevant nav items based on auth state
   const buckets = [];
@@ -129,25 +131,25 @@ function compose(req, res) {
         : (typeof item.template !== 'undefined' && item.template !== null ? String(item.template) : '');
 
       // Robust display name resolver (prefer canonical display_name)
-      function pickDisplayName(req, res) {
+      function pickDisplayName(res) {
         return (
           res?.locals?.ui?.user?.display_name ||
           res?.locals?.user?.display_name ||
-          req.user?.user_metadata?.display_name ||
-          req.user?.user_metadata?.display_name_override ||
-          req.user?.display_name ||
-          req.user?.full_name ||
-          req.user?.name ||
-          req.user?.given_name ||
-          req.user?.email ||
+          authenticatedUser?.user_metadata?.display_name ||
+          authenticatedUser?.user_metadata?.display_name_override ||
+          authenticatedUser?.display_name ||
+          authenticatedUser?.full_name ||
+          authenticatedUser?.name ||
+          authenticatedUser?.given_name ||
+          authenticatedUser?.email ||
           'User'
         );
       }
 
       let label = labelSrc;
       if (item.id === 'welcome' && isAuthed) {
-        label = labelSrc.replace('{{given_name}}', pickDisplayName(req, res));
-        if (!label) label = `Welcome, ${pickDisplayName(req, res)}!`;
+        label = labelSrc.replace('{{given_name}}', pickDisplayName(res));
+        if (!label) label = `Welcome, ${pickDisplayName(res)}!`;
       }
 
       return {

@@ -7,6 +7,7 @@ const validateProfileUpdate = require('../middleware/validateProfileUpdate');
 const { createIdempotencyMiddleware } = require('../middleware/idempotency');
 const logger = require('../utils/logger');
 const { assertUser } = require('../utils/authz');
+const { getVerifiedAuth } = require('../lib/verifiedAuth');
 
 // GET /api/profile/me  -> return your own profile
 router.get('/me', async (req, res) => {
@@ -17,9 +18,7 @@ router.get('/me', async (req, res) => {
     const userId = user.id;
 
     // Extract user access token for RLS-compliant profile fetching
-    const userAccessToken = req.cookies?.['sb-access-token'] || 
-                           (req.headers.authorization?.startsWith('Bearer ') ? 
-                            req.headers.authorization.slice(7) : null);
+    const userAccessToken = getVerifiedAuth(req)?.token || null;
     const profile = await getProfileByUserId(userId, userAccessToken);
     if (!profile) return res.status(404).json({ success: false, message: 'Profile not found' });
 

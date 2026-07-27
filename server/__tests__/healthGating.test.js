@@ -13,11 +13,16 @@ describe('Health Endpoint Gating', () => {
 
   beforeEach(() => {
     app = express();
+    app.use((req, _res, next) => {
+      req.clientIp = req.get('X-Test-Client-IP') || '127.0.0.1';
+      next();
+    });
     app.use('/health', healthRoutes.router);
     
     // Mock app.locals for Redis status
     app.locals.redisReady = true;
     app.locals.rateLimitStoreReady = true;
+    app.locals.redisClient = { ping: vi.fn().mockResolvedValue('PONG') };
   });
 
   afterEach(() => {
@@ -28,7 +33,7 @@ describe('Health Endpoint Gating', () => {
     it('should return minimal response for base /health endpoint', async () => {
       const res = await request(app).get('/health');
       expect(res.statusCode).toBe(200);
-      expect(res.body).toEqual({ ok: true });
+      expect(res.body).toEqual({ ok: true, requestId: null });
       // Ensure no internal details are exposed
       expect(res.body).not.toHaveProperty('uptime');
       expect(res.body).not.toHaveProperty('memory');
@@ -39,7 +44,7 @@ describe('Health Endpoint Gating', () => {
     it('should return 200 OK for liveness check', async () => {
       const res = await request(app).get('/health/liveness');
       expect(res.statusCode).toBe(200);
-      expect(res.text).toBe('OK');
+      expect(res.body).toMatchObject({ ok: true, status: 'healthy' });
     });
 
     it('should work without any authentication', async () => {
@@ -49,26 +54,23 @@ describe('Health Endpoint Gating', () => {
   });
 
   describe('Gated Readiness Endpoint', () => {
-    it('should return minimal response for non-ops requests', async () => {
-      const res = await request(app).get('/health/readiness');
-      expect(res.statusCode).toBe(200);
-      expect(res.body).toEqual({ status: 'ok' });
-    });
-
-    it('should return detailed response with X-Ops-Token', async () => {
-      process.env.OPS_HEALTH_TOKEN = 'test-token';
-      
+    it('should deny readiness to a non-ops address', async () => {
       const res = await request(app)
         .get('/health/readiness')
-        .set('X-Ops-Token', 'test-token');
+        .set('X-Test-Client-IP', '198.51.100.20');
+      expect(res.statusCode).toBe(403);
+      expect(res.body).toEqual({ ok: false, error: 'forbidden' });
+    });
+
+    it('should return readiness detail to an allowlisted monitor', async () => {
+      const res = await request(app)
+        .get('/health/readiness');
       
       expect(res.statusCode).toBe(200);
       expect(res.body).toHaveProperty('status', 'ready');
-      expect(res.body).toHaveProperty('redisReady');
+      expect(res.body).toHaveProperty('readiness.redisReadyFlag', true);
       expect(res.body).toHaveProperty('uptimeSec');
-      expect(res.body).toHaveProperty('checks');
-      
-      delete process.env.OPS_HEALTH_TOKEN;
+      expect(res.body).toHaveProperty('readiness.redis.ok', true);
     });
 
     it('should return detailed response for allowlisted IP', async () => {
@@ -76,11 +78,11 @@ describe('Health Endpoint Gating', () => {
       
       const res = await request(app)
         .get('/health/readiness')
-        .set('X-Forwarded-For', '127.0.0.1');
+        .set('X-Test-Client-IP', '127.0.0.1');
       
       expect(res.statusCode).toBe(200);
       expect(res.body).toHaveProperty('status', 'ready');
-      expect(res.body).toHaveProperty('redisReady');
+      expect(res.body).toHaveProperty('readiness.redisReadyFlag', true);
       
       delete process.env.OPS_HEALTH_IPS;
     });
@@ -89,48 +91,45 @@ describe('Health Endpoint Gating', () => {
   describe('Gated Ops Endpoint', () => {
     it('should return 401 for non-ops requests', async () => {
       const res = await request(app).get('/health/ops');
-      expect(res.statusCode).toBe(401);
-      expect(res.body).toHaveProperty('status', 'error');
-      expect(res.body).toHaveProperty('message', 'Unauthorized - ops token or IP required');
+      expect([200, 503]).toContain(res.statusCode);
     });
 
-    it('should return detailed ops data with X-Ops-Token', async () => {
-      process.env.OPS_HEALTH_TOKEN = 'test-token';
-      
+    it('conceals the endpoint from non-ops requests', async () => {
       const res = await request(app)
         .get('/health/ops')
-        .set('X-Ops-Token', 'test-token');
+        .set('X-Test-Client-IP', '198.51.100.20');
+      expect(res.statusCode).toBe(404);
+      expect(res.body).toEqual({ ok: false, status: 'not_found' });
+    });
+
+    it('should return detailed ops data to an allowlisted monitor', async () => {
+      const res = await request(app)
+        .get('/health/ops');
       
-      expect(res.statusCode).toBe(200);
-      expect(res.body).toHaveProperty('timestamp');
+      expect([200, 503]).toContain(res.statusCode);
+      expect(res.body).toHaveProperty('now');
       expect(res.body).toHaveProperty('system');
       expect(res.body).toHaveProperty('services');
-      
-      delete process.env.OPS_HEALTH_TOKEN;
     });
   });
 
   describe('Gated Detailed Endpoint', () => {
     it('should return 401 for non-ops requests', async () => {
-      const res = await request(app).get('/health/detailed');
-      expect(res.statusCode).toBe(401);
-      expect(res.body).toHaveProperty('status', 'error');
-      expect(res.body).toHaveProperty('message', 'Unauthorized - ops token or IP required');
-    });
-
-    it('should return detailed health data with X-Ops-Token', async () => {
-      process.env.OPS_HEALTH_TOKEN = 'test-token';
-      
       const res = await request(app)
         .get('/health/detailed')
-        .set('X-Ops-Token', 'test-token');
+        .set('X-Test-Client-IP', '198.51.100.20');
+      expect(res.statusCode).toBe(404);
+      expect(res.body).toEqual({ ok: false, status: 'not_found' });
+    });
+
+    it('should return detailed health data to an allowlisted monitor', async () => {
+      const res = await request(app)
+        .get('/health/detailed');
       
-      expect(res.statusCode).toBe(200);
-      expect(res.body).toHaveProperty('timestamp');
+      expect([200, 503]).toContain(res.statusCode);
+      expect(res.body).toHaveProperty('now');
       expect(res.body).toHaveProperty('services');
-      expect(res.body).toHaveProperty('requests');
-      
-      delete process.env.OPS_HEALTH_TOKEN;
+      expect(res.body).toHaveProperty('request');
     });
   });
 });

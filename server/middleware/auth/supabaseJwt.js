@@ -109,7 +109,8 @@ if (!SUPABASE_ANON_KEY) {
 const JWKS = createRemoteJWKSet(
   new URL(JWKS_URL),
   {
-    cooldownDuration: 600_000
+    cooldownDuration: 600_000,
+    timeoutDuration: 3_000
   }
 );
 
@@ -234,6 +235,8 @@ function authRequired(req, res, next) {
 
   verifyToken(token)
     .then((payload) => {
+      // This verifier is the trust-boundary middleware that establishes req.user.
+      // eslint-disable-next-line no-restricted-syntax
       req.user = {
         id: payload.sub,
         email: payload.email || null,

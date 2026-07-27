@@ -5,9 +5,12 @@
 
 const crypto = require('crypto');
 const PDFDocument = require('pdfkit');
+const fs = require('fs/promises');
+const sharp = require('sharp');
 
 const logger = require('../utils/logger');
 const { supabaseAdmin } = require('../utils/supabaseClient');
+const { getUserId } = require('../utils/authz');
 const { validateCaptionServerSide } = require('../middleware/security');
 const { buildDashboardPageModel } = require('../ui_contract/presenters');
 const {
@@ -40,20 +43,31 @@ const ALLOWED_IMAGE_MIME_TYPES = new Set([
 
 const ALLOWED_IMAGE_EXTENSIONS = /\.(jpe?g|png|webp|heic|heif|avif)$/i;
 
-function isAllowedImageUpload(file) {
-  // Upload metadata varies by browser and device, especially for HEIC images. Accept a
-  // supported MIME type or filename extension, then let storage/rendering handle the file.
+async function isAllowedImageUpload(file) {
   if (!file) return false;
   const mimeOk = file.mimetype && ALLOWED_IMAGE_MIME_TYPES.has(file.mimetype);
   const name = file.originalname || '';
   const extOk = ALLOWED_IMAGE_EXTENSIONS.test(name);
-  // Accept if either MIME or extension says "image we support"
-  return mimeOk || extOk;
+  if (!mimeOk || !extOk || !file.path) return false;
+
+  try {
+    const metadata = await sharp(file.path, { failOn: 'error' }).metadata();
+    return ['jpeg', 'png', 'webp', 'heif', 'avif'].includes(metadata.format);
+  } catch {
+    return false;
+  }
+}
+
+async function removeTemporaryFiles(files) {
+  await Promise.allSettled(
+    (files || [])
+      .filter((file) => file?.path)
+      .map((file) => fs.unlink(file.path))
+  );
 }
 
 function getUserIdFromReq(req) {
-  // Authentication middleware may expose either Supabase's id or the older uid alias.
-  return (req.user && (req.user.id || req.user.uid)) || null;
+  return getUserId(req);
 }
 
 /**
@@ -514,8 +528,16 @@ async function addPhotos(req, res, next) {
   // gives the editor stable database/storage references for its new photo layers.
   const binderIdParam = String(req.params.binderId || '');
 
+  const storedKeys = [];
+  let completed = false;
+  let contextClient = null;
+  let contextUserId = null;
+  let resolvedBinderId = null;
+
   try {
     const { userId, client } = getContext(req);
+    contextClient = client;
+    contextUserId = userId;
 
     // binderRoutes/multer has parsed files by this point; the controller still needs storage.
     if (!storageProvider || typeof storageProvider.saveBinderPhoto !== 'function') {
@@ -529,8 +551,10 @@ async function addPhotos(req, res, next) {
     if (!allFiles.length) return res.status(400).json({ ok: false, error: 'No files uploaded' });
 
     // Repeat format validation server-side because browser accept filters can be bypassed.
-    const safeFiles = allFiles.filter(isAllowedImageUpload);
-    if (!safeFiles.length) {
+    const validation = await Promise.all(allFiles.map(isAllowedImageUpload));
+    const safeFiles = allFiles.filter((_file, index) => validation[index]);
+    if (safeFiles.length !== allFiles.length) {
+      await removeTemporaryFiles(allFiles);
       return res.status(400).json({
         ok: false,
         error: 'Only image files (JPG, PNG, HEIC, WEBP, AVIF) are allowed.'
@@ -544,6 +568,7 @@ async function addPhotos(req, res, next) {
       binderIdParam,
       createIfMissing: true
     });
+    resolvedBinderId = binderUuid;
 
     const uploaded = [];
 
@@ -554,6 +579,7 @@ async function addPhotos(req, res, next) {
         binderId: binderUuid, // IMPORTANT: store under real binder UUID
         file
       });
+      storedKeys.push(storageResult.storageKey);
 
       const { data: photoRows, error: photoErr } = await client
         // This owned row is what later view, caption, export, and delete routes authorize against.
@@ -602,6 +628,7 @@ async function addPhotos(req, res, next) {
       });
     }
 
+    completed = true;
     return res.json({
       // App keeps the route-facing ID while database work continues with binderUuid.
       ok: true,
@@ -618,6 +645,33 @@ async function addPhotos(req, res, next) {
       photos: uploaded
     });
   } catch (err) {
+    let metadataCompensated = true;
+    if (storedKeys.length && contextClient && contextUserId && resolvedBinderId) {
+      try {
+        const { error: cleanupError } = await contextClient
+          .from('binder_photos')
+          .delete()
+          .eq('user_id', contextUserId)
+          .eq('binder_id', resolvedBinderId)
+          .in('storage_key', storedKeys);
+        if (cleanupError) throw cleanupError;
+      } catch {
+        metadataCompensated = false;
+        logger.error(
+          { event: 'binder.photo_batch_compensation_failed' },
+          'Could not compensate photo metadata after an upload batch failure'
+        );
+      }
+    }
+
+    // Do not delete objects when metadata compensation failed: retaining an object is safer
+    // than leaving an owned database row that points at missing bytes.
+    if (metadataCompensated) {
+      await Promise.allSettled(
+        storedKeys.map((storageKey) => storageProvider?.deleteBinderPhoto?.(storageKey))
+      );
+    }
+    await removeTemporaryFiles(req.files);
     logger.error(
       {
         event: 'binder.add_photos_failed',
@@ -629,6 +683,12 @@ async function addPhotos(req, res, next) {
       'Binder addPhotos handler failed'
     );
     return next(err);
+  } finally {
+    if (completed) {
+      const storedSet = new Set(storedKeys);
+      const temporaryOnly = (req.files || []).filter((file) => !storedSet.has(file.path));
+      await removeTemporaryFiles(temporaryOnly);
+    }
   }
 }
 

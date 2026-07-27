@@ -32,7 +32,7 @@
   <link rel="stylesheet" href="/binder-editor/binder-editor.css?v=<%= (page && page.assetVersion) || assetVersion || '' %>">
 </head>
 
-<body data-auth-hydrate="true">
+<body data-auth-hydrate="ssr-authenticated">
   <%- include('../partials/nav', { nav: (page && page.nav) ? page.nav : null, app_info: app_info }) %>
 
   <main class="dashboard-root">
@@ -146,9 +146,9 @@
   nonce="<%= cspNonce %>"
 ></script>
   <script src="/js/sbClient.js?v=<%= (page && page.assetVersion) || assetVersion || '' %>" nonce="<%= cspNonce %>"></script>
-  <script src="/js/logout.js?v=<%= (page && page.assetVersion) || assetVersion || '' %>" nonce="<%= cspNonce %>"></script>
   <script src="/js/modalManager.js?v=<%= (page && page.assetVersion) || assetVersion || '' %>" nonce="<%= cspNonce %>"></script>
   <script src="/js/nav-client.js?v=<%= (page && page.assetVersion) || assetVersion || '' %>" nonce="<%= cspNonce %>"></script>
+  <script src="/js/protected-shell.js?v=<%= (page && page.assetVersion) || assetVersion || '' %>" nonce="<%= cspNonce %>"></script>
 
   <!-- Binder editor React app bundle (nonce-protected) -->
   <script

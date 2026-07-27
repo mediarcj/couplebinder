@@ -96,11 +96,10 @@ describe('validateProfileUpdate', () => {
       expect(r.body.details).toContain('is_private has invalid type');
     });
 
-    test('rejects invalid is_private=undefined', async () => {
+    test('treats JSON is_private=undefined as an omitted field', async () => {
       const r = await request(app).put('/api/profile/me').send({ is_private: undefined });
-      expect(r.status).toBe(400);
-      expect(r.body.error).toBe('validation_failed');
-      expect(r.body.details).toContain('is_private has invalid type');
+      expect(r.status).toBe(200);
+      expect(r.body.patch).not.toHaveProperty('is_private');
     });
   });
 
@@ -160,7 +159,6 @@ describe('validateProfileUpdate', () => {
 
     test('rejects if any field is invalid', async () => {
       const r = await request(app).put('/api/profile/me').send({ 
-        is_private: true,
         profile_title: 'Test Title',
         is_private: 'invalid' // This should cause rejection
       });

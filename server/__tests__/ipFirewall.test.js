@@ -3,7 +3,14 @@
 // Notes: Tests Redis integration and graceful fallback behavior
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { ipFirewall, blockIp, unblockIp, isBlocked } from '../middleware/ipFirewall';
+import {
+  ipFirewall,
+  blockIp,
+  unblockIp,
+  isBlocked,
+  _setTestDependencies,
+  _resetTestDependencies
+} from '../middleware/ipFirewall';
 
 // Mock Redis client
 const mockRedis = {
@@ -36,10 +43,12 @@ vi.mock('../utils/logger', () => mockLogger);
 describe('IP Firewall Middleware', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    _setTestDependencies({ redisClient: mockRedis, testLogger: mockLogger });
   });
 
   afterEach(() => {
     vi.resetAllMocks();
+    _resetTestDependencies();
   });
 
   describe('isBlocked', () => {
@@ -179,8 +188,8 @@ describe('IP Firewall Middleware', () => {
 
     beforeEach(() => {
       req = {
-        clientIp: '192.168.1.100',
-        ip: '192.168.1.100',
+        clientIp: '198.51.100.10',
+        ip: '198.51.100.10',
         originalUrl: '/api/test',
         method: 'POST',
         requestId: 'test-request-123'
@@ -210,12 +219,12 @@ describe('IP Firewall Middleware', () => {
       expect(mockLogger.warn).toHaveBeenCalledWith(
         expect.objectContaining({
           event: 'ip_firewall.blocked_attempt',
-          ip: '192.168.1.100',
+          ip: '198.51.100.10',
           path: '/api/test',
           method: 'POST',
           requestId: 'test-request-123'
         }),
-        'Blocked IP attempted access'
+        expect.any(String)
       );
     });
 
@@ -241,19 +250,20 @@ describe('IP Firewall Middleware', () => {
       expect(mockRedis.exists).not.toHaveBeenCalled();
     });
 
-    it('should continue on Redis errors (fail open)', async () => {
+    it('should fail closed on Redis errors for sensitive requests', async () => {
       mockRedis.exists.mockRejectedValue(new Error('Redis connection failed'));
 
       const middleware = ipFirewall();
       await middleware(req, res, next);
 
-      expect(next).toHaveBeenCalled();
-      expect(mockLogger.error).toHaveBeenCalledWith(
+      expect(next).not.toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(503);
+      expect(mockLogger.warn).toHaveBeenCalledWith(
         expect.objectContaining({
-          event: 'ip_firewall.middleware_error',
-          ip: '192.168.1.100'
+          event: 'ip_firewall.redis_error',
+          ip: '198.51.100.10'
         }),
-        'IP firewall middleware error'
+        expect.any(String)
       );
     });
 
@@ -264,7 +274,7 @@ describe('IP Firewall Middleware', () => {
       const middleware = ipFirewall();
       await middleware(req, res, next);
 
-      expect(mockRedis.exists).toHaveBeenCalledWith('ip:block:192.168.1.100');
+      expect(mockRedis.exists).toHaveBeenCalledWith('ip:block:198.51.100.10');
       expect(next).toHaveBeenCalled();
     });
   });

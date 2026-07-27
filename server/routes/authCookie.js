@@ -23,6 +23,8 @@ const { config } = require('../config');
 const { setAuthCookie, clearAuthCookie, AUTH_COOKIE_NAME } = require('../lib/authCookie');
 const { getLastLogoutAt, setLastLogoutNow } = require('../lib/logoutWatermark');
 const { verifyTurnstileRequest } = require('../lib/turnstile');
+const { getVerifiedAuth } = require('../lib/verifiedAuth');
+const { hasUser } = require('../utils/authz');
 
 // Configuration
 const COOKIE_NAME = AUTH_COOKIE_NAME; // canonical name for this process
@@ -101,8 +103,9 @@ router.post('/set-cookie', async (req, res) => {
     // Fast-path: already has authenticated session and canonical cookie -> no-op
     try {
       const hasCanonicalCookie = !!(req.cookies && req.cookies[COOKIE_NAME]);
-      const hasUser = !!req.user;
-      if (hasUser && hasCanonicalCookie) {
+      const requestHasUser = hasUser(req);
+      const hasBearer = /^Bearer\s+/i.test(req.get('authorization') || '');
+      if (requestHasUser && hasCanonicalCookie && !hasBearer) {
         logger.info(
           { event: 'auth.set_cookie.skip', reason: 'already_authenticated', requestId: req.requestId },
           'Set-cookie skipped: request already has authenticated session'
@@ -144,7 +147,10 @@ router.post('/set-cookie', async (req, res) => {
     // Verify token (signature, issuer, audience, exp, etc.)
     let payload;
     try {
-      payload = await verifyToken(token);
+      const verified = getVerifiedAuth(req);
+      payload = verified?.source === 'bearer' && verified.token === token
+        ? verified.payload
+        : await verifyToken(token);
     } catch (verifyError) {
       // Only record a failed attempt if we have a real identity hint.
       // Never use an 'ip-only' bucket for this route.
@@ -276,11 +282,8 @@ router.post('/clear-cookie', async (req, res) => {
     // Capture uid from existing auth cookie BEFORE clearing it
     let uidFromCookie = null;
     try {
-      const raw = req.cookies?.[AUTH_COOKIE_NAME] || null;
-      if (raw) {
-        const payload = await verifyToken(raw).catch(() => null);
-        uidFromCookie = payload?.sub || null;
-      }
+      const verified = getVerifiedAuth(req);
+      if (verified?.source === 'cookie') uidFromCookie = verified.payload?.sub || null;
     } catch {
       // An unreadable old token prevents watermarking, but cookie clearing must still run.
     }

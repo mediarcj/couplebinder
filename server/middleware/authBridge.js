@@ -28,6 +28,8 @@ const {
 
 const { config } = require('../config');
 const logger = require('../utils/logger');
+const { timeAsync } = require('./requestTiming');
+const { setVerifiedAuth } = require('../lib/verifiedAuth');
 
 // JWT configuration
 const JWKS_URL = (
@@ -89,7 +91,8 @@ if (unsupportedAlgorithms.length) {
 const JWKS = createRemoteJWKSet(
   new URL(JWKS_URL),
   {
-    cooldownDuration: 600_000
+    cooldownDuration: 600_000,
+    timeoutDuration: 3_000
   }
 );
 
@@ -433,19 +436,23 @@ module.exports = async function authBridge(
     // - Clock tolerance
     const {
       payload
-    } = await jwtVerify(
-      token,
-      JWKS,
-      {
-        algorithms:
-          ALLOWED_ALGORITHMS,
-        issuer:
-          EXPECTED_ISSUER,
-        audience:
-          EXPECTED_AUDIENCE,
-        clockTolerance:
-          CLOCK_SKEW_SEC
-      }
+    } = await timeAsync(
+      req,
+      'jwt',
+      () => jwtVerify(
+        token,
+        JWKS,
+        {
+          algorithms:
+            ALLOWED_ALGORITHMS,
+          issuer:
+            EXPECTED_ISSUER,
+          audience:
+            EXPECTED_AUDIENCE,
+          clockTolerance:
+            CLOCK_SKEW_SEC
+        }
+      )
     );
 
     // Supabase user JWTs must contain sub.
@@ -463,6 +470,16 @@ module.exports = async function authBridge(
     }
 
     // Step 5: Attach only verified identity claims.
+    const trustedRoles = Array.from(new Set(
+      [
+        ...(Array.isArray(payload.app_metadata?.roles) ? payload.app_metadata.roles : []),
+        payload.app_metadata?.role,
+        payload.user_role,
+      ]
+        .filter(Boolean)
+        .map((role) => String(role).toLowerCase())
+    ));
+
     req.user = {
       id: payload.sub,
       email:
@@ -474,8 +491,10 @@ module.exports = async function authBridge(
       app_metadata:
         payload.app_metadata || {},
       user_metadata:
-        payload.user_metadata || {}
+        payload.user_metadata || {},
+      roles: trustedRoles
     };
+    setVerifiedAuth(req, { token, payload, source });
 
     if (config.auth.debug) {
       logger.debug(

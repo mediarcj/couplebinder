@@ -45,7 +45,7 @@ Usage: Copy this file, rename it, and connect to a matching route and presenter.
   </script>
 </head>
 
-<body data-auth-hydrate="true">
+<body data-auth-hydrate="ssr-authenticated">
   <%- include('partials/nav', { nav: page.nav, app_info: app_info }) %>
 
   <main>
@@ -193,12 +193,11 @@ Usage: Copy this file, rename it, and connect to a matching route and presenter.
   nonce="<%= cspNonce %>"
 ></script>
   <script src="/js/sbClient.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= cspNonce %>"></script>
-  <script src="/js/logout.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= cspNonce %>"></script>
   <script src="/js/modalManager.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= cspNonce %>"></script>
   <script src="/js/nav-client.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= cspNonce %>"></script>
   
   <!-- Page-specific scripts -->
   <script src="/js/_template-protected.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= cspNonce %>"></script>
-  <script src="/js/main.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= cspNonce %>"></script>
+  <script src="/js/protected-shell.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= cspNonce %>"></script>
 </body>
 </html>

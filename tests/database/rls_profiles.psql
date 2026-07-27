@@ -1,0 +1,171 @@
+-- Purpose: Orchestrate the defective, hybrid, and approved synthetic RLS tests.
+-- Data: Synthetic rows and transaction-local caller context only.
+-- Scope: Test-only; this is not a production migration.
+-- Security assertion: Non-owner browser roles exercise RLS and all test state is removed.
+
+\set ON_ERROR_STOP on
+\set QUIET on
+
+\echo Phase: transaction-and-lock
+
+begin;
+
+set local client_min_messages = warning;
+set local lock_timeout = '3s';
+set local statement_timeout = '20s';
+set local idle_in_transaction_session_timeout = '30s';
+
+select pg_advisory_xact_lock(hashtext('couplebinder_phase1_rls_test_foundation'))
+\g /dev/null
+
+drop schema if exists cb_target_graph cascade;
+drop schema if exists cb_hybrid_graph cascade;
+drop schema if exists cb_hybrid_auth cascade;
+drop schema if exists cb_old_graph cascade;
+drop schema if exists cb_rls_test cascade;
+
+do $cleanup_roles$
+declare
+  role_name text;
+begin
+  foreach role_name in array array[
+    'cb_rls_anon',
+    'cb_rls_authenticated',
+    'cb_rls_service'
+  ]
+  loop
+    if exists (select 1 from pg_roles where rolname = role_name) then
+      execute format('drop owned by %I', role_name);
+      execute format('drop role %I', role_name);
+    end if;
+  end loop;
+end
+$cleanup_roles$;
+
+-- Browser-equivalent roles cannot own objects, bypass RLS, or inherit setup power.
+create role cb_rls_anon
+  nologin nosuperuser nocreatedb nocreaterole noinherit nobypassrls;
+create role cb_rls_authenticated
+  nologin nosuperuser nocreatedb nocreaterole noinherit nobypassrls;
+
+-- The service-equivalent role is separate but still uses explicit target policies.
+create role cb_rls_service
+  nologin nosuperuser nocreatedb nocreaterole noinherit nobypassrls;
+
+create schema cb_rls_test;
+
+create function cb_rls_test.assert_true(
+  condition boolean,
+  label text
+)
+returns void
+language plpgsql
+security invoker
+set search_path = pg_catalog
+as $function$
+begin
+  if condition is distinct from true then
+    raise exception using
+      errcode = 'P0001',
+      message = 'assertion failed: ' || label;
+  end if;
+end
+$function$;
+
+create function cb_rls_test.assert_count(
+  command text,
+  expected_count bigint,
+  label text
+)
+returns void
+language plpgsql
+security invoker
+set search_path = pg_catalog
+as $function$
+declare
+  actual_count bigint;
+begin
+  execute 'select count(*) from (' || command || ') as checked_rows'
+    into actual_count;
+
+  if actual_count <> expected_count then
+    raise exception using
+      errcode = 'P0001',
+      message = 'row-count assertion failed: ' || label;
+  end if;
+end
+$function$;
+
+create function cb_rls_test.assert_sqlstate(
+  expected_state text,
+  command text,
+  label text
+)
+returns void
+language plpgsql
+security invoker
+set search_path = pg_catalog
+as $function$
+declare
+  actual_state text;
+begin
+  begin
+    execute command;
+    raise exception using
+      errcode = 'P0001',
+      message = 'statement unexpectedly succeeded: ' || label;
+  exception
+    when others then
+      get stacked diagnostics actual_state = returned_sqlstate;
+      if actual_state <> expected_state then
+        raise exception using
+          errcode = 'P0001',
+          message = 'unexpected SQLSTATE for: ' || label;
+      end if;
+  end;
+end
+$function$;
+
+create function cb_rls_test.set_context(
+  subject text,
+  signed_claims jsonb default '{}'::jsonb,
+  browser_metadata jsonb default '{}'::jsonb
+)
+returns void
+language plpgsql
+security invoker
+set search_path = pg_catalog
+as $function$
+begin
+  perform set_config('request.jwt.claim.sub', coalesce(subject, ''), true);
+  perform set_config('request.jwt.claims', coalesce(signed_claims, '{}'::jsonb)::text, true);
+  perform set_config('request.jwt.claim.user_metadata', coalesce(browser_metadata, '{}'::jsonb)::text, true);
+end
+$function$;
+
+grant usage on schema cb_rls_test
+  to cb_rls_anon, cb_rls_authenticated, cb_rls_service;
+grant execute on all functions in schema cb_rls_test
+  to cb_rls_anon, cb_rls_authenticated, cb_rls_service;
+
+\echo Phase: old-recursive-graph-setup
+\ir fixtures/old_recursive_graph.sql
+
+\echo Phase: hybrid-graph-setup
+\ir fixtures/deployed_hybrid_graph.sql
+
+\echo Phase: approved-target-setup
+\ir fixtures/approved_target_graph.sql
+
+\echo Phase: catalog-assertions
+\ir assertions/catalog_assertions.sql
+
+\echo Phase: access-matrix
+\ir assertions/access_matrix.sql
+
+\echo Phase: cleanup
+\ir assertions/cleanup_assertions.sql
+
+commit;
+
+\echo Phase: pass

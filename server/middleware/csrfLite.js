@@ -9,7 +9,7 @@
  *
  * - Issues a CSRF cookie on idempotent requests (GET/HEAD/OPTIONS).
  * - Enforces token match on POST/PUT/PATCH/DELETE when cookies are present.
- * - Skips CSRF if Authorization: Bearer is used (pure API clients) or for auth cookie endpoints.
+ * - Skips CSRF for validated Bearer flows and the Bearer-authenticated cookie-set endpoint.
  * - Uses timing-safe compare to prevent subtle timing attacks.
  * - Configurable via environment variables for flexibility.
  */
@@ -17,6 +17,7 @@
 const crypto = require('crypto');
 const logger = require('../utils/logger');
 const { config } = require('../config');
+const { getVerifiedAuth } = require('../lib/verifiedAuth');
 
 // Configuration (from centralized config)
 const CSRF_COOKIE_NAME = config.csrf.cookieName;
@@ -27,9 +28,8 @@ const IS_PROD = config.server?.nodeEnv === 'production';
 // Helper Functions
 const SAFE = new Set(['GET', 'HEAD', 'OPTIONS']);
 
-function hasBearerToken(req) {
-  const authz = req.headers.authorization || '';
-  return /^Bearer\s+/i.test(authz);
+function hasVerifiedBearer(req) {
+  return getVerifiedAuth(req)?.source === 'bearer';
 }
 
 function usesCookies(req) {
@@ -96,20 +96,13 @@ function timingSafeEqual(a, b) {
 }
 
 function isAuthCookieEndpoint(req) {
-  // These endpoints authenticate with Bearer, then set/clear cookies server-side
-  return req.path === '/auth/set-cookie' || req.path === '/auth/clear-cookie';
+  return req.path === '/auth/set-cookie';
 }
 
 function isWebhookEndpoint(req) {
   // Webhook endpoints are CSRF-exempt (they use HMAC verification instead)
   // Stripe webhook is mounted at /api/stripe/webhook before body parsers and CSRF
   return req.path === '/api/stripe/webhook' || req.path.startsWith('/api/stripe/webhook');
-}
-
-function wantsJson(req) {
-  const acc = req.get('accept') || '';
-  const ct  = req.get('content-type') || '';
-  return req.path.startsWith('/api/') || acc.includes('application/json') || ct.includes('application/json');
 }
 
 // Main Middleware
@@ -142,9 +135,9 @@ module.exports = function csrfLite(req, res, next) {
     // 2) Non-idempotent: mutation request
     // Skip CSRF if:
     //   - Bearer token present (pure API client), or
-    //   - This is an auth-cookie endpoint (set/clear happens after JWT verify), or
+    //   - This is the Bearer-authenticated set-cookie endpoint, or
     //   - This is a webhook endpoint (uses HMAC verification instead)
-    if (hasBearerToken(req) || isAuthCookieEndpoint(req) || isWebhookEndpoint(req)) {
+    if (hasVerifiedBearer(req) || isAuthCookieEndpoint(req) || isWebhookEndpoint(req)) {
       return next();
     }
 
@@ -197,9 +190,6 @@ module.exports = function csrfLite(req, res, next) {
     }
 
     if (!timingSafeEqual(cookieVal, providedVal)) {
-      // Debug: Log first/last few chars to help diagnose without exposing full token
-      const cookiePreview = cookieVal ? `${cookieVal.substring(0, 4)}...${cookieVal.substring(cookieVal.length - 4)}` : 'null';
-      const providedPreview = providedVal ? `${providedVal.substring(0, 4)}...${providedVal.substring(providedVal.length - 4)}` : 'null';
       logger.warn({
         event: 'csrf.token_mismatch',
         method: req.method,
@@ -207,9 +197,6 @@ module.exports = function csrfLite(req, res, next) {
         contentType: req.get('content-type'),
         cookieLength: cookieVal?.length || 0,
         providedLength: providedVal?.length || 0,
-        cookiePreview,
-        providedPreview,
-        cookieName: CSRF_COOKIE_NAME,
         requestId: req.requestId
       }, 'CSRF token mismatch');
       return res.status(403).json({ ok: false, error: 'Missing or invalid CSRF token' });

@@ -25,26 +25,23 @@ const REDACT_PATTERNS = [
   // Supabase access tokens
   /(sb-access-token=[^;]+)/g,
   // Generic tokens and secrets
-  /password/i,
-  /secret/i,
-  /token/i,
-  /key/i,
-  /auth/i,
-  /session/i,
-  /cookie/i,
-  /bearer/i,
-  /authorization/i,
-  /x-csrf-token/i,
-  /_csrf/i,
-  /csrf-token/i,
+  /\bpassword\b/gi,
+  /\bsecret\b/gi,
+  /\btoken\b/gi,
+  /\bkey\b/gi,
+  /\bauth\b/gi,
+  /\bsession\b/gi,
+  /\bcookie\b/gi,
+  /\bbearer\b/gi,
+  /\bauthorization\b/gi,
+  /\bx-csrf-token\b/gi,
+  /\b_csrf\b/gi,
+  /\bcsrf-token\b/gi,
   // Stripe secrets (defense-in-depth for message strings)
   /(sk_(live|test)_[A-Za-z0-9]+)/gi,
   /(pk_(live|test)_[A-Za-z0-9]+)/gi,
   /(whsec_[A-Za-z0-9]+)/gi
 ];
-
-// Legacy patterns for backward compatibility
-const SENSITIVE_PATTERNS = REDACT_PATTERNS;
 
 // Control characters that could be used for log injection
 const CONTROL_CHARS = /[\x00-\x1F\x7F-\x9F]/g;
@@ -87,9 +84,35 @@ function isSensitiveKey(key) {
     keyLower.includes('bearer') ||
     keyLower.includes('authorization') ||
     keyLower.includes('csrf') ||
+    keyLower === 'userid' ||
+    keyLower.endsWith('_user_id') ||
+    keyLower === 'uid' ||
+    ((keyLower.endsWith('id') || keyLower.endsWith('ids')) && keyLower !== 'requestid') ||
+    keyLower === 'ip' ||
+    keyLower.endsWith('ip') ||
+    keyLower.includes('storagekey') ||
+    keyLower === 'url' ||
+    keyLower.endsWith('_url') ||
+    keyLower === 'query' ||
+    keyLower === 'error' ||
+    keyLower.endsWith('error') ||
+    keyLower === 'stack' ||
+    keyLower === 'cause' ||
+    keyLower === 'message' ||
     // Redact plain emails that appear as meta fields
     keyLower === 'email' || keyLower.endsWith('_email')
   );
+}
+
+function sanitizePathForLog(value) {
+  if (typeof value !== 'string') return '[REDACTED]';
+  const pathname = (value.split(/[?#]/, 1)[0] || '/').replace(CONTROL_CHARS, '');
+  return pathname
+    .replace(
+      /\/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}(?=\/|$)/gi,
+      '/[REDACTED]'
+    )
+    .replace(/\/[A-Za-z0-9_-]{24,}(?=\/|$)/g, '/[REDACTED]');
 }
 
 /**
@@ -110,9 +133,12 @@ function redactSensitiveData(data) {
     const redacted = {};
     
     for (const [key, value] of Object.entries(data)) {
+      const keyLower = String(key).toLowerCase();
       // Keep key names intact for debugging, but redact values if key is sensitive
       if (isSensitiveKey(key)) {
         redacted[key] = '[REDACTED]';
+      } else if (keyLower === 'path' || keyLower.endsWith('_path')) {
+        redacted[key] = sanitizePathForLog(value);
       } else {
         redacted[key] = redactSensitiveData(value);
       }
@@ -131,37 +157,6 @@ function redactSensitiveData(data) {
  * @param {Object} meta - Additional metadata
  * @returns {string} Formatted log message
  */
-function formatLogMessage(level, message, meta = {}) {
-  const timestamp = new Date().toISOString();
-  const requestId = meta.requestId || 'system';
-  
-  // Redact sensitive data from metadata
-  const redactedMeta = redactSensitiveData(meta);
-  
-  // Create structured log entry
-  const logEntry = {
-    timestamp,
-    level,
-    requestId,
-    message: message.replace(CONTROL_CHARS, ''),
-    ...redactedMeta
-  };
-  
-  return JSON.stringify(logEntry);
-}
-
-/**
- * Redact object values, keep only keys (for logging field names without PII)
- */
-function extractFieldNames(obj) {
-  if (!obj || typeof obj !== 'object') return {};
-  const fields = {};
-  for (const key of Object.keys(obj)) {
-    fields[key] = '[VALUE_REDACTED]';
-  }
-  return fields;
-}
-
 /**
  * Secure logger class with structured logging
  * Use this instead of console.log to prevent PII leaks
@@ -244,19 +239,21 @@ class SecureLogger {
       msg = message;
     }
     
-    // Redact sensitive data from metadata
+    // Redact both the message and metadata. Callers should use stable event names, but
+    // this remains safe even if a provider error or user-derived value reaches a message.
     const safeMeta = redactSensitiveData(data);
+    const safeMessage = safe(String(msg || ''));
     
     if (this.isDevelopment) {
       // If the data has an 'event' property, use EVENT formatting instead of INFO formatting
       if (data.event) {
-        consoleLogger.formatJsonEvent({ level: 'info', ts: new Date().toISOString(), msg, ...safeMeta });
+        consoleLogger.formatJsonEvent({ level: 'info', ts: new Date().toISOString(), msg: safeMessage, ...safeMeta });
       } else {
-        consoleLogger.formatInfo(msg || JSON.stringify(safeMeta), { ...safeMeta, requestId: data.requestId || 'system' });
+        consoleLogger.formatInfo(safeMessage || JSON.stringify(safeMeta), { ...safeMeta, requestId: data.requestId || 'system' });
       }
     } else {
       // Production: JSON line for log aggregation
-      console.log(JSON.stringify({ level: 'info', ts: new Date().toISOString(), msg, ...safeMeta }));
+      console.log(JSON.stringify({ level: 'info', ts: new Date().toISOString(), msg: safeMessage, ...safeMeta }));
     }
   }
   
@@ -279,7 +276,7 @@ class SecureLogger {
     
     // For debug, log field names only (not values) to avoid PII
     const fieldNames = typeof data === 'object' ? Object.keys(data).join(', ') : '';
-    const safeMsg = `${msg} [fields: ${fieldNames}]`;
+    const safeMsg = safe(`${msg} [fields: ${fieldNames}]`);
     
     if (this.isDevelopment) {
       console.log(`[DEBUG] ${safeMsg}`);
@@ -291,9 +288,19 @@ class SecureLogger {
    * @param {string} message - Log message
    * @param {Object} meta - Additional metadata
    */
-  warn(message, meta = {}) {
-    // Use consoleLogger for formatted display instead of raw JSON
-    consoleLogger.formatWarning(message, meta);
+  warn(msgOrData, message = '') {
+    const data = typeof msgOrData === 'string'
+      ? (typeof message === 'object' ? message : {})
+      : (msgOrData || {});
+    const msg = typeof msgOrData === 'string' ? msgOrData : message;
+    const safeMeta = redactSensitiveData(data);
+    const safeMessage = safe(String(msg || 'Warning'));
+
+    if (this.isDevelopment) {
+      consoleLogger.formatWarning(safeMessage, safeMeta);
+    } else {
+      console.warn(JSON.stringify({ level: 'warn', ts: new Date().toISOString(), msg: safeMessage, ...safeMeta }));
+    }
   }
   
   /**
@@ -313,9 +320,19 @@ class SecureLogger {
    * @param {string} message - Log message
    * @param {Object} meta - Additional metadata
    */
-  error(message, meta = {}) {
-    // Use consoleLogger for formatted display instead of raw JSON
-    consoleLogger.formatError(message, meta);
+  error(msgOrData, message = '') {
+    const data = typeof msgOrData === 'string'
+      ? (typeof message === 'object' ? message : {})
+      : (msgOrData || {});
+    const msg = typeof msgOrData === 'string' ? msgOrData : message;
+    const safeMeta = redactSensitiveData(data);
+    const safeMessage = safe(String(msg || 'Error'));
+
+    if (this.isDevelopment) {
+      consoleLogger.formatError(safeMessage, safeMeta);
+    } else {
+      console.error(JSON.stringify({ level: 'error', ts: new Date().toISOString(), msg: safeMessage, ...safeMeta }));
+    }
   }
   
   /**
@@ -324,7 +341,7 @@ class SecureLogger {
    * @param {Object} res - Express response object
    * @param {number} duration - Request duration in ms
    */
-  request(req, res, duration) {
+  request(_req, _res, _duration) {
     // This method is now handled by consoleLogger.formatRequest in zorvalon.js
     // No need to log here as it would create duplicate logs
   }
@@ -334,7 +351,7 @@ class SecureLogger {
    * @param {string} event - Event type
    * @param {Object} meta - Additional metadata
    */
-  // These domain helpers send the same safe metadata to structured logs and the readable console formatter.
+  // Domain helpers delegate to the same redacting logger path as all other events.
   auth(event, meta = {}) {
     const safeMeta = {
       requestId: meta.requestId,
@@ -344,8 +361,6 @@ class SecureLogger {
     };
     
     this.info(`Auth event: ${event}`, safeMeta);
-    
-    consoleLogger.formatAuthEvent(event, safeMeta);
   }
   
   /**
@@ -363,8 +378,6 @@ class SecureLogger {
     };
     
     this.info(`Database: ${operation} on ${table}`, safeMeta);
-    
-    consoleLogger.formatDatabaseOperation(operation, table, safeMeta);
   }
   
   /**
@@ -381,8 +394,6 @@ class SecureLogger {
     };
     
     this.warn(`Security: ${event}`, safeMeta);
-    
-    consoleLogger.formatSecurityEvent(event, safeMeta);
   }
   
   /**
@@ -395,8 +406,6 @@ class SecureLogger {
     };
     
     this.info('Cookies parsed and attached to request', safeMeta);
-    
-    consoleLogger.formatCookieParsing(safeMeta);
   }
   
   /**
@@ -410,8 +419,6 @@ class SecureLogger {
     };
     
     this.info(`CSRF token ${action}`, safeMeta);
-    
-    consoleLogger.formatCSRFToken(action, safeMeta);
   }
   
   /**
@@ -426,8 +433,6 @@ class SecureLogger {
     };
     
     this.info(`Security: ${event}`, safeMeta);
-    
-    consoleLogger.formatSecurityClearance(event, safeMeta);
   }
   
   /**
@@ -441,8 +446,6 @@ class SecureLogger {
     };
     
     this.info(`Session ${action}`, safeMeta);
-    
-    consoleLogger.formatSessionEvent(action, safeMeta);
   }
   
   /**
@@ -452,8 +455,7 @@ class SecureLogger {
    * Direct formatting ensures consistent display with other domain events.
    * 
    * Accepts event type (executing/completed) and metadata (userId, fields, operation).
-   * Calls consoleLogger.formatProfileUpdateEvent() for pretty display.
-   * Keeps PII-safe by only logging field names, not values.
+   * Uses the central structured logger so user identifiers and values are redacted.
    * 
    * @param {string} event - Event type (profile.update.executing or profile.update.completed)
    * @param {Object} meta - Additional metadata
@@ -467,12 +469,7 @@ class SecureLogger {
       level: 'info'
     };
     
-    // Format for console display with orange color
-    consoleLogger.formatProfileUpdateEvent({
-      ts: new Date().toISOString(),
-      msg: event,
-      ...safeMeta
-    });
+    this.info({ event, ...safeMeta }, 'Profile update event');
   }
 }
 

@@ -18,7 +18,7 @@
     <link rel="icon" href="/images/favicon.ico">
     <link rel="stylesheet" href="/css/style.css?v=<%= page.assetVersion || assetVersion || '' %>">
 </head>
-<body data-auth-hydrate="true">
+<body data-auth-hydrate="ssr-authenticated">
     <%- include('partials/nav', { nav: page.nav, app_info: app_info }) %>
 
     <main>
@@ -386,6 +386,8 @@
     <!-- Centralized Modals (password change, notifications) -->
     <%- include('partials/modals') %>
 
+    <script id="profile-bootstrap" type="application/json" nonce="<%= cspNonce %>"><%- profileBootstrapJson || '{}' %></script>
+
     <!-- Shared core scripts -->
     <script
   src="/js/supabase-client.js?v=<%= page.assetVersion || assetVersion || '' %>"
@@ -394,12 +396,11 @@
   nonce="<%= cspNonce %>"
 ></script>
     <script src="/js/sbClient.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= cspNonce %>"></script>
-    <script src="/js/logout.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= cspNonce %>"></script>
     <script src="/js/modalManager.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= cspNonce %>"></script>
     <script src="/js/nav-client.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= cspNonce %>"></script>
     
     <!-- Page-specific scripts -->
     <script src="/js/profile-edit.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= cspNonce %>"></script>
-    <script src="/js/main.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= cspNonce %>"></script>
+    <script src="/js/protected-shell.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= cspNonce %>"></script>
 </body>
 </html>

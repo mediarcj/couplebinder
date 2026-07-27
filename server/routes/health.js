@@ -68,7 +68,7 @@ function isOpsAuthorized(req) {
     String(req.get('X-Ops-Health-Token') || req.get('X-Ops-Token') || '').trim();
   if (want && got && want === got) return true;
 
-  const ip = (req.clientIp || req.ip || '').toString();
+  const ip = (req.clientIp || req.ip || '').toString().replace(/^::ffff:/, '');
   const allow = new Set((config?.health?.allowlist || []).map(String));
   return ip && allow.has(ip);
 }
@@ -161,8 +161,10 @@ function basePayload(req) {
 // Base /health endpoint (JSON for tests)
 router.get('/', healthShield, (req, res) => {
   res.set('Cache-Control', 'no-store');
-  const body = basePayload(req);
-  return res.status(200).json(body);
+  return res.status(200).json({
+    ok: true,
+    requestId: req?.requestId || req?.id || null
+  });
 });
 
 const LIVENESS_PATHS = ['/healthz', '/livez'];

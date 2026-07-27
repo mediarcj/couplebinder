@@ -53,11 +53,14 @@ setIfEmpty('CSRF_SECRET', 'test_csrf_secret');
 // Supabase test defaults
 setIfEmpty('SUPABASE_URL', 'http://localhost:54321');
 setIfEmpty('SUPABASE_ANON_KEY', 'test_anon_key');
-setIfEmpty('SUPABASE_JWKS', '{"keys":[{"kty":"oct","k":"dGVzdF9zZWNyZXQ"}]}');
+setIfEmpty(
+  'SUPABASE_JWKS',
+  '{"keys":[{"kty":"RSA","kid":"test-rs256","use":"sig","alg":"RS256","n":"sXch7hP9_EZ7pQYfRzRkFMp6R8EV6Z2e7qjRUkzV68ZGjf6M2GQ4VdXMhVFwK3SxQzBxf1qWz5j0To3wOef8g4ZxO0n3xPd8R6ePKP8h-d_NvG6sFhQY9P9qAnrV0Q9pQ9YJtJ4L3qL8YmYj2XJqQ6jY1rJjvL3QmG8XmU2pZx8KJ3W8cH1kN5uO3hH6V4mG7xN6wT8xQ9kK4rH7Y2jP5cV1mN8sQ3bL6zD9fR2wX5kT7pJ1hG4nM8vQ6yC3aS9eF2uB5rD7xK1mP4qN8tV6wY3zA9cE2gH5jL7nR1sU4xZ8bC6dF3hJ9kM2pQ5tV7wY1zA","e":"AQAB"}]}'
+);
 setIfEmpty('SUPABASE_JWKS_URL', 'http://localhost:54321/.well-known/jwks.json');
 setIfEmpty('SUPABASE_ISSUER', 'http://localhost:54321');
 setIfEmpty('SUPABASE_EXPECTED_AUD', 'authenticated');
-setIfEmpty('JWT_ALLOWED_ALGS', 'HS256,RS256,ES256');
+process.env.JWT_ALLOWED_ALGS = 'RS256,ES256';
 
 // Rate limit defaults
 setIfEmpty('RATE_LIMIT_GENERAL_RPM', '300');
@@ -92,9 +95,7 @@ setIfEmpty('CSRF_HEADER_NAME', 'x-csrf-token');
 setIfEmpty('AUTH_COOKIE_NAME', 'sb_session');
 
 // Block process.exit during tests
-const originalExit = process.exit;
 process.exit = (code) => {
   const err = new Error(`Blocked process.exit(${code}) during tests`);
   throw err;
 };
-

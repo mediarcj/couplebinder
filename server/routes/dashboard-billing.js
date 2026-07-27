@@ -11,6 +11,7 @@ const { buildDashboardPageModel } = require('../ui_contract/presenters');
 const { getPricingCatalog } = require('../services/pricingCatalog');
 const { config } = require('../config');
 const { formatPrice } = require('../ui_contract/presenters/helpers/viewFormatters');
+const { timeAsync } = require('../middleware/requestTiming');
 
 router.get('/', async (req, res) => {
   // If Stripe ever bounces here with ?paid=1, bounce on to confirmation like before
@@ -21,8 +22,15 @@ router.get('/', async (req, res) => {
     );
   }
 
-  // Base page model (nav, app_info, assetVersion, etc.)
-  const pageModel = await buildDashboardPageModel(req, res);
+  // Independent remote work begins together after mount-level authorization.
+  const pageModelPromise = buildDashboardPageModel(req, res);
+  const pricingPromise = timeAsync(
+    req,
+    'stripe_catalog',
+    () => getPricingCatalog()
+  ).catch(() => []);
+
+  const [pageModel, pricing] = await Promise.all([pageModelPromise, pricingPromise]);
 
   // Title + nonce + CSRF token
   pageModel.page = pageModel.page || {};
@@ -41,36 +49,14 @@ router.get('/', async (req, res) => {
   };
 
   // Pricing pulled from Stripe using the ACTIVE key (service handles that)
-  let pricing = [];
-  try {
-    pricing = await getPricingCatalog(); // should already key off config.stripe.active
-  } catch {
-    // Pricing is optional; template will still render CTAs with copy
-    pricing = [];
-  }
-
   // Pre-compute products for display (moves logic out of EJS template)
   // WHAT: Finds the products that match active Stripe price IDs
   // WHY: Keeps template simple and moves business logic to server-side
   // HOW: Matches pricing catalog items against active price IDs with fallback order
   const activePriceOneTime = (config.stripe.active.priceResumeOneTime || '').trim();
   const activePriceExpert = (config.stripe.active.priceResumeExpert || '').trim();
-  
-  // Fallback order: LIVE -> TEST -> legacy
-  const candidateOneTime = [
-    config.stripe.live?.priceResumeOneTime,
-    config.stripe.test?.priceResumeOneTime,
-    config.stripe.priceResumeOneTime
-  ].filter(Boolean);
-  
-  const candidateExpert = [
-    config.stripe.live?.priceResumeExpert,
-    config.stripe.test?.priceResumeExpert,
-    config.stripe.priceResumeExpert
-  ].filter(Boolean);
-  
-  const productOneTime = pricing.find(p => candidateOneTime.includes(p.priceId));
-  const productExpert = pricing.find(p => candidateExpert.includes(p.priceId));
+  const productOneTime = pricing.find((product) => product.priceId === activePriceOneTime);
+  const productExpert = pricing.find((product) => product.priceId === activePriceExpert);
   
   // Pre-format prices for template (moves logic out of EJS)
   const formatProduct = (product) => {

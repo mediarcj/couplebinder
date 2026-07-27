@@ -3,7 +3,17 @@
 // Notes: Tests that CSRF and other mandatory middleware loaded successfully
 
 // Globals enabled in vitest.config.js
-const request = require('supertest');
+const supertest = require('supertest');
+
+function request(target) {
+  const client = supertest(target);
+  return new Proxy(client, {
+    get(instance, property) {
+      if (typeof instance[property] !== 'function') return instance[property];
+      return (...args) => instance[property](...args).set('X-Forwarded-Proto', 'https');
+    }
+  });
+}
 
 // Import app (this will fail fast if critical middleware doesn't load)
 const app = require('../zorvalon');
@@ -65,4 +75,3 @@ describe('Health and Boot Smoke Tests', () => {
   });
   
 });
-

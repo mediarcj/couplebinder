@@ -1,0 +1,47 @@
+{
+  "schemaVersion": "1.0.0",
+  "operationId": "synthetic-staging-operation",
+  "operation": "forward",
+  "target": "staging",
+  "bundleId": "couplebinder.profile-rls-repair.20260727",
+  "repositoryCommit": "38a7b88d8adf425d36c4c300622e3949963f03c9",
+  "manifestSha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "forwardSha256": "af995929f43b0a68e05ab012b46e5133f154921cfcd2d3a5dcc7cf1a0a8c6dcd",
+  "compensationSha256": "12f48b04b78fcb37f4a6e965586b6e512dbde87f137b33439dfb31250d741452",
+  "catalogFingerprintReference": "synthetic-staging-catalog-evidence",
+  "startingCatalogClassification": "pending",
+  "backupReference": "synthetic-disposable-staging",
+  "restoreOwner": "staging-restore-owner",
+  "operator": "staging-operator",
+  "reviewer": "staging-reviewer",
+  "approvalOwner": "project-owner",
+  "maintenance": {
+    "before": "isolated-staging",
+    "after": "pending"
+  },
+  "startedAt": "pending",
+  "finishedAt": "pending",
+  "result": "pending",
+  "postflight": {
+    "status": "pending",
+    "evidenceReference": "synthetic-staging-postflight"
+  },
+  "applicationSmoke": {
+    "status": "pending",
+    "evidenceReference": "synthetic-staging-smoke"
+  },
+  "recursivePolicyObservation": {
+    "status": "pending",
+    "eventCount": 0
+  },
+  "compensationRehearsal": {
+    "status": "pending",
+    "evidenceReference": "synthetic-staging-compensation"
+  },
+  "compensationDecision": "pending",
+  "observationWindow": {
+    "minutes": 0,
+    "status": "pending"
+  },
+  "finalDisposition": "pending"
+}

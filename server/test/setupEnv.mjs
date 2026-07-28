@@ -93,6 +93,18 @@ setIfEmpty('CSRF_HEADER_NAME', 'x-csrf-token');
 
 // If your auth guard reads this to decide cookie name:
 setIfEmpty('AUTH_COOKIE_NAME', 'sb_session');
+setIfEmpty(
+  'AUTH_ROLE_LEGACY_APP_METADATA_ROLE',
+  'false'
+);
+setIfEmpty(
+  'AUTH_ROLE_LEGACY_TOP_LEVEL_USER_ROLE',
+  'false'
+);
+setIfEmpty(
+  'AUTH_ROLE_SUPER_USER_AS_ADMIN',
+  'false'
+);
 
 // Block process.exit during tests
 process.exit = (code) => {

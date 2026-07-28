@@ -8,9 +8,38 @@ const { createIdempotencyMiddleware } = require('../middleware/idempotency');
 const logger = require('../utils/logger');
 const { assertUser } = require('../utils/authz');
 const { getVerifiedAuth } = require('../lib/verifiedAuth');
+const {
+  PROFILE_STATUS,
+  isEditableProfileResult
+} = require('../services/profileResult');
+
+function profileReader(req) {
+  return req.app?.locals
+    ?.getProfileByUserIdOverride ||
+    getProfileByUserId;
+}
+
+function profileUpdater(req) {
+  return req.app?.locals
+    ?.updateProfileTransactionalOverride ||
+    updateProfileTransactional;
+}
+
+function setPrivateNoStore(res) {
+  res.set('Cache-Control', 'no-store');
+  res.set('Pragma', 'no-cache');
+}
+
+function sendProfileUnavailable(res) {
+  setPrivateNoStore(res);
+  return res.status(503).json({
+    success: false,
+    error: 'profile_unavailable'
+  });
+}
 
 // GET /api/profile/me  -> return your own profile
-router.get('/me', async (req, res) => {
+async function getOwnProfileHandler(req, res) {
   // Pass the caller's access token into the profile service so database row-level security
   // can enforce the same identity that the route authenticated.
   try {
@@ -19,19 +48,36 @@ router.get('/me', async (req, res) => {
 
     // Extract user access token for RLS-compliant profile fetching
     const userAccessToken = getVerifiedAuth(req)?.token || null;
-    const profile = await getProfileByUserId(userId, userAccessToken);
-    if (!profile) return res.status(404).json({ success: false, message: 'Profile not found' });
+    const result = await profileReader(req)(
+      userId,
+      userAccessToken
+    );
 
-    res.json({ success: true, profile });
-  } catch (e) {
-    logger.error({
+    setPrivateNoStore(res);
+    if (result.status === PROFILE_STATUS.notFound) {
+      return res.status(404).json({
+        success: false,
+        error: 'profile_not_found'
+      });
+    }
+    if (result.status !== PROFILE_STATUS.ok) {
+      return sendProfileUnavailable(res);
+    }
+
+    return res.json({
+      success: true,
+      profile: result.profile
+    });
+  } catch {
+    logger.warn({
       event: 'profile.get.error',
-      error: e.message,
       requestId: req.requestId
     }, 'Failed to load profile');
-    res.status(500).json({ success: false, message: 'Failed to load profile' });
+    return sendProfileUnavailable(res);
   }
-});
+}
+
+router.get('/me', getOwnProfileHandler);
 
 // Create idempotency middleware for profile updates
 const profileIdempotency = createIdempotencyMiddleware({
@@ -39,49 +85,86 @@ const profileIdempotency = createIdempotencyMiddleware({
   headerName: 'Idempotency-Key'
 });
 
-// PUT /api/profile/me -> update your own profile with idempotency protection
-router.put('/me', profileIdempotency, validateProfileUpdate, async (req, res) => {
+async function requireEditableProfile(req, res, next) {
+  try {
+    const user = assertUser(req);
+    const userAccessToken =
+      getVerifiedAuth(req)?.token || null;
+    const result = await profileReader(req)(
+      user.id,
+      userAccessToken
+    );
+
+    if (result.status === PROFILE_STATUS.notFound) {
+      setPrivateNoStore(res);
+      return res.status(404).json({
+        success: false,
+        error: 'profile_not_found'
+      });
+    }
+
+    if (!isEditableProfileResult(result)) {
+      return sendProfileUnavailable(res);
+    }
+
+    req.authoritativeProfile = result.profile;
+    return next();
+  } catch {
+    logger.warn({
+      event: 'profile.update.precondition_failed',
+      requestId: req.requestId
+    }, 'Profile update precondition failed');
+    return sendProfileUnavailable(res);
+  }
+}
+
+async function updateOwnProfileHandler(req, res) {
+  setPrivateNoStore(res);
   // Validation builds an allowlisted patch, then the service coordinates the profile row
   // with Supabase Auth metadata and compensates if the second system fails.
   try {
     const user = assertUser(req);
     const userId = user.id;
 
-    // Use the validated patch data from middleware
-    // Use transactional service for consistency across auth.users and profiles
-    const updated = await updateProfileTransactional(userId, req.profilePatch);
-    
-    /**
-     * Check if data was unchanged and return appropriate response.
-     * 
-     * Better UX - tell frontend "no change" so it can show proper message.
-     * Backend is source of truth for what changed (Building Law #9).
-     * 
-     * Service returns _unchanged flag if no fields changed.
-     * API passes this to frontend as unchanged: true.
-     * Frontend shows "No changes made" instead of "Updated successfully".
-     */
+    const updated = await profileUpdater(req)(
+      userId,
+      req.profilePatch
+    );
+
     if (updated._unchanged) {
-      // Remove internal flag before sending to client
       const { _unchanged, ...cleanProfile } = updated;
-      return res.json({ 
-        success: true, 
-        profile: cleanProfile, 
-        unchanged: true 
+      return res.json({
+        success: true,
+        profile: cleanProfile,
+        unchanged: true
       });
     }
-    
-    res.json({ success: true, profile: updated });
-  } catch (e) {
+
+    return res.json({
+      success: true,
+      profile: updated
+    });
+  } catch {
     logger.error({
       event: 'profile.update.error',
-      error: e.message,
       requestId: req.requestId
     }, 'Profile update failed');
-    
-    res.status(400).json({ success: false, message: 'Update failed' });
+
+    return res.status(503).json({
+      success: false,
+      error: 'profile_unavailable'
+    });
   }
-});
+}
+
+// PUT /api/profile/me -> update your own profile with idempotency protection
+router.put(
+  '/me',
+  validateProfileUpdate,
+  requireEditableProfile,
+  profileIdempotency,
+  updateOwnProfileHandler
+);
 
 /**
  * POST /api/profile/reconcile -> check profile data consistency
@@ -129,3 +212,8 @@ router.post('/reconcile', async (req, res) => {
 });
 
 module.exports = router;
+module.exports._test = {
+  getOwnProfileHandler,
+  requireEditableProfile,
+  updateOwnProfileHandler
+};

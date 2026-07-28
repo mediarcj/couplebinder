@@ -19,6 +19,9 @@ const {
   buildErrorPageModel 
 } = require('../ui_contract/presenters');
 const logger = require('../utils/logger');
+const {
+  PROFILE_STATUS
+} = require('../services/profileResult');
 
 /**
  * GET /api/page/home
@@ -89,10 +92,26 @@ router.get('/user/:id', async (req, res) => {
   try {
     const pageModel = await buildUserProfilePageModel(req, res, req.params.id);
     
-    if (!pageModel.profile.user) {
+    if (
+      pageModel.profile.status ===
+      PROFILE_STATUS.unavailable
+    ) {
+      res.set('Cache-Control', 'no-store');
+      return res.status(503).json({
+        success: false,
+        error: 'profile_unavailable',
+        requestId: req.requestId,
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    if (
+      pageModel.profile.status ===
+      PROFILE_STATUS.notFound
+    ) {
       return res.status(404).json({
         success: false,
-        error: 'User not found',
+        error: 'profile_not_found',
         requestId: req.requestId,
         timestamp: new Date().toISOString()
       });

@@ -16,6 +16,9 @@
  */
 
 const { assertUser, hasUser } = require('../../utils/authz');
+const {
+  requestHasRole
+} = require('../../security/roleAuthority');
 
 // Safe module loader with fallback
 function safeLoad(modPath, fallback = {}) {
@@ -45,14 +48,12 @@ function featureEnabled(name) {
  * 
  * Enable role-based navigation items (e.g., admin panel).
  * 
- * Check req.user.roles array for matching role.
+ * Check the request-local signed-role authority for a matching role.
  */
 function userHasRole(req, role) {
   if (!hasUser(req)) return false;
   if (!role) return true;
-  const r = String(role).toLowerCase();
-  const user = assertUser(req);
-  return Array.isArray(user.roles) ? user.roles.map(x => String(x).toLowerCase()).includes(r) : false;
+  return requestHasRole(req, role);
 }
 
 /**
@@ -238,4 +239,7 @@ function compose(req, res) {
   };
 }
 
-module.exports = { compose };
+module.exports = {
+  compose,
+  userHasRole
+};

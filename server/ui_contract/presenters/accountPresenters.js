@@ -13,6 +13,11 @@ const { getVerifiedAuth } = require('../../lib/verifiedAuth');
 const {
   isRequestAdmin
 } = require('../../security/roleAuthority');
+const {
+  PROFILE_REASON,
+  PROFILE_STATUS,
+  unavailable
+} = require('../../services/profileResult');
 
 /**
  * Build page model for dashboard page
@@ -32,6 +37,8 @@ async function buildDashboardPageModel(req, res) {
   const user = await buildCanonicalUser(req);
   const isAuthenticated = !!user?.id;
   const isAdmin = isRequestAdmin(req);
+  const profileEditable =
+    user?.profile_editable === true;
   const endNavigation = startSpan(req, 'navigation');
   const navigation = navManager.compose(req, res);
   endNavigation();
@@ -48,12 +55,18 @@ async function buildDashboardPageModel(req, res) {
     user,
     ui_instructions: {
       allowed_actions: isAuthenticated ?
-        ['view_profile', 'edit_profile', 'view_submissions', 'submit_text', 'logout'] :
+        [
+          'view_profile',
+          ...(profileEditable ? ['edit_profile'] : []),
+          'view_submissions',
+          'submit_text',
+          'logout'
+        ] :
         ['login', 'view_public_content'],
       input_limits: { text_min: 20, text_max: 5000, profile_name_max: 100 },
       feature_flags: {
         text_submission: true,
-        profile_editing: isAuthenticated,
+        profile_editing: profileEditable,
         admin_panel: isAdmin,
         user_management: isAdmin,
         advanced_analytics: isAdmin
@@ -76,7 +89,7 @@ async function buildDashboardPageModel(req, res) {
         show_admin_menu: isAdmin,
         show_user_menu: isAuthenticated,
         show_submission_form: true,
-        show_profile_edit: isAuthenticated,
+        show_profile_edit: profileEditable,
         show_analytics: isAdmin
       }
     },
@@ -85,7 +98,14 @@ async function buildDashboardPageModel(req, res) {
       supabaseUrl: config.supabase.url || '',
       supabaseAnonKey: config.supabase.anonKey || ''
     },
-    app_info: buildAppInfo()
+    app_info: buildAppInfo(),
+    profile: {
+      status: user?.profile_status ||
+        PROFILE_STATUS.unavailable,
+      authoritative:
+        user?.profile_authoritative === true,
+      editable: profileEditable
+    }
   };
 }
 
@@ -110,18 +130,26 @@ async function buildUserProfilePageModel(req, res, userId) {
   const isOwn = self?.id && userId && self.id === userId;
 
   // If viewing another user's profile, fetch that profile for display
-  let viewed = null;
+  let viewedResult =
+    unavailable(PROFILE_REASON.unknown);
   try {
     // Extract user access token for RLS-compliant profile fetching
     const userAccessToken = getVerifiedAuth(req)?.token || null;
-    viewed = await getProfileByUserId(userId, userAccessToken);
-  } catch (e) { 
+    viewedResult = await getProfileByUserId(
+      userId,
+      userAccessToken
+    );
+  } catch {
     logger.warn({
       event: 'presenter.view_profile_fetch_failed',
-      userId,
-      error: e?.message || e
+      reason: PROFILE_REASON.unknown
     }, 'view profile fetch failed');
   }
+
+  const viewed =
+    viewedResult.status === PROFILE_STATUS.ok
+      ? viewedResult.profile
+      : null;
 
   return {
     page: {
@@ -130,7 +158,13 @@ async function buildUserProfilePageModel(req, res, userId) {
       type: 'user_profile'
     },
     user: self,
-    profile: { user: viewed || (isOwn ? self : null), isOwnProfile: !!isOwn },
+    profile: {
+      user: viewed,
+      isOwnProfile: !!isOwn,
+      status: viewedResult.status,
+      authoritative:
+        viewedResult.status === PROFILE_STATUS.ok
+    },
     ui: { csrfToken: res.locals.csrfToken || '' },
     app_info: buildAppInfo()
   };

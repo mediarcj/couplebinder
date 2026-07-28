@@ -82,6 +82,16 @@ describe('validateProfileUpdate', () => {
       expect(r.body.patch.is_private).toBe(false);
     });
 
+    test('rejects ambiguous numeric is_private values', async () => {
+      const r = await request(app)
+        .put('/api/profile/me')
+        .send({ is_private: 2 });
+      expect(r.status).toBe(400);
+      expect(r.body.details).toContain(
+        'is_private must be 0 or 1 when numeric'
+      );
+    });
+
     test('rejects invalid is_private="foo"', async () => {
       const r = await request(app).put('/api/profile/me').send({ is_private: 'foo' });
       expect(r.status).toBe(400);
@@ -125,22 +135,26 @@ describe('validateProfileUpdate', () => {
   });
 
   describe('conflict resolution', () => {
-    test('conflict resolution: account_privacy wins over is_private', async () => {
+    test('rejects conflicting public privacy fields', async () => {
       const r = await request(app).put('/api/profile/me').send({ 
         account_privacy: 'public', 
         is_private: true 
       });
-      expect(r.status).toBe(200);
-      expect(r.body.patch.is_private).toBe(false);
+      expect(r.status).toBe(400);
+      expect(r.body.details).toContain(
+        'privacy fields must agree'
+      );
     });
 
-    test('conflict resolution: account_privacy wins over is_private (reverse)', async () => {
+    test('rejects conflicting private privacy fields', async () => {
       const r = await request(app).put('/api/profile/me').send({ 
         account_privacy: 'private', 
         is_private: false 
       });
-      expect(r.status).toBe(200);
-      expect(r.body.patch.is_private).toBe(true);
+      expect(r.status).toBe(400);
+      expect(r.body.details).toContain(
+        'privacy fields must agree'
+      );
     });
   });
 

@@ -1,0 +1,28 @@
+<!--
+  Description: Controlled non-editable state for unavailable or missing profiles
+  Security: This page contains no profile fields and cannot submit profile mutations
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title><%= page?.title || app_info?.name || 'Application' %></title>
+  <link rel="icon" href="/images/favicon.ico">
+  <link rel="stylesheet" href="/css/style.css?v=<%= page.assetVersion || assetVersion || '' %>">
+</head>
+<body data-auth-hydrate="ssr-authenticated">
+  <%- include('partials/nav', { nav: page.nav, app_info: app_info }) %>
+  <main>
+    <div class="container">
+      <section class="profile-header" aria-labelledby="profile-state-heading">
+        <h1 id="profile-state-heading"><%= profileState.heading %></h1>
+        <p><%= profileState.message %></p>
+        <a class="btn btn-secondary" href="<%= profileState.actionHref %>"><%= profileState.actionLabel %></a>
+      </section>
+    </div>
+  </main>
+  <script src="/js/nav-client.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= cspNonce %>"></script>
+  <script src="/js/protected-shell.js?v=<%= page.assetVersion || assetVersion || '' %>" nonce="<%= cspNonce %>"></script>
+</body>
+</html>

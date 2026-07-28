@@ -1,0 +1,255 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:couplebinder:migrations:execution-record:1",
+  "title": "CoupleBinder Profile RLS Repair Execution Record",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "operationId",
+    "operation",
+    "target",
+    "bundleId",
+    "repositoryCommit",
+    "manifestSha256",
+    "forwardSha256",
+    "compensationSha256",
+    "catalogFingerprintReference",
+    "startingCatalogClassification",
+    "backupReference",
+    "restoreOwner",
+    "operator",
+    "reviewer",
+    "approvalOwner",
+    "maintenance",
+    "startedAt",
+    "finishedAt",
+    "result",
+    "postflight",
+    "applicationSmoke",
+    "recursivePolicyObservation",
+    "compensationRehearsal",
+    "compensationDecision",
+    "observationWindow",
+    "finalDisposition"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "1.0.0"
+    },
+    "operationId": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]{7,127}$"
+    },
+    "operation": {
+      "enum": [
+        "forward",
+        "compensation"
+      ]
+    },
+    "target": {
+      "enum": [
+        "staging",
+        "production"
+      ]
+    },
+    "bundleId": {
+      "const": "couplebinder.profile-rls-repair.20260727"
+    },
+    "repositoryCommit": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{40}$"
+    },
+    "manifestSha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "forwardSha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "compensationSha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "catalogFingerprintReference": {
+      "$ref": "#/$defs/safeReference"
+    },
+    "startingCatalogClassification": {
+      "enum": [
+        "pending",
+        "supported_old",
+        "supported_hybrid",
+        "repaired_target",
+        "unknown"
+      ]
+    },
+    "backupReference": {
+      "$ref": "#/$defs/safeReference"
+    },
+    "restoreOwner": {
+      "$ref": "#/$defs/safeActor"
+    },
+    "operator": {
+      "$ref": "#/$defs/safeActor"
+    },
+    "reviewer": {
+      "$ref": "#/$defs/safeActor"
+    },
+    "approvalOwner": {
+      "$ref": "#/$defs/safeActor"
+    },
+    "maintenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "before",
+        "after"
+      ],
+      "properties": {
+        "before": {
+          "enum": [
+            "pending",
+            "enabled",
+            "isolated-staging"
+          ]
+        },
+        "after": {
+          "enum": [
+            "pending",
+            "enabled"
+          ]
+        }
+      }
+    },
+    "startedAt": {
+      "anyOf": [
+        {
+          "const": "pending"
+        },
+        {
+          "type": "string",
+          "format": "date-time"
+        }
+      ]
+    },
+    "finishedAt": {
+      "anyOf": [
+        {
+          "const": "pending"
+        },
+        {
+          "type": "string",
+          "format": "date-time"
+        }
+      ]
+    },
+    "result": {
+      "enum": [
+        "pending",
+        "succeeded",
+        "failed",
+        "stopped"
+      ]
+    },
+    "postflight": {
+      "$ref": "#/$defs/checkResult"
+    },
+    "applicationSmoke": {
+      "$ref": "#/$defs/checkResult"
+    },
+    "recursivePolicyObservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "eventCount"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "pending",
+            "clear",
+            "detected"
+          ]
+        },
+        "eventCount": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "compensationRehearsal": {
+      "$ref": "#/$defs/checkResult"
+    },
+    "compensationDecision": {
+      "enum": [
+        "pending",
+        "not_required",
+        "approved",
+        "rejected"
+      ]
+    },
+    "observationWindow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "minutes",
+        "status"
+      ],
+      "properties": {
+        "minutes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "status": {
+          "enum": [
+            "pending",
+            "passed",
+            "failed"
+          ]
+        }
+      }
+    },
+    "finalDisposition": {
+      "enum": [
+        "pending",
+        "approved_for_production_planning",
+        "hold_maintenance",
+        "compensated_fail_closed",
+        "restore_required",
+        "complete"
+      ]
+    }
+  },
+  "$defs": {
+    "safeReference": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{3,127}$"
+    },
+    "safeActor": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]{2,63}$"
+    },
+    "checkResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "evidenceReference"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "pending",
+            "passed",
+            "failed"
+          ]
+        },
+        "evidenceReference": {
+          "$ref": "#/$defs/safeReference"
+        }
+      }
+    }
+  }
+}

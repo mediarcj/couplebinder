@@ -3,19 +3,10 @@
 // Security: Profile-view roles cannot create administrator UI or page authority
 
 import {
-  beforeEach,
   describe,
   expect,
   it,
-  vi
 } from 'vitest';
-
-const profileService =
-  require('../services/profileService');
-const profileFetch = vi.spyOn(
-  profileService,
-  'getProfileByUserId'
-);
 
 const {
   attachVerifiedRoleAuthority
@@ -30,9 +21,22 @@ const {
 } = require('../ui_contract/presenters/accountPresenters');
 const navManager =
   require('../ui_contract/navigation/manager');
+const {
+  ok
+} = require('../services/profileResult');
 
 function createRequest() {
   return {
+    app: {
+      locals: {
+        getProfileByUserIdOverride: async () => ok({
+          user_id: 'synthetic-caller',
+          display_name: 'Synthetic Profile',
+          account_privacy: 'private',
+          roles: ['admin']
+        })
+      }
+    },
     originalUrl: '/dashboard',
     url: '/dashboard',
     user: {
@@ -56,14 +60,6 @@ function createResponse() {
 }
 
 describe('signed roles in presenters and navigation', () => {
-  beforeEach(() => {
-    profileFetch.mockReset();
-    profileFetch.mockResolvedValue({
-      display_name: 'Synthetic Profile',
-      roles: ['admin']
-    });
-  });
-
   it('ignores database profile roles in the canonical user', async () => {
     const req = createRequest();
 
@@ -87,10 +83,13 @@ describe('signed roles in presenters and navigation', () => {
         roles: ['admin']
       }
     });
-    profileFetch.mockResolvedValue({
-      display_name: 'Synthetic Profile',
-      roles: ['user']
-    });
+    req.app.locals.getProfileByUserIdOverride =
+      async () => ok({
+        user_id: 'synthetic-caller',
+        display_name: 'Synthetic Profile',
+        account_privacy: 'private',
+        roles: ['user']
+      });
 
     const user = await buildCanonicalUser(req);
 

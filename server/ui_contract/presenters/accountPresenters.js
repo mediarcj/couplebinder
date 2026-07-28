@@ -10,6 +10,9 @@ const logger = require('../../utils/logger');
 const { buildAppInfo } = require('./helpers/buildAppInfo');
 const { startSpan } = require('../../middleware/requestTiming');
 const { getVerifiedAuth } = require('../../lib/verifiedAuth');
+const {
+  isRequestAdmin
+} = require('../../security/roleAuthority');
 
 /**
  * Build page model for dashboard page
@@ -28,7 +31,7 @@ const { getVerifiedAuth } = require('../../lib/verifiedAuth');
 async function buildDashboardPageModel(req, res) {
   const user = await buildCanonicalUser(req);
   const isAuthenticated = !!user?.id;
-  const isAdmin = (user.roles || []).includes('admin') || false;
+  const isAdmin = isRequestAdmin(req);
   const endNavigation = startSpan(req, 'navigation');
   const navigation = navManager.compose(req, res);
   endNavigation();

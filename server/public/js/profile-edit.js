@@ -125,7 +125,7 @@ function profileValueFor(fieldName, p) {
     case 'accountPrivacy': {
       if (p.account_privacy === 'public' || p.account_privacy === 'private') return p.account_privacy;
       if (typeof p.is_private === 'boolean') return p.is_private ? 'private' : 'public';
-      return 'public';
+      return '';
     }
     default: return p[fieldName] ?? '';
   }
@@ -148,6 +148,9 @@ function backendFieldFor(fieldName, rawValue) {
     case 'relationshipStatus': return { field: 'relationship_status',   value: rawValue ?? null };
     case 'accountPrivacy': {
       // UI uses 'public'|'private' -> server expects boolean is_private
+      if (rawValue !== 'public' && rawValue !== 'private') {
+        throw new Error('Account privacy must be selected');
+      }
       const normalized = (rawValue === 'private');
       return { field: 'is_private', value: normalized };
     }
@@ -188,7 +191,19 @@ function readProfileBootstrap() {
     const element = document.getElementById('profile-bootstrap');
     if (!element) return null;
     const parsed = JSON.parse(element.textContent || '{}');
-    return parsed && typeof parsed === 'object' ? parsed : null;
+    if (
+      !parsed ||
+      typeof parsed !== 'object' ||
+      parsed.profile_authoritative !== true ||
+      parsed.profile_editable !== true ||
+      (
+        parsed.account_privacy !== 'public' &&
+        parsed.account_privacy !== 'private'
+      )
+    ) {
+      return null;
+    }
+    return parsed;
   } catch (error) {
     log.error('Failed to parse server-rendered profile data', { error: error.message });
     return null;
@@ -589,7 +604,7 @@ function validateJobStatus(value) {
 }
 
 function validateAccountPrivacy(value) {
-  if (!value) return '';
+  if (!value) return 'Account privacy must be selected';
   const validPrivacy = ['public', 'private'];
   if (!validPrivacy.includes(value)) return 'Account privacy must be either public or private';
   return '';
@@ -955,7 +970,7 @@ function initPasswordToggles() {
         btn.classList.toggle('is-visible', isHidden);
       });
     });
-  } catch (_) {
+  } catch {
     // fail-safe
   }
 }

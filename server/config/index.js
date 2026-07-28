@@ -53,6 +53,9 @@ const KNOWN_ENV = new Set([
   'AUTH_COOKIE_NAME',
   'AUTH_DEBUG',
   'AUTH_FRESH_GRACE_SEC',
+  'AUTH_ROLE_LEGACY_APP_METADATA_ROLE',
+  'AUTH_ROLE_LEGACY_TOP_LEVEL_USER_ROLE',
+  'AUTH_ROLE_SUPER_USER_AS_ADMIN',
   'AUTH_SENTINEL_MS',
   'AUTH_SET_COOKIE_ENFORCE_LOCKOUT',
   'AUTH_SET_COOKIE_ENFORCE_TURNSTILE',
@@ -783,6 +786,24 @@ const config = {
       process.env.AUTH_FRESH_GRACE_SEC,
       20
     ),
+
+    roleCompatibility: {
+      // Compatibility is opt-in so missing or misspelled configuration cannot elevate a user.
+      legacyAppMetadataRole: bool(
+        process.env.AUTH_ROLE_LEGACY_APP_METADATA_ROLE,
+        false
+      ),
+
+      legacyTopLevelUserRole: bool(
+        process.env.AUTH_ROLE_LEGACY_TOP_LEVEL_USER_ROLE,
+        false
+      ),
+
+      superUserAsAdmin: bool(
+        process.env.AUTH_ROLE_SUPER_USER_AS_ADMIN,
+        false
+      )
+    },
 
     setCookie: {
       // These optional gates are evaluated inside the public /auth/set-cookie boundary.

@@ -28,7 +28,6 @@ const MAX = {
   avatar_url: 500,
 };
 
-const ALLOWED_PRIVACY = new Set(['public', 'private']);
 const ALLOWED_GENDERS = new Set(['male', 'female']);
 const ALLOWED_RELATIONSHIP_STATUS = new Set(['single', 'married']);
 const ALLOWED_JOB_STATUS = new Set(['unemployed', 'employed']);
@@ -103,8 +102,16 @@ module.exports = function validateProfileUpdate(req, res, next) {
                     });
                 }
             } else if (typeof v === 'number') {
-                // Retain the historical numeric form; only exactly 1 maps to private.
-                patch.is_private = (v === 1);
+                // Only the historical 0/1 forms are unambiguous.
+                if (v === 1) patch.is_private = true;
+                else if (v === 0) patch.is_private = false;
+                else {
+                    return res.status(400).json({
+                        ok: false,
+                        error: 'validation_failed',
+                        details: ['is_private must be 0 or 1 when numeric'],
+                    });
+                }
             } else {
                 return res.status(400).json({
                     ok: false,
@@ -118,10 +125,11 @@ module.exports = function validateProfileUpdate(req, res, next) {
         if (hasOwn(body, 'account_privacy')) {
             // Older clients send a readable enum that maps onto the current boolean column.
             const ap = String(body.account_privacy).toLowerCase().trim();
+            let mappedPrivacy;
             if (ap === 'public') {
-                patch.is_private = false;
+                mappedPrivacy = false;
             } else if (ap === 'private') {
-                patch.is_private = true;
+                mappedPrivacy = true;
             } else {
                 return res.status(400).json({
                     ok: false,
@@ -129,6 +137,19 @@ module.exports = function validateProfileUpdate(req, res, next) {
                     details: ['account_privacy must be one of: public, private'],
                 });
             }
+
+            if (
+                hasOwn(body, 'is_private') &&
+                patch.is_private !== mappedPrivacy
+            ) {
+                return res.status(400).json({
+                    ok: false,
+                    error: 'validation_failed',
+                    details: ['privacy fields must agree'],
+                });
+            }
+
+            patch.is_private = mappedPrivacy;
         }
         if (body.given_name !== undefined) patch.given_name = norm(body.given_name);
         // These direct name/avatar fields support trusted API clients and service compatibility.

@@ -10,6 +10,13 @@
 // 4. Export new builder in presenters/index.js if needed.
 
 const { getProfileByUserId } = require('../../../services/profileService');
+const {
+  PROFILE_REASON,
+  PROFILE_STATUS,
+  isEditableProfileResult,
+  privacyValueForProfile,
+  unavailable
+} = require('../../../services/profileResult');
 const logger = require('../../../utils/logger');
 const { timeAsync } = require('../../../middleware/requestTiming');
 const { getVerifiedAuth } = require('../../../lib/verifiedAuth');
@@ -35,7 +42,10 @@ async function buildCanonicalUserInternal(req) {
       id: null,
       email: null,
       role: 'guest',
-      roles: []
+      roles: [],
+      profile_status: PROFILE_STATUS.notFound,
+      profile_authoritative: false,
+      profile_editable: false
     };
   }
 
@@ -46,31 +56,46 @@ async function buildCanonicalUserInternal(req) {
     id: authenticatedUser.id || null,
     email: authenticatedUser.email || null,
   };
-  if (!basic.id) return basic;
+  if (!basic.id) {
+    return {
+      ...basic,
+      roles: productRoles,
+      profile_status: PROFILE_STATUS.unavailable,
+      profile_authoritative: false,
+      profile_editable: false
+    };
+  }
 
-  // Attempt to get full app profile (optional)
-  let profile = null;
+  // Profile data has a separate availability contract from verified identity.
+  // Provider failures remain unavailable and never become a synthetic profile.
+  let profileResult = unavailable(PROFILE_REASON.unknown);
   try {
     const userAccessToken = getVerifiedAuth(req)?.token || null;
+    const profileReader =
+      req.app?.locals
+        ?.getProfileByUserIdOverride ||
+      getProfileByUserId;
 
-    profile = await timeAsync(
+    profileResult = await timeAsync(
       req,
       'profile',
-      () => getProfileByUserId(basic.id, userAccessToken)
+      () => profileReader(basic.id, userAccessToken)
     );
-  } catch (e) {
+  } catch {
     logger.warn(
       {
         event: 'presenter.profile_fetch_failed',
-        userId: basic.id,
-        error: e?.message || e,
+        reason: PROFILE_REASON.unknown
       },
       'buildCanonicalUser profile fetch failed'
     );
   }
 
-  // If profile exists, merge it with verified identity claims.
-  if (profile) {
+  // Only an explicit ok result may supply editable database profile fields.
+  if (profileResult.status === PROFILE_STATUS.ok) {
+    const profile = profileResult.profile;
+    const accountPrivacy =
+      privacyValueForProfile(profile);
     const amrProviders = Array.isArray(authenticatedUser.amr)
       ? authenticatedUser.amr.map((x) => x?.method).filter(Boolean)
       : [];
@@ -106,19 +131,39 @@ async function buildCanonicalUserInternal(req) {
       email_confirmed: emailConfirmed,
       providers,
       roles: productRoles,
+      profile_status: PROFILE_STATUS.ok,
+      profile_authoritative: true,
+      profile_editable:
+        isEditableProfileResult(profileResult),
+      account_privacy: accountPrivacy,
+      is_private:
+        typeof profile.is_private === 'boolean'
+          ? profile.is_private
+          : accountPrivacy
+            ? accountPrivacy === 'private'
+            : null,
+      birthday: profile.birthday || '',
+      gender: profile.gender || '',
+      language: profile.language || '',
+      city_province: profile.city_province || '',
+      country: profile.country || '',
+      social_media1: profile.social_media1 || '',
+      social_media2: profile.social_media2 || '',
+      social_media3: profile.social_media3 || '',
+      relationship_status:
+        profile.relationship_status || '',
+      job: profile.job || '',
+      hobbies: profile.hobbies || '',
+      music: profile.music || '',
+      fav_food: profile.fav_food || '',
+      profile_title: profile.profile_title || '',
+      profile_description:
+        profile.profile_description || ''
     };
   }
 
-  // Fallback to JWT metadata if no profile is available
-  const md = authenticatedUser.user_metadata || authenticatedUser.user_meta_data || {};
-  const first = md.first_name || '';
-  const last = md.last_name || '';
-  const display =
-    md.display_name ||
-    (first && last
-      ? `${first} ${last}`
-      : first || last || (basic.email ? basic.email.split('@')[0] : 'User'));
-
+  // A missing or unavailable database profile keeps only minimal verified
+  // identity. JWT metadata must not prefill an existing-profile edit form.
   const amrProviders = Array.isArray(authenticatedUser.amr)
     ? authenticatedUser.amr.map((x) => x?.method).filter(Boolean)
     : [];
@@ -138,13 +183,10 @@ async function buildCanonicalUserInternal(req) {
   return {
     id: basic.id,
     email: basic.email,
-    display_name: display,
-    phone: md.phone || '',
-    given_name: first,
-    family_name: last,
-    avatar_url: md.avatar_url || '',
-    locale: md.locale || '',
-    timezone: md.timezone || '',
+    display_name:
+      basic.email
+        ? basic.email.split('@')[0]
+        : 'User',
     created_at: null,
     updated_at: null,
     last_sign_in_at: null,
@@ -152,6 +194,12 @@ async function buildCanonicalUserInternal(req) {
     email_confirmed: emailConfirmed,
     providers,
     roles: productRoles,
+    profile_status:
+      profileResult.status === PROFILE_STATUS.notFound
+        ? PROFILE_STATUS.notFound
+        : PROFILE_STATUS.unavailable,
+    profile_authoritative: false,
+    profile_editable: false
   };
 }
 

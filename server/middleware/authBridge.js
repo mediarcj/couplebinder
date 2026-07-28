@@ -30,6 +30,9 @@ const { config } = require('../config');
 const logger = require('../utils/logger');
 const { timeAsync } = require('./requestTiming');
 const { setVerifiedAuth } = require('../lib/verifiedAuth');
+const {
+  attachVerifiedRoleAuthority
+} = require('../security/roleAuthority');
 
 // JWT configuration
 const JWKS_URL = (
@@ -469,30 +472,25 @@ module.exports = async function authBridge(
       );
     }
 
-    // Step 5: Attach only verified identity claims.
-    const trustedRoles = Array.from(new Set(
-      [
-        ...(Array.isArray(payload.app_metadata?.roles) ? payload.app_metadata.roles : []),
-        payload.app_metadata?.role,
-        payload.user_role,
-      ]
-        .filter(Boolean)
-        .map((role) => String(role).toLowerCase())
-    ));
+    // Step 5: Derive product authority only from the verified payload.
+    // Raw claims are not retained by the role module, and compatibility is
+    // disabled unless the server configuration explicitly enables it.
+    attachVerifiedRoleAuthority(
+      req,
+      payload,
+      config.auth?.roleCompatibility
+    );
 
     req.user = {
       id: payload.sub,
       email:
         payload.email || null,
       role:
-        payload.role ||
-        payload.user_role ||
-        'authenticated',
+        payload.role || 'authenticated',
       app_metadata:
         payload.app_metadata || {},
       user_metadata:
-        payload.user_metadata || {},
-      roles: trustedRoles
+        payload.user_metadata || {}
     };
     setVerifiedAuth(req, { token, payload, source });
 

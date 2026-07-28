@@ -16,6 +16,9 @@ const logger = require('../utils/logger');
 const { config } = require('../config');
 const { formatDateForDisplay, formatCurrency, sanitizeUrl, formatPrice } = require('../ui_contract/presenters/helpers/viewFormatters');
 const { serializeForHtmlScript } = require('../utils/serializeForHtmlScript');
+const {
+  PROFILE_STATUS
+} = require('../services/profileResult');
 
 function applyProtectedPageDefaults({ req: _req, res, pageModel, title }) {
   // Protected pages share nonce, CSRF, asset-version, and browser client settings. Applying
@@ -70,15 +73,65 @@ router.get('/', async (req, res) => {
 /**
  * GET /dashboard/profile-edit
  */
-router.get('/profile-edit', async (req, res) => {
+async function renderProfileEdit(req, res) {
   try {
-    const pageModel = await buildDashboardPageModel(req, res);
+    const buildPageModel =
+      req.app?.locals
+        ?.buildDashboardPageModelOverride ||
+      buildDashboardPageModel;
+    const pageModel = await buildPageModel(req, res);
     applyProtectedPageDefaults({
       req,
       res,
       pageModel,
       title: `Edit Profile - ${config.branding.appName}`
     });
+
+    if (
+      pageModel.profile?.status ===
+      PROFILE_STATUS.notFound
+    ) {
+      res.set('Cache-Control', 'no-store');
+      res.set('Pragma', 'no-cache');
+      return res.status(404).render(
+        'profile-status',
+        {
+          ...pageModel,
+          profileState: {
+            heading: 'Profile setup required',
+            message:
+              'Your profile has not been created yet. Please use the guided setup when it becomes available.',
+            actionHref: '/dashboard',
+            actionLabel: 'Return to Dashboard'
+          }
+        }
+      );
+    }
+
+    if (
+      pageModel.profile?.status !==
+        PROFILE_STATUS.ok ||
+      pageModel.profile?.authoritative !== true ||
+      pageModel.profile?.editable !== true
+    ) {
+      res.set('Cache-Control', 'no-store');
+      res.set('Pragma', 'no-cache');
+      return res.status(503).render(
+        'profile-status',
+        {
+          ...pageModel,
+          profileState: {
+            heading:
+              'Profile temporarily unavailable',
+            message:
+              'Your saved profile could not be loaded safely. No changes can be made right now.',
+            actionHref: '/dashboard',
+            actionLabel: 'Return to Dashboard'
+          }
+        }
+      );
+    }
+
     pageModel.profileBootstrapJson = serializeForHtmlScript(pageModel.user);
     return res.render('profile-edit', pageModel);
   } catch (error) {
@@ -89,7 +142,9 @@ router.get('/profile-edit', async (req, res) => {
     const pageModel = buildErrorPageModel(req, res, 500, 'Unable to load profile edit page');
     return res.status(500).render('error', pageModel);
   }
-});
+}
+
+router.get('/profile-edit', renderProfileEdit);
 
 /**
  * GET /dashboard/purchase/confirmation
@@ -326,3 +381,7 @@ router.get('/checkout/review', async (req, res, next) => {
 // });
 
 module.exports = router;
+module.exports._test = {
+  applyProtectedPageDefaults,
+  renderProfileEdit
+};

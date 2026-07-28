@@ -14,6 +14,9 @@ const logger = require('../../../utils/logger');
 const { timeAsync } = require('../../../middleware/requestTiming');
 const { getVerifiedAuth } = require('../../../lib/verifiedAuth');
 const { assertUser, hasUser } = require('../../../utils/authz');
+const {
+  getRequestRoleAuthority
+} = require('../../../security/roleAuthority');
 
 /**
  * Build a canonical user model from the authenticated request.
@@ -28,10 +31,17 @@ async function buildCanonicalUserInternal(req) {
   // SAFEGUARD
   if (!req || !hasUser(req)) {
     // Defensive default if middleware didn’t inject req.user
-    return { id: null, email: null, role: 'guest' };
+    return {
+      id: null,
+      email: null,
+      role: 'guest',
+      roles: []
+    };
   }
 
   const authenticatedUser = assertUser(req);
+  const productRoles =
+    getRequestRoleAuthority(req).roles;
   const basic = {
     id: authenticatedUser.id || null,
     email: authenticatedUser.email || null,
@@ -59,13 +69,8 @@ async function buildCanonicalUserInternal(req) {
     );
   }
 
-  // Small inline helpers
-  const uniq = (arr) => Array.from(new Set(Array.isArray(arr) ? arr : []));
-  const notNil = (x) => x !== null && x !== undefined;
-
   // If profile exists, merge it with verified identity claims.
   if (profile) {
-    const rolesClean = uniq((profile.roles || []).filter(notNil));
     const amrProviders = Array.isArray(authenticatedUser.amr)
       ? authenticatedUser.amr.map((x) => x?.method).filter(Boolean)
       : [];
@@ -100,7 +105,7 @@ async function buildCanonicalUserInternal(req) {
       email_confirmed_at: null,
       email_confirmed: emailConfirmed,
       providers,
-      roles: rolesClean,
+      roles: productRoles,
     };
   }
 
@@ -146,7 +151,7 @@ async function buildCanonicalUserInternal(req) {
     email_confirmed_at: null,
     email_confirmed: emailConfirmed,
     providers,
-    roles: [],
+    roles: productRoles,
   };
 }
 

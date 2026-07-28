@@ -180,9 +180,40 @@ statement timeout, and no persistent volume requirement.
 
 ## Phase 2 use
 
-Phase 2 may use these tests to develop a later-dated corrected migration and a
-safe compensating migration. Phase 2 must add supported starting-state
-fixtures and run its migration artifacts through this laboratory.
+Phase 2 adds `run-phase2-migration-tests.sh`, supported starting-state
+fixtures, and migration-specific assertions. The Phase 2 runner applies the
+later-dated repair and compensation only inside the same kind of isolated
+synthetic PostgreSQL database required by this document.
+
+The Phase 2 matrix covers:
+
+- supported old and hybrid starting catalogs;
+- exact post-repair access, grant, option, and dependency contracts;
+- non-destructive rejection of already-repaired and unknown-drift states;
+- fail-closed compensation that never reconstructs the vulnerable graph;
+- transaction rollback after an injected failure;
+- advisory-lock rejection of overlapping repair attempts;
+- deterministic cleanup.
+
+Run it with the same guard and local PostgreSQL variables shown above:
+
+```sh
+COUPLEBINDER_RLS_TEST_CONFIRM=ISOLATED_SYNTHETIC_DATABASE_ONLY \
+PGHOST=127.0.0.1 \
+PGPORT=55432 \
+PGDATABASE=couplebinder_rls_synthetic \
+PGUSER=postgres \
+PGPASSWORD='synthetic-local-password' \
+tests/database/run-phase2-migration-tests.sh
+```
+
+The example password is an invented local-only placeholder. Do not reuse it
+outside a disposable test container.
+
+Phase 2 migration files are executable artifacts, but their presence in the
+repository is not authorization to apply them to staging or production.
+Production execution requires separate owner review, catalog verification,
+backup verification, and narrow authorization.
 
 Phase 1 does not authorize creating, editing, moving, or running anything under
 `db/migrations/`.

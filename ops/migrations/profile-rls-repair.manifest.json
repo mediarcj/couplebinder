@@ -1,0 +1,212 @@
+{
+  "schemaVersion": "1.0.0",
+  "bundleId": "couplebinder.profile-rls-repair.20260727",
+  "description": "Controlled profile RLS repair bundle. Repository presence is not execution authorization.",
+  "requiredApplication": {
+    "minimumReviewedCommit": "38a7b88d8adf425d36c4c300622e3949963f03c9",
+    "phase": 4,
+    "profileResultContract": [
+      "ok",
+      "not_found",
+      "unavailable"
+    ]
+  },
+  "artifacts": [
+    {
+      "id": "couplebinder.profile_rls_repair.20260727",
+      "role": "forward",
+      "path": "db/migrations/20260727_repair_profile_rls_authorization.sql",
+      "sha256": "af995929f43b0a68e05ab012b46e5133f154921cfcd2d3a5dcc7cf1a0a8c6dcd",
+      "executable": true,
+      "requiresSeparatePhase6Authorization": true
+    },
+    {
+      "id": "couplebinder.profile_rls_compensation.20260727",
+      "role": "compensation",
+      "path": "db/migrations/20260727_compensate_profile_rls_authorization.sql",
+      "sha256": "12f48b04b78fcb37f4a6e965586b6e512dbde87f137b33439dfb31250d741452",
+      "executable": false,
+      "compensationOnly": true,
+      "failClosed": true,
+      "requiresExplicitOwnerDecision": true,
+      "requiresSeparatePhase6Authorization": true
+    },
+    {
+      "id": "couplebinder.profile_view_hardening.superseded.20260726",
+      "role": "blocked",
+      "path": "db/migrations/20260726_harden_profiles_view.sql",
+      "sha256": "3a502b8c107146f2ef67ab6df0a06fcb07223c62517d35f3666079380aef68f2",
+      "gitObject": "c284e4f00244ba3e007298fd47804877bad56373",
+      "executable": false,
+      "blocked": true,
+      "neverExecute": true,
+      "reason": "Leaves the self-referential user_roles policy unchanged and retains a user_roles view dependency."
+    }
+  ],
+  "supportedStartingCatalogs": [
+    "supported_old",
+    "supported_hybrid"
+  ],
+  "preflightChecks": [
+    "artifact_hashes_verified",
+    "application_commit_verified",
+    "catalog_classification_supported",
+    "catalog_evidence_reviewed",
+    "maintenance_or_staging_isolation_verified",
+    "backup_or_disposable_staging_verified",
+    "operator_named",
+    "independent_reviewer_named"
+  ],
+  "postflightChecks": [
+    "recursive_policy_absent",
+    "public_profile_discovery_absent",
+    "private_view_security_invoker",
+    "private_view_security_barrier",
+    "private_view_user_roles_dependency_absent",
+    "auth_helper_absent",
+    "ordinary_user_roles_access_denied",
+    "own_profile_access_verified",
+    "cross_user_profile_access_denied",
+    "recursive_policy_observation_clear"
+  ],
+  "requiredStagingEvidence": [
+    "successful_execution_record",
+    "matching_manifest_hash",
+    "matching_forward_hash",
+    "matching_application_commit",
+    "supported_catalog_classification",
+    "postflight_pass",
+    "application_smoke_pass",
+    "compensation_rehearsal_recorded"
+  ],
+  "requiredProductionEvidence": [
+    "successful_matching_staging_record",
+    "verified_backup_reference",
+    "restore_owner",
+    "maintenance_enabled",
+    "execution_operator",
+    "independent_reviewer",
+    "go_no_go_owner",
+    "observation_owner",
+    "compensation_decision_owner"
+  ],
+  "observation": {
+    "maintenanceMinutes": 60,
+    "limitedNonPayingCohortHours": 24,
+    "recursivePolicyEventsAllowed": 0
+  },
+  "securityInvariants": {
+    "publicDiscoveryEnabled": false,
+    "browserCrossUserAdministrationEnabled": false,
+    "userRolesIsProductAuthority": false,
+    "compensationIsFailClosed": true,
+    "broadAclRepairDeferred": true
+  },
+  "repositorySqlInventory": [
+    {
+      "path": "db/detechify_public_data.sql",
+      "classification": "prohibited-data-export",
+      "executionPolicy": "never-execute"
+    },
+    {
+      "path": "db/detechify_schema.sql",
+      "classification": "schema-reference",
+      "executionPolicy": "not-in-this-bundle"
+    },
+    {
+      "path": "db/manual/20251025_fix_payments_indexes.sql",
+      "classification": "manual-one-time-operation",
+      "executionPolicy": "separate-review"
+    },
+    {
+      "path": "db/manual/stripe_indexes_and_policies.sql",
+      "classification": "manual-one-time-operation",
+      "executionPolicy": "separate-review"
+    },
+    {
+      "path": "db/migrations/20251022_is_private_guardrails.sql",
+      "classification": "historical-migration",
+      "executionPolicy": "not-in-this-bundle"
+    },
+    {
+      "path": "db/migrations/20251022_stripe_billing_tables.sql",
+      "classification": "historical-migration",
+      "executionPolicy": "not-in-this-bundle"
+    },
+    {
+      "path": "db/migrations/20251025_stripe_customer_env_split.sql",
+      "classification": "historical-migration",
+      "executionPolicy": "not-in-this-bundle"
+    },
+    {
+      "path": "db/migrations/20251202_couplebinder_binder_schema.sql",
+      "classification": "historical-migration",
+      "executionPolicy": "not-in-this-bundle"
+    },
+    {
+      "path": "db/migrations/20251203_couplebinder_binder_photos_align.sql",
+      "classification": "historical-migration",
+      "executionPolicy": "not-in-this-bundle"
+    },
+    {
+      "path": "db/migrations/20251205_couplebinder_base_schema.sql",
+      "classification": "historical-baseline",
+      "executionPolicy": "not-in-this-bundle"
+    },
+    {
+      "path": "db/migrations/20251224_move_legacy_binder_layouts.sql",
+      "classification": "historical-migration",
+      "executionPolicy": "not-in-this-bundle"
+    },
+    {
+      "path": "db/migrations/20260711_allow_outbox_processing_status.sql",
+      "classification": "historical-migration",
+      "executionPolicy": "not-in-this-bundle"
+    },
+    {
+      "path": "db/migrations/20260726_harden_profiles_view.sql",
+      "classification": "superseded-blocked",
+      "executionPolicy": "never-execute"
+    },
+    {
+      "path": "db/migrations/20260727_compensate_profile_rls_authorization.sql",
+      "classification": "emergency-compensation",
+      "executionPolicy": "owner-authorized-compensation-only"
+    },
+    {
+      "path": "db/migrations/20260727_repair_profile_rls_authorization.sql",
+      "classification": "approved-repair",
+      "executionPolicy": "phase6-forward-only"
+    },
+    {
+      "path": "db/patches/2025-01-20_enhance_profile_trigger.sql",
+      "classification": "patch-separate-review",
+      "executionPolicy": "not-in-this-bundle"
+    },
+    {
+      "path": "db/patches/2025-10-05_profiles_limits_audit.sql",
+      "classification": "patch-separate-review",
+      "executionPolicy": "not-in-this-bundle"
+    },
+    {
+      "path": "db/patches/2025-10-05_view_last_signins.sql",
+      "classification": "patch-separate-review",
+      "executionPolicy": "never-execute-for-repair"
+    },
+    {
+      "path": "db/patches/2025-10-12_idempotency_keys.sql",
+      "classification": "patch-separate-review",
+      "executionPolicy": "not-in-this-bundle"
+    },
+    {
+      "path": "db/patches/2025-10-12_submissions_table.sql",
+      "classification": "patch-separate-review",
+      "executionPolicy": "not-in-this-bundle"
+    },
+    {
+      "path": "db/recipes/profiles_roles_pages.sql",
+      "classification": "recipe-reference",
+      "executionPolicy": "never-execute-for-repair"
+    }
+  ]
+}

@@ -24,6 +24,9 @@ const {
 const { audit } = require('../../lib/audit');
 const logger = require('../../utils/logger');
 const { config } = require('../../config');
+const {
+  attachVerifiedRoleAuthority
+} = require('../../security/roleAuthority');
 
 // STEP 1: Read and validate configuration
 const SUPABASE_URL = (
@@ -235,15 +238,18 @@ function authRequired(req, res, next) {
 
   verifyToken(token)
     .then((payload) => {
+      attachVerifiedRoleAuthority(
+        req,
+        payload,
+        config.auth?.roleCompatibility
+      );
+
       // This verifier is the trust-boundary middleware that establishes req.user.
       // eslint-disable-next-line no-restricted-syntax
       req.user = {
         id: payload.sub,
         email: payload.email || null,
-        role:
-          payload.role ||
-          payload.user_role ||
-          'user',
+        role: payload.role || 'authenticated',
         app_metadata:
           payload.app_metadata || {},
         user_metadata:
